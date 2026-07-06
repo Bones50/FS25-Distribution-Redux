@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<GUI name="distributionSettingsPage">
+    <GuiElement profile="fs25_menuContainer">
+        <GuiElement profile="fs25_menuHeaderPanel">
+            <Bitmap profile="fs25_menuHeaderIconBg">
+                <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_options_generalSettings2"/>
+            </Bitmap>
+            <Text profile="fs25_menuHeaderTitle" text="Distribution - Settings"/>
+        </GuiElement>
+
+        <ScrollingLayout profile="fs25_settingsLayout" id="boxLayout">
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="scope">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Range: every owned asset reaches farm-wide.  Proximity: assets only reach sources within the proximity radius below."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Scope"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="includeHusbandry">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Include animal husbandry -- barns, coops, beehives, plus manure &amp; slurry pits -- in the distribution network. Off removes them entirely: they are neither fed nor is their output (milk / manure / slurry / eggs / wool / honey) distributed or sold."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Animal Husbandry"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="includeSilosSheds">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Include crop / material silos and pallet storage sheds in the distribution network. Off removes them: silos no longer feed productions, and pallet sheds neither receive nor release pallets. (Manure &amp; slurry pits follow the Animal Husbandry setting.)"/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Silos &amp; Pallet Storage"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="radius">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="How far a consumer reaches for sources in Proximity mode."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Proximity radius"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="bufferHours">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Hours of feedstock topped up at each consumer per cycle."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Consumer buffer"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="sellEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Global switch for all auto-selling (Sell / Distribute+Sell modes)."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Selling"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="waterSupplyEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Automatically supply water to water-input productions and animal pastures (billed by distance to the nearest water source)."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Auto-Water"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="distCostEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Charge a per-hour transport cost for each active distribution (scales with haul distance)."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Distribution cost"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="distCostBase">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Base transport cost per hour for a short haul (at or under the cost distance below)."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Cost rate"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="distCostThreshold">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Hauls at or under this distance pay the flat base rate; longer hauls scale up linearly."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Cost distance"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="seasonalReserveEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Crops set to Distribute+Sell keep enough feedstock to feed production until the next harvest; only the surplus is sold."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Seasonal harvest reserve"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="seasonalFallbackMonths">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Months of feedstock to hold for a crop before the mod has observed its real harvest window."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Reserve months (until learned)"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="bestPriceEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Master switch: hold Sell / Distribute+Sell surplus until its best month before selling. Off: everything sells immediately."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Sell at best price"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="bestPriceDefault">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Default for a newly-set Sell / Distribute+Sell output, until you change that building's own toggle."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Default sell timing"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="debugEnabled">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Write detailed distribution activity to log.txt (moves, sales, stores, water top-ups and charges). Turn off for a quieter log."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Debug logging"/>
+            </Bitmap>
+
+        </ScrollingLayout>
+    </GuiElement>
+</GUI>

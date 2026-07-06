@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<GUIProfiles>
+    <Presets>
+        <Preset name="sdColorWhite" value="1 1 1 1"/>
+    </Presets>
+
+    <Profile name="SDHeaderLeft" extends="baseReference">
+        <imageColor value="0 0 0 0" />
+        <textFocusedColor value="$preset_fs25_colorMainHighlight" />
+        <textHighlightedColor value="$preset_fs25_colorMainHighlight" />
+        <textSize value="16px" />
+        <textBold value="true" />
+        <textUpperCase value="true" />
+        <textColor value="$preset_colorWhite_50" />
+        <textAlignment value="left" />
+        <textDisabledColor value="$preset_colorDisabled" />
+    </Profile>
+
+    <Profile name="SDList" extends="emptyPanel" with="anchorStretchingYLeft pivotTopLeft">
+    </Profile>
+
+    <Profile name="SDListItem" extends="baseReference" with="anchorTopStretchingX alternating">
+        <height value="56px"/>
+        <imageColor value="$preset_fs25_colorGrey" />
+        <imageSelectedColor value="$preset_fs25_colorMainHighlight" />
+        <alternateBackgroundColor value="$preset_fs25_colorGreyDark_50" />
+    </Profile>
+
+    <Profile name="SDRowCell" extends="baseReference" with="anchorStretchingYLeft">
+        <textBold value="false" />
+        <textSize value="18px" />
+        <textAlignment value="left" />
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textSelectedColor value="$preset_fs25_colorMainDark" />
+        <textDisabledColor value="$preset_colorDisabled" />
+    </Profile>
+
+    <!-- Help window: topic-content rows (plain, non-highlighting text lines). -->
+    <Profile name="SDBodyItem" extends="baseReference" with="anchorTopStretchingX">
+        <height value="27px"/>
+        <imageColor value="0 0 0 0" />
+        <imageSelectedColor value="0 0 0 0" />
+        <imageFocusedColor value="0 0 0 0" />
+    </Profile>
+
+    <Profile name="SDBodyCell" extends="baseReference" with="anchorStretchingYLeft">
+        <textBold value="false" />
+        <textSize value="16px" />
+        <textAlignment value="left" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textSelectedColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainLight" />
+    </Profile>
+
+    <!-- Right-aligned variants for numeric columns + the held/cap amount. -->
+    <Profile name="SDHeaderRight" extends="SDHeaderLeft">
+        <textAlignment value="right" />
+    </Profile>
+
+    <Profile name="SDRowCellR" extends="SDRowCell">
+        <textAlignment value="right" />
+    </Profile>
+
+    <!-- Fill percentage (right-aligned, green like the base production screen). -->
+    <Profile name="SDRowCellPct" extends="SDRowCell">
+        <textAlignment value="right" />
+        <textColor value="$preset_fs25_colorMainHighlight" />
+        <textSelectedColor value="$preset_fs25_colorMainHighlight" />
+    </Profile>
+
+    <!-- Compact 38px data rows (selectable; used by the Outputs list). Row pitch
+         comes from the profile <height>, NOT the ListItem instance size. -->
+    <Profile name="SDListItemData" extends="SDListItem">
+        <height value="38px"/>
+    </Profile>
+    <!-- Info-only rows (top / Inputs section): compact + never show a selection/focus highlight. -->
+    <Profile name="SDListItemInfo" extends="SDListItemData">
+        <imageSelectedColor value="$preset_fs25_colorGrey" />
+        <imageFocusedColor value="$preset_fs25_colorGrey" />
+    </Profile>
+    <Profile name="SDInfoCell" extends="SDRowCell">
+        <textSelectedColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainLight" />
+    </Profile>
+    <Profile name="SDInfoCellR" extends="SDRowCellR">
+        <textSelectedColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainLight" />
+    </Profile>
+    <Profile name="SDInfoCellPct" extends="SDRowCellPct">
+        <textSelectedColor value="$preset_fs25_colorMainHighlight" />
+        <textFocusedColor value="$preset_fs25_colorMainHighlight" />
+    </Profile>
+</GUIProfiles>

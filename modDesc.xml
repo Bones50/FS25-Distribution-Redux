@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!-- descVersion 92 loads on every FS25 patch; this mod uses only launch-era
+     schema. Bump to the current patch value (~106-107) to silence any notice. -->
+<modDesc descVersion="110">
+    <author>Bones</author>
+    <version>1.0.0.0</version>
+
+    <title>
+        <en>Distribution Redux</en>
+    </title>
+    <description>
+        <en><![CDATA[
+# Distribution Redux
+Take full control of your farm's logistics!
+Distribution Redux replaces Farming Simulator 25's hourly distribution with a demand-driven, proximity-aware system that you control building by building - directly on your existing base game facilities, with no additional placeables required.
+Every in-game hour, the system:
+- Supplies factories and animal husbandries with only the materials they actually need
+- Prioritises the nearest available source
+- Automatically distributes water to supported productions and animal pastures
+- Sells or stores surplus materials based on your chosen settings
+# Output Modes
+Configure each product or production output independently:
+- Hold
+- Distribute
+- Sell
+- Distribute + Sell
+- Distribute + Store
+- Store
+Store sends all produced goods to a central storage location for later use or distribution.
+# Features
+- Works with base game silos, animal husbandries, productions, storages, sheds and heaps
+- No additional buildings or placeables required
+- Automatically distributes feed, straw bedding and water
+- Surplus materials fill the nearest storage first, then overflow to additional storage locations
+- Adjustable distance-based distribution and watering costs
+- Supports proximity-based or whole-farm distribution
+- Granular control: include or exclude silos, pallet sheds and animal husbandry
+- Per-building and per-product controls
+- Settings are saved with your game
+- Multiplayer supported
+# Compatibility
+Designed for base game assets and maps but will support most mods if they are standard design.
+Some modded buildings may behave differently and compatibility cannot be guaranteed. If you discover a mod that is not supported, please get in touch and I'll see what can be done.
+]]></en>
+        <de><![CDATA[
+# Distribution Redux
+Übernimm die volle Kontrolle über die Logistik deines Hofs!
+Distribution Redux ersetzt die stündliche Verteilung von Farming Simulator 25 durch ein bedarfsgesteuertes, entfernungsbewusstes System, das du Gebäude für Gebäude steuerst - direkt auf deinen vorhandenen Basisspiel-Anlagen, ganz ohne zusätzliche Platzierungsobjekte.
+In jeder Spielstunde:
+- Versorgt das System Fabriken und Tierhaltungen nur mit den Materialien, die sie tatsächlich benötigen
+- Bevorzugt es die nächstgelegene verfügbare Quelle
+- Verteilt es automatisch Wasser an unterstützte Produktionen und Tierweiden
+- Verkauft oder lagert es überschüssige Materialien gemäß deinen Einstellungen
+# Ausgabemodi
+Konfiguriere jedes Produkt bzw. jede Produktionsausgabe unabhängig:
+- Hold
+- Distribute
+- Sell
+- Distribute + Sell
+- Distribute + Store
+- Store
+Store sendet alle produzierten Waren an einen zentralen Lagerort zur späteren Verwendung oder Verteilung.
+# Funktionen
+- Funktioniert mit Basisspiel-Silos, Tierhaltungen, Produktionen, Lagern, Schuppen und Misthaufen
+- Keine zusätzlichen Gebäude oder Platzierungsobjekte erforderlich
+- Verteilt automatisch Futter, Stroh-Einstreu und Wasser
+- Überschüssige Materialien füllen zuerst das nächstgelegene Lager und laufen dann in weitere Lagerorte über
+- Anpassbare entfernungsabhängige Verteilungs- und Wasserkosten
+- Unterstützt näherungsbasierte oder hofweite Verteilung
+- Granulare Steuerung: Silos, Palettenlager und Tierhaltung ein- oder ausschließen
+- Steuerung pro Gebäude und pro Produkt
+- Einstellungen werden mit deinem Spielstand gespeichert
+- Mehrspieler wird unterstützt
+# Kompatibilität
+Für Basisspiel-Objekte und -Karten konzipiert.
+Einige modifizierte Gebäude verhalten sich möglicherweise anders, und die Kompatibilität kann nicht garantiert werden. Falls du eine Mod entdeckst, die nicht unterstützt wird, melde dich bitte und ich schaue, was sich machen lässt.
+]]></de>
+    </description>
+
+    <iconFilename>icon_DistributionRedux.dds</iconFilename>
+
+    <multiplayer supported="true"/>
+
+    <l10n>
+        <text name="input_DISTREDUX_OPEN_DIALOG">
+            <en>Configure distribution (nearest asset)</en>
+        </text>
+        <text name="input_DISTREDUX_OPEN_MANAGER">
+            <en>Open Distribution Redux menu</en>
+        </text>
+    </l10n>
+
+    <actions>
+        <action name="DISTREDUX_OPEN_DIALOG" category="BASE"/>
+        <action name="DISTREDUX_OPEN_MANAGER" category="BASE"/>
+    </actions>
+    <inputBinding>
+        <actionBinding action="DISTREDUX_OPEN_DIALOG">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_leftbracket"/>
+        </actionBinding>
+        <actionBinding action="DISTREDUX_OPEN_MANAGER">
+            <binding device="KB_MOUSE_DEFAULT" input="KEY_backslash"/>
+        </actionBinding>
+    </inputBinding>
+
+    <extraSourceFiles>
+        <sourceFile filename="scripts/DistributionModeEvent.lua"/>
+        <sourceFile filename="scripts/DistributionSellTimingEvent.lua"/>
+        <!-- Seasonal price-curve reader for best-price selling (pure reader; loaded early). -->
+        <sourceFile filename="scripts/DistributionPricing.lua"/>
+        <sourceFile filename="scripts/SmartDistribution.lua"/>
+        <sourceFile filename="scripts/DistributionSettings.lua"/>
+        <!-- 4th production output mode "Distribute + Sell".
+             Remove this line + scripts/ProductionDistributeSell.lua to disable. -->
+        <sourceFile filename="scripts/ProductionDistributeSell.lua"/>
+        <!-- Help-content source (topic text + word-wrap) reused by the menu's User Guide tab.
+             The old keybind-opened help popup is retired; ] now opens that tab instead. -->
+        <sourceFile filename="scripts/DistributionHelpDialog.lua"/>
+
+        <!-- Consolidated full-screen menu (TabbedMenu) with left-side tabs:
+             Productions / Silos / Animal Husbandry / User Guide / Settings.
+             Base page class loads first, then the page subclasses, then the menu screen. -->
+        <sourceFile filename="scripts/gui/DistributionMenuPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionSettingsPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionProductionsPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionHelpPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionMenu.lua"/>
+    </extraSourceFiles>
+</modDesc>
