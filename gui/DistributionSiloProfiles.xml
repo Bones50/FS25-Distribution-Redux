@@ -91,4 +91,35 @@
         <textSelectedColor value="$preset_fs25_colorMainHighlight" />
         <textFocusedColor value="$preset_fs25_colorMainHighlight" />
     </Profile>
+    <!-- centered box for the spawn pop-up (Distribution Redux's own dialog).
+         Extends the base-game dialog background so it renders as a small centered window. -->
+    <Profile name="SDSpawnDialogBox" extends="fs25_dialogBg">
+        <size value="720px 560px" />
+    </Profile>
+    <!-- wider box for the Advanced window (two lists side by side) -->
+    <Profile name="SDAdvDialogBox" extends="fs25_dialogBg">
+        <size value="1400px 780px" />
+    </Profile>
+    <!-- dropdown / stepper selector (left/right arrows + text) for the spawn pop-up.
+         anchorBottomCenter + positive-Y positions is the base-game dialog convention. -->
+    <Profile name="SDMultiTextOption" extends="baseReference" with="anchorBottomCenter">
+        <size value="460px 40px" />
+        <autoAddDefaultElements value="true" />
+        <defaultProfileButtonLeft value="fs25_multiTextOptionLeft" />
+        <defaultProfileButtonRight value="fs25_multiTextOptionRight" />
+        <defaultProfileText value="fs25_multiTextOptionText" />
+        <defaultProfileBgThreePart value="fs25_multiTextOptionBg" />
+    </Profile>
+    <!-- +10 / -10 quantity buttons for the spawn pop-up. Uses the base-game button image, but with DR's
+         own palette + property set (distinct from any other mod's stepper profile). -->
+    <Profile name="SDStep10Button" extends="fs25_multiTextOptionLeft" with="anchorBottomCenter">
+        <size value="62px 34px" />
+        <imageSliceId value="gui.3dShop_button" />
+        <imageFocusedSliceId value="gui.3dShop_button_selected" />
+        <imageColor value="$preset_fs25_colorMainLight" />
+        <imageFocusedColor value="$preset_fs25_colorMainHighlight" />
+        <textSize value="17px" />
+        <textColor value="$preset_fs25_colorMainDark" />
+        <textFocusedColor value="$preset_fs25_colorMainDark" />
+    </Profile>
 </GUIProfiles>

@@ -43,3 +43,36 @@ end
 function DistributionMenuPage:onFrameClose()
     DistributionMenuPage:superClass().onFrameClose(self)
 end
+
+-- Capture the full footer button list when the menu assigns it, so pages can rebuild a FILTERED copy
+-- (e.g. drop the Sell Timing button when the selected output isn't a sell mode) in updateSellTimingButton.
+function DistributionMenuPage:setMenuButtonInfo(buttons)
+    self._allButtons = buttons
+    DistributionMenuPage:superClass().setMenuButtonInfo(self, buttons)
+end
+
+-- Re-assign the footer at runtime. Goes through the canonical (base-game) setMenuButtonInfo so the menu
+-- actually re-registers/rebuilds the footer -- setting self.menuButtonInfo directly does NOT. We bypass
+-- our own override above so _allButtons keeps the FULL set for the next toggle. Pages call this from
+-- their updateSellTimingButton with the already-filtered list.
+function DistributionMenuPage:applyFooterButtons(vis)
+    DistributionMenuPage:superClass().setMenuButtonInfo(self, vis)
+    if self.setMenuButtonInfoDirty ~= nil then self:setMenuButtonInfoDirty() end
+end
+
+-- Hide each list's scrollbar TRACK (fs25_listSliderBox) whenever that list has no overflow. A list
+-- needs the bar only when its item count exceeds the whole rows that fit in its frame. Each page sets
+-- self._scrollMap = { { sliderId, listId, rowsThatFit }, ... } in onGuiSetupFinished; this runs for all.
+function DistributionMenuPage:update(dt)
+    local sc = DistributionMenuPage:superClass()
+    if sc.update ~= nil then sc.update(self, dt) end
+    local map = self._scrollMap
+    if map == nil or self.getNumberOfItemsInSection == nil then return end
+    for i = 1, #map do
+        local e = map[i]
+        local slider, list = self[e[1]], self[e[2]]
+        if slider ~= nil and slider.parent ~= nil and list ~= nil then
+            slider.parent:setVisible(self:getNumberOfItemsInSection(list, 1) > e[3])
+        end
+    end
+end

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Distribution Redux: Advanced Inputs window, scoped to ONE receiving building.
+     A single list: one row per input product the building can hold. Each row shows the
+     product, whether its storage is Pooled or Individual, how much is held, and its max
+     (as a % with the live litre equivalent, or BLOCKED). Buttons act on the selected row.
+
+     LAYOUT NOTE: the SDList profile is anchorStretchingYLeft + pivotTopLeft, so list
+     elements are positioned from the BOX'S LEFT EDGE with POSITIVE X. Only the centre-
+     anchored Text elements (title/subtitle) sit at x=0. Buttons must use profile
+     "buttonOK" (capital K); the lowercase spelling renders as a white bar. -->
+<GUI name="DistributionInputsDialog" onOpen="onOpen" onClose="onClose">
+    <GuiElement type="empty" profile="newLayer" />
+    <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
+
+    <GuiElement profile="SDAdvDialogBox" id="dialogElement">
+        <ThreePartBitmap profile="fs25_dialogBgMiddleSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgTopSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgBottom" />
+
+        <GuiElement profile="fs25_dialogContentContainer">
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="Advanced Inputs" position="0px -30px" />
+            <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""                position="0px -78px" />
+
+            <!-- single list: input products -->
+            <Bitmap profile="SDList" position="40px -122px" size="1120px 34px">
+                <Text profile="SDHeaderLeft" position="12px 0px"  size="320px 34px"  text="INCOMING PRODUCT" />
+                <Text profile="SDHeaderLeft" position="350px 0px" size="170px 34px"  text="STORAGE TYPE" />
+                <Text profile="SDHeaderLeft" position="530px 0px" size="220px 34px"  text="HELD" />
+                <Text profile="SDHeaderLeft" position="770px 0px" size="350px 34px"  text="MAX INTO THIS BUILDING" />
+                <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+            </Bitmap>
+            <GuiElement profile="SDList" position="40px -160px" size="1120px 480px">
+                <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1120px 480px"
+                            onSelectionChanged="onListSelectionChanged">
+                    <ListItem profile="SDListItem" name="rowTemplate" size="1120px 46px" onClick="onClickInputRow">
+                        <Bitmap position="12px 11px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                        <Text profile="SDRowCell" position="48px 0px"  size="300px 46px" textSize="17px" name="name" />
+                        <Text profile="SDRowCell" position="350px 0px" size="170px 46px" textSize="16px" name="kind" />
+                        <Text profile="SDRowCell" position="530px 0px" size="220px 46px" textSize="16px" name="held" />
+                        <Text profile="SDRowCell" position="770px 0px" size="350px 46px" textSize="16px" name="cap" />
+                    </ListItem>
+                </SmoothList>
+            </GuiElement>
+        </GuiElement>
+
+        <!-- action buttons -->
+        <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
+            <Button profile="buttonOK"   text="- Max"   onClick="onCapDown"     id="capDownButton" inputActionName="MENU_EXTRA_1" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="+ Max"   onClick="onCapUp"       id="capUpButton"   inputActionName="MENU_EXTRA_2" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Block"   onClick="onToggleBlock" id="blockButton"   inputActionName="MENU_ACCEPT" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Block All" onClick="onToggleAllBlock" id="blockAllButton" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonBack" text="Close"   onClick="onClickBack"   id="noButton" />
+        </BoxLayout>
+    </GuiElement>
+</GUI>

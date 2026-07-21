@@ -1,0 +1,8 @@
+# Dev/screenshot artifacts — not part of the mod
+*.jpg
+*.jpeg
+*.png
+
+# Local help/notes
+help.txt
+Help Files.txt

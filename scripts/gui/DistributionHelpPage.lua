@@ -32,6 +32,7 @@ function DistributionHelpPage:onGuiSetupFinished()
         self.bodyList:setDataSource(self)
         self.bodyList:setDelegate(self)
     end
+    self._scrollMap = { { "topicSlider", "topicList", 14 }, { "bodyListSlider", "bodyList", 25 } }
 end
 
 function DistributionHelpPage:selectTopic(index)

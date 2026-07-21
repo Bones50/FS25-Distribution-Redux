@@ -42,27 +42,37 @@ function DistributionMenu:setupPages()
 
     -- Storage-style footer actions, shared by Silos / Animal Husbandry (both are
     -- DistributionStoragePage instances). MENU_ACTIVATE (Space) is consumed by a focused list for
-    -- row-activation, so footer actions use EXTRA_1/EXTRA_2/CANCEL, which lists don't swallow.
+    -- row-activation, so footer actions use EXTRA_1/CANCEL, which lists don't swallow.
+    -- NOTE: there is deliberately no "Cycle All": endpoints are per (building, product), so one product
+    -- can have a valid market/consumer while another does not, and a single building-wide mode could not
+    -- honour both. Cycling the selected output only is unambiguous.
     local function storageButtonsFor(getPage)
         return {
             back,
-            btn(InputAction.MENU_EXTRA_1, "Cycle Selected", function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
-            btn(InputAction.MENU_EXTRA_2, "Cycle All",      function() local p = getPage(); if p ~= nil then p:onCycleAll() end end),
-            btn(InputAction.MENU_CANCEL,  "Sell Timing",    function() local p = getPage(); if p ~= nil then p:onSellTiming() end end, "sellTiming"),
+            btn(InputAction.MENU_EXTRA_1, "Cycle Output", function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
+            btn(InputAction.MENU_EXTRA_2, "Advanced",     function() local p = getPage(); if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+            btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = getPage(); if p ~= nil then p:onSellTiming() end end, "sellTiming"),
         }
     end
 
-    -- Productions page footer actions (operate on the selected building + line).
+    -- Productions footer: 4 action slots. The single "Advanced" button is CONTEXTUAL like the other tabs
+    -- (Advanced Inputs when an input row has focus, Advanced Outputs when an output row has focus). Sell
+    -- Timing shows only for sell-mode / Hold-Internal outputs; it shares no slot now that Advanced is one.
     local productionsButtons = {
         back,
-        btn(InputAction.MENU_EXTRA_1, "Toggle Line",  function() if self.pageProductions ~= nil then self.pageProductions:onToggleLine() end end),
-        btn(InputAction.MENU_EXTRA_2, "Cycle Output", function() if self.pageProductions ~= nil then self.pageProductions:onCycleOutput() end end),
-        btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() if self.pageProductions ~= nil then self.pageProductions:onSellTiming() end end, "sellTiming"),
+        btn(InputAction.MENU_EXTRA_1, "Cycle Output", function() local p = self.pageProductions; if p ~= nil then p:onCycleSelected() end end),
+        btn(InputAction.MENU_EXTRA_2, "Toggle Line",  function() local p = self.pageProductions; if p ~= nil and p.onToggleLine ~= nil then p:onToggleLine() end end),
+        btn(InputAction.MENU_ACCEPT,  "Advanced",     function() local p = self.pageProductions; if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+        btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = self.pageProductions; if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
     }
 
     -- a page shows only while its asset class is in the network (Settings toggles). nil/true -> show.
     local showSilos     = function() return DistributionSettings == nil or DistributionSettings.includeSilosSheds ~= false end
     local showHusbandry = function() return DistributionSettings == nil or DistributionSettings.includeHusbandry  ~= false end
+    local showMarkets   = function() return (DistributionSettings == nil or DistributionSettings.includeMarkets ~= false) and SmartDistribution ~= nil and SmartDistribution.hasAnyMarket ~= nil and SmartDistribution.hasAnyMarket() end
+
+    -- Markets uses the same footer as the other tabs.
+    local marketButtons = storageButtonsFor(function() return self.pageMarkets end)
 
     -- left-tab order: Productions, Silos, Animal Husbandry, User Guide, Settings
     -- { pageElement, tabIconSliceId, footerButtons, enablePredicate }
@@ -73,6 +83,7 @@ function DistributionMenu:setupPages()
         { self.pageProductions, "gui.icon_ingameMenu_productionChains", productionsButtons, always },
         { self.pageStorage,     "gui.icon_construction_buildings",      storageButtonsFor(function() return self.pageStorage end),   showSilos },
         { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          storageButtonsFor(function() return self.pageHusbandry end), showHusbandry },
+        { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
         { self.pageHelp,        "gui.icon_options_help2",               { back }, always },
         { self.pageSettings,    "gui.icon_options_generalSettings2",    { back }, always },
     }
@@ -122,7 +133,8 @@ function DistributionMenu:focusAsset()
 
     local page = self.pageStorage                       -- SILO / SHED
     if cls == "PRODUCTION" then page = self.pageProductions
-    elseif cls == "HUSBANDRY" or cls == "HEAP" then page = self.pageHusbandry end   -- pits ride with husbandry
+    elseif cls == "HUSBANDRY" or cls == "HEAP" then page = self.pageHusbandry
+    elseif cls == "MARKET" then page = self.pageMarkets end   -- pits ride with husbandry
     if page == nil then return end
 
     local idx = self.tabIndexByPage ~= nil and self.tabIndexByPage[page] or nil

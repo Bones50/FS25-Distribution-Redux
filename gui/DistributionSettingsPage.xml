@@ -32,6 +32,13 @@
             </Bitmap>
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="includeMarkets">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Include markets and kiosks in the distribution network. Off removes them: farm-owned products are no longer routed to them for selling, and the Markets tab is hidden."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Markets &amp; Kiosks"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="radius">
                     <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="How far a consumer reaches for sources in Proximity mode."/>
                 </MultiTextOption>

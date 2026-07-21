@@ -17,7 +17,7 @@ local DistributionModeEvent_mt = Class(DistributionModeEvent, Event)
 -- effect -- the multiplayer "non-host changes do nothing" bug.
 InitEventClass(DistributionModeEvent, "DistributionModeEvent")
 
-DistributionModeEvent.MODE_NUM_BITS = 3   -- modes 0..5 fit in 3 bits (incl. DISTRIBUTE_STORE)
+DistributionModeEvent.MODE_NUM_BITS = 4   -- modes 0..8 need 4 bits (Market Supply=7, Distribute + Market Supply=8)
 
 function DistributionModeEvent.emptyNew()
     return Event.new(DistributionModeEvent_mt)

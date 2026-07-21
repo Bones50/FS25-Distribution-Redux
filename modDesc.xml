@@ -3,77 +3,79 @@
      schema. Bump to the current patch value (~106-107) to silence any notice. -->
 <modDesc descVersion="110">
     <author>Bones</author>
-    <version>1.0.0.0</version>
+    <version>1.1.0.0</version>
 
     <title>
         <en>Distribution Redux</en>
     </title>
     <description>
         <en><![CDATA[
-# Distribution Redux
-Take full control of your farm's logistics!
-Distribution Redux replaces Farming Simulator 25's hourly distribution with a demand-driven, proximity-aware system that you control building by building - directly on your existing base game facilities, with no additional placeables required.
-Every in-game hour, the system:
-- Supplies factories and animal husbandries with only the materials they actually need
-- Prioritises the nearest available source
-- Automatically distributes water to supported productions and animal pastures
-- Sells or stores surplus materials based on your chosen settings
-# Output Modes
-Configure each product or production output independently:
-- Hold
-- Distribute
-- Sell
-- Distribute + Sell
-- Distribute + Store
-- Store
-Store sends all produced goods to a central storage location for later use or distribution.
-# Features
-- Works with base game silos, animal husbandries, productions, storages, sheds and heaps
-- No additional buildings or placeables required
-- Automatically distributes feed, straw bedding and water
-- Surplus materials fill the nearest storage first, then overflow to additional storage locations
-- Adjustable distance-based distribution and watering costs
-- Supports proximity-based or whole-farm distribution
-- Granular control: include or exclude silos, pallet sheds and animal husbandry
-- Per-building and per-product controls
-- Settings are saved with your game
-- Multiplayer supported
-# Compatibility
-Designed for base game assets and maps but will support most mods if they are standard design.
-Some modded buildings may behave differently and compatibility cannot be guaranteed. If you discover a mod that is not supported, please get in touch and I'll see what can be done.
+Distribution Redux
+Replace Farming Simulator 25's standard distribution system with a smarter, demand-driven logistics network.
+Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled.
+Features
+
+* No additional placeables required
+* Works with existing productions, storages, silos, and animal husbandries
+* Demand-driven distribution based on real consumption
+* Automatic feed, straw, and water supply
+* Multiple output modes: Hold, Distribute, Sell, Store, and combinations
+* Hold Internal mode: keep bulk product in a production and spawn pallets on demand
+* Proximity-based or whole-farm distribution
+* Per-building and per-product configuration
+* Multiplayer supported
+Compatibility
+Designed for the base game and compatible with most standard mods. Some custom buildings may require additional support.
+
+Feedback/Issues: https://github.com/Bones50/FS25-Distribution-Redux
+
+Changelog
+
+v1.0.0.2
+- Buildings can now be renamed: all buildings in the distribution network can be given a custom name from the base-game construction menu (silos, sheds and pits included, which the game does not normally allow). Distribution Redux uses that name throughout its menu, with the original building name shown beneath it as a reference.
+- Fixed the Manure Heap and Slurry Pit listing each other's product: the Manure Heap now shows only Manure and the Slurry Pit only Slurry.
+- Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
+
+v1.0.0.1
+- UI fixes and consistency edits.
+- Added Markets and Kiosks to the distribution system.
+- Fixed the sell-at-best-price logic that could sell too early on the first pass.
+- Added the Hold Internal output mode: keep a production's bulk product in the building instead of auto-spawning pallets.
+- Added manual pallet spawning from a Hold Internal output's held stock - a pop-up lets you pick the pallet type and quantity (capped by what's stored), available from the Distribution Redux menu and the base-game production screen.
 ]]></en>
         <de><![CDATA[
-# Distribution Redux
-Übernimm die volle Kontrolle über die Logistik deines Hofs!
-Distribution Redux ersetzt die stündliche Verteilung von Farming Simulator 25 durch ein bedarfsgesteuertes, entfernungsbewusstes System, das du Gebäude für Gebäude steuerst - direkt auf deinen vorhandenen Basisspiel-Anlagen, ganz ohne zusätzliche Platzierungsobjekte.
-In jeder Spielstunde:
-- Versorgt das System Fabriken und Tierhaltungen nur mit den Materialien, die sie tatsächlich benötigen
-- Bevorzugt es die nächstgelegene verfügbare Quelle
-- Verteilt es automatisch Wasser an unterstützte Produktionen und Tierweiden
-- Verkauft oder lagert es überschüssige Materialien gemäß deinen Einstellungen
-# Ausgabemodi
-Konfiguriere jedes Produkt bzw. jede Produktionsausgabe unabhängig:
-- Hold
-- Distribute
-- Sell
-- Distribute + Sell
-- Distribute + Store
-- Store
-Store sendet alle produzierten Waren an einen zentralen Lagerort zur späteren Verwendung oder Verteilung.
-# Funktionen
-- Funktioniert mit Basisspiel-Silos, Tierhaltungen, Produktionen, Lagern, Schuppen und Misthaufen
-- Keine zusätzlichen Gebäude oder Platzierungsobjekte erforderlich
-- Verteilt automatisch Futter, Stroh-Einstreu und Wasser
-- Überschüssige Materialien füllen zuerst das nächstgelegene Lager und laufen dann in weitere Lagerorte über
-- Anpassbare entfernungsabhängige Verteilungs- und Wasserkosten
-- Unterstützt näherungsbasierte oder hofweite Verteilung
-- Granulare Steuerung: Silos, Palettenlager und Tierhaltung ein- oder ausschließen
-- Steuerung pro Gebäude und pro Produkt
-- Einstellungen werden mit deinem Spielstand gespeichert
-- Mehrspieler wird unterstützt
-# Kompatibilität
-Für Basisspiel-Objekte und -Karten konzipiert.
-Einige modifizierte Gebäude verhalten sich möglicherweise anders, und die Kompatibilität kann nicht garantiert werden. Falls du eine Mod entdeckst, die nicht unterstützt wird, melde dich bitte und ich schaue, was sich machen lässt.
+Distribution Redux
+Ersetzt das Standard-Verteilungssystem von Farming Simulator 25 durch ein intelligenteres, bedarfsgesteuertes Logistiknetzwerk.
+Distribution Redux transportiert Ressourcen automatisch zwischen Produktionen, Tierhaltungen, Silos und Lagern - basierend auf dem tatsächlichen Bedarf. Es bevorzugt die nächstgelegene verfügbare Quelle, unterstützt die automatische Verteilung von Futter, Stroh und Wasser und gibt dir die volle Kontrolle darüber, wie jede Ausgabe gehandhabt wird.
+Funktionen
+
+* Keine zusätzlichen Platzierungsobjekte erforderlich
+* Funktioniert mit vorhandenen Produktionen, Lagern, Silos und Tierhaltungen
+* Bedarfsgesteuerte Verteilung auf Basis des tatsächlichen Verbrauchs
+* Automatische Versorgung mit Futter, Stroh und Wasser
+* Mehrere Ausgabemodi: Hold, Distribute, Sell, Store und Kombinationen
+* Modus "Hold Internal": Schüttgut in der Produktion behalten und Paletten bei Bedarf erzeugen
+* Näherungsbasierte oder hofweite Verteilung
+* Konfiguration pro Gebäude und pro Produkt
+* Mehrspieler wird unterstützt
+Kompatibilität
+Entwickelt für das Grundspiel und kompatibel mit den meisten Standard-Mods. Einige benutzerdefinierte Gebäude erfordern möglicherweise zusätzliche Unterstützung.
+
+Feedback/Issues: https://github.com/Bones50/FS25-Distribution-Redux
+
+Changelog
+
+v1.0.0.2
+- Gebäude können jetzt umbenannt werden: Alle Gebäude im Verteilungsnetz lassen sich über das Baumenü des Grundspiels mit einem eigenen Namen versehen (auch Silos, Schuppen und Gruben, was das Spiel sonst nicht erlaubt). Distribution Redux verwendet diesen Namen im gesamten Menü und zeigt den ursprünglichen Gebäudenamen darunter als Referenz an.
+- Fehler behoben, bei dem Misthaufen und Güllegrube jeweils das Produkt des anderen anzeigten: Der Misthaufen zeigt nun nur noch Mist, die Güllegrube nur noch Gülle.
+- Fehler behoben, bei dem Misthaufen und Güllegrube kein eingehendes Produkt anzeigten; sie listen nun das, was tatsächlich hineinfließt.
+
+v1.0.0.1
+- UI-Korrekturen und Konsistenzanpassungen.
+- Märkte und Kioske zum Verteilungssystem hinzugefügt.
+- Fehler behoben, bei dem "Zum besten Preis verkaufen" beim ersten Durchlauf zu früh verkaufte.
+- Neuer Ausgabemodus "Hold Internal": Das Schüttgut einer Produktion im Gebäude behalten, statt automatisch Paletten zu erzeugen.
+- Manuelles Erzeugen von Paletten aus dem gehaltenen Bestand eines "Hold Internal"-Ausgangs - ein Dialog erlaubt die Auswahl von Palettentyp und Anzahl (durch den Bestand begrenzt), verfügbar im Distribution-Redux-Menü und im Produktionsbildschirm des Grundspiels.
 ]]></de>
     </description>
 
@@ -104,8 +106,10 @@ Einige modifizierte Gebäude verhalten sich möglicherweise anders, und die Komp
     </inputBinding>
 
     <extraSourceFiles>
+        <sourceFile filename="scripts/DistributionLimits.lua"/>
         <sourceFile filename="scripts/DistributionModeEvent.lua"/>
         <sourceFile filename="scripts/DistributionSellTimingEvent.lua"/>
+        <sourceFile filename="scripts/DistributionMarketTimingEvent.lua"/>
         <!-- Seasonal price-curve reader for best-price selling (pure reader; loaded early). -->
         <sourceFile filename="scripts/DistributionPricing.lua"/>
         <sourceFile filename="scripts/SmartDistribution.lua"/>
@@ -125,6 +129,9 @@ Einige modifizierte Gebäude verhalten sich möglicherweise anders, und die Komp
         <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>
         <sourceFile filename="scripts/gui/DistributionProductionsPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionHelpPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionSpawnDialog.lua"/>
+        <sourceFile filename="scripts/gui/DistributionAdvancedDialog.lua"/>
+        <sourceFile filename="scripts/gui/DistributionInputsDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionMenu.lua"/>
     </extraSourceFiles>
 </modDesc>

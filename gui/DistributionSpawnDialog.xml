@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Distribution Redux: manual pallet-spawn pop-up. Own content on GIANTS' base-game
+     dialog frame + control profiles. Controls use anchorBottomCenter + positive Y. -->
+<GUI name="DistributionSpawnDialog" onOpen="onOpen" onClose="onClose">
+    <GuiElement type="empty" profile="newLayer" />
+    <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
+
+    <GuiElement profile="SDSpawnDialogBox" id="dialogElement">
+        <ThreePartBitmap profile="fs25_dialogBgMiddleSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgTopSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgBottom" />
+
+        <GuiElement profile="fs25_dialogContentContainer">
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="Spawn Pallets" position="0px -35px" />
+            <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""            position="0px -85px" />
+
+            <!-- pallet TYPE dropdown (locked when only one option); arrows built in -->
+            <MultiTextOption profile="SDMultiTextOption" id="typeElement" position="0px 185px"
+                             onClick="onClickType" focusInit="onOpen">
+                <Text profile="fs25_multiTextOptionText" name="text" />
+            </MultiTextOption>
+
+            <!-- QUANTITY stepper (arrows step 1..max) with +10 / -10 buttons flanking it -->
+            <MultiTextOption profile="SDMultiTextOption" id="countElement" position="0px 110px"
+                             onClick="onClickCount">
+                <Text profile="fs25_multiTextOptionText" name="text" />
+            </MultiTextOption>
+            <Button profile="SDStep10Button" id="minus10Btn" text="-10" onClick="onCountMinus10" position="-276px 116px" />
+            <Button profile="SDStep10Button" id="plus10Btn"  text="+10" onClick="onCountPlus10"  position="276px 116px" />
+        </GuiElement>
+
+        <!-- action buttons (BoxLayout): Spawn = yes/Enter, Cancel = no/Esc -->
+        <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
+            <Button profile="buttonOK"   text="Spawn"  onClick="onClickOk"   id="yesButton" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonBack" text="Cancel" onClick="onClickBack" id="noButton" />
+        </BoxLayout>
+    </GuiElement>
+</GUI>

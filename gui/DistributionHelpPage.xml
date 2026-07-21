@@ -9,24 +9,29 @@
         </GuiElement>
 
         <!-- left: topic list (table of contents) -->
-        <SmoothList profile="SDList" id="topicList" position="40px -96px" size="460px 760px"
-                    onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
-            <ListItem profile="SDListItem" name="rowTemplate" size="460px 52px" onClick="onClickTopic">
-                <Text profile="SDRowCell" position="18px 0px" size="424px 52px" textSize="20px" name="topicName" />
-            </ListItem>
-        </SmoothList>
+        <GuiElement profile="SDList" position="40px -96px" size="460px 760px">
+            <SmoothList profile="SDList" id="topicList" position="0px 0px" size="460px 760px"
+                        onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
+                <ListItem profile="SDListItem" name="rowTemplate" size="460px 52px" onClick="onClickTopic">
+                    <Text profile="SDRowCell" position="18px 0px" size="424px 52px" textSize="20px" name="topicName" />
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 760px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 752px" dataElementId="topicList" id="topicSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
 
         <!-- right: selected topic body -->
-        <Text profile="SDHeaderLeft" id="bodyTitleElement" position="540px -96px" size="1180px 40px" textSize="20px" text="" />
-        <SmoothList profile="SDList" id="bodyList" position="540px -140px" size="1180px 720px"
-                    focusChangeTop="nil" focusChangeBottom="nil">
-            <ListItem profile="SDBodyItem" name="rowTemplate" size="1180px 30px" onClick="onClickBodyRow">
-                <Text profile="SDBodyCell" position="6px 0px" size="1168px 30px" textSize="18px" name="bodyLine" />
-            </ListItem>
-        </SmoothList>
-
-        <ThreePartBitmap profile="fs25_listSliderBox" position="1735px -140px" size="12px 720px">
-            <Slider profile="fs25_listSlider" size="6px 712px" dataElementId="bodyList" id="bodyListSlider" />
-        </ThreePartBitmap>
+        <GuiElement profile="SDList" position="540px -96px" size="1180px 760px">
+            <SmoothList profile="SDList" id="bodyList" position="0px 0px" size="1180px 760px"
+                        focusChangeTop="nil" focusChangeBottom="nil">
+                <ListItem profile="SDBodyItem" name="rowTemplate" size="1180px 30px" onClick="onClickBodyRow">
+                    <Text profile="SDBodyCell" position="6px 0px" size="1168px 30px" textSize="18px" name="bodyLine" />
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 760px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 752px" dataElementId="bodyList" id="bodyListSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
     </GuiElement>
 </GUI>

@@ -27,7 +27,7 @@ local TOPICS = {
     {
         title = "Getting Started",
         body = [[
-Distribution Redux replaces the base-game hourly distribution with a demand-driven, proximity-aware system you steer building by building. Each in-game hour it decides what gets fed to your factories and animals, what gets watered, what gets sold, and what gets stored - all on your existing base-game buildings, with no extra placeables.
+Distribution Redux replaces the base-games distribution system with a demand-driven system and extends that system to additional buildings such as animal husbandry, silo's/storage and markets. Each in-game hour it determines the expected demand and only feeds what that production needs. Excess stock can be sold, or stored in a suitable building after distribution. No extra placeables needed, works on all default buildings as well as building mods that stick with the standard Giants schema for that building type. 
 
 ## Two keys
 Backslash key: open the Distribution Redux menu - a full-screen window with a tab for every kind of building, plus this guide and the settings.
@@ -46,39 +46,46 @@ The backslash key opens the consolidated menu. Down the left side are tabs.
 Productions - factories and production points.
 Silos - bulk silos and pallet / bale storage sheds.
 Animal Husbandry - barns, coops, beehives, plus manure and slurry pits.
+Markets - Kiosks and Markets you place on the map.
 User Guide - this guide.
 Settings - the global options.
 
-## Hidden tabs
-The Silos tab and the Animal Husbandry tab only appear when that group is switched on in Settings. If you have excluded silos and pallet storage, or excluded animal husbandry, the matching tab is hidden - turn the group back on to see it again.
+Each building tab is a two-pane page: your buildings listed on the left, and the selected building's inputs, production lines and outputs (Varies depending on the building function) on the right.
 
-Each building tab is a two-pane page: your buildings listed on the left, and the selected building's products on the right.]]
+## Hidden tabs
+The Silos/Storage, Animal Husbandry, and Markets tabs only appear when that group is switched on in Settings. If you have excluded silos and pallet storage, animal husbandry, or markets, the matching tab is hidden and those buildings are removed from the distribution network - turn the group back on to see it again.]]
     },
     {
         title = "Building Pages",
         body = [[
-The Productions, Silos and Animal Husbandry tabs share one layout: pick a building on the left, configure its products on the right - one row per product the building holds or handles.
+The Productions, Silos, Markets and Animal Husbandry tabs share one layout: pick a building on the left, configure its production lines and products on the right. Where applicable it will show inputs, Production lines and outputs and allow you to adjust where each product goes (as well as activate or deactivate production lines).
 
 ## Columns
 Product - the name and icon.
 Held / Stock - how much is in the building now.
-Distr. / cyc - litres distributed in the last in-game hour.
-Sold / cyc - litres sold last hour.
-Stored / cyc - litres pushed into storage last hour.
+Distr. / mo - litres distributed in the last in-game month (24 hours).
+Sold / mo - litres sold in the last in-game month (24 hours). Value of sale is shown in brackets.
+Stored / mo - litres pushed into storage and markets in the last in-game month (24 hours).
 Mode - the product's current output mode (and, for selling, its sell timing).
 
 ## Setting a mode
-Cycle the highlighted product to step it through the available modes, or cycle the whole building at once. Bulk stores (silo, shed, pit) step through Distribute, Hold, Distribute + Sell, Sell. Productions and animal barns also reach Distribute + Store and Store, because they make a surplus worth stashing elsewhere.
+Cycle the output in the list and use the cycle output button to step it through the available modes, or cycle the whole building at once. Highlight a production line to turn it on or off.
 
-Changing a production output here is the same setting as the vanilla production screen's output toggle, so either place updates the other - and the vanilla screen shows the mod's mode names too.]]
+If you select a sell mode, click the Sell Timing button to switch between sell immediately or sell at best price.
+
+Changing a production output or turning a production line on or off here is the same setting as the vanilla production screen's output toggle, so either place updates the other - and the vanilla screen shows the mod's mode names too.]]
     },
     {
         title = "Output Modes",
         body = [[
 A mode tells the mod what to do with a product, or a production output, each hour. The names read the same on the production screen and in the mod's pages.
 
-## Hold
-Leave it where it is. The mod will not move or sell it. (This was called "Stored" in earlier versions.) Use it for anything you want to manage by hand.
+## Hold / Hold Pallets / Hold Internal
+Leave the output where it is - the mod will not move or sell it. Most products simply show "Hold" (this was called "Stored" in earlier versions).
+
+A production output that can be made into pallets instead shows two choices:
+Hold Pallets - the production keeps dropping pallets automatically as it fills, exactly like the base game.
+Hold Internal - the output is kept as bulk inside the production and no pallets spawn on their own; you spawn them yourself on demand (see Pallet Spawning).
 
 ## Distribute
 Feed nearby productions and animals that need this product, nearest source first, up to what their recipes call for. Surplus stays put.
@@ -87,29 +94,53 @@ Feed nearby productions and animals that need this product, nearest source first
 Sell it each hour - immediately, or once it reaches its best price (see Sell Timing).
 
 ## Distribute + Sell
-Feed demand first, then sell whatever is left over.
+Feed demand first, then sell whatever is left over (See Sell timing and Annual Harvest Reserve for details on how these features work).
 
 ## Distribute + Store
 Feed demand first, then move the surplus into your other storage (silos and sheds) instead of selling it. Productions and barns only.
 
 ## Store
-Do not distribute at all; move the whole product straight into your other storage. Use it to funnel everything to one central store. Productions and barns only. (This was called "Store Offsite" in earlier versions.)
+Do not distribute at all; move the whole product straight into your other storage. Use it to funnel everything to one central store or silo. Productions and barns only.
 
-## Where storage goes
-For Distribute + Store and Store, the surplus fills the nearest suitable storage first, then overflows to the next, until it is placed or every store in reach is full. A plain silo, shed or pit is itself storage, so it cannot cascade into another store - that is why those two modes are productions and barns only.]]
+## Market Supply
+Transfers outputs to a market/kiosk you have placed. From there the product can be sold at a premium price.
+
+## Distribute + Market Supply
+Feed demand first, then transfers outputs to a market/kiosk you have placed.
+
+#Advanced Features
+
+## Sell Timing
+Anything set to Sell or Distribute + Sell can either sell straight away or wait for a good price.
+Immediate - Sell the surplus each hour at whatever the current price is. Simple and steady.
+Best price - Hold the surplus back and only sell when the price is at, or near, the top of its cycle. The mod reads the season's price curve for each crop and waits for the peak, so you earn more per litre at the cost of selling less often.
+
+## Annual Harvest Reserve
+If activated in the settings the Annual Harvest Reserve will identify crops that come in annually and each cycle it will determine how much stock it needs to keep until the next harvest cycle comes around. This prevents modes that store, move or sell surplus from actiong on stock needed to keep the production going for the entire year.
+
+## Water Supply
+If activated in the settings Water will automatically be supplied to any buildings that need it (e.g. Animal Husbandry, Greenhouses etc). The system will calculate the cost using the standard formula, but identifying the closest water source (either a water tank OR a lake) to determine distance.]]
     },
     {
-        title = "Sell Timing",
+        title = "Pallet Spawning",
         body = [[
-Anything set to Sell or Distribute + Sell can either sell straight away or wait for a good price.
+Many production outputs can be turned into pallets (boards, planks, vegetables in crates, and so on). Distribution Redux lets you keep those outputs as bulk and spawn pallets by hand, only when you want them, instead of the production dropping them automatically.
 
-## Immediate
-Sell the surplus each hour at whatever the current price is. Simple and steady.
+## Hold Internal
+On the Productions tab (or the base-game production screen), set a palletisable output to Hold Internal. The production then keeps that output as bulk stock and stops dropping pallets on its own. The stock simply builds up in the building until you distribute, sell, move, or spawn it.
 
-## Best price
-Hold the surplus back and only sell when the price is at, or near, the top of its cycle. The mod reads the season's price curve for each crop and waits for the peak, so you earn more per litre at the cost of selling less often.
+## Spawning pallets
+Once a Hold Internal output holds at least one pallet's worth of stock, a Spawn Pallets button appears - both on the Distribution Redux Productions tab and on the base-game production screen. Press it to open the spawn window.
 
-Set the timing per product on the building's page, or set the default for everything in Settings. Best price needs the seasonal price information the game provides; where that is unavailable, the product falls back to immediate.]]
+## The spawn window
+Type - the pallet type. If the output only supports one type it is shown for reference; if it supports more, use the arrows to choose.
+Quantity - how many pallets to spawn. The arrows step by one, the -10 / +10 buttons jump in tens, and the amount is capped at what the held stock allows.
+Spawn drops that many filled pallets at the production's pallet point and removes the matching amount of stock. Cancel closes without spawning.
+
+## Good to know
+The button only shows for an output that is on Hold Internal and has at least one full pallet's worth stored - below that, there is nothing to spawn.
+The production must have a pallet spawn point in its model (most palletising buildings do).
+In multiplayer the host performs the spawn, so the pallets appear for every player.]]
     },
     {
         title = "The Hourly Pass",
@@ -122,19 +153,11 @@ It looks at every active production line and enrolled animal pen, works out what
 ## 2. Store the surplus
 Distribute + Store outputs push their leftover into storage, and Store pushes everything in - nearest store first, overflowing to the next. This happens after feeding, so storing never grabs stock a factory still needed.
 
+## 3. Send the surplus to my Market/Kiosk
+Market Supply and Distribute + Market Supply outputs are transferred to any markets you have placed, also only after feeding
+
 ## 3. Sell the surplus
 Sell and Distribute + Sell outputs are sold, also only after feeding - a sale never beats a hungry consumer to the stock. With Best price timing a sale waits for the price peak, and an optional seasonal reserve can hold back enough feedstock to last until the next harvest.]]
-    },
-    {
-        title = "Feeding and Water",
-        body = [[
-## Feeding animals
-Animal husbandry is handled alongside productions. Enrolled barns are auto-fed the inputs their animals consume - food, optionally straw bedding, and water - from sources within reach, the same demand-capped, nearest-first way productions are fed. Straw bedding can be turned off separately.
-
-## Water supply
-Factories that take water as an input, and pastures that need water but have no automatic supply, are topped up automatically each hour from an effectively unlimited ambient supply - so a water-hungry plant or thirsty pasture will not stall just because you have not trucked water to it.
-
-It is not free: each watered building is billed for the haul distance to its nearest water source, using the same per-link distribution cost as everything else. A water source is whichever is closer of a building that holds or makes water, or open water - a river, lake or pond. If there is no source in range, water still flows at the flat base rate. Pastures with their own automatic supply are left to the game and never billed. Switch the feature off with the Auto-Water setting.]]
     },
     {
         title = "Distribution Costs",
@@ -142,7 +165,7 @@ It is not free: each watered building is billed for the haul distance to its nea
 By default, moving goods is not free - the mod charges a small per-hour distribution cost for each active delivery link (feeding, storing offsite, and watering all count), to stop teleport-everything-everywhere from being a no-brainer. The charge appears under your farm's maintenance and upkeep.
 
 ## How it is calculated
-The cost for one link each hour is the base times max(1, distance divided by the threshold), with a base of 10 and a threshold of 50 m by default. A delivery within 50 m costs the flat base; one at 150 m costs three times the base. Water is billed the same way. Costs are summed per farm each hour.
+The cost for one link each hour is the base cost times x the distance in increments (Threshold), with a base of 10 and a threshold of 50 m by default. A delivery within 50 m costs the flat base; one at 150 m costs three times the base. Water is billed the same way. Costs are summed per farm each hour.
 
 You can lower the base, change the threshold, or switch the whole thing off in Settings - turning it off makes watering free too.]]
     },
@@ -161,40 +184,11 @@ Includes or excludes barns, coops, beehives, and manure and slurry pits. Off rem
 ## Silos & Pallet Storage (on / off)
 Includes or excludes bulk silos and pallet / bale storage sheds. Off removes them - silos stop feeding productions and sheds neither receive nor release pallets, and their tab is hidden.
 
+## Markets and Kiosks (on / off)
+Includes or excludes Markets and Kiosks. Off removes them - Markets cannot be fed products, and their tab is hidden.
+
 ## Productions
 Productions always take part, exactly as in the base game - there is no switch to exclude them.]]
-    },
-    {
-        title = "Pallet & Bale Storage",
-        body = [[
-Pallet and bale storage sheds work a little differently from bulk silos, because they hold whole objects rather than litres.
-
-## Pre-configuring products
-A shed's page lists every pallet and bale your network can actually supply that the shed accepts - your productions' pallet outputs, your animals' eggs, wool and honey, and the baleable crops you have on hand - even if none are in the shed yet. So you can set how each should be handled before the first one arrives. Anything already sitting in the shed always shows too, even if you loaded it by hand.
-
-## Keeping space free (reserve)
-When a shed fills up, the mod first tries to move surplus pallets to another of your sheds that has room - most valuable kept, least valuable moved. If there is nowhere to relocate them, it sells off the least valuable pallets to keep a slot free for next cycle's output. A shed with somewhere to relocate to will never sell.]]
-    },
-    {
-        title = "Silo Extensions",
-        body = [[
-Silo extensions add storage capacity to a silo without being managed separately.
-
-## How they work
-Place an extension within the vicinity of a silo of the matching type, and its capacity folds into that primary silo. You configure distribution on the primary silo only - the extension simply adds room. It does not appear as its own building and has no separate modes.
-
-If an extension is not behaving, check that it is close enough to a silo that stores the same product; an extension with no matching silo nearby has nothing to attach to.]]
-    },
-    {
-        title = "Biogas Plants",
-        body = [[
-Biogas plants are productions, so they take part automatically.
-
-## Selling methane and electricity
-A biogas plant that sells methane or feeds electricity to the grid is paid at the game's grid rate, scaled by your economic difficulty setting - so the income matches the difficulty you are playing on.
-
-## Digestate
-Digestate the plant produces is recorded as Biogas Plant income on your finances page, rather than being mislabelled, so your books read correctly.]]
     },
     {
         title = "Settings",
@@ -205,66 +199,45 @@ Global settings live on the Settings tab. They are saved with your profile and s
 Scope - Range (whole farm) or Proximity (within a radius).
 Animal Husbandry - include or exclude barns, coops, beehives and manure / slurry pits.
 Silos & Pallet Storage - include or exclude bulk silos and pallet / bale sheds.
+Markets & Kiosks - include or exclude Markets and Kiosks.
 Proximity radius - how far a source reaches in Proximity scope.
 Consumer buffer - hours of feedstock topped up at each consumer per cycle.
-Selling - master on / off for all auto-selling.
-Best price - default sell timing: wait for the price peak, or sell immediately.
+Sell at best price - master on / off for selling at best price (otherwise reverts just to sell immediately).
+Default Sell Timing - default sell timing: wait for the price peak, or sell immediately.
 Auto-Water - automatically supply water to water-input productions and pastures.
 Distribution cost / rate / distance - the per-hour transport cost and how it scales.
 Seasonal harvest reserve - keep enough feedstock to feed production until the next harvest, selling only the surplus.
+Harvest Reserve months - Initially the system will not know when you harvest your seasonal products, lacking that information the system will default to keeping this many months of product until it learns better. 
 Debug logging - write detailed activity to log.txt; turn off for a quieter log.]]
-    },
-    {
-        title = "Multiplayer and Saving",
-        body = [[
-## Multiplayer
-Supported. The distribution pass runs on the host, and any mode or timing change you make is broadcast so it reaches the host and every player. Storage changes flow through the game's normal sync. The per-cycle stats and money notifications shown in the pages are the host's figures, since the host runs the pass.
-
-## Saving
-Your per-building, per-product choices are saved with your savegame and restored when you load back in, keyed to each building, so they survive across sessions. You do not need to re-set anything after a reload.
-
-## Reading the per-cycle numbers
-The Distr., Sold and Stored per-cycle columns show what happened in the most recently completed in-game hour - a snapshot, not a live ticker. They read zero right after you open a page, until the next hour ticks over.]]
     },
     {
         title = "Troubleshooting",
         body = [[
 A building is not showing up? Check Scope and the group toggles - Proximity only reaches within the radius, and a building whose group (Animal Husbandry, or Silos & Pallet Storage) is switched off is removed from the network and its tab hidden.
 
-Nothing is being delivered? Make sure the source is set to a Distribute mode (not Hold), the consumer's line is active, and the two are within reach for the current scope.
+Nothing is being delivered? Make sure the source is set to a Distribute mode (not Hold), the consumer's production line is active, and the two are within reach for the current scope.
 
 A factory is not getting water? Water is supplied automatically when Auto-Water is on; if a water-input plant looks starved, confirm the setting.
 
 No prompt at a building? The left-bracket prompt only shows for buildings that are part of the network. If you excluded that group in Settings, the prompt is gone by design.
 
-Do not run it alongside other distribution-overhaul mods - they hook the same system and will fight. The mod works on base-game buildings; some modded buildings may behave differently.]]
-    },
-    {
-        title = "Quick Reference",
-        body = [[
-## Keys
-Backslash - open the Distribution Redux menu.
-Left bracket - look at a building's loading point to open its page directly.
-
-## Modes
-Hold - do nothing, keep it in the building.
-Distribute - feed nearby demand, nearest first.
-Sell - sell each hour (immediately or at best price).
-Distribute + Sell - feed demand, sell the rest.
-Distribute + Store - feed demand, store the rest (productions and barns).
-Store - store all of it, no distributing (productions and barns).
-
-## Sell timing
-Immediate - sell at the current price.
-Best price - wait for the season's price peak.
-
-## Each hour
-Feed active productions and animals (a buffer, not a flood, nearest first) and top up water, then store the Store and Distribute + Store outputs (nearest first, overflow to next), then sell the surplus (now, or at best price), then charge a small per-link distribution cost.]]
+Do not run it alongside other distribution-overhaul mods - they hook the same system and will fight. The mod works on base-game buildings and any modded buislings that follow Giants standard Schema; some modded buildings may behave differently.]]
     },
     {
         title = "Changelog",
         body = [[
+## v1.0.0.2
+1. Renaming buildings - every building in the distribution network can now be given a custom name from the base-game construction menu. The game only allows this on some buildings by default; Distribution Redux enables it for all of its buildings (silos, sheds, pits and markets included). The mod then uses your name everywhere in this menu, with the original building name shown underneath it as a reference, so a farm with eight identical greenhouses is finally readable.
+2. Manure Heap / Slurry Pit product fix - each was listing the other's product as an output. The Manure Heap now shows only Manure, and the Slurry Pit only Slurry.
+3. Manure Heap / Slurry Pit incoming fix - neither showed an incoming product. They now list what actually flows into them (manure and slurry respectively).
+
 ## v1.0.0.1
+1. UI Improvements and consistency pass including addition of scroll bars, repositioning of tables, Added the value of products sold in the last month to the sold/mo column etc
+2. Added Markets and Kiosks to the distribution system - All buildings now have a market supply option to route the output to a market you have placed. Items sold through your market get a 20% bonus to price although selling in bulk will reduce the price you get (just like base game).
+3. Sell at Best Price Fix - When set to sell at best price and the system has no pricing history, product would sell earlier than expected. Now falls back to the price graph in game if it doesn't have enough of it's own data.
+4. Added Hold Internal mode and manual pallet spawning - palletisable production outputs can be kept as bulk stock (Hold Internal) instead of auto-spawning pallets, then spawned by hand on demand through a spawn window where you pick the pallet type and quantity. Available from both the Distribution Redux Productions tab and the base-game production screen.
+
+## v1.0.0.0
 1. Added the ability to specify whether goods should sell immediately or once they hit best price.
 2. Completely rebuilt UI that breaks out distribution types and consolidates the settings and help guide into the menu.
 3. Fixes to silo extensions so they work in a consistent manner. An extension must now be placed within the vicinity of a matching silo type; all distribution is managed in the primary silo and the extension simply adds storage to it.
@@ -275,12 +248,13 @@ Feed active productions and animals (a buffer, not a flood, nearest first) and t
 8. Settings reworked to be more granular: you can now include or exclude silos / pallet sheds, and include or exclude animal husbandry buildings. Productions always register and participate in distribution, just like the base game.
 9. Change in mode titles: Hold now holds items in the building (used to be "Stored"); Store moves items offsite when storage is available.
 
-## v1.0.0.0
-Initial Release.]]
+## v0.0.0.1
+Pre-Release.]]
     },
 }
 
 -- ---- word wrap -------------------------------------------------------------
+
 DistributionHelpDialog.TOPICS = TOPICS
 
 -- Turn a topic body into an ordered list of display rows:

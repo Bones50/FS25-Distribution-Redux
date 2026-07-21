@@ -34,7 +34,7 @@ SmartDistribution.MOD_NAME = g_currentModName
 local INF = math.huge
 
 -- ---- enums -----------------------------------------------------------------
-local MODE = { INHERIT = 0, HOLD = 1, DISTRIBUTE = 2, DISTRIBUTE_SELL = 3, SELL = 4, DISTRIBUTE_STORE = 5, STORE = 6 }
+local MODE = { INHERIT = 0, HOLD = 1, DISTRIBUTE = 2, DISTRIBUTE_SELL = 3, SELL = 4, DISTRIBUTE_STORE = 5, STORE = 6, TRANSFER_MARKET = 7, DISTRIBUTE_MARKET = 8, HOLD_INTERNAL = 9, STORE_TO = 10, DISTRIBUTE_STORE_TO = 11 }
 local REACH = { INHERIT = 0, PROXIMITY = 1, FARM_WIDE = 2 }
 local PART  = { ALL = 1, VANILLA_ONLY = 2, NONE = 3 }
 SmartDistribution.MODE, SmartDistribution.REACH, SmartDistribution.PARTICIPATION = MODE, REACH, PART
@@ -47,6 +47,7 @@ local S = {
         reach             = REACH.PROXIMITY,
         includeHusbandry  = true,              -- Settings: include animal husbandry (barns/coops/beehives) in the network
         includeSilosSheds = true,              -- Settings: include silos + pallet storage sheds in the network
+        includeMarkets    = true,              -- Settings: include markets / kiosks in the network
         mode              = MODE.DISTRIBUTE,   -- default behaviour for sources
         radius            = 50,                -- metres, used when reach == PROXIMITY
         bufferHours       = 2,                 -- hours of feedstock kept at a consumer
@@ -81,8 +82,9 @@ SmartDistribution.settings = S
 SmartDistribution.modDir = g_currentModDirectory or ""
 
 -- cross-cutting toggles
-SmartDistribution.debug  = false
+SmartDistribution.debug  = true
 SmartDistribution.dryRun = false
+SmartDistribution._prodThruDebug = true   -- TEMP: dump production throughput math (remove after)
 -- Reproduce vanilla's sellDirectly-output income (biogas electric charge + methane): our full
 -- suppression of the vanilla hourly pass would otherwise drop it.  Verified in-game (electric 0.35/l,
 -- methane 0.45/l; digestate income is not doubled, confirming vanilla no longer pays this under the
@@ -120,6 +122,30 @@ local function placeableName(p)
         if ok and n ~= nil and n ~= "" then return n end
     end
     return "placeable#" .. tostring(p.rootNode or "?")
+end
+
+-- The building's ORIGINAL (store) name, ignoring any custom name the player set in the construction menu.
+-- getName() already returns the custom name when one is set, so this is the secondary/reference label.
+-- Returns nil when it matches the displayed name (i.e. the building has not been renamed).
+function SmartDistribution.placeableStoreName(p)
+    if p == nil then return nil end
+    local n
+    if g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil and p.configFileName ~= nil then
+        local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager, p.configFileName)
+        if ok and item ~= nil and item.name ~= nil and item.name ~= "" then n = item.name end
+    end
+    if n == nil and p.configFileNameClean ~= nil then n = tostring(p.configFileNameClean) end
+    return n
+end
+
+-- The original name, but only when the player has actually renamed the building (else nil).
+function SmartDistribution.placeableRenamedFrom(p)
+    if p == nil then return nil end
+    local custom = p.nameCustom
+    if custom == nil or custom == "" then return nil end     -- not renamed -> nothing secondary to show
+    local store = SmartDistribution.placeableStoreName(p)
+    if store == nil or store == custom then return nil end
+    return store
 end
 
 local function fillTypeName(ft)
@@ -268,8 +294,20 @@ local function installExtensionBlock()
     if UnloadingStation ~= nil and UnloadingStation.addTargetStorage ~= nil then
         local orig = UnloadingStation.addTargetStorage
         UnloadingStation.addTargetStorage = function(self, storage, ...)
-            if S.master and storage ~= nil and storage.isExtension == true then
-                if not isStorageSiloStation(self) then return end   -- refuse: only storage silos may be extended
+            -- A PASTURE never links to a manure heap or slurry pit: refuse the attach so the heap stays
+            -- free to bind to the nearest real barn instead. Water troughs / bale feeders still attach.
+            if S.master and storage ~= nil and self ~= nil
+               and SmartDistribution.isGrazingPasture(self.owningPlaceable)
+               and SmartDistribution.storageHoldsManure(storage) then
+                return
+            end
+            -- A standalone silo never becomes an extension of a neighbouring silo (no proximity pooling).
+            if S.master and SmartDistribution.blocksSiloSelfExtension(self, storage) then return end
+            -- Fold an extension's capacity into its parent ONLY when the parent is a storage silo (DR's
+            -- extension model). For any other station -- a husbandry/pasture water or food tank, a
+            -- production tank -- let the attach proceed normally so the base game (and mods like Grazing
+            -- Pasture) see the storage; we just don't record it as a DR-folded extension.
+            if S.master and storage ~= nil and storage.isExtension == true and isStorageSiloStation(self) then
                 recordExtensionParent(self, storage)                -- pool the extension into that silo
             end
             return orig(self, storage, ...)
@@ -278,8 +316,13 @@ local function installExtensionBlock()
     if LoadingStation ~= nil and LoadingStation.addSourceStorage ~= nil then
         local orig = LoadingStation.addSourceStorage
         LoadingStation.addSourceStorage = function(self, storage, ...)
-            if S.master and storage ~= nil and storage.isExtension == true then
-                if not isStorageSiloStation(self) then return end
+            if S.master and storage ~= nil and self ~= nil
+               and SmartDistribution.isGrazingPasture(self.owningPlaceable)
+               and SmartDistribution.storageHoldsManure(storage) then
+                return                                             -- pastures never source from manure heaps/pits
+            end
+            if S.master and SmartDistribution.blocksSiloSelfExtension(self, storage) then return end
+            if S.master and storage ~= nil and storage.isExtension == true and isStorageSiloStation(self) then
                 recordExtensionParent(self, storage)
             end
             return orig(self, storage, ...)
@@ -312,6 +355,220 @@ end
 local function isHusbandryBuilding(p)
     return p.spec_husbandry ~= nil or p.spec_husbandryLiquidManure ~= nil or
            p.spec_husbandryMilk ~= nil
+end
+
+-- Is this one of the FS25_GrazingPasture mod's pastures?  This must NOT be inferred from base-game
+-- structure: spec_husbandryMeadow is present on vanilla barns with an outdoor area too (Cow Barn (large)
+-- has it), and both a vanilla barn and a pasture declare MANURE with capacity 0 -- so neither the meadow
+-- spec nor the storage shape can tell them apart.  We therefore ask the pasture mod itself when it is
+-- loaded, and fall back to its placeable type names.  Guarded throughout, so DR behaves normally when the
+-- pasture mod is absent (returns false -> every husbandry is treated as an ordinary barn).
+-- (A SmartDistribution.* field, not a top-level local, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.isGrazingPasture(p)
+    if p == nil then return false end
+    -- FS25 gives each mod its own Lua environment, so DR cannot see PastureFeedOverride and cannot rely on
+    -- the pasture mod's own API.  Structural test instead, verified against sdManureProbe output:
+    --   Cow Barn (large)     -> spec_husbandryMeadow yes, spec_husbandryLiquidManure YES  -> normal barn
+    --   Grazing Pasture      -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO   -> pasture
+    --   Chicken shed / silos -> no meadow spec                                            -> normal
+    -- A grazing husbandry that produces no slurry is a pasture; vanilla meadow barns all have a slurry
+    -- spec.  Type names are kept as a secondary match in case the structural test ever misses.
+    if p.spec_husbandryMeadow ~= nil and p.spec_husbandryLiquidManure == nil then return true end
+    local tn = p.typeName
+    if type(tn) == "string" then
+        if tn == "baseHusbandryPasture" or tn == "cowHusbandryPastureFeed"
+           or tn == "sheepHusbandryFeed" or tn == "horseHusbandryPastureFeed" then return true end
+    end
+    return false
+end
+
+-- Does this storage carry manure / slurry?  Used to keep manure heaps and slurry pits away from pastures
+-- while still letting their water troughs and bale feeders attach normally.
+-- (A SmartDistribution.* field, not a top-level local, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.storageHoldsManure(storage)
+    if storage == nil or g_fillTypeManager == nil then return false end
+    local mft = g_fillTypeManager:getFillTypeIndexByName("MANURE")
+    local sft = g_fillTypeManager:getFillTypeIndexByName("LIQUIDMANURE")
+    if type(storage.fillTypes) == "table" then
+        if (mft ~= nil and storage.fillTypes[mft]) or (sft ~= nil and storage.fillTypes[sft]) then return true end
+    end
+    if type(storage.capacities) == "table" then
+        if (mft ~= nil and storage.capacities[mft] ~= nil) or (sft ~= nil and storage.capacities[sft] ~= nil) then return true end
+    end
+    if storage.fillTypeIndex ~= nil and (storage.fillTypeIndex == mft or storage.fillTypeIndex == sft) then return true end
+    return false
+end
+
+-- Build-menu categories whose placeables are pure capacity extensions (no stock of their own). Anything
+-- listed here may fold into a neighbouring silo; every other silo keeps its stock separate. Lower-case.
+-- Add to this list if your game/mods use a different category name -- the refusal is logged with the
+-- category it saw, so an unrecognised one is easy to spot with SmartDistribution.debug on.
+SmartDistribution.extensionStoreCategories = {
+    ["siloextensions"]    = true,
+    ["siloextension"]     = true,
+    ["storageextensions"] = true,
+    ["storageextension"]  = true,
+    ["extensions"]        = true,
+    ["extension"]         = true,
+}
+
+-- Build-menu (store) category of a placeable, lower-cased; nil when it cannot be resolved.
+function SmartDistribution.storeCategoryName(p)
+    if p == nil or g_storeManager == nil or p.configFileName == nil then return nil end
+    local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager, p.configFileName)
+    if not ok or item == nil then return nil end
+    local c = item.categoryName or item.category
+    if type(c) == "string" and c ~= "" then return string.lower(c) end
+    return nil
+end
+
+-- Which placeable owns this storage?  A Storage does not reliably carry a back-reference, so fall back to
+-- scanning the placeable system for the silo that lists it.  Returns nil when it cannot be resolved.
+-- (A SmartDistribution.* field, not a top-level local, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.storageOwnerPlaceable(storage)
+    if storage == nil then return nil end
+    if storage.owningPlaceable ~= nil then return storage.owningPlaceable end
+    if storage.owner ~= nil and storage.owner.spec_silo ~= nil then return storage.owner end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return nil end
+    for _, p in ipairs(ps.placeables) do
+        local silo = p.spec_silo
+        if silo ~= nil and silo.storages ~= nil then
+            for _, s in ipairs(silo.storages) do
+                if s == storage then return p end
+            end
+        end
+    end
+    return nil
+end
+
+-- Stop two SEPARATE silos merging into one shared pool just because they were built close together.
+-- Vanilla lets any storage flagged isExtension bind to a station in range, so a normal silo dropped beside
+-- another silo folds into it.  Only a placeable whose BUILD MENU CATEGORY says it is an extension may do
+-- that; a silo that is a working store in its own right keeps its stock separate.
+-- Scope is deliberately narrow: this only ever policies silo -> silo attachment.  Husbandry / pasture
+-- stations are untouched, so pasture water troughs and bale feeders still attach normally.
+-- Returns true when this attach must be refused.
+-- (A SmartDistribution.* field, not a top-level local, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.blocksSiloSelfExtension(station, storage)
+    if station == nil or storage == nil then return false end
+    if not isStorageSiloStation(station) then return false end   -- only silo <- silo pooling is policed
+    local target = station.owningPlaceable
+    local owner  = SmartDistribution.storageOwnerPlaceable(storage)
+    local cat    = owner ~= nil and SmartDistribution.storeCategoryName(owner) or nil
+    -- one line per silo-to-silo attach so an unexpected category / unresolved owner is visible in the log
+    log("silo attach: target='%s' owner='%s' isExtension=%s category=%s",
+        placeableName(target), owner ~= nil and placeableName(owner) or "<unresolved>",
+        tostring(storage.isExtension), tostring(cat))
+    if target == nil or owner == nil then return false end
+    if owner == target then return false end          -- a silo's own storage on its own station: always fine
+    if owner.spec_silo == nil then return false end   -- not a silo placeable: leave it alone
+    if cat ~= nil and SmartDistribution.extensionStoreCategories[cat] then return false end   -- real extension
+    if cat == nil then
+        -- category unreadable: fall back to structure (capacity-only placeable == genuine extension)
+        local silo = owner.spec_silo
+        if silo.loadingStation == nil and silo.unloadingStation == nil then return false end
+    end
+    log("silo pooling refused: '%s' (category %s) will not extend '%s'",
+        placeableName(owner), tostring(cat), placeableName(target))
+    return true
+end
+
+-- ---- Move To loopback test --------------------------------------------------
+-- A Move To chain must never return a product to where it started.  A->B->A, or any longer ring such as
+-- A->B->C->A, shuttles the same stock back and forth forever and bills a distribution cost every cycle
+-- while moving nothing on net.  These two helpers answer that question over the CURRENT graph.
+--
+-- Every ACTIVE (unblocked) Move To edge for one fill type, as edges[srcUid][destUid] = true.  Only assets
+-- actually in a Move To mode contribute edges -- a plain Store destination is a dead end and cannot close
+-- a ring.  Self-contained: the uid -> asset mapping is derived from the placeable system, so no lookup
+-- table has to be maintained anywhere else.
+-- (SmartDistribution.* fields, not top-level locals, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.moveToActiveEdges(ft)
+    local edges = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil or ft == nil then return edges end
+    if SmartDistribution.assetUid == nil or SmartDistribution.resolvedAssetMode == nil
+       or SmartDistribution.outputDestinations == nil then return edges end
+    local M = SmartDistribution.MODE
+    for _, p in ipairs(ps.placeables) do
+        local uid = SmartDistribution.assetUid(p)
+        if uid ~= nil then
+            local okM, m = pcall(SmartDistribution.resolvedAssetMode, p, ft)
+            if okM and (m == M.STORE_TO or m == M.DISTRIBUTE_STORE_TO) then
+                local okD, rows = pcall(SmartDistribution.outputDestinations, p, ft, false, true, false)
+                if okD and type(rows) == "table" then
+                    local set = edges[uid]
+                    if set == nil then set = {}; edges[uid] = set end
+                    for _, d in ipairs(rows) do
+                        if d ~= nil and d.uid ~= nil and not d.blocked then set[d.uid] = true end
+                    end
+                end
+            end
+        end
+    end
+    return edges
+end
+
+-- Does routing srcUid's ft to destUid close a ring?  True when destUid can reach srcUid again by following
+-- active Move To edges to any depth.  Pass a prebuilt `edges` table when testing several destinations at
+-- once so the graph is only walked together, not rebuilt per row.  The visited set makes a malformed or
+-- already-looping graph terminate rather than spin.
+function SmartDistribution.moveToCreatesLoop(srcUid, ft, destUid, edges)
+    if srcUid == nil or destUid == nil then return false end
+    if destUid == srcUid then return true end                  -- straight back into itself
+    edges = edges or SmartDistribution.moveToActiveEdges(ft)
+    local seen, stack = {}, { destUid }
+    while #stack > 0 do
+        local cur = table.remove(stack)
+        if cur == srcUid then return true end
+        if not seen[cur] then
+            seen[cur] = true
+            local nxt = edges[cur]
+            if nxt ~= nil then
+                for u in pairs(nxt) do
+                    if u == srcUid then return true end
+                    if not seen[u] then stack[#stack + 1] = u end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Effective per-hour consumption of a husbandry INPUT ("food" | "water" | "straw").  Normal barns publish
+-- this on the spec (fs.litersPerHour / ws.litersPerHour / ss.inputLitersPerHour).  GRAZING PASTURES leave
+-- it at 0 -- their animals eat from meadow foliage, so the trough advertises no rate -- which would make
+-- our feed/straw/water phases skip them.  To feed a pasture like any other husbandry we fall back to the
+-- animals themselves: sum each cluster's per-day input curve x head count / 24.  Self-contained (reads the
+-- base animalSystem), so it needs no dependency on the pasture mod.  Returns 0 when nothing is known.
+function SmartDistribution.husbandryAnimalRate(p, inputKey)
+    if p == nil or p.getClusters == nil then return 0 end
+    local m = g_currentMission
+    local asys = m ~= nil and m.animalSystem or nil
+    if asys == nil or asys.getSubTypeByIndex == nil then return 0 end
+    local okC, clusters = pcall(p.getClusters, p)
+    if not okC or type(clusters) ~= "table" then return 0 end
+    local rate = 0
+    for _, cluster in ipairs(clusters) do
+        local sti = cluster.getSubTypeIndex ~= nil and cluster:getSubTypeIndex() or cluster.subTypeIndex
+        local subType = sti ~= nil and asys:getSubTypeByIndex(sti) or nil
+        local curve = subType ~= nil and subType.input ~= nil and subType.input[inputKey] or nil
+        if curve ~= nil and curve.get ~= nil and cluster.getAge ~= nil and cluster.getNumAnimals ~= nil then
+            local okA, perDay = pcall(function() return curve:get(cluster:getAge()) end)
+            if okA and type(perDay) == "number" then
+                rate = rate + perDay * (cluster:getNumAnimals() or 0) / 24
+            end
+        end
+    end
+    return rate
+end
+
+-- The rate a feed/straw/water phase should plan against: the spec's own published rate, or -- when that's
+-- 0 (a grazing pasture) -- the animal-derived rate above.
+function SmartDistribution.husbandryInputRate(p, specRate, inputKey)
+    if specRate ~= nil and specRate > 0 then return specRate end
+    return SmartDistribution.husbandryAnimalRate(p, inputKey)
 end
 
 -- A beehive HONEY spawner (PlaceableBeehivePalletSpawner) is a standalone placeable -- separate from
@@ -383,13 +640,29 @@ end
 -- plus the named manure family. Per-building, not one fixed global list.
 local function husbandryOutputFillTypes(p)
     local out = {}
+    -- A PASTURE produces nothing: no milk, no manure, no slurry. It is a grazing area, not a barn, so it
+    -- must never appear as a source of any output and must never be offered manure/slurry routing.
+    if SmartDistribution.isGrazingPasture(p) then return out end
     if p.spec_husbandryMilk ~= nil and p.spec_husbandryMilk.fillTypes ~= nil then
         for _, ft in ipairs(p.spec_husbandryMilk.fillTypes) do out[ft] = true end
     end
     if p.spec_husbandryLiquidManure ~= nil and p.spec_husbandryLiquidManure.fillType ~= nil then
         out[p.spec_husbandryLiquidManure.fillType] = true
     end
-    for ft in pairs(outputNamedSet()) do out[ft] = true end
+    -- The manure family (MANURE / LIQUIDMANURE / SLURRY) is NOT universal: a chicken coop produces eggs
+    -- and nothing else. Only list the ones this pen actually supports -- either the husbandry itself says
+    -- so, or it has a storage that holds it (the barn's own manure patch).
+    for ft in pairs(outputNamedSet()) do
+        local supported = false
+        if p.getHusbandryIsFillTypeSupported ~= nil then
+            local ok, r = pcall(p.getHusbandryIsFillTypeSupported, p, ft)
+            supported = ok and r == true
+        end
+        if not supported and SmartDistribution.assetHoldsFillType ~= nil then
+            supported = SmartDistribution.assetHoldsFillType(p, ft)
+        end
+        if supported then out[ft] = true end
+    end
     return out
 end
 
@@ -541,6 +814,23 @@ local function storageFillTypes(storage)
     return {}
 end
 
+-- Can this placeable actually hold ft in one of its own storages? Used to trim the blanket manure-family
+-- output set down to what an asset really carries (a Manure Pit holds MANURE, a Slurry Pit LIQUIDMANURE).
+function SmartDistribution.assetHoldsFillType(p, ft)
+    if p == nil or ft == nil then return false end
+    for _, s in ipairs(getAllStorages(p)) do
+        if storageFillTypes(s)[ft] ~= nil then return true end
+    end
+    -- object-storage sheds (pallet shed / hay loft) don't expose their contents through getAllStorages;
+    -- their supported/stored fill types come from the shed helpers instead. Without this a shed is never
+    -- seen as holding anything, so Store To wouldn't treat it as a valid target or source.
+    if p.spec_objectStorage ~= nil then
+        if SmartDistribution.shedSupportedFillTypes ~= nil and SmartDistribution.shedSupportedFillTypes(p)[ft] then return true end
+        if SmartDistribution.shedStoredFillTypes ~= nil and SmartDistribution.shedStoredFillTypes(p)[ft] then return true end
+    end
+    return false
+end
+
 -- a "slurry pit": a storage silo whose tank holds LIQUIDMANURE (and isn't a barn or a production).
 -- Grouped with the manure pit under the HEAP class so the Animal Husbandry setting governs both.
 local function isLiquidManureSilo(p)
@@ -554,9 +844,97 @@ local function isLiquidManureSilo(p)
     return false
 end
 
+-- ---- owned markets / kiosks (sell points) ----------------------------------
+-- The "Transfer to My Market" target: a selling-station placeable this farm owns with real price
+-- dynamics (priceDropPerLiter set; fixed-price production-input buyers -- piano/biomass -- have it
+-- nil), not a train stop and not a production. Routed product waits in a mod-side buffer
+-- (MARKET_CAP litres per fill type) and is sold through the station's native price + degradation,
+-- with a +20% bonus credited on top. All fields (not locals) -- the file is at Lua's 200-local cap.
+SmartDistribution.MARKET_CAP = 200000
+-- per-market storage cap (litres, per fill type) = 2x the market's placement price.
+-- Falls back to the flat MARKET_CAP when the store price can't be read.
+function SmartDistribution.marketCap(market)
+    local si = market ~= nil and market.storeItem or nil
+    if si ~= nil and type(si.price) == "number" and si.price > 0 then return si.price * 2 end
+    return SmartDistribution.MARKET_CAP
+end
+function SmartDistribution.marketStationOf(p)
+    local spec = p ~= nil and p.spec_sellingStation or nil
+    return spec ~= nil and (spec.sellingStation or spec.station) or nil
+end
+-- Only genuine market / kiosk sell points count -- not stone, pallet, bale, or other specialised sell
+-- points that also have live pricing. Matched on the placeable's config file + display name; add hints
+-- to MARKET_NAME_HINTS to admit more market types later.
+SmartDistribution.MARKET_NAME_HINTS = { "market", "kiosk" }
+function SmartDistribution.isMarketKind(p)
+    if p == nil then return false end
+    local id = tostring(p.configFileName or p.xmlFilename or "")
+    if p.getName ~= nil then
+        local ok, n = pcall(p.getName, p); if ok and type(n) == "string" then id = id .. " " .. n end
+    end
+    id = id:lower()
+    for _, hint in ipairs(SmartDistribution.MARKET_NAME_HINTS) do
+        if id:find(hint, 1, true) then return true end
+    end
+    return false
+end
+function SmartDistribution.isMarket(p)
+    if p == nil or p.spec_sellingStation == nil then return false end
+    if getProductionPoint(p) ~= nil then return false end
+    local st = SmartDistribution.marketStationOf(p)
+    if type(st) ~= "table" or st.isTrainStation == true or st.priceDropPerLiter == nil then return false end
+    local owner = (p.getOwnerFarmId ~= nil) and p:getOwnerFarmId() or nil
+    if owner == nil or owner == 0 then return false end
+    return SmartDistribution.isMarketKind(p)   -- only real market / kiosk sell points, not stone / pallet / etc.
+end
+function SmartDistribution.marketAccepts(p, ft)
+    local st = SmartDistribution.marketStationOf(p)
+    if st == nil then return false end
+    if type(st.getIsFillTypeSupported) == "function" then
+        local ok, r = pcall(function() return st:getIsFillTypeSupported(ft) end)
+        if ok then return r == true end
+    end
+    if type(st.acceptedFillTypes) == "table" then return st.acceptedFillTypes[ft] == true end
+    return false
+end
+-- mod-side virtual buffer + per-market sell timing (persisted + synced).
+SmartDistribution._marketBuffer = {}   -- uid -> ft -> litres (<= MARKET_CAP)
+SmartDistribution._marketTiming = {}   -- uid -> ft -> sell mode: 1 = best price, 2 = hold (0/immediate omitted)
+SmartDistribution._marketPriceHigh = {}   -- uid -> ft -> highest effective price seen (session; best-price target)
+function SmartDistribution.marketBufferLevel(uid, ft)
+    local b = uid ~= nil and SmartDistribution._marketBuffer[uid] or nil
+    return (b ~= nil and b[ft]) or 0
+end
+function SmartDistribution.marketBufferAdd(uid, ft, delta)
+    if uid == nil or ft == nil or delta == nil then return end
+    local b = SmartDistribution._marketBuffer[uid]; if b == nil then b = {}; SmartDistribution._marketBuffer[uid] = b end
+    local v = math.max(0, (b[ft] or 0) + delta)
+    b[ft] = (v > 0) and v or nil
+end
+-- per-market sell mode: 0 = sell immediately, 1 = wait for the seasonal peak, 2 = hold (never sell)
+SmartDistribution.MARKET_IMMEDIATE = 0
+SmartDistribution.MARKET_BEST      = 1
+SmartDistribution.MARKET_HOLD      = 2
+function SmartDistribution.marketSellMode(uid, ft)
+    local b = uid ~= nil and SmartDistribution._marketTiming[uid] or nil
+    return (b ~= nil and b[ft]) or 0
+end
+function SmartDistribution.setMarketSellMode(uid, ft, mode)
+    if uid == nil or ft == nil then return end
+    local b = SmartDistribution._marketTiming[uid]
+    if mode ~= nil and mode ~= 0 then
+        if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
+        b[ft] = mode
+    elseif b ~= nil then
+        b[ft] = nil
+        if next(b) == nil then SmartDistribution._marketTiming[uid] = nil end
+    end
+end
+
 -- ---- asset classification / identity / settings resolution -----------------
 local function getAssetClass(p)
     if getProductionPoint(p) ~= nil then return "PRODUCTION" end
+    if SmartDistribution.isMarket(p) then return "MARKET" end   -- owned sell point / kiosk
     if isManurePit(p) then return "HEAP" end              -- manure pit (standalone manure heap)
     if isLiquidManureSilo(p) then return "HEAP" end       -- slurry pit (liquid-manure silo) -- rides with husbandry
     if p.spec_silo ~= nil then return "SILO" end
@@ -619,10 +997,12 @@ local function isEnrolled(p)
     if part == PART.NONE then return false end
     if part == PART.VANILLA_ONLY then return VANILLA_ELIGIBLE[getAssetClass(p)] == true end
     -- per-class network toggles (Settings: Animal Husbandry / Silos & Pallet Storage). Manure +
-    -- slurry pits (HEAP) ride with Animal Husbandry; silos + pallet sheds are the other switch.
+    -- slurry pits (HEAP) are storage, so they ride with Silos & Pallet Storage now (they used to ride
+    -- with Animal Husbandry).
     local cls = getAssetClass(p)
-    if (cls == "HUSBANDRY" or cls == "HEAP") and not S.global.includeHusbandry then return false end
-    if (cls == "SILO" or cls == "SHED") and not S.global.includeSilosSheds then return false end
+    if cls == "HUSBANDRY" and not S.global.includeHusbandry then return false end
+    if (cls == "SILO" or cls == "SHED" or cls == "HEAP") and not S.global.includeSilosSheds then return false end
+    if cls == "MARKET" and not S.global.includeMarkets then return false end
     return true   -- ALL
 end
 
@@ -654,8 +1034,41 @@ end
 function SmartDistribution.applyAssetMode(placeable, ft, mode, noEventSend)
     if placeable == nil or ft == nil then return end
     SmartDistribution.setAssetMode(getUid(placeable), ft, mode)
+    SmartDistribution._seedMoveToBlocks(placeable, ft, mode)   -- Move To starts all-blocked (loop-safe)
     if not noEventSend and DistributionModeEvent ~= nil and DistributionModeEvent.sendEvent ~= nil then
         DistributionModeEvent.sendEvent(placeable, ft, mode)
+    end
+end
+
+-- Move To (and Distribute + Move To) is the ONE mode whose destinations default to BLOCKED, so a store
+-- never auto-cascades into another store until the player deliberately activates a target (loop-safe).
+-- We express that in the unified model by blocking every candidate store the moment the output enters a
+-- Move To mode -- but only when the player has not already configured this output (no existing blocks or
+-- priority for it), so re-entering the mode doesn't wipe their choices. Server-authoritative; the block
+-- edits persist + replay to clients like any other.
+function SmartDistribution._seedMoveToBlocks(placeable, ft, mode)
+    if mode ~= MODE.STORE_TO and mode ~= MODE.DISTRIBUTE_STORE_TO then return end
+    if placeable == nil or placeable.rootNode == nil then return end
+    if g_currentMission ~= nil and g_currentMission.getIsServer ~= nil and not g_currentMission:getIsServer() then return end
+    local srcUid = getUid(placeable)
+    if srcUid == nil then return end
+    -- already configured? leave it alone
+    local C = SmartDistribution.control
+    if (C.blocked[srcUid] ~= nil and C.blocked[srcUid][ft] ~= nil)
+       or (C.priority[srcUid] ~= nil and C.priority[srcUid][ft] ~= nil) then return end
+    local form = SmartDistribution.sourceHoldForm(placeable, ft)
+    if form == nil then
+        if placeable.spec_objectStorage ~= nil then form = "PALLET" else form = "BULK" end
+    end
+    local myFarm = SmartDistribution._ownerFarmId(placeable)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
+        if tp ~= placeable and tp.rootNode ~= nil and isEnrolled(tp)
+           and SmartDistribution._ownerFarmId(tp) == myFarm
+           and SmartDistribution.storeToTargetValid(form, tp, ft) then
+            local du = getUid(tp)
+            if du ~= nil then SmartDistribution.setDestBlocked(srcUid, ft, du, true) end
+        end
     end
 end
 
@@ -824,10 +1237,12 @@ end
 
 -- a source may hand out ft only if enrolled, not excluded, and mode distributes
 local function canSourceDistribute(p, ft)
+    if SmartDistribution.isMarket(p) then return false end   -- a market's buffer is sell-only; it can never feed the network back
     if not isEnrolled(p) then return false end
     if S.global.excludedFillTypes[ft] then return false end
     local m = resolveMode(p, ft)
-    return m == MODE.DISTRIBUTE or m == MODE.DISTRIBUTE_SELL or m == MODE.DISTRIBUTE_STORE
+    return m == MODE.DISTRIBUTE or m == MODE.DISTRIBUTE_SELL or m == MODE.DISTRIBUTE_STORE or m == MODE.DISTRIBUTE_MARKET
+        or m == MODE.DISTRIBUTE_STORE_TO
 end
 
 -- ---- demand (only ACTIVE / player-enabled productions count) ---------------
@@ -1075,6 +1490,19 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
             sources[#sources + 1] = { storage = WATER_SOURCE_PROXY, d2 = d2, placeable = srcP }
         end
     end
+    -- Production Redux input control: drop any source the player has blocked from feeding
+    -- this consumer this fill type. No-op (and skipped entirely) when no blocks are set,
+    -- so standalone Distribution Redux behaviour is unchanged.
+    if next(SmartDistribution.control.blocked) ~= nil and consumerPlaceable ~= nil then
+        local cu = getUid(consumerPlaceable)
+        local kept = {}
+        for _, s in ipairs(sources) do
+            if s.placeable == nil or not SmartDistribution.isDestBlocked(getUid(s.placeable), ft, cu) then   -- source-side block
+                kept[#kept + 1] = s
+            end
+        end
+        sources = kept
+    end
     table.sort(sources, function(a, b) return a.d2 < b.d2 end)   -- nearest first
     return sources
 end
@@ -1103,7 +1531,8 @@ end
 -- (forceShowChange=false) while the game is fast-forwarding, so the balance still tracks the sleep with
 -- no per-hour notification and no jarring wake-time lump.  Fast-forward is flagged in onHourChanged
 -- from the real-time gap between hourly ticks.
-local FAST_FORWARD_GAP_SEC = 4.0    -- hourly ticks closer than this (real seconds) == sleep
+local FAST_FORWARD_GAP_SEC = 4.0    -- hourly ticks closer than this (real seconds) == sleep (enter fast-forward);
+                                    -- 2x this is the hysteresis exit gap (stay asleep through brief stalls)
 
 -- single money chokepoint.  During fast-forward (sleep) the money is STILL applied each accelerated
 -- hour, so the balance tracks the sleep correctly -- but with forceShowChange=false so the engine does
@@ -1133,6 +1562,7 @@ local function tallyMoney(delta, mt)
         cycleMoney.sales = cycleMoney.sales + delta          -- all other product sales
     end
     cycleMoney.any = true
+    SmartDistribution._lastTallySec = (getTimeSec ~= nil) and getTimeSec() or SmartDistribution._lastTallySec
 end
 
 -- single money chokepoint. Money is applied immediately every (accelerated) hour so the
@@ -1153,22 +1583,70 @@ local function fmtMoney(v)
     end
     return string.format("%s%d", v < 0 and "-" or "", math.floor(math.abs(v) + 0.5))
 end
+SmartDistribution.formatMoney = fmtMoney
+-- compact money for tight table cells: -$1.2M / $12.3k / $980, locale currency symbol if available
+function SmartDistribution.formatMoneyShort(v)
+    v = v or 0
+    local a = math.abs(v)
+    local num
+    if a >= 1e6 then num = string.format("%.1fM", a / 1e6)
+    elseif a >= 1e3 then num = string.format("%.1fk", a / 1e3)
+    else num = string.format("%d", math.floor(a + 0.5)) end
+    local sym = "$"
+    if g_i18n ~= nil and g_i18n.getCurrencySymbol ~= nil then
+        local ok, s = pcall(function() return g_i18n:getCurrencySymbol(true) end)
+        if ok and type(s) == "string" and s ~= "" then sym = s end
+    end
+    return (v < 0 and "-" or "") .. sym .. num
+end
 
 -- Emit one combined notification for the cycle just completed, then clear the tally.
 -- Called at the START of the next cycle so a removable add-on's late biogas-surplus
 -- sale (ProductionDistributeSell, which runs after this pass) is already counted.
+-- Emit one combined notification (per non-zero category) for an accumulated tally; the caller clears it.
+-- Shared by the normal-cycle flush and the wake-up flush.
+SmartDistribution.COST_NOTIFY_COLOUR = { 1.0, 0.5, 0.0, 1.0 }   -- orange, for the distribution-cost side notification
+
+function SmartDistribution.emitSummary(acc)
+    if acc == nil then return end
+    if acc.biogas ~= 0 then SmartDistribution.notify("Biogas income: "     .. fmtMoney(acc.biogas)) end
+    if acc.sales  ~= 0 then SmartDistribution.notify("Product sales: "     .. fmtMoney(acc.sales))  end
+    if acc.cost   ~= 0 then SmartDistribution.notify("Distribution costs: -" .. fmtMoney(math.abs(acc.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
+    if DistributionMoneyNotifyEvent ~= nil and DistributionMoneyNotifyEvent.broadcast ~= nil then
+        DistributionMoneyNotifyEvent.broadcast(acc.biogas, acc.sales, acc.cost)   -- MP: mirror the summary to clients
+    end
+end
+
 function SmartDistribution.flushCycleSummary()
     local cm = cycleMoney
     cycleMoney = nil
     if cm == nil or not cm.any then return end
-    if cm.ff then return end                       -- stay silent through sleep/fast-forward (no wake-time lump)
-    -- one notification PER category (only the non-zero ones), each this hour's combined total
-    if cm.biogas ~= 0 then SmartDistribution.notify("Biogas income: "     .. fmtMoney(cm.biogas)) end
-    if cm.sales  ~= 0 then SmartDistribution.notify("Product sales: "     .. fmtMoney(cm.sales))  end
-    if cm.cost   ~= 0 then SmartDistribution.notify("Maintenance costs: " .. fmtMoney(cm.cost))   end
-    if DistributionMoneyNotifyEvent ~= nil and DistributionMoneyNotifyEvent.broadcast ~= nil then
-        DistributionMoneyNotifyEvent.broadcast(cm.biogas, cm.sales, cm.cost)   -- MP: mirror the summary to clients
-    end
+    -- fold this cycle's tallies into the running summary. No emit here: the settled emit in
+    -- flushPendingSummary() (update frame) fires once the hour's money has stopped arriving, so the
+    -- deferred distribution cost AND the PDS production / biogas pass all land in ONE notification
+    -- (they otherwise flush a frame -- and thus an hour -- apart).
+    local acc = SmartDistribution._summaryAccum
+    if acc == nil then acc = { sales = 0, biogas = 0, cost = 0 }; SmartDistribution._summaryAccum = acc end
+    acc.sales  = acc.sales  + cm.sales
+    acc.biogas = acc.biogas + cm.biogas
+    acc.cost   = acc.cost   + cm.cost
+end
+
+-- emit the combined summary this many real seconds after the last money tally: long enough that an
+-- hour's tick-time and deferred-frame tallies (and rapid sleep hours) coalesce, short enough to feel prompt.
+SmartDistribution.SUMMARY_SETTLE_SEC = 2.0
+-- Emit the accumulated summary once the money for the current hour (or the whole sleep) has SETTLED --
+-- i.e. no new tally has arrived for SUMMARY_SETTLE_SEC real seconds. During normal play this fires a
+-- couple seconds after each hour; during sleep the rapid tallies keep resetting it, so it fires just
+-- once, right on waking. Called every update frame.
+function SmartDistribution.flushPendingSummary()
+    local acc = SmartDistribution._summaryAccum
+    if acc == nil then return end
+    local now  = (getTimeSec ~= nil) and getTimeSec() or nil
+    local last = SmartDistribution._lastTallySec
+    if now == nil or last == nil or (now - last) < (SmartDistribution.SUMMARY_SETTLE_SEC or 2.0) then return end
+    SmartDistribution._summaryAccum = nil
+    SmartDistribution.emitSummary(acc)
 end
 
 local function chargeDistribution(bill)
@@ -1319,8 +1797,9 @@ local function slotMove(slot, c, give, bill)
     else
         setLevel(c.storage, c.ft, stock - accepted, slot.farmId, -accepted)
         ledgerAdd(c.placeable, c.ft, "dist", accepted)            -- distributed-out, source side
-        ledgerAdd(slot.placeable, c.ft, "received", accepted)     -- received-in, recipient side (production inputs, troughs, ...)
+        ledgerAdd(slot.placeable, c.ft, "received", accepted)     -- received-in, recipient side (productions inputs, troughs, ...)
         log("move %.0f %s : %s -> %s", accepted, fillTypeName(c.ft), placeableName(c.placeable), placeableName(slot.placeable))
+        SmartDistribution.recordFeed(slot.placeable, c.ft, c.placeable, accepted)   -- link status: this source fed this consumer
     end
     slot.need = slot.need - accepted
     recordBill(bill, slot.farmId, c.placeable, slot.placeable, c.d2)
@@ -1360,15 +1839,40 @@ local function allocate(slots, bill)
             local g = groups[key]
             local stock = getLevel(g.storage, g.ft)
             if stock > ALLOC_EPS then
-                local needs = {}
-                for i, cl in ipairs(g.claims) do needs[i] = cl.slot.need end
-                local share = proportionalSplit(stock, needs)
-                for i, cl in ipairs(g.claims) do
-                    local give = share[i] or 0
-                    if give > ALLOC_EPS then
-                        local moved = slotMove(cl.slot, cl.c, give, bill)
-                        if moved > ALLOC_EPS then progress = true end
-                        if moved + ALLOC_EPS < give then cl.slot.blocked[cl.idx] = true; progress = true end  -- deposit capped: retire
+                -- Production Redux output priority: when this contested source has a priority
+                -- order set for (source, ft), fill claimants strictly in rank order (rank 1 to
+                -- need, then rank 2, ...). priorityOrder returns nil otherwise, so the original
+                -- proportional split runs unchanged when no priority is set.
+                local ord = nil
+                if next(SmartDistribution.control.priority) ~= nil and #g.claims > 1 then
+                    local srcUid = g.claims[1].c.placeable ~= nil and getUid(g.claims[1].c.placeable) or nil
+                    if srcUid ~= nil then
+                        ord = SmartDistribution.priorityOrder(srcUid, g.ft, g.claims,
+                            function(cl) return cl.slot.placeable ~= nil and getUid(cl.slot.placeable) or nil end)
+                    end
+                end
+                if ord ~= nil then
+                    local remaining = stock
+                    for _, cl in ipairs(ord) do
+                        if remaining <= ALLOC_EPS then break end
+                        local give = math.min(cl.slot.need, remaining)
+                        if give > ALLOC_EPS then
+                            local moved = slotMove(cl.slot, cl.c, give, bill)
+                            if moved > ALLOC_EPS then progress = true; remaining = remaining - moved end
+                            if moved + ALLOC_EPS < give then cl.slot.blocked[cl.idx] = true; progress = true end  -- deposit capped: retire
+                        end
+                    end
+                else
+                    local needs = {}
+                    for i, cl in ipairs(g.claims) do needs[i] = cl.slot.need end
+                    local share = proportionalSplit(stock, needs)
+                    for i, cl in ipairs(g.claims) do
+                        local give = share[i] or 0
+                        if give > ALLOC_EPS then
+                            local moved = slotMove(cl.slot, cl.c, give, bill)
+                            if moved > ALLOC_EPS then progress = true end
+                            if moved + ALLOC_EPS < give then cl.slot.blocked[cl.idx] = true; progress = true end  -- deposit capped: retire
+                        end
                     end
                 end
             end
@@ -1403,7 +1907,8 @@ local function collectProductionSlots(points, slots)
                             placeable = placeable, farmId = farmId, need = need, cands = cands, blocked = {},
                             deposit = function(dft, amount, dry)
                                 local free = getFree(pp.storage, dft)
-                                local mv = math.min(amount, free)
+                                local room = SmartDistribution.inputAcceptableLiters(placeable, dft)   -- receiver-side block / max %
+                                local mv = math.min(amount, free, room)
                                 if mv <= 0 then return 0 end
                                 if not dry then setLevel(pp.storage, dft, getLevel(pp.storage, dft) + mv, farmId, mv) end
                                 return mv
@@ -1425,7 +1930,7 @@ local function collectFoodSlots(slots)
     for _, p in ipairs(ps.placeables) do
         local fs = p.spec_husbandryFood
         if fs ~= nil and p.rootNode ~= nil and p.addFood ~= nil and isEnrolled(p) then
-            local rate = fs.litersPerHour or 0
+            local rate = SmartDistribution.husbandryInputRate(p, fs.litersPerHour, "food")
             if rate > 0 then
                 local current = 0
                 for _, lvl in pairs(fs.fillLevels) do current = current + lvl end
@@ -1470,7 +1975,10 @@ local function collectStrawSlots(slots)
         local ss = p.spec_husbandryStraw
         if ss ~= nil and p.rootNode ~= nil and p.addHusbandryFillLevelFromTool ~= nil and
            p.getHusbandryIsFillTypeSupported ~= nil and p:getHusbandryIsFillTypeSupported(STRAW) and isEnrolled(p) then
-            local rate = ss.inputLitersPerHour or 0
+            -- pastures DO take straw (as in the base pasture mod); manure is prevented at the sink side:
+            -- they get no manure storage slot and never link to a heap/pit, so the conversion has nowhere
+            -- to go and is discarded exactly as it is without DR.
+            local rate = SmartDistribution.husbandryInputRate(p, ss.inputLitersPerHour, "straw")
             if rate > 0 then
                 local current = p:getHusbandryFillLevel(STRAW) or 0
                 local free    = p:getHusbandryFreeCapacity(STRAW) or 0
@@ -1511,7 +2019,7 @@ local function collectHusbandryWaterSlots(slots)
         if ws ~= nil and not ws.automaticWaterSupply and p.rootNode ~= nil and
            p.addHusbandryFillLevelFromTool ~= nil and p.getHusbandryIsFillTypeSupported ~= nil and
            p:getHusbandryIsFillTypeSupported(WATER) and isEnrolled(p) then
-            local rate = ws.litersPerHour or 0
+            local rate = SmartDistribution.husbandryInputRate(p, ws.litersPerHour, "water")
             if rate > 0 then
                 local current = p:getHusbandryFillLevel(WATER) or 0
                 local free    = p:getHusbandryFreeCapacity(WATER) or 0
@@ -1644,26 +2152,144 @@ local function gatherShedSinks(sourcePlaceable, ft, x, z, farmId, srcReach)
     return sinks
 end
 
+-- Drop BLOCKED destinations from a candidate sink list, then order by the player's rank (destRank)
+-- first, else nearest-first. Shared by the bulk and pallet store paths. cands = {{placeable,storage,d2}}.
+function SmartDistribution.orderedStoreSinks(p, ft, farmId, x, z, cands, srcUid)
+    local out = {}
+    for _, si in ipairs(cands or {}) do
+        local du = si.placeable ~= nil and getUid(si.placeable) or nil
+        if du ~= nil and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            si.rank = SmartDistribution.destRank(srcUid, ft, du)
+            out[#out + 1] = si
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return (a.d2 or 0) < (b.d2 or 0)
+    end)
+    return out
+end
+
 local function storeAmount(p, storage, ft, farmId, bill)
     if S.global.excludedFillTypes[ft] then return end
     local rm = resolveMode(p, ft)
     if rm ~= MODE.DISTRIBUTE_STORE and rm ~= MODE.STORE then return end
     if p.rootNode == nil then return end
+    -- Palletized outputs are delivered as whole pallets by palletPhase, NOT drained in bulk from the
+    -- production buffer here -- otherwise the product is stored twice (bulk drain + pallet deposit),
+    -- which splits it across targets instead of filling the ranked one. (palletSpawnerFillTypes is an
+    -- ARRAY -- search by value.)
+    local pfts = palletSpawnerFillTypes(p)
+    if pfts ~= nil then
+        for _, pf in ipairs(pfts) do
+            if pf == ft then return end
+        end
+    end
     local level = getLevel(storage, ft)
     if level <= 0 then return end
     local x, _, z = getWorldTranslation(p.rootNode)
-    local sinks = gatherSinks(p, ft, x, z, farmId, resolveReach(p))
+
+    -- Default-ON: auto-hunt all valid store sinks, drop any the player BLOCKED, order by rank else distance.
+    local srcUid = getUid(p)
+    local sinks = SmartDistribution.orderedStoreSinks(p, ft, farmId, x, z, gatherSinks(p, ft, x, z, farmId, resolveReach(p)), srcUid)
+
     local remaining = level
     for _, sink in ipairs(sinks) do
         if remaining <= 0 then break end
-        local moved = transfer(farmId, storage, sink.storage, ft, remaining)
+        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft)   -- receiver-side block / max %
+        local want = math.min(remaining, room)
+        local moved = want > 0 and transfer(farmId, storage, sink.storage, ft, want) or 0
         if moved > 0 then
             ledgerAdd(p, ft, "stored", moved)
+            ledgerAdd(sink.placeable, ft, "received", moved)   -- recipient side: a store transfer is incoming product too
             recordBill(bill, farmId, p, sink.placeable, sink.d2)
             log("stored %d %s : %s -> %s", moved, fillTypeName(ft), placeableName(p), placeableName(sink.placeable))
+            SmartDistribution.recordFeed(sink.placeable, ft, p, moved)   -- link status: this source fed this sink
             remaining = remaining - moved
         end
     end
+end
+
+-- uid -> placeable lookup (Store To resolves its chosen targets through this)
+function SmartDistribution.placeableByUid(uid)
+    if uid == nil or g_currentMission == nil or g_currentMission.placeableSystem == nil then return nil end
+    for _, p in ipairs(g_currentMission.placeableSystem.placeables) do
+        if p.rootNode ~= nil and getUid(p) == uid then return p end
+    end
+    return nil
+end
+
+-- Store To: push only into the stores the player explicitly chose for this (source, ft), in their ranked
+-- order -- or nearest-first while the list is unranked. Each target takes what it can up to its capacity
+-- and the rest spills to the next. If nothing can be pushed (every chosen store is full, or none are
+-- chosen yet) the stock simply stays put and the mode stays as it is: we flag it so the UI can show that
+-- the product can no longer be pushed, and it will top the stores up again on a later cycle.
+function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
+    if S.global.excludedFillTypes[ft] then return end
+    local rm = resolveMode(p, ft)
+    if rm ~= MODE.STORE_TO and rm ~= MODE.DISTRIBUTE_STORE_TO then return end
+    if p.rootNode == nil then return end
+    local srcUid = getUid(p)
+    if srcUid == nil then return end
+
+    -- Palletized outputs (production pallet outputs, coop eggs/wool, beehive honey) are delivered as
+    -- whole pallets by palletPhase -> _storeToPalletAmount, not by this bulk/shed transfer. Skip them here
+    -- so they aren't processed twice. (palletSpawnerFillTypes is an ARRAY -- search by value.)
+    local pfts = palletSpawnerFillTypes(p)
+    if pfts ~= nil then
+        for _, pf in ipairs(pfts) do
+            if pf == ft then return end
+        end
+    end
+
+    -- how the source holds this product right now decides both the amount and which targets are valid
+    local form = SmartDistribution.sourceHoldForm(p, ft)
+    if form == nil then SmartDistribution.setStoreTargetFull(srcUid, ft, false); return end
+    local level = (form == "PALLET") and shedStoredLiters(p, ft) or getLevel(storage, ft)
+    if level <= 0 then SmartDistribution.setStoreTargetFull(srcUid, ft, false); return end
+
+    -- Move To: every form-compatible OTHER store on the farm is a candidate, MINUS blocked ones. The
+    -- dialog blocks them all by default (loop-safe) so nothing moves until the player activates targets.
+    -- Order by rank, else nearest-first.
+    local x, _, z = getWorldTranslation(p.rootNode)
+    local myFarm = SmartDistribution._ownerFarmId(p)
+    local targets = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
+        if tp ~= p and tp.rootNode ~= nil and isEnrolled(tp)
+           and SmartDistribution._ownerFarmId(tp) == myFarm
+           and SmartDistribution.storeToTargetValid(form, tp, ft) then
+            local du = getUid(tp)
+            if du ~= nil and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+                local tx, _, tz = getWorldTranslation(tp.rootNode)
+                targets[#targets + 1] = { placeable = tp, d2 = (tx - x) ^ 2 + (tz - z) ^ 2, rank = SmartDistribution.destRank(srcUid, ft, du) }
+            end
+        end
+    end
+    if #targets == 0 then SmartDistribution.setStoreTargetFull(srcUid, ft, true); return end
+    table.sort(targets, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return a.d2 < b.d2
+    end)
+
+    local remaining, movedAny = level, false
+    for _, t in ipairs(targets) do
+        if remaining <= 0 then break end
+        local moved = SmartDistribution.storeToMove(p, storage, t.placeable, ft, remaining, farmId)
+        if moved > 0 then
+            movedAny = true
+            ledgerAdd(p, ft, "stored", moved)
+            ledgerAdd(t.placeable, ft, "received", moved)
+            recordBill(bill, farmId, p, t.placeable, t.d2)
+            log("storedTo %d %s : %s -> %s", moved, fillTypeName(ft), placeableName(p), placeableName(t.placeable))
+            SmartDistribution.recordFeed(t.placeable, ft, p, moved)
+            remaining = remaining - moved
+        end
+    end
+    -- still holding stock but nothing would take it => every chosen store is full
+    SmartDistribution.setStoreTargetFull(srcUid, ft, (not movedAny) and remaining > 0)
 end
 
 local function storePhase(manager, bill)
@@ -1697,8 +2323,32 @@ local function storePhase(manager, bill)
             end
         end
     end
-end
 
+    -- Store To / Distribute + Store To: silos, sheds and any other enrolled store pushing into the
+    -- stores the player chose. Sheds (object storage) hold their product as pallets/bales, which don't
+    -- appear in getAllStorages, so we sweep by the source's supported fill types, not its bulk tanks.
+    for _, p in ipairs(ps.placeables) do
+        if isEnrolled(p) and p.rootNode ~= nil then
+            local farmId = p.ownerFarmId
+            local seen = {}
+            for _, storage in ipairs(getAllStorages(p)) do
+                for ft in pairs(storageFillTypes(storage)) do
+                    if not seen[ft] then seen[ft] = true
+                        SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
+                    end
+                end
+            end
+            -- object-storage sheds: their held pallet/bale fill types aren't in getAllStorages
+            if p.spec_objectStorage ~= nil and SmartDistribution.shedStoredFillTypes ~= nil then
+                for ft in pairs(SmartDistribution.shedStoredFillTypes(p)) do
+                    if not seen[ft] then seen[ft] = true
+                        SmartDistribution.storeToAmount(p, nil, ft, farmId, bill)
+                    end
+                end
+            end
+        end
+    end
+end
 -- ---- phase 2: sell remainders ----------------------------------------------
 
 -- SEASONAL HARVEST RESERVE (off by default). For a crop in Distribute+Sell, hold
@@ -1834,6 +2484,7 @@ local function sellAmount(p, storage, ft, farmId)
     end
     setLevel(storage, ft, level - amount, farmId, -amount)
     ledgerAdd(p, ft, "sold", amount)
+    ledgerAdd(p, ft, "money", amount * price)
     local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
     applyMoney(amount * price, farmId, mt)   -- batched across sleep, settled at wake
     log("sold %d %s for %d", amount, fillTypeName(ft), amount * price)
@@ -1856,6 +2507,7 @@ local function sellProduction(pp, farmId)
                     applyMoney(amount * price, farmId, mt)   -- batched across sleep, settled at wake
                     setLevel(pp.storage, ft, 0, farmId, -amount)
                     ledgerAdd(pp.owningPlaceable, ft, "sold", amount)
+                    ledgerAdd(pp.owningPlaceable, ft, "money", amount * price)
                     log("sold %d %s for %d", amount, fillTypeName(ft), amount * price)
                 end
             end
@@ -1948,6 +2600,7 @@ local function sellDirectProduction(manager)
                                     else
                                         applyMoney(amount * price, farmId, mt)   -- batched across sleep
                                         ledgerAdd(placeable, o.type, "sold", amount)
+                                        ledgerAdd(placeable, o.type, "money", amount * price)
                                         log("sell-direct %.0f %s @ %.4f = %.0f  [%s]",
                                             amount, fillTypeName(o.type), price, amount * price, placeableName(placeable))
                                     end
@@ -1983,6 +2636,367 @@ local function sellPhase(manager)
         end
     end
     seasonalBudget = nil
+end
+
+-- ---- owned-market sell points: transfer + sale (+20% bonus) ----------------
+-- A source set to "Transfer to My Market" pushes surplus into the buffers of the farm's markets
+-- (nearest first, up to MARKET_CAP each); markets then sell those buffers at the station's native
+-- listed price with a +20% bonus (immediate, or held for best price). Stage 1: storage-based sources
+-- (silos etc.) + abstract sale at native price x1.2. Follow-ups: native addFillLevelFromTool so our
+-- sales advance the station's own degradation, the degradation-aware spill, and production/pallet sources.
+function SmartDistribution.assetHasMarket(asset)
+    if asset == nil or asset.rootNode == nil or g_currentMission == nil then return false end
+    local ps = g_currentMission.placeableSystem
+    if ps == nil then return false end
+    local farmId = asset.ownerFarmId
+    local reach = resolveReach(asset)
+    local ax, _, az = getWorldTranslation(asset.rootNode)
+    local r = (S.global.radius or 50)
+    for _, m in ipairs(ps.placeables) do
+        if SmartDistribution.isMarket(m) and m.rootNode ~= nil then
+            local mo = m.getOwnerFarmId and m:getOwnerFarmId() or m.ownerFarmId
+            if mo == farmId then
+                if reach ~= REACH.PROXIMITY then return true end
+                local mx, _, mz = getWorldTranslation(m.rootNode)
+                local dx, dz = ax - mx, az - mz
+                if dx * dx + dz * dz <= r * r then return true end
+            end
+        end
+    end
+    return false
+end
+
+-- The market list a source should actually use for (ft): the player's picked markets when set (ranked
+-- order, else nearest-first), otherwise the auto-hunt result from marketsFor. Picked markets are still
+-- filtered to ones that accept ft and belong to the farm, so a stale pick can't misroute. Mirrors the
+-- store-target override in storeAmount; empty picks => unchanged behaviour.
+function SmartDistribution.effectiveMarketsFor(srcPlaceable, farmId, ft, sx, sz, reach)
+    local srcUid = srcPlaceable ~= nil and getUid(srcPlaceable) or nil
+    -- Default-ON: every market in reach that accepts ft, MINUS blocked ones, ordered rank then distance.
+    local out = {}
+    for _, mm in ipairs(SmartDistribution.marketsFor(farmId, ft, sx, sz, reach)) do
+        local du = getUid(mm.p)
+        if srcUid == nil or du == nil or not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            mm.rank = (srcUid ~= nil and du ~= nil) and SmartDistribution.destRank(srcUid, ft, du) or nil
+            out[#out + 1] = mm
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return a.d2 < b.d2
+    end)
+    return out
+end
+
+function SmartDistribution.marketsFor(farmId, ft, sx, sz, reach)
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return out end
+    local r = (S.global.radius or 50)
+    for _, m in ipairs(ps.placeables) do
+        if SmartDistribution.isMarket(m) and m.rootNode ~= nil and SmartDistribution.marketAccepts(m, ft) then
+            local mo = m.getOwnerFarmId and m:getOwnerFarmId() or m.ownerFarmId
+            if mo == farmId then
+                local mx, _, mz = getWorldTranslation(m.rootNode)
+                local dx, dz = sx - mx, sz - mz
+                local d2 = dx * dx + dz * dz
+                if reach ~= REACH.PROXIMITY or d2 <= r * r then
+                    out[#out + 1] = { p = m, d2 = d2 }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.d2 < b.d2 end)
+    return out
+end
+
+-- how many litres of ft this source may hand to the market this cycle. Market Supply transfers the
+-- post-reserve level; Distribute + Market Supply additionally respects the seasonal (annual-harvest)
+-- budget -- exactly like Distribute + Sell -- and only ever sees the post-distribution remainder,
+-- since the allocator has already pulled downstream demand from it before this phase runs.
+function SmartDistribution.marketTransferAmount(p, ft, mode, level)
+    if level == nil or level <= 0 then return 0 end
+    local amount = level - (S.global.sellReserve or 0)
+    if amount <= 0 then return 0 end
+    if mode == MODE.DISTRIBUTE_MARKET and seasonalBudget ~= nil then
+        local b = seasonalBudget[ft]
+        if b ~= nil then
+            if b <= 0 then return 0 end
+            if amount > b then amount = b end
+            seasonalBudget[ft] = b - amount     -- consume the shared farm-wide harvest budget
+        end
+    end
+    return amount
+end
+
+-- spread up to `maxAmount` litres of a storage's ft across the farm's in-range markets (nearest first).
+function SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz, reach, maxAmount, srcPlaceable)
+    local level = getLevel(storage, ft)
+    if level <= 0 then return 0 end
+    local budget = (maxAmount ~= nil) and math.min(level, maxAmount) or level
+    local moved = 0
+    for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(srcPlaceable, farmId, ft, sx, sz, reach)) do
+        if budget <= 0 or level <= 0 then break end
+        local muid = getUid(mm.p)
+        local push = math.min(budget, level, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        if push > 0 then
+            setLevel(storage, ft, level - push, farmId, -push)
+            level = level - push; budget = budget - push; moved = moved + push
+            SmartDistribution.marketBufferAdd(muid, ft, push)
+            ledgerAdd(mm.p, ft, "received", push)
+            SmartDistribution.recordFeed(mm.p, ft, srcPlaceable, push)   -- link status: this building fed this market
+        end
+    end
+    return moved
+end
+
+-- same, but the source is a pallet spawner (coop eggs / sheep wool / beehive honey): drain pallets.
+function SmartDistribution.transferPalletsToMarkets(spawner, ft, farmId, sx, sz, reach, maxAmount)
+    local level = palletFillLevel(spawner, ft)
+    if level == nil or level <= 0 then return 0 end
+    local budget = (maxAmount ~= nil) and math.min(level, maxAmount) or level
+    local moved = 0
+    for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(spawner, farmId, ft, sx, sz, reach)) do
+        if budget <= 0 then break end
+        local muid = getUid(mm.p)
+        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        if want > 0 then
+            local drained = drainPallets(spawner, ft, want, farmId)
+            if drained <= 0 then break end
+            SmartDistribution.marketBufferAdd(muid, ft, drained)
+            ledgerAdd(mm.p, ft, "received", drained)
+            SmartDistribution.recordFeed(mm.p, ft, spawner, drained)   -- link status: pallets fed this market
+            budget = budget - drained; moved = moved + drained
+        end
+    end
+    return moved
+end
+
+-- same, but the source is an object-storage shed (pallet / bale warehouse): drain its stored liters.
+function SmartDistribution.transferShedToMarkets(shed, ft, farmId, sx, sz, reach, maxAmount)
+    local level = shedStoredLiters(shed, ft)
+    if level == nil or level <= 0 then return 0 end
+    local budget = (maxAmount ~= nil) and math.min(level, maxAmount) or level
+    local moved = 0
+    for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(shed, farmId, ft, sx, sz, reach)) do
+        if budget <= 0 then break end
+        local muid = getUid(mm.p)
+        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        if want > 0 then
+            local drained = drainShedStored(shed, ft, want, farmId)
+            if drained <= 0 then break end
+            SmartDistribution.marketBufferAdd(muid, ft, drained)
+            ledgerAdd(mm.p, ft, "received", drained)
+            SmartDistribution.recordFeed(mm.p, ft, shed, drained)   -- link status: the shed fed this market
+            budget = budget - drained; moved = moved + drained
+        end
+    end
+    return moved
+end
+
+function SmartDistribution.marketTransferPhase(manager)
+    if not S.master then return end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    seasonalBudget = computeSeasonalBudget()   -- annual-harvest reserve for Distribute + Market Supply (nil when the feature is off)
+    -- storage sources (silos / husbandry storages) + non-production pallet spawners + object-storage sheds
+    for _, p in ipairs(ps.placeables) do
+        if not SmartDistribution.isMarket(p) and isEnrolled(p) and p.rootNode ~= nil and getProductionPoint(p) == nil then
+            local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId
+            local reach = resolveReach(p)
+            local sx, _, sz = getWorldTranslation(p.rootNode)
+            for _, storage in ipairs(getAllStorages(p)) do
+                for ft in pairs(storageFillTypes(storage)) do
+                    local m = resolveMode(p, ft)
+                    if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
+                        local amt = SmartDistribution.marketTransferAmount(p, ft, m, getLevel(storage, ft))
+                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz, reach, amt, p); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                    end
+                end
+            end
+            local pfts = palletSpawnerFillTypes(p)
+            if pfts ~= nil then
+                for _, ft in ipairs(pfts) do
+                    local m = resolveMode(p, ft)
+                    if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
+                        local amt = SmartDistribution.marketTransferAmount(p, ft, m, palletFillLevel(p, ft))
+                        if amt > 0 then local moved = SmartDistribution.transferPalletsToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                    end
+                end
+            end
+            if p.spec_objectStorage ~= nil then   -- pallet / bale warehouse (object storage)
+                for ft in pairs(SmartDistribution.shedStoredFillTypes(p)) do
+                    local m = resolveMode(p, ft)
+                    if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
+                        local amt = SmartDistribution.marketTransferAmount(p, ft, m, shedStoredLiters(p, ft))
+                        if amt > 0 then local moved = SmartDistribution.transferShedToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                    end
+                end
+            end
+        end
+    end
+    -- production outputs (mill -> flour, dairy -> cheese/butter, ...): drain pp.storage output fill types
+    for _, farmTable in pairs(manager.farmIds or {}) do
+        for _, pp in ipairs(farmTable.productionPoints or {}) do
+            local placeable = pp.owningPlaceable
+            if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil then
+                local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or placeable.ownerFarmId
+                local reach = resolveReach(placeable)
+                local sx, _, sz = getWorldTranslation(placeable.rootNode)
+                local outFts = {}
+                for _, def in ipairs(getActiveProductionDefs(pp)) do
+                    for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then outFts[o.type] = true end end
+                end
+                for ft in pairs(outFts) do
+                    local m = resolveMode(placeable, ft)
+                    if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
+                        local amt = SmartDistribution.marketTransferAmount(placeable, ft, m, getLevel(pp.storage, ft))
+                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(pp.storage, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(placeable, ft, "stored", moved) end end
+                    end
+                end
+            end
+        end
+    end
+    seasonalBudget = nil
+end
+
+-- Read a farm's current balance (used to measure what a native station sale actually paid).
+function SmartDistribution.farmMoney(farmId)
+    if g_currentMission == nil or farmId == nil then return nil end
+    if g_currentMission.getMoney ~= nil then
+        local ok, a = pcall(function() return g_currentMission:getMoney(farmId) end)
+        if ok and type(a) == "number" then return a end
+    end
+    if g_farmManager ~= nil and g_farmManager.getFarmById ~= nil then
+        local ok, f = pcall(function() return g_farmManager:getFarmById(farmId) end)
+        if ok and type(f) == "table" then
+            if type(f.getBalance) == "function" then
+                local ok2, b = pcall(function() return f:getBalance() end)
+                if ok2 and type(b) == "number" then return b end
+            end
+            if type(f.money) == "number" then return f.money end
+        end
+    end
+    return nil
+end
+
+-- Sell `liters` of `ft` at this market. Preferred path: the station's native addFillLevelFromTool,
+-- so the game applies its own price + degradation and pays the base -- we measure the balance delta
+-- to confirm it actually paid, then credit a +20% bonus on those real proceeds. If the balance can't
+-- be read or the native call pays nothing, fall back to an abstract sale at native price x1.2 (never
+-- double-pays: the native branch only runs when we can measure it).
+function SmartDistribution.marketSell(station, farmId, ft, liters)
+    if station == nil or farmId == nil or liters == nil or liters <= 0 then return end
+    local price = 0
+    if type(station.getEffectiveFillTypePrice) == "function" then
+        local ok, a = pcall(function() return station:getEffectiveFillTypePrice(ft) end)
+        if ok and type(a) == "number" then price = a end
+    end
+    if price <= 0 then
+        local econ = g_currentMission ~= nil and g_currentMission.economyManager or nil
+        if econ ~= nil and econ.getPricePerLiter ~= nil then price = econ:getPricePerLiter(ft) or 0 end
+    end
+    if price <= 0 then return end
+    local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
+    local before = SmartDistribution.farmMoney(farmId)
+    local nativePaid = 0
+    local mission = g_currentMission
+    if before ~= nil and mission ~= nil and mission.addMoney ~= nil and type(station.addFillLevelFromTool) == "function" then
+        local tt = (ToolType ~= nil) and (ToolType.UNDEFINED or ToolType.UNKNOWN) or nil
+        -- Suppress the station's OWN per-sale notification (the base-game "sold products" money-change).
+        -- forceShowChange=false on addMoney isn't enough by itself -- a normal-sized sale still pushes a
+        -- money-change straight to the HUD -- so we also no-op the money-change / notification calls for the
+        -- duration of the native sale. The proceeds still land on the finance sheet and get folded into the
+        -- mod's batched "Product sales" summary below, so the player sees ONE combined notification, not two.
+        local realAddMoney = mission.addMoney
+        mission.addMoney = function(selfm, amount, fid, mtype, addChange, forceShow)
+            return realAddMoney(selfm, amount, fid, mtype, addChange, false)
+        end
+        local noop    = function() end
+        local hud     = mission.hud
+        local rHudMC  = (hud ~= nil) and hud.addMoneyChange or nil
+        local rShowMC = mission.showMoneyChange
+        local rAddMC  = mission.addMoneyChange
+        local rIngame = mission.addIngameNotification
+        if rHudMC  ~= nil then hud.addMoneyChange           = noop end
+        if rShowMC ~= nil then mission.showMoneyChange       = noop end
+        if rAddMC  ~= nil then mission.addMoneyChange        = noop end
+        if rIngame ~= nil then mission.addIngameNotification = noop end
+        pcall(function() station:addFillLevelFromTool(farmId, liters, ft, nil, tt, nil) end)
+        mission.addMoney = realAddMoney
+        if rHudMC  ~= nil then hud.addMoneyChange           = rHudMC  end
+        if rShowMC ~= nil then mission.showMoneyChange       = rShowMC end
+        if rAddMC  ~= nil then mission.addMoneyChange        = rAddMC  end
+        if rIngame ~= nil then mission.addIngameNotification = rIngame end
+        local after = SmartDistribution.farmMoney(farmId)
+        if after ~= nil then nativePaid = after - before end
+    end
+    if nativePaid > 0 then
+        tallyMoney(nativePaid, mt)                          -- fold the native base into the batched "Product sales" summary (silent through sleep)
+        applyMoney(0.20 * nativePaid, farmId, mt)          -- +20% bonus (silent + tallied)
+        log("market sold %d %s: native %d + bonus %d", liters, fillTypeName(ft), math.floor(nativePaid), math.floor(0.20 * nativePaid))
+        return nativePaid * 1.20
+    end
+    applyMoney(liters * price * 1.20, farmId, mt)          -- native path unavailable / paid nothing: abstract sale, silent + tallied
+    log("market sold %d %s: abstract %d (native price %.4f x1.2)", liters, fillTypeName(ft), math.floor(liters * price * 1.20), price)
+    return liters * price * 1.20
+end
+
+-- Best-price gate for a market product. Sells when this market's current effective price is within ~5%
+-- of the best price we can justify: the higher of (a) the highest price seen here for this product and
+-- (b) the seasonal peak the price forecast projects from the current price. Early on, with no observed
+-- high yet, (b) -- the graph -- drives it; once a real high has been seen, (a) does. A near-full buffer
+-- always sells, so best-price never back-pressures the supplying network.
+function SmartDistribution.marketAtBestPrice(market, muid, ft, station, avail)
+    local cur = 0
+    if station ~= nil and type(station.getEffectiveFillTypePrice) == "function" then
+        local ok, a = pcall(function() return station:getEffectiveFillTypePrice(ft) end)
+        if ok and type(a) == "number" then cur = a end
+    end
+    if cur <= 0 then return true end                                  -- can't price it -> don't trap it
+    local hi = SmartDistribution._marketPriceHigh[muid]
+    if hi == nil then hi = {}; SmartDistribution._marketPriceHigh[muid] = hi end
+    if (hi[ft] or 0) < cur then hi[ft] = cur end                      -- track the observed high
+    if avail ~= nil and avail >= SmartDistribution.marketCap(market) * 0.95 then return true end   -- safety: near cap, sell
+    local graphPeak = cur
+    if DistributionPricing ~= nil and DistributionPricing.peakRatio ~= nil then
+        graphPeak = cur * (DistributionPricing.peakRatio(ft) or 1)    -- current price projected to the seasonal peak
+    end
+    local target = math.max(hi[ft] or 0, graphPeak)
+    return cur >= target * 0.95                                       -- within 5% of the best justifiable price
+end
+
+function SmartDistribution.marketSellPhase(manager)
+    if not S.master then return end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if SmartDistribution.isMarket(p) then
+            local muid = getUid(p)
+            local buf = SmartDistribution._marketBuffer[muid]
+            if buf ~= nil then
+                local farmId = p.getOwnerFarmId and p:getOwnerFarmId() or p.ownerFarmId
+                local station = SmartDistribution.marketStationOf(p)
+                local fts = {}
+                for ft, v in pairs(buf) do if v ~= nil and v > 0 then fts[#fts + 1] = ft end end
+                for _, ft in ipairs(fts) do
+                    local mode = SmartDistribution.marketSellMode(muid, ft)   -- per-product: 0 immediate / 1 best price / 2 hold
+                    local avail = SmartDistribution.marketBufferLevel(muid, ft)
+                    local sellNow = mode ~= SmartDistribution.MARKET_HOLD
+                    if sellNow and mode == SmartDistribution.MARKET_BEST then
+                        sellNow = SmartDistribution.marketAtBestPrice(p, muid, ft, station, avail)
+                    end
+                    if avail > 0 and sellNow and station ~= nil then
+                        local got = SmartDistribution.marketSell(station, farmId, ft, avail)
+                        SmartDistribution.marketBufferAdd(muid, ft, -avail)
+                        ledgerAdd(p, ft, "sold", avail)
+                        if got ~= nil and got > 0 then ledgerAdd(p, ft, "money", got) end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- ---- pallet-spawner outputs (eggs / wool / honey) --------------------------
@@ -2336,6 +3350,7 @@ local function sellShedLiters(shed, ft, liters, farmId)
     local drained = drainShedStored(shed, ft, liters, farmId)
     if drained > 0 then
         ledgerAdd(shed, ft, "sold", drained)
+        ledgerAdd(shed, ft, "money", drained * price)
         local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
         applyMoney(drained * price, farmId, mt)   -- batched across sleep, settled at wake
         log("sold %d %s (shed) for %d  [%s]", drained, fillTypeName(ft), drained * price, placeableName(shed))
@@ -2387,6 +3402,86 @@ local function transferShedPallets(src, dst, ft, maxSlots)
     return moved
 end
 
+-- ---- Store To: form-aware routing across ALL storage types --------------------------------------
+-- Store To lets any store push a product to another store that can physically receive it. The rule is
+-- FORM, not building class: a product held as pallets/bales (object storage) can only go to a store that
+-- accepts those pallets; a product held in bulk can only go to a store with a bulk tank for it. This
+-- covers modded buildings too (a non-silo bulk store can feed a silo, and vice versa), because we decide
+-- from how the SOURCE currently holds the item and whether the DESTINATION supports that same form --
+-- never from the class name. Cross-form (bulk <-> pallet) is rejected: the base game gates that behind a
+-- baler / shredder, so the mod won't fabricate the conversion.
+
+-- Does this placeable hold `ft` as pallets/bales in object storage (with some on hand)?
+function SmartDistribution._holdsAsPallets(p, ft)
+    return p ~= nil and p.spec_objectStorage ~= nil and shedStoredLiters(p, ft) > 0
+end
+
+-- A bulk storage on `p` that supports `ft` (nil if none). This is the receiving tank for a bulk push.
+function SmartDistribution._bulkStorageFor(p, ft)
+    if p == nil then return nil end
+    for _, s in ipairs(getAllStorages(p)) do
+        if storageFillTypes(s)[ft] ~= nil then return s end
+    end
+    return nil
+end
+
+-- Is `dst` a valid Store To target for `ft` held (in `srcForm`) by the source? srcForm is "PALLET" or
+-- "BULK". Same-form only, and the destination must be genuine STORAGE -- a barn/pen or a production has
+-- a bulk tank for its inputs/outputs but is a DEMAND, not a place to stockpile into, so it is excluded
+-- here (Distribute feeds those; Store To does not).
+function SmartDistribution.storeToTargetValid(srcForm, dst, ft)
+    if dst == nil or ft == nil then return false end
+    local cls = getAssetClass(dst)
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    if srcForm == "PALLET" then
+        return isPalletShedSink(dst, ft)                      -- object storage that supports + has a free slot
+    end
+    return SmartDistribution._bulkStorageFor(dst, ft) ~= nil  -- any bulk tank that supports ft
+end
+
+-- The form a source hands `ft` out in ("PALLET" or "BULK"), or nil if it has none.
+--   * object-storage sheds hold pallets/bales directly -> PALLET
+--   * a production PALLETIZES some outputs (bottled milk, bread, ...): those leave as pallets even though
+--     the production buffers them in a bulk tank internally, so they must target a pallet store, not a
+--     bulk silo. Detect that from the production's pallet-spawner output set.
+--   * anything held in a real bulk tank -> BULK
+function SmartDistribution.sourceHoldForm(p, ft)
+    if SmartDistribution._holdsAsPallets(p, ft) then return "PALLET" end
+    -- palletSpawnerFillTypes returns an ARRAY of fill-type indices, not a set -- search it by value.
+    local pfts = palletSpawnerFillTypes(p)
+    if pfts ~= nil then
+        for _, pf in ipairs(pfts) do
+            if pf == ft then return "PALLET" end
+        end
+    end
+    if SmartDistribution._bulkStorageFor(p, ft) ~= nil then return "BULK" end
+    return nil
+end
+
+-- Move up to `amount` litres of `ft` from source to dst, using the right primitive for the source's
+-- current FORM. Returns litres moved. Caller has already validated form compatibility.
+function SmartDistribution.storeToMove(srcP, srcStorage, dstP, ft, amount, farmId)
+    if amount <= 0 then return 0 end
+    -- receiver-side cap: never push more than the target will accept for this product (block / max %).
+    local room = SmartDistribution.inputAcceptableLiters(dstP, ft)
+    if room <= 0 then return 0 end
+    if amount > room then amount = room end
+    if SmartDistribution._holdsAsPallets(srcP, ft) then
+        -- pallet/bale source -> pallet store: move whole slots, report the litres they carried
+        local count = shedObjectCount(srcP, ft)
+        if count <= 0 then return 0 end
+        local perSlot = shedStoredLiters(srcP, ft) / count
+        if perSlot <= 0 then return 0 end
+        local slots = math.max(1, math.floor(amount / perSlot))
+        local movedSlots = transferShedPallets(srcP, dstP, ft, slots)
+        return movedSlots * perSlot
+    end
+    -- bulk source -> bulk store
+    local dstStorage = SmartDistribution._bulkStorageFor(dstP, ft)
+    if dstStorage == nil then return 0 end
+    return transfer(farmId, srcStorage, dstStorage, ft, amount)
+end
+
 -- Best-price release for a shed: the held fill types want to wait for their peak,
 -- but the shed has a single shared slot limit fed by several sources. If slots are
 -- filling, free the lowest opportunity-cost-per-slot held stock first (cheap or
@@ -2434,6 +3529,7 @@ local function shedReleaseHeld(shed, farmId, held)
                     local movedL = movedSlots * e.perSlot
                     ledgerAdd(shed, e.ft, "stored", movedL)            -- left this shed (distributed out)
                     ledgerAdd(sink.shed, e.ft, "received", movedL)     -- arrived at the other shed
+                    SmartDistribution.recordFeed(sink.shed, e.ft, shed, movedL)   -- link status: shed -> shed
                     e.count = e.count - movedSlots
                     toFree  = toFree  - movedSlots
                     log("shed relocate: moved %d slot(s) %s : %s -> %s (kept for peak, no sale)",
@@ -2481,6 +3577,7 @@ local function sellPalletAmount(p, ft, farmId, cap)
     local drained = drainPallets(p, ft, level, farmId)
     if drained > 0 then
         ledgerAdd(p, ft, "sold", drained)
+        ledgerAdd(p, ft, "money", drained * price)
         local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
         applyMoney(drained * price, farmId, mt)   -- batched across sleep, settled at wake
         log("sold %d %s (pallets) for %d  [%s]", drained, fillTypeName(ft), drained * price, placeableName(p))
@@ -2563,7 +3660,7 @@ end
 -- move the coop's `ft` pallets (whole objects) into a Pallet Storage Shed; returns liters moved.
 -- addObjectToObjectStorage despawns each real pallet and stores it abstractly (the shed then
 -- shows the pallets), bounded by the shed's free object slots.
-local function depositPalletsToShed(coop, ft, shed)
+local function depositPalletsToShed(coop, ft, shed, maxSlots)
     local spec = coop.spec_husbandryPallets   -- nil for a beehive spawner (loose pallets, nothing to prune)
     local oss = shed.spec_objectStorage
     if not isPalletSpawnerAsset(coop) or oss == nil or shed.addObjectToObjectStorage == nil then
@@ -2575,17 +3672,19 @@ local function depositPalletsToShed(coop, ft, shed)
         local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
         if lvl > 0 and palletIsFull(pallet, idx, ft) then toMove[#toMove + 1] = { pallet = pallet, lvl = lvl } end
     end
-    local moved = 0
+    local moved, slotsUsed = 0, 0
     for _, e in ipairs(toMove) do
         local cap = oss.capacity or 0
         local stored = (oss.storedObjects ~= nil and #oss.storedObjects) or (oss.numStoredObjects or 0)
         if cap > 0 and stored >= cap then break end
+        if maxSlots ~= nil and slotsUsed >= maxSlots then break end   -- per-product cap (receiver-side)
         local can = true
         if shed.getObjectStorageCanStoreObject ~= nil then can = shed:getObjectStorageCanStoreObject(e.pallet) end
         if can then
             shed:addObjectToObjectStorage(e.pallet)   -- despawns the pallet + stores it abstractly
             if spec ~= nil and type(spec.pallets) == "table" then spec.pallets[e.pallet] = nil end  -- defensive (trigger also clears on delete)
             moved = moved + e.lvl
+            slotsUsed = slotsUsed + 1
         end
     end
     -- mirror the game's store path: schedule the shed's count / visual-pallet / dirty-flag refresh.
@@ -2612,17 +3711,20 @@ local function storePalletAmount(p, ft, farmId, bill)
     local remaining = level
     for _, sink in ipairs(sinks) do
         if remaining <= 0 then break end
+        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft)   -- receiver-side block / max %
         if sink.shed ~= nil then
             -- Pallet Storage Shed: move whole FULL pallets (object storage), not liters
+            local perSlot = SmartDistribution._shedLitresPerSlot(sink.placeable) or 1
+            local slotCap = math.floor(room / math.max(1, perSlot))
             if SmartDistribution.dryRun then
-                local would = math.min(remaining, fullPalletLiters(p, ft))
+                local would = math.min(remaining, fullPalletLiters(p, ft), room)
                 if would > 0 then
                     log("[dry-run] would store %d %s (full pallets) : %s -> %s [shed]", would, fillTypeName(ft), placeableName(p), placeableName(sink.placeable))
                     recordBill(bill, farmId, p, sink.placeable, sink.d2)
                     remaining = remaining - would
                 end
-            else
-                local moved = depositPalletsToShed(p, ft, sink.shed)
+            elseif slotCap >= 1 then
+                local moved = depositPalletsToShed(p, ft, sink.shed, slotCap)
                 if moved > 0 then
                     ledgerAdd(p, ft, "stored", moved)
                     recordBill(bill, farmId, p, sink.placeable, sink.d2)
@@ -2631,7 +3733,7 @@ local function storePalletAmount(p, ft, farmId, bill)
                 end
             end
         else
-            local want = math.min(remaining, getFree(sink.storage, ft))
+            local want = math.min(remaining, getFree(sink.storage, ft), room)
             if want > 0 then
                 if SmartDistribution.dryRun then
                     log("[dry-run] would store %d %s (pallets) : %s -> %s", want, fillTypeName(ft), placeableName(p), placeableName(sink.placeable))
@@ -2652,6 +3754,80 @@ local function storePalletAmount(p, ft, farmId, bill)
     end
 end
 
+-- Store To for palletized outputs (production pallet outputs, coop eggs/wool, beehive honey). Same
+-- delivery as storePalletAmount, but restricted to the player's chosen targets (ranked, else nearest);
+-- with none chosen it falls back to the auto-hunt storePalletAmount. Sets the target-full UI flag when
+-- stock remains but no chosen target could take it.
+function SmartDistribution._storeToPalletAmount(p, ft, farmId, bill)
+    if p.rootNode == nil then return end
+    local srcUid = getUid(p)
+    if srcUid == nil then return end
+    local level = palletFillLevel(p, ft)
+    if level <= 0 then SmartDistribution.setStoreTargetFull(srcUid, ft, false); return end
+    local x, _, z = getWorldTranslation(p.rootNode)
+    local reach = resolveReach(p)
+    local myFarm = SmartDistribution._ownerFarmId(p)
+
+    -- Default-ON: all candidate sinks (bulk + shed) for this pallet output, MINUS blocked, ordered by
+    -- rank then nearest-first.
+    local cands = {}
+    for _, si in ipairs(gatherSinks(p, ft, x, z, farmId, reach)) do cands[#cands+1] = si end
+    for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, reach)) do cands[#cands+1] = sh end
+    local ordered = {}
+    for _, si in ipairs(cands) do
+        local du = si.placeable ~= nil and getUid(si.placeable) or nil
+        if du ~= nil and SmartDistribution._ownerFarmId(si.placeable) == myFarm
+           and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            si.rank = SmartDistribution.destRank(srcUid, ft, du)
+            ordered[#ordered + 1] = si
+        end
+    end
+    if #ordered == 0 then SmartDistribution.setStoreTargetFull(srcUid, ft, true); return end
+    table.sort(ordered, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return a.d2 < b.d2
+    end)
+
+    local remaining, movedAny = level, false
+    for _, sink in ipairs(ordered) do
+        if remaining <= 0 then break end
+        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft)   -- receiver-side block / max %
+        if sink.shed ~= nil then
+            local perSlot = SmartDistribution._shedLitresPerSlot(sink.placeable) or 1
+            local slotCap = math.floor(room / math.max(1, perSlot))   -- how many slots the cap still allows
+            if slotCap >= 1 then   -- room for at least one slot
+                local moved = depositPalletsToShed(p, ft, sink.shed, slotCap)
+                if moved > 0 then
+                    movedAny = true
+                    ledgerAdd(p, ft, "stored", moved)
+                    ledgerAdd(sink.placeable, ft, "received", moved)
+                    recordBill(bill, farmId, p, sink.placeable, sink.d2)
+                    SmartDistribution.recordFeed(sink.placeable, ft, p, moved)
+                    log("storedTo %d %s (pallets) : %s -> %s#%s [shed]", moved, fillTypeName(ft), placeableName(p), placeableName(sink.placeable), tostring(getUid(sink.placeable)))
+                    remaining = remaining - moved
+                end
+            end
+        else
+            local want = math.min(remaining, getFree(sink.storage, ft), room)
+            if want > 0 then
+                local drained = drainPallets(p, ft, want, farmId)
+                if drained > 0 then
+                    movedAny = true
+                    setLevel(sink.storage, ft, getLevel(sink.storage, ft) + drained, farmId, drained)
+                    ledgerAdd(p, ft, "stored", drained)
+                    ledgerAdd(sink.placeable, ft, "received", drained)
+                    recordBill(bill, farmId, p, sink.placeable, sink.d2)
+                    SmartDistribution.recordFeed(sink.placeable, ft, p, drained)
+                    log("storedTo %d %s (pallets) : %s -> %s", drained, fillTypeName(ft), placeableName(p), placeableName(sink.placeable))
+                    remaining = remaining - drained
+                end
+            end
+        end
+    end
+    SmartDistribution.setStoreTargetFull(srcUid, ft, (not movedAny) and remaining > 0)
+end
+
 local function palletPhase(manager, bill)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return end
@@ -2664,7 +3840,9 @@ local function palletPhase(manager, bill)
                 if not S.global.excludedFillTypes[ft] then
                     local m = resolveMode(p, ft)
                     if m == MODE.DISTRIBUTE_STORE or m == MODE.STORE then
-                        storePalletAmount(p, ft, farmId, bill)   -- DISTRIBUTE_STORE: store the post-distribute remainder; STORE: store all
+                        -- Store / Dist+Store: auto-hunt all compatible stores, minus blocked, ranked
+                        -- (else nearest). _storeToPalletAmount handles all of that.
+                        SmartDistribution._storeToPalletAmount(p, ft, farmId, bill)
                     elseif (m == MODE.SELL or m == MODE.DISTRIBUTE_SELL) and not isProd then
                         -- SELL: sell all.  DISTRIBUTE_SELL: phase 1 already distributed to
                         -- consumers; sell whatever pallets remain.  Production pallet outputs in
@@ -2781,11 +3959,42 @@ local function snapshotCropLevels()
     lastCropLevels = scanCropHeld()
 end
 
+-- ---- self-healing: a mode whose endpoint disappears reverts to the default (Hold) -----------------
+-- Endpoints are live: demolish the only market that takes a product and any building still set to a
+-- market mode would be stranded on a mode that can never do anything. Each pass we sweep the network and
+-- revert those to the default HOLD (which the menu shows as "Hold Pallets" where the asset spawns
+-- pallets, and a plain internal hold where it does not). Server-side; applyAssetMode syncs + persists.
+function SmartDistribution.enforceValidModes()
+    if not S.master or g_currentMission == nil or g_currentMission.placeableSystem == nil then return end
+    for _, p in ipairs(g_currentMission.placeableSystem.placeables) do
+        if p.rootNode ~= nil and isEnrolled(p) then
+            local pp = getProductionPoint(p)
+            -- assetMenuFillTypes returns a SET, not an array: ipairs would iterate NOTHING and this
+            -- whole self-heal would silently never run.
+            for ft in pairs(SmartDistribution.assetMenuFillTypes(p) or {}) do
+                local cur = SmartDistribution.resolvedAssetMode(p, ft)
+                if cur ~= nil and not SmartDistribution.modeHasEndpoint(p, ft, cur) then
+                    if pp ~= nil and SmartDistribution.setProductionOutputMode ~= nil then
+                        SmartDistribution.setProductionOutputMode(pp, ft, 0)   -- production virtual KEEP (= Hold)
+                    else
+                        SmartDistribution.applyAssetMode(p, ft, MODE.HOLD)
+                    end
+                    log("%s [%s]: %s has no endpoint any more -> reverted to Hold",
+                        placeableName(p), fillTypeName(ft), SmartDistribution.modeName(cur))
+                end
+            end
+        end
+    end
+end
+
 function SmartDistribution.runHourly(manager)
     if not S.master then return end
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
+    SmartDistribution.enforceValidModes()                      -- drop any mode whose endpoint has gone away
+    SmartDistribution.beginFeedPass()                          -- start a fresh feed log; the UI reads the previous (complete) one
     detectHarvests()                                          -- learn crop harvest months (pre-phase levels)
     cycleAcc = {}                                              -- begin per-cycle accounting
+    SmartDistribution.observeHusbandryProduction()            -- record husbandry output produced since last cycle (pre-drain)
     local bill = {}
     local slots = {}
     for _, farmTable in pairs(manager.farmIds or {}) do        -- phases 1 + 1b + 1c: unified allocation
@@ -2802,7 +4011,14 @@ function SmartDistribution.runHourly(manager)
     if S.global.sellEnabled then                               -- phase 2
         sellPhase(manager)
     end
+    SmartDistribution.marketTransferPhase(manager)             -- phase 2c: route "Transfer to My Market" surplus into market buffers
+    if S.global.sellEnabled then
+        SmartDistribution.marketSellPhase(manager)             -- phase 2d: markets sell their buffers (native price + 20% bonus)
+    end
     sellDirectProduction(manager)                              -- phase 2b: plant sellDirectly outputs (biogas electric/methane)
+    SmartDistribution.commitHusbandryProduction()             -- baseline husbandry output levels for next cycle's produced calc
+    SmartDistribution.recordProductionThroughput(cycleAcc)    -- production consumed/produced this cycle (delta + this cycle's flows, aligned windows)
+    SmartDistribution.recordHusbandryConsumption(cycleAcc)    -- husbandry feed/water/straw consumed this cycle
     S.lastCycle = cycleAcc                                     -- publish this cycle's tallies for the asset dialog
     monthlyRing[(monthlyPos % MONTHLY_CYCLES) + 1] = cycleAcc  -- roll the 24-cycle "monthly" window (persisted)
     monthlyPos = (monthlyPos + 1) % MONTHLY_CYCLES
@@ -2815,9 +4031,7 @@ function SmartDistribution.runHourly(manager)
     -- appended pass right after this one (same hourly tick) and flushes the summary at the end of THAT
     -- pass, so its sales fold into the same number. With the add-on absent, nothing sells after this
     -- point, so emit the summary here and now -- still the same tick the money was applied.
-    if not SmartDistribution.PRODUCTION_DISTSELL_ENABLED then
-        SmartDistribution.flushCycleSummary()
-    end
+    SmartDistribution.flushCycleSummary()                         -- accumulate this cycle; the settled emit fires from the update frame
 end
 
 -- ---- hook ------------------------------------------------------------------
@@ -2834,7 +4048,12 @@ function SmartDistribution.onHourChanged(manager, superFunc, ...)
     local nowSec = (getTimeSec ~= nil) and getTimeSec() or nil
     local lastSec = SmartDistribution._lastHourSec
     if nowSec ~= nil and lastSec ~= nil then
-        SmartDistribution._fastForward = (nowSec - lastSec) < FAST_FORWARD_GAP_SEC
+        local gap = nowSec - lastSec
+        if SmartDistribution._fastForward then
+            SmartDistribution._fastForward = gap < (FAST_FORWARD_GAP_SEC * 2)   -- hysteresis: stay asleep through brief stalls
+        else
+            SmartDistribution._fastForward = gap < FAST_FORWARD_GAP_SEC
+        end
     else
         SmartDistribution._fastForward = false
     end
@@ -2945,6 +4164,31 @@ local function saveOverrides(missionInfo)
             end
         end
     end
+    -- market virtual buffers (uid -> ft -> litres) + per-market sell timing (best price)
+    local mb = 0
+    for uid, byFt in pairs(SmartDistribution._marketBuffer) do
+        for ft, litres in pairs(byFt) do
+            if type(litres) == "number" and litres > 0 then
+                local k = string.format("smartDistribution.marketBuf(%d)", mb)
+                setXMLString(xml, k .. "#uniqueId", tostring(uid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLFloat(xml,  k .. "#litres",   litres)
+                mb = mb + 1
+            end
+        end
+    end
+    local mtc = 0
+    for uid, byFt in pairs(SmartDistribution._marketTiming) do
+        for ft, mode in pairs(byFt) do
+            if mode ~= nil and mode ~= 0 then
+                local k = string.format("smartDistribution.marketTiming(%d)", mtc)
+                setXMLString(xml, k .. "#uniqueId", tostring(uid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLInt(xml,    k .. "#sellMode", mode)
+                mtc = mtc + 1
+            end
+        end
+    end
     -- learned harvest windows per crop (seasonal reserve)
     local j = 0
     for ft, months in pairs(S.harvestMonths or {}) do
@@ -2953,6 +4197,55 @@ local function saveOverrides(missionInfo)
             setXMLString(xml, k .. "#fillType",      fillTypeName(ft))
             setXMLString(xml, k .. "#harvestMonths", table.concat(months, ","))
             j = j + 1
+        end
+    end
+    -- distribution control: output->destination blocks + destination priority (source-keyed, DR-owned)
+    local bi = 0
+    for srcUid, byFt in pairs(SmartDistribution.control.blocked or {}) do
+        for ft, dests in pairs(byFt) do
+            for destUid in pairs(dests) do
+                local k = string.format("smartDistribution.block(%d)", bi)
+                setXMLString(xml, k .. "#source",   tostring(srcUid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLString(xml, k .. "#dest",     tostring(destUid))
+                bi = bi + 1
+            end
+        end
+    end
+    local pi = 0
+    for srcUid, byFt in pairs(SmartDistribution.control.priority or {}) do
+        for ft, list in pairs(byFt) do
+            if type(list) == "table" and #list > 0 then
+                local k = string.format("smartDistribution.priority(%d)", pi)
+                setXMLString(xml, k .. "#source",   tostring(srcUid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLString(xml, k .. "#dests",    table.concat(list, ","))
+                pi = pi + 1
+            end
+        end
+    end
+    -- receiver-side input control: per-building block + max %% per product
+    local ibi = 0
+    for rcvUid, byFt in pairs(SmartDistribution.control.inputBlock or {}) do
+        for ft, on in pairs(byFt) do
+            if on then
+                local k = string.format("smartDistribution.inputBlock(%d)", ibi)
+                setXMLString(xml, k .. "#receiver", tostring(rcvUid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                ibi = ibi + 1
+            end
+        end
+    end
+    local ici = 0
+    for rcvUid, byFt in pairs(SmartDistribution.control.inputCapPct or {}) do
+        for ft, pct in pairs(byFt) do
+            if type(pct) == "number" then
+                local k = string.format("smartDistribution.inputCap(%d)", ici)
+                setXMLString(xml, k .. "#receiver", tostring(rcvUid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLInt(xml,    k .. "#pct",      pct)
+                ici = ici + 1
+            end
         end
     end
     -- rolling 24-cycle "monthly" transaction window (dist/sold/stored/received per asset+ft)
@@ -2974,6 +4267,9 @@ local function saveOverrides(missionInfo)
                         setXMLFloat(xml,  ek .. "#sold",     e.sold or 0)
                         setXMLFloat(xml,  ek .. "#stored",   e.stored or 0)
                         setXMLFloat(xml,  ek .. "#received", e.received or 0)
+                        setXMLFloat(xml,  ek .. "#money",    e.money or 0)
+                        setXMLFloat(xml,  ek .. "#produced", e.produced or 0)
+                        setXMLFloat(xml,  ek .. "#consumed", e.consumed or 0)
                         ei = ei + 1
                     end
                 end
@@ -2983,7 +4279,7 @@ local function saveOverrides(missionInfo)
     end
     saveXMLFile(xml)
     delete(xml)
-    log("saved %d per-asset override(s) + %d timing(s) + %d crop window(s) + %d monthly cycle(s) -> %s", i, t, j, ci, path)
+    log("saved %d per-asset override(s) + %d timing(s) + %d crop window(s) + %d monthly cycle(s) + %d marketBuf + %d marketTiming -> %s", i, t, j, ci, mb, mtc, path)
 end
 
 local function loadOverrides()
@@ -3028,6 +4324,62 @@ local function loadOverrides()
         end
         j = j + 1
     end
+    -- distribution control: output->destination blocks + destination priority (source-keyed, DR-owned),
+    -- plus receiver-side input block + max %% (must include ALL fields or later accessors index nil)
+    SmartDistribution.control = { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {} }
+    local bi = 0
+    while true do
+        local k = string.format("smartDistribution.block(%d)", bi)
+        local source = getXMLString(xml, k .. "#source")
+        if source == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local dest   = getXMLString(xml, k .. "#dest")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        if ft ~= nil and dest ~= nil then
+            SmartDistribution.setDestBlocked(source, ft, dest, true)
+        end
+        bi = bi + 1
+    end
+    local pi = 0
+    while true do
+        local k = string.format("smartDistribution.priority(%d)", pi)
+        local source = getXMLString(xml, k .. "#source")
+        if source == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local csv    = getXMLString(xml, k .. "#dests")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        if ft ~= nil and csv ~= nil then
+            local list = {}
+            for tok in string.gmatch(csv, "[^,]+") do list[#list + 1] = tok end
+            if #list > 0 then
+                SmartDistribution.control.priority[source] = SmartDistribution.control.priority[source] or {}
+                SmartDistribution.control.priority[source][ft] = list
+            end
+        end
+        pi = pi + 1
+    end
+    -- receiver-side input control: per-building block + max %% per product
+    local ibi = 0
+    while true do
+        local k = string.format("smartDistribution.inputBlock(%d)", ibi)
+        local receiver = getXMLString(xml, k .. "#receiver")
+        if receiver == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        if ft ~= nil then SmartDistribution.setInputBlocked(receiver, ft, true) end
+        ibi = ibi + 1
+    end
+    local ici = 0
+    while true do
+        local k = string.format("smartDistribution.inputCap(%d)", ici)
+        local receiver = getXMLString(xml, k .. "#receiver")
+        if receiver == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local pct    = getXMLInt(xml, k .. "#pct")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        if ft ~= nil and pct ~= nil then SmartDistribution.setInputCapPct(receiver, ft, pct) end
+        ici = ici + 1
+    end
     -- per-asset sell-timing overrides
     local t, tn = 0, 0
     while true do
@@ -3045,6 +4397,38 @@ local function loadOverrides()
             end
         end
         t = t + 1
+    end
+    -- market virtual buffers + per-market sell timing
+    local mb, mbn = 0, 0
+    while true do
+        local k = string.format("smartDistribution.marketBuf(%d)", mb)
+        local uid = getXMLString(xml, k .. "#uniqueId")
+        if uid == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local litres = getXMLFloat(xml,  k .. "#litres")
+        if ftName ~= nil and litres ~= nil and litres > 0 and g_fillTypeManager ~= nil then
+            local ft = g_fillTypeManager:getFillTypeIndexByName(ftName)
+            if ft ~= nil then
+                local b = SmartDistribution._marketBuffer[uid]; if b == nil then b = {}; SmartDistribution._marketBuffer[uid] = b end
+                b[ft] = math.max(0, litres)
+                mbn = mbn + 1
+            end
+        end
+        mb = mb + 1
+    end
+    local mtc = 0
+    while true do
+        local k = string.format("smartDistribution.marketTiming(%d)", mtc)
+        local uid = getXMLString(xml, k .. "#uniqueId")
+        if uid == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        local mode = getXMLInt(xml, k .. "#sellMode")
+        if ft ~= nil and mode ~= nil and mode ~= 0 then
+            local b = SmartDistribution._marketTiming[uid]; if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
+            b[ft] = mode
+        end
+        mtc = mtc + 1
     end
     -- rolling 24-cycle "monthly" transaction window
     monthlyRing = {}
@@ -3072,6 +4456,9 @@ local function loadOverrides()
                         sold     = getXMLFloat(xml, ek .. "#sold")     or 0,
                         stored   = getXMLFloat(xml, ek .. "#stored")   or 0,
                         received = getXMLFloat(xml, ek .. "#received") or 0,
+                        money    = getXMLFloat(xml, ek .. "#money")    or 0,
+                        produced = getXMLFloat(xml, ek .. "#produced") or 0,
+                        consumed = getXMLFloat(xml, ek .. "#consumed") or 0,
                     }
                 end
             end
@@ -3143,6 +4530,107 @@ function SmartDistribution.cmdMode(self, indexStr, ftName, modeStr)
     SmartDistribution.applyAssetMode(p, ft, mode)
     return string.format("set %s [%s] mode=%d (uid=%s) - save the game to persist",
         placeableName(p), string.upper(ftName), mode, tostring(getUid(p)))
+end
+
+-- Fill a freshly spawned pallet from the production's held stock and debit the storage by what went in.
+-- Called (async) once the pallet has loaded. Returns the litres actually added. (Verified in-game: the
+-- spawn callback passes (target, pallet, fillUnitIndex, fillTypeIndex); we locate the unit + fill it.)
+function SmartDistribution._fillSpawnedPallet(pp, ft, pallet)
+    if pp == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
+    local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or 1
+    local unit
+    if pallet.getFillUnits ~= nil then
+        local units = pallet:getFillUnits() or {}
+        for i = 1, #units do
+            if pallet.getFillUnitSupportsFillType == nil or pallet:getFillUnitSupportsFillType(i, ft) then unit = i; break end
+        end
+    end
+    unit = unit or 1
+    local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
+    local avail  = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
+    local amount = math.min(cap > 0 and cap or avail, avail)
+    if amount <= 0 then return 0 end
+    local added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
+    if added > 0 and pp.storage ~= nil and pp.storage.setFillLevel ~= nil and pp.storage.getFillLevel ~= nil then
+        pp.storage:setFillLevel(math.max(0, (pp.storage:getFillLevel(ft) or avail) - added), ft)
+    end
+    -- let an open UI refresh its displayed held volume once the pallet is filled + the storage debited
+    if added > 0 and SmartDistribution._spawnCompleteCb ~= nil then pcall(SmartDistribution._spawnCompleteCb) end
+    return added
+end
+
+-- Spawn up to `count` filled pallets of `ft` from a production's held stock, SERIALLY: each pallet fills
+-- from + debits the storage in its load callback, then the next spawns -- so two pallets never draw the
+-- same litres. Stops early when the stock runs out. Uses the production's own base-game palletSpawner.
+function SmartDistribution.spawnPalletsFromProduction(pp, ft, count)
+    if pp == nil or pp.palletSpawner == nil or ft == nil then return 0 end
+    count = math.max(1, math.min(math.floor(count or 1), 50))
+    local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or 1
+    local function spawnNext(remaining)
+        if remaining <= 0 then return end
+        if pp.getFillLevel ~= nil and (pp:getFillLevel(ft) or 0) <= 0 then return end
+        pcall(function()
+            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet)
+                SmartDistribution._fillSpawnedPallet(pp, ft, pallet)
+                spawnNext(remaining - 1)
+            end, pp)
+        end)
+    end
+    spawnNext(count)
+    return count
+end
+
+-- Read a pallet's per-unit capacity (litres) from its XML, cached by filename. Returns nil if unknown.
+function SmartDistribution.palletCapacityFor(pp, ft)
+    if pp == nil or pp.palletSpawner == nil or ft == nil then return nil end
+    local map = pp.palletSpawner.fillTypeIdToPallet
+    local entry = map ~= nil and map[ft] or nil
+    local filename = entry ~= nil and entry.filename or nil
+    if filename == nil or filename == "nope" then return nil end
+    SmartDistribution._palletCapCache = SmartDistribution._palletCapCache or {}
+    local cached = SmartDistribution._palletCapCache[filename]
+    if cached ~= nil then return cached or nil end                    -- false is cached "known bad"
+    local cap
+    pcall(function()
+        if XMLFile ~= nil and XMLFile.load ~= nil and FillUnit ~= nil and FillUnit.getCapacityFromXml ~= nil then
+            local schema = (Vehicle ~= nil and Vehicle.xmlSchema) or nil
+            local xml = XMLFile.load("sdPalletCap", filename, schema)
+            if xml ~= nil then cap = FillUnit.getCapacityFromXml(xml); xml:delete() end
+        end
+    end)
+    SmartDistribution._palletCapCache[filename] = cap or false
+    return cap
+end
+
+-- Build the list of spawn options for a production output. v1: the single pallet type the production's
+-- spawner uses; bale sizes and tree species will be appended here later. Each option is
+-- { kind, name, fillType, capacity, maxCount } where maxCount is capped by held litres / unit capacity.
+function SmartDistribution.getSpawnOptions(pp, ft)
+    local opts = {}
+    if pp == nil or ft == nil then return opts end
+    local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
+    local cap = SmartDistribution.palletCapacityFor(pp, ft)
+    if cap ~= nil and cap > 0 then
+        local volStr = (g_i18n ~= nil and g_i18n.formatVolume ~= nil) and g_i18n:formatVolume(cap, 0) or (tostring(math.floor(cap)) .. " l")
+        opts[#opts + 1] = { kind = "pallet", name = "Pallet - " .. volStr, fillType = ft, capacity = cap, maxCount = math.floor(held / cap) }
+    end
+    return opts
+end
+
+function SmartDistribution.cmdSpawn(self, indexStr, ftName, countStr)
+    local idx = tonumber(indexStr)
+    if idx == nil or ftName == nil then
+        return "usage: sdSpawn <index> <fillType> [count]  (index from sdList; spawns pallets from that production's held stock)"
+    end
+    local p = listedPlaceables()[idx]
+    if p == nil then return "no placeable at index " .. tostring(idx) end
+    local pp = getProductionPoint(p)
+    if pp == nil then return placeableName(p) .. " is not a production" end
+    if pp.palletSpawner == nil then return placeableName(p) .. " has no pallet spawner" end
+    local ft = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName(string.upper(ftName)) or nil
+    if ft == nil then return "unknown fill type: " .. tostring(ftName) end
+    local n = SmartDistribution.spawnPalletsFromProduction(pp, ft, tonumber(countStr) or 1)
+    return string.format("spawned %d pallet(s) of %s from %s", n, string.upper(ftName), placeableName(p))
 end
 
 function SmartDistribution.cmdShow(self)
@@ -4013,6 +5501,81 @@ function SmartDistribution.cmdIconProbe(self)
     return "icon probe done -- see log"
 end
 
+function SmartDistribution.cmdMarketProbe(self)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem" end
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local function scalar(v)
+        local t = type(v)
+        if t == "number" or t == "string" or t == "boolean" then return tostring(v) end
+        return "<" .. t .. ">"
+    end
+    local myFarm = (g_currentMission.getFarmId ~= nil) and g_currentMission:getFarmId() or nil
+    local function keysOf(obj)
+        local ks = {}
+        if type(obj) == "table" then for k, v in pairs(obj) do ks[#ks + 1] = tostring(k) .. "=" .. scalar(v) end end
+        table.sort(ks); return table.concat(ks, ", ")
+    end
+    local function methodsOf(obj, label)
+        if type(obj) ~= "table" then return end
+        for _, m in ipairs({ "sellFillType", "getEffectiveFillTypePrice", "getFillTypePrice", "getPricePerLiter",
+                             "getIsFillTypeSupported", "getIsFillTypeAllowed", "addFillLevelFromTool", "sellArea",
+                             "updateSellPrice", "getFillTypePriceMultiplier", "getAcceptedFillTypes", "sell" }) do
+            if type(obj[m]) == "function" then dump("   [" .. label .. "] method: " .. m) end
+        end
+    end
+    local n = 0
+    for _, p in ipairs(ps.placeables) do
+        local spec = p.spec_sellingStation
+        if spec ~= nil then
+            n = n + 1
+            local owner = (p.getOwnerFarmId ~= nil) and p:getOwnerFarmId() or nil
+            dump(string.format("[market %d] %s  ownerFarm=%s (myFarm=%s)", n, tostring(placeableName(p)), tostring(owner), tostring(myFarm)))
+            dump("   spec keys: " .. keysOf(spec))
+            local st = spec.sellingStation or spec.station or nil
+            if type(st) == "table" then dump("   station keys: " .. keysOf(st)) end
+            methodsOf(p, "placeable"); methodsOf(st, "station"); methodsOf(spec, "spec")
+            local isProd = (getProductionPoint ~= nil) and (getProductionPoint(p) ~= nil) or false
+            local function nparams(obj, m)
+                if type(obj) == "table" and type(obj[m]) == "function" and debug ~= nil and debug.getinfo ~= nil then
+                    local ok, info = pcall(debug.getinfo, obj[m], "u")
+                    if ok and type(info) == "table" then return tostring(info.nparams) .. (info.isvararg and "+vararg" or "") end
+                end
+                return "?"
+            end
+            dump(string.format("   isProduction=%s isTrainStation=%s storageRadius=%s priceDropPerLiter=%s priceRecoverPerSecond=%s",
+                tostring(isProd), tostring(st and st.isTrainStation), tostring(st and st.storageRadius),
+                tostring(st and st.priceDropPerLiter), tostring(st and st.priceRecoverPerSecond)))
+            if st ~= nil then
+                dump(string.format("   nparams: sellFillType=%s addFillLevelFromTool=%s getEffectiveFillTypePrice=%s getIsFillTypeAllowed=%s getIsFillTypeSupported=%s",
+                    nparams(st, "sellFillType"), nparams(st, "addFillLevelFromTool"), nparams(st, "getEffectiveFillTypePrice"),
+                    nparams(st, "getIsFillTypeAllowed"), nparams(st, "getIsFillTypeSupported")))
+            end
+            local accepted = (st ~= nil and st.acceptedFillTypes) or spec.acceptedFillTypes or nil
+            if type(accepted) == "table" then
+                local cnt = 0
+                for ft, okv in pairs(accepted) do
+                    if okv and cnt < 10 then
+                        cnt = cnt + 1
+                        local sp, bp = "?", "?"
+                        local target = (st ~= nil and type(st.getEffectiveFillTypePrice) == "function") and st or nil
+                        if target ~= nil then local ok, a = pcall(function() return target:getEffectiveFillTypePrice(ft) end); if ok then sp = tostring(a) end end
+                        if g_currentMission.economyManager ~= nil and g_currentMission.economyManager.getPricePerLiter ~= nil then
+                            local ok, a = pcall(function() return g_currentMission.economyManager:getPricePerLiter(ft) end); if ok then bp = tostring(a) end
+                        end
+                        dump(string.format("   accepts %s  stationPrice=%s basePrice=%s", tostring(fillTypeName(ft)), sp, bp))
+                    end
+                end
+                if cnt == 0 then dump("   acceptedFillTypes table present but empty") end
+            else
+                dump("   acceptedFillTypes: not a plain table (report this + spec/station keys above)")
+            end
+        end
+    end
+    if n == 0 then return "no selling-station placeables found" end
+    return "market probe done -- see log.txt"
+end
+
 local function installConsole()
     if addConsoleCommand == nil then return end
     addConsoleCommand("sdList", "List placeables: index | uniqueId | name | class | overrides", "cmdList", SmartDistribution)
@@ -4024,6 +5587,7 @@ local function installConsole()
     addConsoleCommand("sdManureProbe", "Dump manure heaps/extensions + barn manure/slurry storage [dev]", "cmdManureProbe", SmartDistribution)
     addConsoleCommand("sdExtProbe", "Dump extension placement methods + siloExtension/manureHeap spec fields [dev]", "cmdExtProbe", SmartDistribution)
     addConsoleCommand("sdBiogasProbe", "Dump production selling station + direct-sell outputs/prices [dev]", "cmdBiogasProbe", SmartDistribution)
+    addConsoleCommand("sdSpawn", "Spawn pallets from a production's held stock: sdSpawn <index> <fillType> [count]", "cmdSpawn", SmartDistribution)
     addConsoleCommand("sdSeasonProbe", "Dump current month/period + crop fill-type mapping + growth fields [dev]", "cmdSeasonProbe", SmartDistribution)
     addConsoleCommand("sdSeasonStatus", "Show current month + per-crop monthly demand and farm-held [dev]", "cmdSeasonStatus", SmartDistribution)
     addConsoleCommand("sdSeasonReserve", "Toggle seasonal harvest reserve: sdSeasonReserve on|off|<months>", "cmdSeasonReserve", SmartDistribution)
@@ -4041,8 +5605,14 @@ end
 -- GUI/input cannot be harness-tested; uncertain calls are pcall-guarded and
 -- logged so the in-game log shows exactly what resolved. [VERIFY] tags mark them.
 -- ============================================================================
-local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribute + Sell", [4]="Sell", [5]="Distribute + Store", [6]="Store" }
-function SmartDistribution.modeName(m) return MODE_NAMES[m] or ("mode" .. tostring(m)) end
+local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribute + Sell", [4]="Sell", [5]="Distribute + Store", [6]="Store", [7]="Market Supply", [8]="Distribute + Market Supply", [9]="Hold Internal", [10]="Move To", [11]="Distribute + Move To" }
+-- For a palletisable production output, plain Hold lets the engine auto-spawn pallets, so we surface it as
+-- "Hold Pallets" to distinguish it from Hold Internal (keep as bulk, no spawn). Non-palletisable outputs
+-- (silos, bulk goods) keep the plain "Hold" label since there are no pallets to differentiate.
+function SmartDistribution.modeName(m, palletizable)
+    if m == MODE.HOLD and palletizable then return "Hold Pallets" end
+    return MODE_NAMES[m] or ("mode" .. tostring(m))
+end
 
 -- store-capable = a valid storePhase SOURCE (production output or husbandry output)
 local function assetCanStore(asset)
@@ -4053,26 +5623,36 @@ end
 -- Mode cycle ring. Distribute+Store is only offered for store-capable assets; a
 -- plain silo can't store-cascade to another silo, so it keeps the 4-mode ring and
 -- never lands on Distribute+Store.
-local function cycleNext(m, includeStore)
+local function cycleNext(m, includeStore, includeMarket, includePallets)
     if m == MODE.DISTRIBUTE       then return MODE.HOLD end
-    if m == MODE.HOLD             then return MODE.DISTRIBUTE_SELL end
+    if m == MODE.HOLD             then return includePallets and MODE.HOLD_INTERNAL or MODE.DISTRIBUTE_SELL end
+    if m == MODE.HOLD_INTERNAL    then return MODE.DISTRIBUTE_SELL end
     if m == MODE.DISTRIBUTE_SELL  then return MODE.SELL end
-    if m == MODE.SELL             then return includeStore and MODE.DISTRIBUTE_STORE or MODE.DISTRIBUTE end
-    if m == MODE.DISTRIBUTE_STORE then return includeStore and MODE.STORE or MODE.DISTRIBUTE end
-    if m == MODE.STORE            then return MODE.DISTRIBUTE end
+    if m == MODE.SELL then
+        if includeStore  then return MODE.DISTRIBUTE_STORE end
+        return MODE.DISTRIBUTE_STORE_TO
+    end
+    if m == MODE.DISTRIBUTE_STORE then return MODE.STORE end
+    if m == MODE.STORE            then return MODE.DISTRIBUTE_STORE_TO end
+    -- Store To pair sits after the auto-Store pair; cycleNextForAsset skips whichever has no endpoint
+    -- (e.g. Store To is only meaningful for a silo/shed that has somewhere to push to).
+    if m == MODE.DISTRIBUTE_STORE_TO then return MODE.STORE_TO end
+    if m == MODE.STORE_TO         then return includeMarket and MODE.TRANSFER_MARKET or MODE.DISTRIBUTE end
+    if m == MODE.TRANSFER_MARKET   then return MODE.DISTRIBUTE_MARKET end
+    if m == MODE.DISTRIBUTE_MARKET then return MODE.DISTRIBUTE end
     return MODE.HOLD
 end
 
-function SmartDistribution.notify(text)
+function SmartDistribution.notify(text, colour)
     log("%s", text)                         -- always log, so the chain is visible
     local m = g_currentMission
     if m == nil then return end
     if m.hud ~= nil and m.hud.addSideNotification ~= nil then   -- [VERIFY] FS25 signature
-        local colour = (FSBaseMission ~= nil and FSBaseMission.INGAME_NOTIFICATION_OK) or nil
-        if pcall(function() m.hud:addSideNotification(colour, text, 2500) end) then return end
+        colour = colour or (FSBaseMission ~= nil and FSBaseMission.INGAME_NOTIFICATION_OK) or nil
+        if pcall(function() m.hud:addSideNotification(colour, text, 7500) end) then return end
     end
     if m.showBlinkingWarning ~= nil then     -- [VERIFY] fallback
-        pcall(function() m:showBlinkingWarning(text, 2500) end)
+        pcall(function() m:showBlinkingWarning(text, 7500) end)
     end
 end
 
@@ -4184,10 +5764,123 @@ function SmartDistribution.assetMenuFillTypes(p)
     return assetConfigFillTypes(p)
 end
 
+-- ---- endpoint gating: never offer a mode with nowhere to send the product -----------------------
+-- A mode is only meaningful if something in the world can actually receive that fill type. Slurry with
+-- no market that takes slurry should not offer Market Supply; a product nothing buys should not offer
+-- Sell, and so on. Each check is per (asset, fill type) and honours the asset's reach, so the answer
+-- matches what the hourly pass would really do. Used by the mode cycle + the menu labels.
+function SmartDistribution.hasMarketEndpoint(asset, ft)
+    if asset == nil or ft == nil or asset.rootNode == nil then return false end
+    local farmId = SmartDistribution._ownerFarmId(asset)
+    local x, _, z = getWorldTranslation(asset.rootNode)
+    local ms = SmartDistribution.marketsFor(farmId, ft, x, z, resolveReach(asset))
+    return ms ~= nil and #ms > 0
+end
+
+function SmartDistribution.hasStoreEndpoint(asset, ft)
+    if asset == nil or ft == nil or asset.rootNode == nil then return false end
+    if not assetCanStore(asset) then return false end            -- class can't store-cascade at all
+    local farmId = SmartDistribution._ownerFarmId(asset)
+    local x, _, z = getWorldTranslation(asset.rootNode)
+    local sinks = gatherSinks(asset, ft, x, z, farmId, resolveReach(asset))
+    if sinks ~= nil and #sinks > 0 then return true end
+    -- palletized outputs (bottled milk, bread, ...) store into pallet sheds, which gatherSinks does not
+    -- return -- check those too, or Store would look endpoint-less and enforceValidModes would revert it.
+    local shedSinks = gatherShedSinks(asset, ft, x, z, farmId, resolveReach(asset))
+    return shedSinks ~= nil and #shedSinks > 0
+end
+
+-- something in the game actually buys this fill type
+function SmartDistribution.hasSellEndpoint(asset, ft)
+    if ft == nil then return false end
+    local econ = g_currentMission ~= nil and g_currentMission.economyManager or nil
+    if econ == nil or econ.getPricePerLiter == nil then return true end   -- unknown -> don't hide the option
+    local ok, price = pcall(econ.getPricePerLiter, econ, ft)
+    return ok and (price or 0) > 0
+end
+
+-- some other building in the network would take this fill type as an input
+function SmartDistribution.hasDistributeEndpoint(asset, ft)
+    if asset == nil or ft == nil then return false end
+    local uid = getUid(asset)
+    if uid == nil then return false end
+    local sinks = SmartDistribution.sinksFor(uid, ft)
+    return sinks ~= nil and #sinks > 0
+end
+
+-- Store To is meaningful when this asset is itself a store (silo / shed) AND some OTHER store on the
+-- farm can hold the product -- i.e. there is somewhere to push to. It is offered even before the player
+-- has chosen any targets (the outputs indicator tells them none are set yet); what would make it a dead
+-- end is having nowhere at all it could ever push.
+function SmartDistribution.hasStoreToEndpoint(asset, ft)
+    if asset == nil or ft == nil then return false end
+    -- Store To is meaningful when some OTHER store can physically receive the product in the SAME form
+    -- (bulk->bulk or pallet->pallet). Offered even before targets are chosen; a dead end is having
+    -- nowhere it could ever push. Form follows how the source currently holds it; on an empty store we
+    -- fall back to its declared capability so the mode can be pre-configured.
+    local form = SmartDistribution.sourceHoldForm ~= nil and SmartDistribution.sourceHoldForm(asset, ft) or nil
+    if form == nil then
+        if asset.spec_objectStorage ~= nil then form = "PALLET"
+        elseif SmartDistribution.assetHoldsFillType ~= nil and SmartDistribution.assetHoldsFillType(asset, ft) then form = "BULK"
+        else
+            if SmartDistribution._storeToDebug then SmartDistribution.log("storeto? %s [%s]: no form (holds nothing)", placeableName(asset), fillTypeName(ft)) end
+            return false
+        end
+    end
+    local myFarm = SmartDistribution._ownerFarmId(asset)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return false end
+    for _, p in ipairs(ps.placeables) do
+        if p ~= asset and p.rootNode ~= nil and isEnrolled(p)
+           and SmartDistribution._ownerFarmId(p) == myFarm
+           and SmartDistribution.storeToTargetValid ~= nil and SmartDistribution.storeToTargetValid(form, p, ft) then
+            return true
+        end
+    end
+    if SmartDistribution._storeToDebug then SmartDistribution.log("storeto? %s [%s] form=%s: no compatible target found", placeableName(asset), fillTypeName(ft), tostring(form)) end
+    return false
+end
+
+-- Is a mode meaningful for this (asset, fill type)? Hold is always allowed (it is the "do nothing"
+-- state); every other mode needs a live endpoint for EACH thing it does. A combined mode requires BOTH
+-- halves: Distribute+Market with no market that takes the product is just Distribute, so we only offer
+-- the single mode and never the misleading pair.
+function SmartDistribution.modeHasEndpoint(asset, ft, m)
+    local M = MODE
+    if m == M.HOLD or m == M.INHERIT or m == M.HOLD_INTERNAL then return true end
+    local dist   = SmartDistribution.hasDistributeEndpoint(asset, ft)
+    local sell   = SmartDistribution.hasSellEndpoint(asset, ft)
+    local store  = SmartDistribution.hasStoreEndpoint(asset, ft)
+    local market = SmartDistribution.hasMarketEndpoint(asset, ft)
+    if m == M.DISTRIBUTE         then return dist end
+    if m == M.SELL               then return sell end
+    if m == M.STORE              then return store end
+    if m == M.TRANSFER_MARKET    then return market end
+    if m == M.STORE_TO           then return SmartDistribution.hasStoreToEndpoint(asset, ft) end
+    if m == M.DISTRIBUTE_SELL    then return dist and sell end
+    if m == M.DISTRIBUTE_STORE   then return dist and store end
+    if m == M.DISTRIBUTE_MARKET  then return dist and market end
+    if m == M.DISTRIBUTE_STORE_TO then return dist and SmartDistribution.hasStoreToEndpoint(asset, ft) end
+    return true
+end
+
 -- exposed for the per-asset dialog (DistributionSiloDialog.lua)
+SmartDistribution.log            = log
 SmartDistribution.cycleNext      = cycleNext
-function SmartDistribution.cycleNextForAsset(asset, m)   -- store-aware: only store-capable assets reach Distribute+Store
-    return cycleNext(m, assetCanStore(asset))
+-- Step the ring, skipping any mode with no endpoint for this fill type (so e.g. slurry never lands on a
+-- market mode when no market takes slurry). ft is optional: without it the old, ungated ring is used.
+function SmartDistribution.cycleNextForAsset(asset, m, ft)   -- store-aware + pallet-aware (Hold Internal only where the asset spawns pallets)
+    local step = function(cur)
+        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset), palletSpawnerFillTypes(asset) ~= nil)
+    end
+    local nxt = step(m)
+    if ft == nil then return nxt end
+    for _ = 1, 12 do                                          -- ring is 10 long; the cap is a backstop
+        if SmartDistribution.modeHasEndpoint(asset, ft, nxt) then return nxt end
+        nxt = step(nxt)
+        if nxt == m then return m end                         -- full lap: nothing else is valid, stay put
+    end
+    return nxt
 end
 SmartDistribution.siloFillTypes  = siloFillTypes
 SmartDistribution.assetFillTypes = assetConfigFillTypes        -- allocator view (sheds: stored only)
@@ -4293,6 +5986,10 @@ function SmartDistribution.productionLines(p)
             if SmartDistribution.productionOutputVMode ~= nil then
                 vmode = SmartDistribution.productionOutputVMode(pp, o.type)
                 vname = SmartDistribution.productionOutputVModeName(vmode)
+                -- Hold and Hold Internal both collapse to vanilla KEEP above, so name them from the DR mode.
+                local drMode = SmartDistribution.resolvedAssetMode ~= nil and SmartDistribution.resolvedAssetMode(p, o.type) or nil
+                if drMode == MODE.HOLD_INTERNAL then vname = "Hold Internal"
+                elseif drMode == MODE.HOLD and palletSpawnerFillTypes(p) ~= nil then vname = "Hold Pallets" end
             end
             outputs[#outputs + 1] = { ft = o.type, name = ftTitle(o.type), held = held(o.type), capacity = cap(o.type), amount = o.amount or 0,
                                       perMonth = (o.amount or 0) * cpm, perHour = (o.amount or 0) * cph, mode = vmode, modeName = vname, sellDirectly = o.sellDirectly }
@@ -4379,21 +6076,21 @@ end
 -- MONTHLY (rolling 24-cycle) distributed / sold / stored for (asset, ft): the same per-cycle
 -- deltas as lastCycleStats, summed over the last MONTHLY_CYCLES completed cycles. Persisted.
 function SmartDistribution.monthlyStats(p, ft)
-    if p == nil or ft == nil then return 0, 0, 0 end
+    if p == nil or ft == nil then return 0, 0, 0, 0 end
     local uid = getUid(p)
     if clientMonthly ~= nil then                                  -- client: read the synced aggregate
         local au = clientMonthly[uid]; local e = au ~= nil and au[ft] or nil
-        if e == nil then return 0, 0, 0 end
-        return e.dist or 0, e.sold or 0, e.stored or 0
+        if e == nil then return 0, 0, 0, 0 end
+        return e.dist or 0, e.sold or 0, e.stored or 0, e.money or 0
     end
-    local d, s, st = 0, 0, 0
+    local d, s, st, mo = 0, 0, 0, 0
     for i = 1, MONTHLY_CYCLES do
         local snap = monthlyRing[i]
         local a = snap ~= nil and snap[uid] or nil
         local e = a ~= nil and a[ft] or nil
-        if e ~= nil then d = d + (e.dist or 0); s = s + (e.sold or 0); st = st + (e.stored or 0) end
+        if e ~= nil then d = d + (e.dist or 0); s = s + (e.sold or 0); st = st + (e.stored or 0); mo = mo + (e.money or 0) end
     end
-    return d, s, st
+    return d, s, st, mo
 end
 
 -- MONTHLY (rolling 24-cycle) received for (asset, ft); mirror of lastCycleReceived. Persisted.
@@ -4411,7 +6108,140 @@ function SmartDistribution.monthlyReceived(p, ft)
         local e = a ~= nil and a[ft] or nil
         if e ~= nil then r = r + (e.received or 0) end
     end
+    if SmartDistribution._monthlyDebug then
+        local parts = {}
+        for i = 1, MONTHLY_CYCLES do
+            local snap = monthlyRing[i]; local a = snap ~= nil and snap[uid] or nil; local e = a ~= nil and a[ft] or nil
+            parts[#parts+1] = string.format("%d", (e ~= nil and (e.received or 0)) or 0)
+        end
+        SmartDistribution.log("monthlyRecv %s [%s] pos=%d sum=%d slots=[%s]", placeableName(p), fillTypeName(ft), monthlyPos, r, table.concat(parts, ","))
+    end
     return r
+end
+
+-- Aggregate SOLD liters + money per fill type across ALL assets, for Production Redux.
+-- window = "hour"  -> the last completed cycle (S.lastCycle)
+--          "month" -> the rolling 24-cycle window (monthlyRing; clientMonthly on an MP client)
+-- Returns { [fillTypeIndex] = { sold = <liters>, money = <currency> }, ... }. Server-authoritative
+-- for "hour" (clients don't run the pass, so their lastCycle is empty); "month" also works on clients
+-- via the synced clientMonthly aggregate. Read-only; never mutates the ring.
+function SmartDistribution.salesByProduct(window)
+    local out = {}
+    local function add(ft, sold, money)
+        if ft == nil then return end
+        sold = sold or 0; money = money or 0
+        if sold == 0 and money == 0 then return end
+        local e = out[ft]
+        if e == nil then e = { sold = 0, money = 0 }; out[ft] = e end
+        e.sold  = e.sold  + sold
+        e.money = e.money + money
+    end
+    local function scan(byUid)
+        if type(byUid) ~= "table" then return end
+        for _, byFt in pairs(byUid) do
+            if type(byFt) == "table" then
+                for ft, e in pairs(byFt) do
+                    if type(e) == "table" then add(ft, e.sold, e.money) end
+                end
+            end
+        end
+    end
+
+    if window == "hour" then
+        scan(S.lastCycle)                                  -- last completed cycle (host-side)
+    elseif clientMonthly ~= nil then
+        scan(clientMonthly)                                -- MP client: synced monthly aggregate
+    else
+        for i = 1, MONTHLY_CYCLES do scan(monthlyRing[i]) end   -- server/SP: sum the 24-cycle ring
+    end
+    return out
+end
+
+-- Per-ASSET sold liters + money for Production Redux's expanded Product Sales view.
+-- Like salesByProduct, but keeps the placeable dimension so the UI can show one row
+-- per selling asset. Each uid is resolved to its placeable for a display name + shop
+-- image. window = "hour" (last cycle) | "month" (24-cycle window / client aggregate).
+-- Returns an ARRAY: { { ft=, uid=, assetName=, assetIcon=, sold=, money= }, ... }.
+function SmartDistribution.salesByAsset(window)
+    local byUid = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps ~= nil and ps.placeables ~= nil then
+        for _, p in ipairs(ps.placeables) do
+            if p ~= nil and p.rootNode ~= nil then byUid[getUid(p)] = p end
+        end
+    end
+
+    local function storeItemOf(p)
+        if p == nil then return nil end
+        if type(p.storeItem) == "table" then return p.storeItem end
+        if p.configFileName ~= nil and g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil then
+            local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager, p.configFileName)
+            if ok and type(item) == "table" then return item end
+        end
+        return nil
+    end
+    local function assetName(p)
+        if p ~= nil and p.getName ~= nil then
+            local ok, n = pcall(p.getName, p)
+            if ok and type(n) == "string" and n ~= "" then return n end
+        end
+        local si = storeItemOf(p)
+        if si ~= nil and type(si.name) == "string" and si.name ~= "" then return si.name end
+        return "Unknown asset"
+    end
+    local function assetIcon(p)
+        local si = storeItemOf(p)
+        if si ~= nil then
+            local f = si.imageFilename or si.iconFilename
+            if type(f) == "string" and f ~= "" then return f end
+        end
+        return nil
+    end
+
+    local out = {}
+    local function emit(uid, byFt)
+        if type(byFt) ~= "table" then return end
+        local p = byUid[uid]
+        local name, icon
+        for ft, e in pairs(byFt) do
+            if type(e) == "table" then
+                local sold, money = e.sold or 0, e.money or 0
+                if sold ~= 0 or money ~= 0 then
+                    if name == nil then name = assetName(p); icon = assetIcon(p) end
+                    out[#out + 1] = { ft = ft, uid = uid, assetName = name, assetIcon = icon, sold = sold, money = money }
+                end
+            end
+        end
+    end
+
+    if window == "hour" then
+        if type(S.lastCycle) == "table" then
+            for uid, byFt in pairs(S.lastCycle) do emit(uid, byFt) end
+        end
+    elseif clientMonthly ~= nil then
+        for uid, byFt in pairs(clientMonthly) do emit(uid, byFt) end
+    else
+        local acc = {}   -- uid -> ft -> {sold, money}
+        for i = 1, MONTHLY_CYCLES do
+            local snap = monthlyRing[i]
+            if type(snap) == "table" then
+                for uid, byFt in pairs(snap) do
+                    if type(byFt) == "table" then
+                        local au = acc[uid]; if au == nil then au = {}; acc[uid] = au end
+                        for ft, e in pairs(byFt) do
+                            if type(e) == "table" then
+                                local ae = au[ft]; if ae == nil then ae = { sold = 0, money = 0 }; au[ft] = ae end
+                                ae.sold = ae.sold + (e.sold or 0)
+                                ae.money = ae.money + (e.money or 0)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for uid, byFt in pairs(acc) do emit(uid, byFt) end
+    end
+    return out
 end
 
 -- Record a per-cycle stat for a move/sale that happens OUTSIDE the main pass -- e.g. the
@@ -4451,9 +6281,11 @@ local function buildMonthlyAggList()
                 local au = agg[uid]; if au == nil then au = {}; agg[uid] = au end
                 for ft, e in pairs(fts) do
                     local ae = au[ft]
-                    if ae == nil then ae = { d = 0, s = 0, st = 0, r = 0 }; au[ft] = ae end
+                    if ae == nil then ae = { d = 0, s = 0, st = 0, r = 0, mo = 0, pr = 0, co = 0 }; au[ft] = ae end
                     ae.d  = ae.d  + (e.dist or 0);   ae.s = ae.s + (e.sold or 0)
                     ae.st = ae.st + (e.stored or 0); ae.r = ae.r + (e.received or 0)
+                    ae.mo = ae.mo + (e.money or 0)
+                    ae.pr = ae.pr + (e.produced or 0); ae.co = ae.co + (e.consumed or 0)
                 end
             end
         end
@@ -4463,11 +6295,25 @@ local function buildMonthlyAggList()
     if ps ~= nil then
         for _, p in ipairs(ps.placeables) do
             local uid = getUid(p)
-            local au = uid ~= nil and agg[uid] or nil
-            if au ~= nil then
-                for ft, ae in pairs(au) do
-                    if (ae.d + ae.s + ae.st + ae.r) > 0 then
-                        list[#list + 1] = { p = p, ft = ft, d = ae.d, s = ae.s, st = ae.st, r = ae.r }
+            if uid ~= nil then
+                local au = agg[uid]
+                local isMkt = SmartDistribution.isMarket(p)
+                if au ~= nil then
+                    for ft, ae in pairs(au) do
+                        local buf = isMkt and SmartDistribution.marketBufferLevel(uid, ft) or 0
+                        if (ae.d + ae.s + ae.st + ae.r + ae.mo + ae.pr + ae.co) > 0 or buf > 0 then
+                            list[#list + 1] = { p = p, ft = ft, d = ae.d, s = ae.s, st = ae.st, r = ae.r, mo = ae.mo, buf = buf, pr = ae.pr, co = ae.co }
+                        end
+                    end
+                end
+                if isMkt then   -- markets with buffer but no monthly activity: still send so the tab shows live buffer
+                    local b = SmartDistribution._marketBuffer[uid]
+                    if b ~= nil then
+                        for ft, litres in pairs(b) do
+                            if litres ~= nil and litres > 0 and (au == nil or au[ft] == nil) then
+                                list[#list + 1] = { p = p, ft = ft, d = 0, s = 0, st = 0, r = 0, mo = 0, buf = litres }
+                            end
+                        end
                     end
                 end
             end
@@ -4499,6 +6345,10 @@ function DistributionStatsEvent:writeStream(streamId, connection)
         streamWriteFloat32(streamId, en.s)
         streamWriteFloat32(streamId, en.st)
         streamWriteFloat32(streamId, en.r)
+        streamWriteFloat32(streamId, en.mo or 0)
+        streamWriteFloat32(streamId, en.buf or 0)
+        streamWriteFloat32(streamId, en.pr or 0)
+        streamWriteFloat32(streamId, en.co or 0)
     end
 end
 function DistributionStatsEvent:readStream(streamId, connection)
@@ -4512,20 +6362,28 @@ function DistributionStatsEvent:readStream(streamId, connection)
         local s  = streamReadFloat32(streamId)
         local st = streamReadFloat32(streamId)
         local r  = streamReadFloat32(streamId)
-        self.entries[i] = { p = p, ft = ft, d = d, s = s, st = st, r = r }
+        local mo = streamReadFloat32(streamId)
+        local bf = streamReadFloat32(streamId)
+        local pr = streamReadFloat32(streamId)
+        local co = streamReadFloat32(streamId)
+        self.entries[i] = { p = p, ft = ft, d = d, s = s, st = st, r = r, mo = mo, buf = bf, pr = pr, co = co }
     end
     self:run(connection)
 end
 function DistributionStatsEvent:run(connection)
     -- stats flow server -> client only; never relayed onward.
-    if self.clearFirst or clientMonthly == nil then clientMonthly = {} end
+    if self.clearFirst or clientMonthly == nil then clientMonthly = {}; SmartDistribution._marketBuffer = {} end
     for _, en in ipairs(self.entries) do
         local p = en.p
         if p ~= nil then
             local uid = getUid(p)
             if uid ~= nil then
                 local au = clientMonthly[uid]; if au == nil then au = {}; clientMonthly[uid] = au end
-                au[en.ft] = { dist = en.d, sold = en.s, stored = en.st, received = en.r }
+                au[en.ft] = { dist = en.d, sold = en.s, stored = en.st, received = en.r, money = en.mo or 0, produced = en.pr or 0, consumed = en.co or 0 }
+                if (en.buf or 0) > 0 then   -- client-side market buffer for the Markets tab
+                    local b = SmartDistribution._marketBuffer[uid]; if b == nil then b = {}; SmartDistribution._marketBuffer[uid] = b end
+                    b[en.ft] = en.buf
+                end
             end
         end
     end
@@ -4552,7 +6410,7 @@ end
 
 -- ============================================================================
 -- MULTIPLAYER: per-cycle money summary mirror (server -> clients)
--- flushCycleSummary emits the "Biogas income / Product sales / Maintenance costs" side-notifications
+-- flushCycleSummary emits the "Biogas income / Product sales / Distribution costs" side-notifications
 -- on the server (which runs the pass). This event carries the same three category totals to clients
 -- so non-host players see the identical summary; each client formats with its own locale and notifies.
 -- ============================================================================
@@ -4585,7 +6443,7 @@ function DistributionMoneyNotifyEvent:run(connection)
     -- client display only; never relayed onward. Mirrors flushCycleSummary's notifications.
     if self.biogas ~= 0 then SmartDistribution.notify("Biogas income: "     .. fmtMoney(self.biogas)) end
     if self.sales  ~= 0 then SmartDistribution.notify("Product sales: "     .. fmtMoney(self.sales))  end
-    if self.cost   ~= 0 then SmartDistribution.notify("Maintenance costs: " .. fmtMoney(self.cost))   end
+    if self.cost   ~= 0 then SmartDistribution.notify("Distribution costs: -" .. fmtMoney(math.abs(self.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
 end
 -- server: mirror the just-emitted summary to all clients. No-op in single-player.
 function DistributionMoneyNotifyEvent.broadcast(biogas, sales, cost)
@@ -4728,16 +6586,24 @@ function SmartDistribution.cycleAssetMode(asset)
 
     -- everything else: unify-then-step the asset mode across all its fill types
     local store = assetCanStore(asset)
+    local market = SmartDistribution.assetHasMarket(asset)
     local modes = {}
     for i, ft in ipairs(order) do modes[i] = SmartDistribution.resolvedAssetMode(asset, ft) end
-    local target = bulkCycleTarget(modes, modes[1], function(m) return cycleNext(m, store) end)
-    local names = {}
+    local target = bulkCycleTarget(modes, modes[1], function(m) return cycleNext(m, store, market, palletSpawnerFillTypes(asset) ~= nil) end)
+    local names, skipped = {}, {}
     for _, ft in ipairs(order) do
-        SmartDistribution.applyAssetMode(asset, ft, target)   -- syncs MP + persists on save
-        names[#names + 1] = fillTypeName(ft)
+        -- don't park a product on a mode it has no endpoint for (e.g. Market Supply for a product no
+        -- market accepts): leave that one on its current mode instead.
+        if SmartDistribution.modeHasEndpoint == nil or SmartDistribution.modeHasEndpoint(asset, ft, target) then
+            SmartDistribution.applyAssetMode(asset, ft, target)   -- syncs MP + persists on save
+            names[#names + 1] = fillTypeName(ft)
+        else
+            skipped[#skipped + 1] = fillTypeName(ft)
+        end
     end
-    log("%s", string.format("%s -> %s  [%s]",
-        placeableName(asset), SmartDistribution.modeName(target), table.concat(names, ", ")))
+    log("%s", string.format("%s -> %s  [%s]%s",
+        placeableName(asset), SmartDistribution.modeName(target), table.concat(names, ", "),
+        #skipped > 0 and ("  (no endpoint, unchanged: " .. table.concat(skipped, ", ") .. ")") or ""))
 end
 -- back-compat alias
 SmartDistribution.cycleSiloMode = SmartDistribution.cycleAssetMode
@@ -4854,6 +6720,11 @@ local function assetInteractionNodes(p)
         if pp.playerTrigger ~= nil then out[#out + 1] = pp.playerTrigger end
         if pp.playerTriggerNode ~= nil then out[#out + 1] = pp.playerTriggerNode end
     end
+    -- Markets / kiosks: the reachable interaction points are the selling station's load / unload
+    -- trigger(s) -- where you drive a trailer in to sell. Lets the [ gaze prompt fire at any of them.
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
+        collectStationNodes(SmartDistribution.marketStationOf(p), out)
+    end
     if #out == 0 and p.rootNode ~= nil then out[#out + 1] = p.rootNode end
     return out
 end
@@ -4908,6 +6779,7 @@ function SmartDistribution.findNearestConfigurableAsset()
     -- a configurable class AND still in the network: assets excluded via Settings lose their direct
     -- loading/unloading-point access (the [ prompt + cycle key stop seeing them).
     return findNearestOwned(function(p)
+        if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then return isEnrolled(p) end   -- markets/kiosks: [ opens the Markets tab (only while the Markets group is on)
         local cfg = p.spec_silo ~= nil or isHusbandryBuilding(p) or p.spec_objectStorage ~= nil
                  or isManurePit(p) or isBeehiveSpawner(p) or getProductionPoint(p) ~= nil
         return cfg and isEnrolled(p)
@@ -4958,6 +6830,455 @@ end
 -- ---- manager (authoritative list) ------------------------------------------
 -- every owned configurable asset (silos + barns for now; productions join when
 -- their config lands), ordered by class then name, for the manager list.
+-- ---- Markets tab helpers (per-market buffer / timing / accepted-item list) --
+function SmartDistribution.hasAnyMarket()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return false end
+    for _, p in ipairs(ps.placeables) do if SmartDistribution.isMarket(p) then return true end end
+    return false
+end
+function SmartDistribution.marketBufferOf(market, ft)
+    if market == nil then return 0 end
+    return SmartDistribution.marketBufferLevel(getUid(market), ft)
+end
+-- per-(market, ft) sell-mode label for the MODE column.
+function SmartDistribution.marketProductLabel(market, ft)
+    if market == nil then return "Sell  -  Immediate" end
+    local m = SmartDistribution.marketSellMode(getUid(market), ft)
+    if m == SmartDistribution.MARKET_HOLD then return "Hold" end
+    if m == SmartDistribution.MARKET_BEST then return "Sell  -  Best price" end
+    return "Sell  -  Immediate"
+end
+-- current per-(market, ft) sell mode (0/1/2), taking the market placeable.
+function SmartDistribution.marketModeOf(market, ft)
+    if market == nil or ft == nil then return 0 end
+    return SmartDistribution.marketSellMode(getUid(market), ft)
+end
+-- short sell-type label (Immediate / Best price) for the footer button; nil while Held.
+function SmartDistribution.marketSellTypeLabel(market, ft)
+    if market == nil or ft == nil then return nil end
+    local m = SmartDistribution.marketSellMode(getUid(market), ft)
+    if m == SmartDistribution.MARKET_HOLD then return nil end
+    return (m == SmartDistribution.MARKET_BEST) and "Best price" or "Immediate"
+end
+-- "Change output": toggle the selected product between Sell (immediate) and Hold.
+function SmartDistribution.marketToggleOutput(market, ft)
+    if market == nil or ft == nil then return 0 end
+    local cur = SmartDistribution.marketSellMode(getUid(market), ft)
+    local nextMode = (cur == SmartDistribution.MARKET_HOLD) and SmartDistribution.MARKET_IMMEDIATE or SmartDistribution.MARKET_HOLD
+    SmartDistribution.applyMarketTiming(market, ft, nextMode)
+    return nextMode
+end
+-- "Change sell type": toggle the selected product between Immediate and Best price (no-op while Held).
+function SmartDistribution.marketToggleSellType(market, ft)
+    if market == nil or ft == nil then return end
+    local cur = SmartDistribution.marketSellMode(getUid(market), ft)
+    if cur == SmartDistribution.MARKET_HOLD then return cur end
+    local nextMode = (cur == SmartDistribution.MARKET_BEST) and SmartDistribution.MARKET_IMMEDIATE or SmartDistribution.MARKET_BEST
+    SmartDistribution.applyMarketTiming(market, ft, nextMode)
+    return nextMode
+end
+-- "Change all outputs": set every accepted product of the market to Sell (immediate) or Hold.
+function SmartDistribution.marketSetAllOutputs(market, hold)
+    if market == nil then return end
+    local mode = hold and SmartDistribution.MARKET_HOLD or SmartDistribution.MARKET_IMMEDIATE
+    for ft in pairs(SmartDistribution.marketMenuFillTypes(market)) do
+        SmartDistribution.applyMarketTiming(market, ft, mode)
+    end
+end
+-- set + sync a (market, ft) sell mode. On the sync-receiving side run() calls this with
+-- noEventSend = true so it never echoes back. Mirrors applyAssetSellTiming.
+function SmartDistribution.applyMarketTiming(market, ft, mode, noEventSend)
+    if market == nil or ft == nil then return end
+    SmartDistribution.setMarketSellMode(getUid(market), ft, mode)
+    if not noEventSend and DistributionMarketTimingEvent ~= nil and DistributionMarketTimingEvent.sendEvent ~= nil then
+        DistributionMarketTimingEvent.sendEvent(market, ft, mode)
+    end
+end
+-- replay every non-default (market, ft, mode) for the multiplayer join sync.
+function SmartDistribution.forEachMarketTiming(fn)
+    if fn == nil or g_currentMission == nil then return end
+    local ps = g_currentMission.placeableSystem
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if SmartDistribution.isMarket(p) then
+            local byFt = SmartDistribution._marketTiming[getUid(p)]
+            if byFt ~= nil then
+                for ft, mode in pairs(byFt) do
+                    if mode ~= nil and mode ~= 0 then fn(p, ft, mode) end
+                end
+            end
+        end
+    end
+end
+-- ---- Animal Husbandry tab data --------------------------------------------
+-- the input fill types a husbandry demands: animal food + straw + (non-automatic) water.
+function SmartDistribution.husbandryInputFillTypes(p)
+    local out = {}
+    if p == nil then return out end
+    local fmap = foodQualityMap(p)
+    if fmap ~= nil then for ft in pairs(fmap) do out[ft] = true end end
+    if p.getHusbandryIsFillTypeSupported ~= nil then
+        local straw = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("STRAW") or nil
+        if straw ~= nil and p.spec_husbandryStraw ~= nil then
+            local ok, sup = pcall(p.getHusbandryIsFillTypeSupported, p, straw); if ok and sup then out[straw] = true end
+        end
+        local water = waterFillType()
+        if water ~= nil and p.spec_husbandryWater ~= nil and not p.spec_husbandryWater.automaticWaterSupply then
+            local ok, sup = pcall(p.getHusbandryIsFillTypeSupported, p, water); if ok and sup then out[water] = true end
+        end
+    end
+    -- The pits (Manure Pit / Slurry Pit) are HEAP assets, not barns, so none of the barn specs above
+    -- apply and they were listing no incoming product at all. What flows INTO a pit is simply what its
+    -- storage holds: manure for a manure heap, liquid manure for a slurry pit.
+    if not isHusbandryBuilding(p) then
+        for _, s in ipairs(getAllStorages(p)) do
+            for ft in pairs(storageFillTypes(s)) do out[ft] = true end
+        end
+    end
+    return out
+end
+
+-- held / capacity for a husbandry INPUT. Animal food is a single SHARED pool (spec_husbandryFood):
+-- every food fill type reports the same total food level and the shared food capacity. Straw / water
+-- read their own husbandry fill levels.
+function SmartDistribution.husbandryInputHeld(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local fs = p.spec_husbandryFood
+    if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= waterFillType() then
+        local total = 0
+        if fs.fillLevels ~= nil then for _, lvl in pairs(fs.fillLevels) do total = total + (lvl or 0) end end
+        return total
+    end
+    if p.getHusbandryFillLevel ~= nil then
+        local ok, lvl = pcall(p.getHusbandryFillLevel, p, ft); if ok and type(lvl) == "number" then return lvl end
+    end
+    return SmartDistribution.assetHeld(p, ft)
+end
+function SmartDistribution.husbandryInputCapacity(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local fs = p.spec_husbandryFood
+    if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= waterFillType() then
+        return fs.capacity or 0
+    end
+    if p.getHusbandryCapacity ~= nil then
+        local ok, c = pcall(p.getHusbandryCapacity, p, ft); if ok and type(c) == "number" and c > 0 then return c end
+    end
+    return SmartDistribution.assetCapacity(p, ft)
+end
+
+-- total storage capacity for ft across an asset's storages (partner to assetHeld).
+function SmartDistribution.assetCapacity(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local total = 0
+    local okS, storages = pcall(getAllStorages, p)
+    if okS and type(storages) == "table" then
+        for _, storage in ipairs(storages) do
+            local c = storageCapacity(storage, ft); if type(c) == "number" then total = total + c end
+        end
+    end
+    return total
+end
+
+-- monthly husbandry production per (asset, ft), summed from the rolling window (mirrors monthlyReceived).
+function SmartDistribution.monthlyProduced(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local uid = getUid(p)
+    if clientMonthly ~= nil then
+        local au = clientMonthly[uid]; local e = au ~= nil and au[ft] or nil
+        return e ~= nil and (e.produced or 0) or 0
+    end
+    local r = 0
+    for i = 1, MONTHLY_CYCLES do
+        local snap = monthlyRing[i]
+        local a = snap ~= nil and snap[uid] or nil
+        local e = a ~= nil and a[ft] or nil
+        if e ~= nil then r = r + (e.produced or 0) end
+    end
+    return r
+end
+
+-- Per-cycle husbandry PRODUCED tracker: the rise in an output's held level between the previous
+-- cycle's end and this cycle's start is pure production (nothing is drained in between). Recorded
+-- into the cycle ledger as "produced"; the end-of-cycle level is committed as next cycle's baseline.
+SmartDistribution._husbProdLast = {}   -- uid -> ft -> last end-of-cycle output level
+function SmartDistribution.observeHusbandryProduction()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if getProductionPoint(p) == nil and isHusbandryBuilding(p) and isEnrolled(p) then
+            local uid = getUid(p)
+            local last = SmartDistribution._husbProdLast[uid]
+            local outs = husbandryOutputFillTypes(p)
+            local pfts = palletSpawnerFillTypes(p)
+            if pfts ~= nil then for _, ft in ipairs(pfts) do outs[ft] = true end end
+            for ft in pairs(outs) do
+                local cur  = SmartDistribution.assetHeld(p, ft)
+                local prev = (last ~= nil and last[ft]) or cur
+                if cur - prev > 0 then ledgerAdd(p, ft, "produced", cur - prev) end
+            end
+        end
+    end
+end
+function SmartDistribution.commitHusbandryProduction()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if getProductionPoint(p) == nil and isHusbandryBuilding(p) and isEnrolled(p) then
+            local uid = getUid(p)
+            local rec = SmartDistribution._husbProdLast[uid]; if rec == nil then rec = {}; SmartDistribution._husbProdLast[uid] = rec end
+            local outs = husbandryOutputFillTypes(p)
+            local pfts = palletSpawnerFillTypes(p)
+            if pfts ~= nil then for _, ft in ipairs(pfts) do outs[ft] = true end end
+            for ft in pairs(outs) do rec[ft] = SmartDistribution.assetHeld(p, ft) end
+        end
+    end
+end
+
+-- Per-cycle husbandry CONSUMED tracker (feed / water / straw eaten by the animals). Same buffer-delta
+-- idea as the production tracker: consumed = (prevLevel + received) - currentLevel, using THIS cycle's
+-- flows (cycleAcc, passed in) so the windows align. Called once at end of runHourly.
+--
+-- COMPLICATION: animal food is a single SHARED pool (spec_husbandryFood) -- every food fill type
+-- reports the SAME pool total via husbandryInputHeld, so a naive per-ft delta would count the whole
+-- pool's drop once for EACH food type. We handle food specially: measure the pool drop ONCE, then
+-- attribute it across the food types in proportion to what was delivered (received) this cycle. Water
+-- and straw (and pit contents) are single fill types with their own levels, so they use the plain
+-- per-ft formula.
+SmartDistribution._husbConsumeLast = {}   -- uid -> ft -> last end-of-cycle input level (per-ft; food uses a shared key)
+function SmartDistribution.recordHusbandryConsumption(flows)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    local function flow(uid, ft, field)
+        local a = flows ~= nil and flows[uid] or nil
+        local e = a ~= nil and a[ft] or nil
+        return e ~= nil and (e[field] or 0) or 0
+    end
+    local water = waterFillType()
+    for _, p in ipairs(ps.placeables) do
+        if getProductionPoint(p) == nil and isHusbandryBuilding(p) and isEnrolled(p) then
+            local uid = getUid(p)
+            local last = SmartDistribution._husbConsumeLast[uid]
+            local rec  = last; if rec == nil then rec = {}; SmartDistribution._husbConsumeLast[uid] = rec end
+            local fs = p.spec_husbandryFood
+
+            -- split inputs into shared-pool food vs standalone (water / straw / pit)
+            local foodFts, soloFts = {}, {}
+            for ft in pairs(SmartDistribution.husbandryInputFillTypes(p)) do
+                if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= water then
+                    foodFts[#foodFts + 1] = ft
+                else
+                    soloFts[#soloFts + 1] = ft
+                end
+            end
+
+            -- standalone inputs: plain per-ft delta
+            for _, ft in ipairs(soloFts) do
+                local cur  = SmartDistribution.husbandryInputHeld(p, ft)
+                local prev = (last ~= nil and last[ft]) or cur
+                local consumed = (prev + flow(uid, ft, "received")) - cur
+                if consumed > 0 then ledgerAdd(p, ft, "consumed", consumed) end
+                rec[ft] = cur
+            end
+
+            -- shared food pool: measure the pool drop once, attribute by received-share
+            if #foodFts > 0 then
+                local pool = 0
+                if fs ~= nil and fs.fillLevels ~= nil then for _, lvl in pairs(fs.fillLevels) do pool = pool + (lvl or 0) end end
+                local prevPool = (last ~= nil and last["__foodPool"]) or pool
+                local totalRecv = 0
+                for _, ft in ipairs(foodFts) do totalRecv = totalRecv + flow(uid, ft, "received") end
+                local poolConsumed = (prevPool + totalRecv) - pool
+                if poolConsumed > 0 then
+                    if totalRecv > 0 then
+                        -- attribute proportional to what was delivered this cycle
+                        for _, ft in ipairs(foodFts) do
+                            local share = flow(uid, ft, "received") / totalRecv
+                            local c = poolConsumed * share
+                            if c > 0 then ledgerAdd(p, ft, "consumed", c) end
+                        end
+                    else
+                        -- nothing delivered this cycle: attribute to the food type with the most on hand
+                        local bigFt, bigLvl = nil, -1
+                        if fs ~= nil and fs.fillLevels ~= nil then
+                            for ft, lvl in pairs(fs.fillLevels) do
+                                if (lvl or 0) > bigLvl then bigLvl = lvl or 0; bigFt = ft end
+                            end
+                        end
+                        if bigFt ~= nil then ledgerAdd(p, bigFt, "consumed", poolConsumed) end
+                    end
+                end
+                rec["__foodPool"] = pool
+            end
+        end
+    end
+end
+
+-- Per-cycle production THROUGHPUT tracker (buffer deltas, mirrors the husbandry produced tracker).
+-- A production point shares one pp.storage for inputs and outputs, so a raw level delta mixes
+-- production with distribution flow. We isolate production by adjusting with the flows we ledgered
+-- THIS cycle (cycleAcc, passed in), measured over the SAME window as the buffer delta:
+--   consumed(input ft)  = (prevLevel + received) - currentLevel          -- fell despite deliveries in
+--   produced(output ft) = (currentLevel - prevLevel) + (dist+sold+stored) -- rose despite draw-off
+-- Both clamped >= 0. Called ONCE at end of runHourly (before cycleAcc is cleared): it snapshots the
+-- new baseline AND records the deltas in one pass, so the delta window and the flow window align
+-- exactly (both = this cycle). `flows` is cycleAcc.
+SmartDistribution._prodThruLast = {}   -- uid -> ft -> last end-of-cycle pp.storage level
+function SmartDistribution.recordProductionThroughput(flows)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    local function flow(uid, ft, field)
+        local a = flows ~= nil and flows[uid] or nil
+        local e = a ~= nil and a[ft] or nil
+        return e ~= nil and (e[field] or 0) or 0
+    end
+    for _, p in ipairs(ps.placeables) do
+        local pp = getProductionPoint(p)
+        if pp ~= nil and pp.storage ~= nil and isEnrolled(p) then
+            local uid = getUid(p)
+            local last = SmartDistribution._prodThruLast[uid]
+            local rec  = last; if rec == nil then rec = {}; SmartDistribution._prodThruLast[uid] = rec end
+            local inFts, outFts = {}, {}
+            for _, line in ipairs(SmartDistribution.productionLines(p) or {}) do
+                for _, i in ipairs(line.inputs or {})  do inFts[i.ft]  = true end
+                for _, o in ipairs(line.outputs or {}) do outFts[o.ft] = true end
+            end
+            -- inputs: consumed = (prev + received) - cur
+            for ft in pairs(inFts) do
+                local cur  = getLevel(pp.storage, ft)
+                local prev = (last ~= nil and last[ft]) or cur
+                local consumed = (prev + flow(uid, ft, "received")) - cur
+                if SmartDistribution._prodThruDebug then
+                    SmartDistribution.log("prodThru IN %s [%s] prev=%d recv=%d cur=%d -> consumed=%d", placeableName(p), fillTypeName(ft), prev, flow(uid, ft, "received"), cur, consumed)
+                end
+                if consumed > 0 then ledgerAdd(p, ft, "consumed", consumed) end
+            end
+            -- outputs: how we measure produced depends on the output's FORM.
+            --   * BULK (in pp.storage): produced = (cur - prev) + (dist + sold + stored). The buffer is
+            --     drained the SAME cycle it fills, so adding the outflows back reconstructs gross output.
+            --   * PALLET (bottled milk, planks, ...): the pallet level itself tracks production directly,
+            --     but whole-pallet STORE/SELL/DISTRIBUTE happens a cycle LATER than the spawn (the level
+            --     rises one cycle, drops the next). Adding the outflows in the spawn cycle double-counts
+            --     (verified: prev=0 cur=1000 stored=1000 -> 2000, then prev=1000 cur=0 -> -1000 dropped by
+            --     the >=0 clamp, netting 2x). So for pallets we take just the positive level rise and do
+            --     NOT re-add flows; the lagged drop is correctly ignored.
+            local pal = palletSpawnerFillTypes(p)
+            local isPal = {}
+            if pal ~= nil then for _, pf in ipairs(pal) do isPal[pf] = true end end
+            for ft in pairs(outFts) do
+                local produced
+                if isPal[ft] then
+                    local cur  = palletFillLevel(p, ft)
+                    local prev = (last ~= nil and last[ft]) or cur
+                    produced = cur - prev                      -- pallet level rise = production (outflows lag a cycle)
+                else
+                    local cur  = getLevel(pp.storage, ft)
+                    local prev = (last ~= nil and last[ft]) or cur
+                    local out  = flow(uid, ft, "dist") + flow(uid, ft, "sold") + flow(uid, ft, "stored")
+                    produced = (cur - prev) + out
+                end
+                if SmartDistribution._prodThruDebug then
+                    SmartDistribution.log("prodThru OUT %s [%s] pal=%s dist=%d sold=%d stored=%d -> produced=%d", placeableName(p), fillTypeName(ft), tostring(isPal[ft] == true), flow(uid, ft, "dist"), flow(uid, ft, "sold"), flow(uid, ft, "stored"), produced)
+                end
+                if produced > 0 then ledgerAdd(p, ft, "produced", produced) end
+            end
+            -- snapshot the new baseline (both input and output fts), using the matching accessor per ft
+            for ft in pairs(inFts)  do rec[ft] = getLevel(pp.storage, ft) end
+            for ft in pairs(outFts) do
+                if isPal[ft] then rec[ft] = palletFillLevel(p, ft) else rec[ft] = getLevel(pp.storage, ft) end
+            end
+        end
+    end
+end
+
+-- MONTHLY (rolling 24-cycle) consumed for (production, input ft). Mirror of monthlyProduced.
+function SmartDistribution.monthlyConsumed(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local uid = getUid(p)
+    if clientMonthly ~= nil then
+        local au = clientMonthly[uid]; local e = au ~= nil and au[ft] or nil
+        return e ~= nil and (e.consumed or 0) or 0
+    end
+    local r = 0
+    for i = 1, MONTHLY_CYCLES do
+        local snap = monthlyRing[i]
+        local a = snap ~= nil and snap[uid] or nil
+        local e = a ~= nil and a[ft] or nil
+        if e ~= nil then r = r + (e.consumed or 0) end
+    end
+    return r
+end
+
+-- a husbandry's full output set: milk / manure / slurry + egg / wool / honey pallets (for the tab).
+function SmartDistribution.husbandryOutputSet(p)
+    local outs = husbandryOutputFillTypes(p)
+    local pfts = palletSpawnerFillTypes(p)
+    if pfts ~= nil then for _, ft in ipairs(pfts) do outs[ft] = true end end
+    -- husbandryOutputFillTypes() adds the whole manure family (MANURE / LIQUIDMANURE / SLURRY) to every
+    -- asset, which is right for a barn but wrong for a pit: a Manure Pit was listing slurry and a Slurry
+    -- Pit was listing manure. For the pits (non-barn HEAP assets) keep only what they actually hold.
+    if not isHusbandryBuilding(p) then
+        for ft in pairs(outputNamedSet()) do
+            if outs[ft] and not SmartDistribution.assetHoldsFillType(p, ft) then outs[ft] = nil end
+        end
+    end
+    return outs
+end
+
+-- every fill type currently "in the distribution network": an active output of an enrolled production
+-- (regardless of current stock), produced by a pallet spawner (coop eggs / wool / honey), or currently
+-- held in an enrolled silo / husbandry / shed storage. Used to decide which rows a market shows.
+function SmartDistribution.networkFillTypes(farmId)
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return out end
+    for _, p in ipairs(ps.placeables) do
+        if p.ownerFarmId == farmId and isEnrolled(p) and not SmartDistribution.isMarket(p) then
+            local cls = getAssetClass(p)
+            if cls == "PRODUCTION" then
+                -- outputs of every ENABLED production line (shown even while a line is idle / waiting for input)
+                local pp = getProductionPoint(p)
+                if pp ~= nil then
+                    for _, def in ipairs(getActiveProductionDefs(pp)) do
+                        for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
+                    end
+                end
+            elseif cls == "HUSBANDRY" then
+                -- husbandries always generate their outputs: milk / manure + egg / wool / honey pallets (shown regardless of stock)
+                for ft in pairs(husbandryOutputFillTypes(p)) do out[ft] = true end
+                local pfts = palletSpawnerFillTypes(p)
+                if pfts ~= nil then for _, ft in ipairs(pfts) do out[ft] = true end end
+            else
+                -- SILO / SHED / HEAP / OTHER: only what is currently stored (grain in silos, pallets in the warehouse)
+                for _, storage in ipairs(getAllStorages(p)) do
+                    for ft in pairs(storageFillTypes(storage)) do
+                        if getLevel(storage, ft) > 0 then out[ft] = true end
+                    end
+                end
+                if p.spec_objectStorage ~= nil then
+                    for ft in pairs(shedStoredFillTypes(p)) do out[ft] = true end
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- fill types a market's tab shows: currently buffered, active this month (received/sold), or in the
+-- distribution network (produced or held) AND supported by this market.
+function SmartDistribution.marketMenuFillTypes(market)
+    local out = {}
+    if market == nil then return out end
+    local uid = getUid(market)
+    local buf = SmartDistribution._marketBuffer[uid]
+    if buf ~= nil then for ft, v in pairs(buf) do if v ~= nil and v > 0 then out[ft] = true end end end   -- stock the market is currently holding
+    local farmId = (market.getOwnerFarmId and market:getOwnerFarmId()) or market.ownerFarmId
+    for ft in pairs(SmartDistribution.networkFillTypes(farmId)) do
+        if SmartDistribution.marketAccepts(market, ft) then out[ft] = true end
+    end
+    return out
+end
+
 function SmartDistribution.enumerateConfigurableAssets()
     local out = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
@@ -4966,10 +7287,11 @@ function SmartDistribution.enumerateConfigurableAssets()
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil then
             local cls = getAssetClass(p)
-            if cls == "SILO" or cls == "HUSBANDRY" or cls == "PRODUCTION" or cls == "SHED" or cls == "HEAP" then
+            if cls == "SILO" or cls == "HUSBANDRY" or cls == "PRODUCTION" or cls == "SHED" or cls == "HEAP" or cls == "MARKET" then
                 local owned = (p.getOwnerFarmId == nil) or (farmId == nil) or (p:getOwnerFarmId() == farmId)
                 if owned then
-                    out[#out + 1] = { placeable = p, name = placeableName(p), class = cls }
+                    out[#out + 1] = { placeable = p, name = placeableName(p), class = cls,
+                                      origName = SmartDistribution.placeableRenamedFrom(p) }
                 end
             end
         end
@@ -5008,10 +7330,23 @@ function SmartDistribution.registerMenuGui()
         loadPage(DistributionSettingsPage,    "distributionSettingsPage",    "gui/DistributionSettingsPage.xml")
         loadPage(DistributionStoragePage,         "distributionStoragePage",     "gui/DistributionStoragePage.xml")
         loadPage(DistributionAnimalHusbandryPage, "distributionHusbandryPage",   "gui/DistributionHusbandryPage.xml")
+        loadPage(DistributionMarketsPage,         "distributionMarketsPage",     "gui/DistributionMarketsPage.xml")
         loadPage(DistributionProductionsPage, "distributionProductionsPage", "gui/DistributionProductionsPage.xml")
         loadPage(DistributionHelpPage,        "distributionHelpPage",        "gui/DistributionHelpPage.xml")
         SmartDistribution._menu = DistributionMenu.new()
         g_gui:loadGui(dir .. "gui/DistributionMenu.xml", "DistributionMenu", SmartDistribution._menu)
+        if DistributionSpawnDialog ~= nil then
+            SmartDistribution._spawnDialog = DistributionSpawnDialog.new()
+            g_gui:loadGui(dir .. "gui/DistributionSpawnDialog.xml", "DistributionSpawnDialog", SmartDistribution._spawnDialog)
+        end
+        if DistributionAdvancedDialog ~= nil then
+            SmartDistribution._advDialog = DistributionAdvancedDialog.new()
+            g_gui:loadGui(dir .. "gui/DistributionAdvancedDialog.xml", "DistributionAdvancedDialog", SmartDistribution._advDialog)
+        end
+        if DistributionInputsDialog ~= nil then
+            SmartDistribution._inputsDialog = DistributionInputsDialog.new()
+            g_gui:loadGui(dir .. "gui/DistributionInputsDialog.xml", "DistributionInputsDialog", SmartDistribution._inputsDialog)
+        end
     end)
     if ok then
         SmartDistribution._menuRegistered = true
@@ -5019,6 +7354,121 @@ function SmartDistribution.registerMenuGui()
     else
         log("registerMenuGui error: %s", tostring(err))
     end
+end
+
+-- Open the Advanced window (granular routing) for a building.
+function SmartDistribution.openAdvancedDialog(asset, ft)
+    if g_gui == nil or SmartDistribution._advDialog == nil or asset == nil or ft == nil then return false end
+    SmartDistribution._advDialog:setup(asset, ft)
+    g_gui:showDialog("DistributionAdvancedDialog")
+    return true
+end
+
+-- Open the Advanced Inputs window (receiver-side block + per-product max %) for a building.
+function SmartDistribution.openInputsDialog(asset)
+    if g_gui == nil or asset == nil then return false end
+    if SmartDistribution._inputsDialog == nil then
+        log("openInputsDialog: dialog not registered (needs a full game restart after adding DistributionInputsDialog)")
+        return false
+    end
+    SmartDistribution._inputsDialog:setup(asset)
+    g_gui:showDialog("DistributionInputsDialog")
+    return true
+end
+
+-- Rows for the Advanced Inputs dialog: one per input product the building can receive, carrying its
+-- pooled/individual classification, block state, effective max %, and the live litre equivalent so the
+-- UI can show "50%  (125,000 L)". Pooled products are grouped; the caller renders a pooled section and
+-- an individual section.
+function SmartDistribution.receiverInputRows(p)
+    local rows = {}
+    if p == nil then return rows end
+    local rcvUid = getUid(p)
+    local pool = SmartDistribution.pooledInputCapacity(p)
+    local poolSet = {}
+    if pool ~= nil then for _, ft in ipairs(pool.fts) do poolSet[ft] = true end end
+    for ft in pairs(SmartDistribution.receiverInputFillTypes(p)) do
+        local pooled = poolSet[ft] == true
+        local cap = SmartDistribution.inputProductCapacity(p, ft)
+        local pct = SmartDistribution.inputCapPct(p, ft)
+        rows[#rows + 1] = {
+            ft = ft,
+            name = fillTypeName(ft),   -- dialog re-resolves the display title from ft; this is a fallback
+            pooled = pooled,
+            blocked = rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft) or false,
+            pct = pct,
+            capLiters = cap,
+            maxLiters = cap * (pct / 100),
+            held = SmartDistribution.inputHeldLevel(p, ft),
+            explicit = rcvUid ~= nil and SmartDistribution.hasExplicitInputCapPct(rcvUid, ft) or false,
+        }
+    end
+    table.sort(rows, function(a, b)
+        if a.pooled ~= b.pooled then return a.pooled end   -- pooled products first
+        return tostring(a.name) < tostring(b.name)
+    end)
+    return rows, (pool ~= nil and pool.liters or nil)
+end
+
+-- Which input products a building can receive (for the Advanced Inputs dialog). Productions use their
+-- input fill types; husbandries use husbandryInputFillTypes; storage/sheds use their supported fts.
+function SmartDistribution.receiverInputFillTypes(p)
+    local out = {}
+    if p == nil then return out end
+    local pp = getProductionPoint(p)
+    if pp ~= nil then
+        for _, def in ipairs(getActiveProductionDefs(pp)) do
+            for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
+        end
+        -- include configured (not just active) lines so the player can pre-set caps
+        if type(pp.productions) == "table" then
+            for _, def in ipairs(pp.productions) do
+                for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
+            end
+        end
+        return out
+    end
+    if isHusbandryBuilding(p) and SmartDistribution.husbandryInputFillTypes ~= nil then
+        for ft in pairs(SmartDistribution.husbandryInputFillTypes(p)) do out[ft] = true end
+        return out
+    end
+    -- storage / sheds: everything the building can hold is an "input" for cap purposes
+    if p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
+        for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do out[ft] = true end
+    end
+    for _, s in ipairs(getAllStorages(p)) do
+        for ft in pairs(storageFillTypes(s)) do out[ft] = true end
+    end
+    return out
+end
+
+-- Should the Advanced button be offered for this (asset, ft)? Only when the output's mode routes
+-- somewhere the player can configure -- i.e. it distributes, stores, or supplies a market (incl. combos).
+-- Sell / Hold / Hold Internal / Market-less setups have nothing to arrange, so no button.
+function SmartDistribution.modeConfigurable(asset, ft)
+    if asset == nil or ft == nil then return false end
+    local pp = getProductionPoint(asset)
+    if pp ~= nil then
+        local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
+        return v == 1 or v == 3 or v == 4 or v == 5 or v == 6 or v == 7   -- dist / dist+sell / dist+store / store / market / dist+market
+    end
+    local m = SmartDistribution.resolvedAssetMode(asset, ft)
+    local M = MODE
+    if SmartDistribution.modeDistributes(m) then return true end
+    return m == M.STORE or m == M.STORE_TO
+        or m == M.TRANSFER_MARKET
+end
+
+-- Open the manual pallet-spawn pop-up for a production output. onConfirm(option, count) is invoked
+-- when the player presses Spawn. Returns true if the dialog was shown.
+function SmartDistribution.openSpawnDialog(placeable, ft, onConfirm)
+    if g_gui == nil or SmartDistribution._spawnDialog == nil then return false end
+    local pp = getProductionPoint(placeable)
+    if pp == nil or ft == nil then return false end
+    local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
+    SmartDistribution._spawnDialog:setup(pp, ft, held, onConfirm)
+    g_gui:showDialog("DistributionSpawnDialog")
+    return true
 end
 
 -- open (or toggle) the consolidated menu; falls back to the old manager list if
@@ -5108,6 +7558,13 @@ local MANURE_STORAGE_CAPACITY = 50000
 local function patchHusbandryManureStorage(placeable)
     if placeable == nil or placeable.spec_husbandry == nil then return end
     if placeable.spec_manureHeap ~= nil then return end          -- already has a heap
+    -- The Grazing Pasture mod's pastures ship MANURE capacity 0 on purpose and must keep it; every other
+    -- husbandry (including vanilla barns, which also declare 0) gets the slot as designed.
+    local grazing = SmartDistribution.isGrazingPasture(placeable)
+    Logging.info("[DR manure] %s: typeName=%s grazing=%s -> %s",
+        tostring(placeable.getName ~= nil and placeable:getName() or placeable),
+        tostring(placeable.typeName), tostring(grazing), grazing and "SKIP (pasture)" or "patch")
+    if grazing then return end
     local manureFT = g_fillTypeManager ~= nil and
         g_fillTypeManager:getFillTypeIndexByName("MANURE") or nil
     if manureFT == nil or manureFT <= 0 then return end
@@ -5175,6 +7632,7 @@ SmartDistribution.husbandryOutputFillTypes = husbandryOutputFillTypes
 local proximityWatcher = { acc = 0, target = nil, lastNear = nil, lastEid = nil }
 
 function proximityWatcher:update(dt)
+    SmartDistribution.flushPendingSummary()      -- emit the slept-through summary the moment fast-forward stops
     -- Run an hourly pass deferred from onHourChanged (normal play). We wait one update
     -- tick first, so the engine's hour-change processing -- including producers depositing
     -- this hour's batch in a listener that runs after ours -- has completed; the store pass
@@ -5348,9 +7806,43 @@ local function installMenu()
         function() pcall(SmartDistribution.registerMenuGui) end)
 end
 
+-- ---- rename unlock ---------------------------------------------------------
+-- The base game only shows its rename option for placeables whose XML opts in with
+-- <base><canBeRenamed>true</canBeRenamed></base> (greenhouses and husbandries do; bunker silos and most
+-- storage do not). That flag is just a field on the placeable, so DR flips it on for every building in
+-- its network: the player renames from the base-game construction menu, and the name flows back through
+-- getName() into DR's lists. No custom rename UI, and the name saves + syncs like any other.
+function SmartDistribution.isNetworkAsset(p)
+    if p == nil or p.rootNode == nil then return false end
+    return SmartDistribution.productionPointOf ~= nil and SmartDistribution.productionPointOf(p) ~= nil
+        or p.spec_productionPoint ~= nil
+        or p.spec_husbandry ~= nil
+        or p.spec_silo ~= nil
+        or p.spec_objectStorage ~= nil
+        or p.spec_sellingStation ~= nil
+end
+
+function SmartDistribution.unlockRename(p)
+    if p ~= nil and p.canBeRenamed ~= true and SmartDistribution.isNetworkAsset(p) then
+        p.canBeRenamed = true
+    end
+end
+
+if PlaceableSystem ~= nil and PlaceableSystem.addPlaceable ~= nil then
+    PlaceableSystem.addPlaceable = Utils.appendedFunction(PlaceableSystem.addPlaceable, function(_, placeable)
+        SmartDistribution.unlockRename(placeable)
+    end)
+else
+    log("rename unlock: PlaceableSystem.addPlaceable not found; renaming left as the base game set it.")
+end
+
 install()
 installPersistence()
--- installConsole() -- dev console commands disabled for release (registration removed)
+-- installConsole()   -- dev console commands (sdList / sdMode / sdSpawn / sd*Probe / ...) disabled for release. Uncomment to re-enable for testing.
+-- TEMP dev probe for the Markets feature; disabled for release (uncomment to re-enable):
+-- if addConsoleCommand ~= nil then
+--     addConsoleCommand("sdMarketProbe", "Dump owned selling-station/market spec + sell API [dev]", "cmdMarketProbe", SmartDistribution)
+-- end
 installInteraction()
 installHusbandryPatch()
 installManureExtensionPlaceable()
@@ -5358,3 +7850,993 @@ installExtensionPlacementGates()
 installManureHeapDetach()
 installProximityWatcher()
 installMenu()
+
+-- ---- cross-mod API publish -------------------------------------------------
+-- FS25 loads each mod's scripts in its OWN script environment, so a bare top-level
+-- global defined here does not reliably reach another mod (e.g. Production Redux).
+-- Publish the API through channels a companion mod can definitely read:
+--   1) the shared root environment via getfenv(0), when available;
+--   2) g_currentMission once the mission exists (set at load-finished, which runs
+--      before a later-loading companion mod's own load-finished hook).
+-- wrapped in a function so its locals don't count against this file's 200-local
+-- main-chunk ceiling (bare top-level locals here would overflow it)
+;(function()
+    local ok, G = pcall(getfenv, 0)
+    if ok and type(G) == "table" then G.SmartDistribution = SmartDistribution end
+end)()
+if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
+    Mission00.loadMission00Finished = Utils.appendedFunction(
+        Mission00.loadMission00Finished,
+        function()
+            if g_currentMission ~= nil then
+                g_currentMission.smartDistribution = SmartDistribution
+            end
+        end)
+end
+
+-- ============================================================================
+-- Distribution control layer: input source blocks + output priority + store targets.
+--
+-- OWNED AND PERSISTED BY DISTRIBUTION REDUX. (This began life in Production Redux, which
+-- pushed it in via setControl(); PR is retired and DR now owns the whole feature.)
+--
+--   blocked[consumerUid][ft][sourceUid] = true      source may NOT feed that consumer
+--   priority[sourceUid][ft] = { consumerUid, ... }  ordered, rank 1 first
+--   (destinations are demands, stores or markets; unified source-side model)
+--
+-- The allocator reads these directly: gatherSources filters blocked edges, and allocate()
+-- fills a contested source's claimants in rank order (proportional split when unranked).
+-- Empty tables => behaviour is exactly as it was before any of this existed.
+-- Everything here is SmartDistribution.* fields -- the file is at Lua's 200 main-chunk
+-- local ceiling, so no new top-level locals may be introduced.
+-- ============================================================================
+SmartDistribution.control = SmartDistribution.control or { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {} }
+
+function SmartDistribution.setControl(t)
+    if type(t) ~= "table" then t = {} end
+    SmartDistribution.control = {
+        blocked     = t.blocked     or {},   -- [srcUid][ft][destUid] = true : output never goes to that destination
+        priority    = t.priority    or {},   -- [srcUid][ft] = { destUid, ... } : ranked order; unranked -> distance
+        inputBlock  = t.inputBlock  or {},   -- [rcvUid][ft] = true : building refuses this product on the way IN
+        inputCapPct = t.inputCapPct or {},   -- [rcvUid][ft] = 0..100 : max % of the (pooled) capacity this product may take
+    }
+end
+
+-- ============================================================================
+-- UNIFIED OUTPUT->DESTINATION CONTROL (source-side).
+--
+-- One block table and one priority table, both keyed by the SOURCE output:
+--   blocked[srcUid][ft][destUid]  the output never routes to that destination (demand, store or market)
+--   priority[srcUid][ft] = {...}  ranked destinations; anything unranked falls back to nearest-first
+--
+-- Every mode reads the same thing: "all valid destinations for this output, minus blocked, in priority
+-- then distance order." Move To differs only in its DEFAULT: the dialog blocks every store when the
+-- player switches an output to Move To, so nothing moves until they deliberately unblock (activate)
+-- targets -- the loop-safe default. There is no separate allow-list anymore.
+-- ============================================================================
+
+-- block / unblock one output->destination edge
+function SmartDistribution.setDestBlocked(srcUid, ft, destUid, blocked)
+    local B = SmartDistribution.control.blocked
+    if blocked then
+        B[srcUid] = B[srcUid] or {}
+        B[srcUid][ft] = B[srcUid][ft] or {}
+        B[srcUid][ft][destUid] = true
+    else
+        local bs = B[srcUid]
+        local bf = bs ~= nil and bs[ft] or nil
+        if bf ~= nil then
+            bf[destUid] = nil
+            if next(bf) == nil then bs[ft] = nil end
+            if next(bs) == nil then B[srcUid] = nil end
+        end
+    end
+end
+
+function SmartDistribution.isDestBlocked(srcUid, ft, destUid)
+    local b = SmartDistribution.control.blocked
+    local bs = b ~= nil and b[srcUid] or nil
+    local bf = bs ~= nil and bs[ft] or nil
+    return bf ~= nil and bf[destUid] == true
+end
+
+-- toggle a destination's place in the (source, ft) priority order (append / remove + compact)
+function SmartDistribution.toggleDestPriority(srcUid, ft, destUid)
+    local P = SmartDistribution.control.priority
+    P[srcUid] = P[srcUid] or {}
+    local list = P[srcUid][ft]
+    if list == nil then list = {}; P[srcUid][ft] = list end
+    local found
+    for i = 1, #list do if list[i] == destUid then found = i; break end end
+    if found ~= nil then
+        table.remove(list, found)
+        if #list == 0 then
+            P[srcUid][ft] = nil
+            if next(P[srcUid]) == nil then P[srcUid] = nil end
+        end
+    else
+        list[#list + 1] = destUid
+    end
+end
+
+-- move a ranked destination up/down one place
+function SmartDistribution.moveDestPriority(srcUid, ft, destUid, delta)
+    local P = SmartDistribution.control.priority
+    local list = P[srcUid] ~= nil and P[srcUid][ft] or nil
+    if list == nil then return end
+    local at
+    for i = 1, #list do if list[i] == destUid then at = i; break end end
+    if at == nil then return end
+    local to = math.max(1, math.min(#list, at + (delta or 0)))
+    if to == at then return end
+    table.remove(list, at)
+    table.insert(list, to, destUid)
+end
+
+function SmartDistribution.clearDestPriority(srcUid, ft)
+    local P = SmartDistribution.control.priority
+    if P[srcUid] ~= nil then
+        P[srcUid][ft] = nil
+        if next(P[srcUid]) == nil then P[srcUid] = nil end
+    end
+end
+
+-- rank of a destination in the (source, ft) order, or nil when unranked
+function SmartDistribution.destRank(srcUid, ft, destUid)
+    local P = SmartDistribution.control.priority
+    local list = P[srcUid] ~= nil and P[srcUid][ft] or nil
+    if list == nil then return nil end
+    for i = 1, #list do if list[i] == destUid then return i end end
+    return nil
+end
+
+-- has the player ranked this (source, ft) at all? (any explicit order present)
+function SmartDistribution.destsAreRanked(srcUid, ft)
+    local P = SmartDistribution.control.priority
+    local list = P[srcUid] ~= nil and P[srcUid][ft] or nil
+    return list ~= nil and #list > 0
+end
+
+-- ============================================================================
+-- RECEIVER-SIDE INPUT CONTROL (block + per-product max %).
+--
+-- Separate from the source-side block/priority: this governs what a building will accept ON THE WAY IN.
+--   inputBlock[rcvUid][ft]  = true    -- the building refuses this product entirely
+--   inputCapPct[rcvUid][ft] = 0..100  -- max % of the (pooled) capacity this product may occupy
+--
+-- WHY PERCENT, not litres: a silo extension changes the capacity; a percent cap rides that change with
+-- no re-tuning, and the UI shows the live litre equivalent so the player still sees the real number.
+--
+-- POOLED vs INDIVIDUAL capacity. Some buildings share one capacity across several products (an object-
+-- storage hay loft: N bale slots shared by hay + straw; a bulk tank that accepts several fill types).
+-- There, one product can starve another -- the cap is what stops straw filling the loft and locking out
+-- hay. Individual per-product tanks can't starve each other, so a cap there is just a fine-tune.
+-- ============================================================================
+
+-- The pooled TOTAL capacity (in litres) a building shares across products, plus the set of products that
+-- share it, or nil when the building has no pooled capacity. Three pooled shapes exist:
+--   * object-storage shed (hay loft, pallet shed): slot count is one shared limit; litres = slots x per-slot
+--   * husbandry FOOD: spec_husbandryFood is ONE shared pool across all the food types the animals accept
+--     (the barn shows a single "Food" total). Straw and water are SEPARATE specs, each a single fill type,
+--     so they are individual -- never pooled. A food pool only matters when 2+ food types share it.
+--   * bulk store: pooled when ONE storage tank supports 2+ fill types.
+function SmartDistribution.pooledInputCapacity(p)
+    if p == nil then return nil end
+    -- object-storage shed (hay loft, pallet shed): shared slot pool
+    local spec = p.spec_objectStorage
+    if spec ~= nil then
+        local slots = spec.capacity or 0
+        if slots <= 0 then return nil end                     -- unlimited: no meaningful cap
+        local fts = {}
+        if SmartDistribution.shedSupportedFillTypes ~= nil then
+            for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do fts[#fts + 1] = ft end
+        end
+        if #fts < 1 then return nil end
+        -- litres per slot: infer from stock on hand, else a sane bale default
+        local perSlot = SmartDistribution._shedLitresPerSlot(p)
+        return { liters = slots * perSlot, fts = fts, kind = "SHED", slots = slots, perSlot = perSlot }
+    end
+    -- production input buffer: pp.storage holds every input. FS25 productions usually give each input its
+    -- OWN capacity (capacities[ft]) -> individual, no contention. Some share one buffer across inputs ->
+    -- pooled. Detect: if a per-ft capacities table lists the inputs, they're individual (return nil here,
+    -- inputProductCapacity resolves each one); if the storage exposes only a single shared capacity that
+    -- every input draws from, they're pooled.
+    local pp = getProductionPoint(p)
+    if pp ~= nil and pp.storage ~= nil then
+        local fts = {}
+        if type(pp.inputFillTypeIds) == "table" then
+            for ft in pairs(pp.inputFillTypeIds) do fts[#fts + 1] = ft end
+        end
+        if #fts < 2 then return nil end                        -- 0-1 inputs: nothing to pool
+        local st = pp.storage
+        local perFt = type(st.capacities) == "table"
+        if perFt then
+            -- confirm EACH input has its own entry; if any input is missing a per-ft cap the buffer is
+            -- effectively shared for that input, so treat the whole thing as pooled to be safe.
+            for _, ft in ipairs(fts) do if st.capacities[ft] == nil then perFt = false; break end end
+        end
+        if perFt then return nil end                           -- individual per-input buffers: not pooled
+        -- shared buffer: total = current levels + free (free is the same shared remainder for any input)
+        local total = 0
+        for _, ft in ipairs(fts) do total = total + (getLevel(st, ft) or 0) end
+        local cap = total + getFree(st, fts[1])
+        if cap > 0 and cap < INF then return { liters = cap, fts = fts, kind = "PRODIN", storage = st } end
+        return nil
+    end
+    -- husbandry FOOD pool: one shared capacity across all accepted food types (straw / water are their own
+    -- single-type specs and are NOT part of this pool). Only a pool when 2+ food types share it.
+    local fs = p.spec_husbandryFood
+    if fs ~= nil and fs.supportedFillTypes ~= nil then
+        local water = waterFillType()
+        local fts = {}
+        for ft in pairs(fs.supportedFillTypes) do
+            if ft ~= water then fts[#fts + 1] = ft end
+        end
+        if #fts >= 2 then
+            local cap = fs.capacity or 0
+            if cap > 0 then return { liters = cap, fts = fts, kind = "FOOD" } end
+        end
+        return nil   -- a husbandry's non-food inputs (straw, water) are individual, never pooled
+    end
+    -- bulk storage that supports several fts in ONE storage = pooled
+    for _, s in ipairs(getAllStorages(p)) do
+        local fts = {}
+        for ft in pairs(storageFillTypes(s)) do fts[#fts + 1] = ft end
+        if #fts >= 2 then
+            -- shared capacity: getFreeCapacity returns the same remaining total for every ft, so total
+            -- capacity = current total level + free
+            local total = 0
+            for _, ft in ipairs(fts) do total = total + (getLevel(s, ft) or 0) end
+            local cap = total + getFree(s, fts[1])
+            if cap > 0 and cap < INF then return { liters = cap, fts = fts, kind = "BULK", storage = s } end
+        end
+    end
+    return nil
+end
+
+-- best-effort litres-per-slot for a shed: average of what's stored, else a bale-sized default.
+function SmartDistribution._shedLitresPerSlot(p)
+    local spec = p ~= nil and p.spec_objectStorage or nil
+    if spec ~= nil then
+        local stored = (spec.storedObjects ~= nil and #spec.storedObjects) or (spec.numStoredObjects or 0)
+        if stored and stored > 0 and SmartDistribution.shedSupportedFillTypes ~= nil then
+            local totalL = 0
+            for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do totalL = totalL + (shedStoredLiters(p, ft) or 0) end
+            if totalL > 0 then return totalL / stored end
+        end
+    end
+    return 4000   -- a round bale ~ 4000 L; only used until real stock reveals the true per-slot size
+end
+
+-- the litre capacity + current level for a specific input product at a building. For pooled storage the
+-- capacity is the shared pool; for individual storage it's that product's own tank.
+function SmartDistribution.inputProductCapacity(p, ft)
+    local pool = SmartDistribution.pooledInputCapacity(p)
+    if pool ~= nil then
+        for _, pf in ipairs(pool.fts) do if pf == ft then return pool.liters, pool end end
+    end
+    -- production input (individual per-ft buffer): capacity is this input's own slot in pp.storage
+    local pp = getProductionPoint(p)
+    if pp ~= nil and pp.storage ~= nil then
+        local cap = (getLevel(pp.storage, ft) or 0) + getFree(pp.storage, ft)
+        if cap > 0 and cap < INF then return cap, nil end
+        return 0, nil
+    end
+    -- husbandry non-food inputs (straw / water) or a food type on a single-food barn: use the husbandry
+    -- capacity helper, which knows the food pool from straw/water.
+    if p ~= nil and isHusbandryBuilding(p) and SmartDistribution.husbandryInputCapacity ~= nil then
+        local c = SmartDistribution.husbandryInputCapacity(p, ft)
+        if type(c) == "number" and c > 0 then return c, nil end
+    end
+    -- individual: this ft's own tank
+    if p ~= nil and p.spec_objectStorage == nil then
+        for _, s in ipairs(getAllStorages(p)) do
+            if storageFillTypes(s)[ft] ~= nil then
+                local cap = (getLevel(s, ft) or 0) + getFree(s, ft)
+                if cap > 0 and cap < INF then return cap, nil end
+            end
+        end
+    end
+    return 0, nil
+end
+
+function SmartDistribution.inputHeldLevel(p, ft)
+    if p == nil or ft == nil then return 0 end
+    if p.spec_objectStorage ~= nil then return shedStoredLiters(p, ft) or 0 end
+    -- production input buffer
+    local pp = getProductionPoint(p)
+    if pp ~= nil and pp.storage ~= nil then return getLevel(pp.storage, ft) or 0 end
+    -- husbandry: food reports the shared-pool total, straw/water their own levels
+    if isHusbandryBuilding(p) and SmartDistribution.husbandryInputHeld ~= nil then
+        return SmartDistribution.husbandryInputHeld(p, ft) or 0
+    end
+    local s = SmartDistribution._bulkStorageFor(p, ft)
+    if s ~= nil then return getLevel(s, ft) or 0 end
+    return SmartDistribution.assetHeld(p, ft)
+end
+
+-- ---- input block ----------------------------------------------------------
+function SmartDistribution.setInputBlocked(rcvUid, ft, blocked)
+    local C = SmartDistribution.control
+    C.inputBlock = C.inputBlock or {}
+    local B = C.inputBlock
+    if blocked then
+        B[rcvUid] = B[rcvUid] or {}
+        B[rcvUid][ft] = true
+    elseif B[rcvUid] ~= nil then
+        B[rcvUid][ft] = nil
+        if next(B[rcvUid]) == nil then B[rcvUid] = nil end
+    end
+end
+function SmartDistribution.isInputBlocked(rcvUid, ft)
+    local ib = SmartDistribution.control.inputBlock
+    local b = ib ~= nil and ib[rcvUid] or nil
+    return b ~= nil and b[ft] == true
+end
+
+-- ---- input max % ----------------------------------------------------------
+-- Default % when the player hasn't set one: pooled storage splits evenly across the products that share
+-- it (250k pool, 2 products -> 125k -> 50% each); individual storage defaults to 100% (no restriction).
+function SmartDistribution.defaultInputCapPct(p, ft)
+    local pool = SmartDistribution.pooledInputCapacity(p)
+    if pool ~= nil then
+        for _, pf in ipairs(pool.fts) do
+            if pf == ft then
+                local n = #pool.fts
+                if n > 0 then return math.floor(100 / n + 0.5) end
+            end
+        end
+    end
+    return 100
+end
+
+-- For a POOLED product, the highest % it may be set to so the pool's shares still sum to <= 100%:
+--   100 - (sum of the OTHER pooled products' effective caps).
+-- Individual (non-pooled) products aren't constrained this way, so they return 100.
+function SmartDistribution.inputCapPctHeadroom(p, ft)
+    local pool = SmartDistribution.pooledInputCapacity(p)
+    if pool == nil then return 100 end
+    local inPool = false
+    for _, pf in ipairs(pool.fts) do if pf == ft then inPool = true; break end end
+    if not inPool then return 100 end
+    local others = 0
+    for _, pf in ipairs(pool.fts) do
+        if pf ~= ft then others = others + (SmartDistribution.inputCapPct(p, pf) or 0) end
+    end
+    return math.max(0, 100 - others)
+end
+function SmartDistribution.setInputCapPct(rcvUid, ft, pct)
+    if pct == nil then return end
+    pct = math.max(0, math.min(100, math.floor(pct + 0.5)))
+    local C = SmartDistribution.control
+    C.inputCapPct = C.inputCapPct or {}
+    local T = C.inputCapPct
+    T[rcvUid] = T[rcvUid] or {}
+    T[rcvUid][ft] = pct
+end
+function SmartDistribution.clearInputCapPct(rcvUid, ft)
+    local C = SmartDistribution.control.inputCapPct
+    if C ~= nil and C[rcvUid] ~= nil then
+        C[rcvUid][ft] = nil
+        if next(C[rcvUid]) == nil then C[rcvUid] = nil end
+    end
+end
+-- the effective % for (rcv, ft): the player's explicit value, else the default.
+function SmartDistribution.inputCapPct(p, ft)
+    local rcvUid = getUid(p)
+    local T = SmartDistribution.control.inputCapPct
+    local C = (rcvUid ~= nil and T ~= nil) and T[rcvUid] or nil
+    local v = C ~= nil and C[ft] or nil
+    if v ~= nil then return v end
+    return SmartDistribution.defaultInputCapPct(p, ft)
+end
+function SmartDistribution.hasExplicitInputCapPct(rcvUid, ft)
+    local T = SmartDistribution.control.inputCapPct
+    local C = T ~= nil and T[rcvUid] or nil
+    return C ~= nil and C[ft] ~= nil
+end
+
+-- ENFORCEMENT: how many more litres of `ft` this building will accept right now, given its input block
+-- and its per-product cap. Every fill path clamps its deposit to this. Returns a big number when the
+-- product is unconstrained (blocked -> 0; no pooled cap and no explicit cap -> the normal free space).
+function SmartDistribution.inputAcceptableLiters(p, ft)
+    local rcvUid = getUid(p)
+    if rcvUid == nil then return INF end
+    if SmartDistribution.isInputBlocked(rcvUid, ft) then return 0 end
+    local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
+    if cap <= 0 then return INF end                            -- unknown capacity: don't constrain
+    local pct = SmartDistribution.inputCapPct(p, ft)
+    local maxL = cap * (pct / 100)
+    local held = SmartDistribution.inputHeldLevel(p, ft)
+    return math.max(0, maxL - held)
+end
+
+-- "Store To" could push nothing last pass because every chosen store is full (UI indicator).
+-- The stock stays where it is and the mode stays on Store To, so it tops them up again next cycle.
+SmartDistribution._storeTargetFull = SmartDistribution._storeTargetFull or {}
+function SmartDistribution.isStoreTargetFull(sourceUid, ft)
+    local t = SmartDistribution._storeTargetFull[sourceUid]
+    return t ~= nil and t[ft] == true
+end
+function SmartDistribution.setStoreTargetFull(sourceUid, ft, full)
+    local T = SmartDistribution._storeTargetFull
+    if full then
+        T[sourceUid] = T[sourceUid] or {}
+        T[sourceUid][ft] = true
+    elseif T[sourceUid] ~= nil then
+        T[sourceUid][ft] = nil
+        if next(T[sourceUid]) == nil then T[sourceUid] = nil end
+    end
+end
+
+-- Compat shim: old consumer-side "is this source blocked from feeding me?" is now source-side
+-- isDestBlocked(source, ft, consumer). Kept so input-status views + link status read one block table.
+function SmartDistribution.isSourceBlocked(consumerUid, ft, sourceUid)
+    return SmartDistribution.isDestBlocked(sourceUid, ft, consumerUid)
+end
+
+-- Ordered claim list for a contested source output, or nil when no usable priority
+-- is set for (sourceUid, ft). Returning nil keeps allocate()'s proportional split,
+-- so the default (no priority) path is byte-identical to the original engine.
+-- uidOf(claim) -> the claim's CONSUMER uid.
+function SmartDistribution.priorityOrder(sourceUid, ft, claims, uidOf)
+    local pr = SmartDistribution.control.priority
+    local pf = pr ~= nil and pr[sourceUid] or nil
+    local list = pf ~= nil and pf[ft] or nil
+    if list == nil or #list == 0 then return nil end
+    local rank = {}
+    for i = 1, #list do rank[list[i]] = i end
+    local ranked, unranked = {}, {}
+    for _, cl in ipairs(claims) do
+        local u = uidOf(cl)
+        if u ~= nil and rank[u] ~= nil then ranked[#ranked + 1] = { cl = cl, r = rank[u] }
+        else unranked[#unranked + 1] = cl end
+    end
+    if #ranked == 0 then return nil end                 -- no ranked claimant here -> default split
+    table.sort(ranked, function(a, b) return a.r < b.r end)
+    local out = {}
+    for _, e in ipairs(ranked) do out[#out + 1] = e.cl end
+    for _, cl in ipairs(unranked) do out[#out + 1] = cl end   -- unranked go last, in candidate order
+    return out
+end
+
+-- ---- Production Redux introspection (read-only network model) ---------------
+function SmartDistribution.assetIconFile(p)
+    if p == nil then return nil end
+    local si = p.storeItem
+    if type(si) ~= "table" and g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil then
+        local cfg = p.configFileName or p.xmlFilename
+        if cfg ~= nil then
+            local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager, cfg)
+            if ok then si = item end
+        end
+    end
+    if type(si) == "table" then
+        local img = si.imageFilename or si.imageFilenameSmall
+        if type(img) == "string" and img ~= "" then return img end
+    end
+    return fillHudIconFile(placeablePrimaryProduct(p))
+end
+
+-- The local player's farm id (best-effort across FS25 accessors); nil if unknown.
+function SmartDistribution._playerFarmId()
+    local m = g_currentMission
+    if m == nil then return nil end
+    if m.getFarmId ~= nil then local ok, f = pcall(m.getFarmId, m); if ok and f ~= nil then return f end end
+    if m.player ~= nil and m.player.farmId ~= nil then return m.player.farmId end
+    if g_localPlayer ~= nil and g_localPlayer.farmId ~= nil then return g_localPlayer.farmId end
+    return m.playerFarmId
+end
+
+-- Owner farm id of a placeable (getOwnerFarmId method or the field), or nil.
+function SmartDistribution._ownerFarmId(p)
+    if p == nil then return nil end
+    if p.getOwnerFarmId ~= nil then local ok, f = pcall(p.getOwnerFarmId, p); if ok and f ~= nil then return f end end
+    return p.ownerFarmId
+end
+
+function SmartDistribution._ftTitle(ft)
+    if g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeByIndex ~= nil then
+        local def = g_fillTypeManager:getFillTypeByIndex(ft)
+        if def ~= nil and def.title ~= nil then return def.title end
+    end
+    return tostring(ft)
+end
+
+-- Products a building supports: inputs (can consume/receive) and outputs (can
+-- produce/provide). Productions use their input/output fill-type sets; storages
+-- (silos / pits / husbandry) list what they can hold as BOTH (source + sink).
+function SmartDistribution.assetProducts(p)
+    local inputs, outputs, seenIn, seenOut = {}, {}, {}, {}
+    local function addIn(ft)  if ft ~= nil and not seenIn[ft]  then seenIn[ft]  = true; inputs[#inputs + 1]   = ft end end
+    local function addOut(ft) if ft ~= nil and not seenOut[ft] then seenOut[ft] = true; outputs[#outputs + 1] = ft end end
+
+    local pp = getProductionPoint(p)
+    if pp ~= nil then
+        if type(pp.inputFillTypeIds)  == "table" then for ft in pairs(pp.inputFillTypeIds)  do addIn(ft)  end end
+        if type(pp.outputFillTypeIds) == "table" then for ft in pairs(pp.outputFillTypeIds) do addOut(ft) end end
+        if #inputs == 0 or #outputs == 0 then
+            for _, prod in ipairs(pp.productions or {}) do
+                for _, i in ipairs(prod.inputs  or {}) do addIn(i.type)  end
+                for _, o in ipairs(prod.outputs or {}) do addOut(o.type) end
+            end
+        end
+    end
+    for _, s in ipairs(getAllStorages(p)) do
+        for ft in pairs(storageFillTypes(s)) do addIn(ft); addOut(ft) end
+    end
+
+    local function byName(a, b) return tostring(SmartDistribution._ftTitle(a)) < tostring(SmartDistribution._ftTitle(b)) end
+    table.sort(inputs, byName); table.sort(outputs, byName)
+    return { inputs = inputs, outputs = outputs }
+end
+
+-- Every owned placeable Distribution Redux treats as part of the network, with the
+-- products it supports. Sorted by name. Used by Production Redux's Control tab.
+function SmartDistribution.enrolledAssets()
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return out end
+    local myFarm = SmartDistribution._playerFarmId()
+    for _, p in ipairs(ps.placeables) do
+        -- owned by the player only (strict: unowned / other-farm placeables are excluded)
+        if p.rootNode ~= nil and isEnrolled(p)
+           and (myFarm == nil or SmartDistribution._ownerFarmId(p) == myFarm) then
+            local prod = SmartDistribution.assetProducts(p)
+            if #prod.inputs > 0 or #prod.outputs > 0 then
+                out[#out + 1] = {
+                    uid = getUid(p), name = placeableName(p), icon = SmartDistribution.assetIconFile(p),
+                    origName = SmartDistribution.placeableRenamedFrom(p),
+                    inputs = prod.inputs, outputs = prod.outputs,
+                }
+            end
+        end
+    end
+    table.sort(out, function(a, b) return tostring(a.name) < tostring(b.name) end)
+    return out
+end
+
+-- Can placeable p provide ft into the network (mode/enrolment gate + physically holds/outputs it)?
+function SmartDistribution.canProvide(p, ft)
+    if not canSourceDistribute(p, ft) then return false end
+    local pp = getProductionPoint(p)
+    if pp ~= nil and type(pp.outputFillTypeIds) == "table" and pp.outputFillTypeIds[ft] then return true end
+    for _, s in ipairs(getRawStorages(p, ft)) do if storageSupports(s, ft) then return true end end
+    if isPalletSpawnerAsset(p) and palletFillLevel ~= nil and palletFillLevel(p, ft) > 0 then return true end
+    if p.spec_objectStorage ~= nil then
+        if p.getObjectStorageSupportsFillType == nil then return false end
+        local ok, sup = pcall(p.getObjectStorageSupportsFillType, p, ft)
+        if ok and sup and shedStoredLiters ~= nil and shedStoredLiters(p, ft) > 0 then return true end
+    end
+    return false
+end
+
+-- All network sources that could feed ft to the consumer (uid), each flagged blocked
+-- per the current control state. consumerUid is excluded from its own source list.
+function SmartDistribution.sourcesFor(consumerUid, ft)
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return out end
+    local myFarm = SmartDistribution._playerFarmId()
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil then
+            local of = SmartDistribution._ownerFarmId(p)
+            local u = getUid(p)
+            -- same farm-scoping the engine uses: neutral (nil owner) allowed, other farms excluded
+            if u ~= consumerUid and (myFarm == nil or of == nil or of == myFarm)
+               and SmartDistribution.canProvide(p, ft) then
+                out[#out + 1] = {
+                    uid = u, name = placeableName(p), icon = SmartDistribution.assetIconFile(p),
+                    blocked = SmartDistribution.isSourceBlocked(consumerUid, ft, u),
+                }
+            end
+        end
+    end
+    table.sort(out, function(a, b) return tostring(a.name) < tostring(b.name) end)
+    return out
+end
+
+-- ---- Advanced window data --------------------------------------------------
+-- Destinations only make sense for a mode that actually ROUTES the product somewhere. Sell, Market
+-- Supply, Hold and Hold Internal send it nowhere on the farm (it is sold, or it just sits there), so
+-- they have no destinations and the window must not imply otherwise.
+--   showDemands -> the buildings that consume it (rank via the priority order; can be blocked)
+--   showStores  -> the stores the player picks for Store To (rank = fill order; "listed" = chosen)
+-- The caller decides which apply, because a production's mode lives in the parallel virtual system.
+-- Does this MODE route product to demands on the farm? (There is no existing mode-only predicate:
+-- canSourceDistribute() takes a placeable + fill type, not a mode, so this tests the mode directly.)
+function SmartDistribution.modeDistributes(m)
+    return m == MODE.DISTRIBUTE
+        or m == MODE.DISTRIBUTE_SELL
+        or m == MODE.DISTRIBUTE_STORE
+        or m == MODE.DISTRIBUTE_MARKET
+        or m == MODE.DISTRIBUTE_STORE_TO
+end
+
+-- Destinations of one kind for (asset, ft), for the Advanced window. Called once per section, so exactly
+-- one of showDemands/showStores/showMarkets is set. Each row carries rank/listed/blocked + link status.
+--   DEMAND -> buildings that consume ft (rank = priority order; can be blocked)
+--   STORE  -> silos/sheds/heaps that hold ft (rank = Store To order; "listed" = picked)
+--   MARKET -> markets/kiosks that buy ft   (rank = market order;   "listed" = picked)
+function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores, showMarkets)
+    local out = {}
+    if asset == nil or ft == nil then return out end
+    if not showDemands and not showStores and not showMarkets then return out end
+    local srcUid = getUid(asset)
+    if srcUid == nil or asset.rootNode == nil then return out end
+    local x, _, z = getWorldTranslation(asset.rootNode)
+
+    -- MARKETS come from marketsFor (sinksFor never returns markets -- a market isn't a network sink).
+    if showMarkets then
+        local farmId = SmartDistribution._ownerFarmId ~= nil and SmartDistribution._ownerFarmId(asset) or asset.ownerFarmId
+        for _, mm in ipairs(SmartDistribution.marketsFor(farmId, ft, x, z, resolveReach(asset))) do
+            local muid = getUid(mm.p)
+            local rank = SmartDistribution.destRank(srcUid, ft, muid)
+            local blk  = SmartDistribution.isDestBlocked(srcUid, ft, muid)
+            local status
+            if blk then status = SmartDistribution.LINK.BLOCKED
+            elseif SmartDistribution.fedBy(muid, ft, srcUid) > 0 then status = SmartDistribution.LINK.ACTIVE
+            else status = SmartDistribution.LINK.IDLE end
+            out[#out + 1] = {
+                uid = muid, name = placeableName(mm.p), kind = "MARKET",
+                dist = math.sqrt(mm.d2), rank = rank, listed = rank ~= nil, blocked = blk,
+                status = status, statusLabel = (SmartDistribution.LINK_LABEL or {})[status] or "",
+            }
+        end
+        table.sort(out, function(a, b)
+            if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+            if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+            return a.dist < b.dist
+        end)
+        return out
+    end
+
+    -- STORES: build directly from every form-compatible store (sinksFor is for network demand and does
+    -- not return sheds). This mirrors the engine's Store To validity exactly, so the pickable list and
+    -- what actually gets pushed always agree.
+    if showStores then
+        local form = SmartDistribution.sourceHoldForm ~= nil and SmartDistribution.sourceHoldForm(asset, ft) or nil
+        if form == nil then
+            if asset.spec_objectStorage ~= nil then form = "PALLET" else form = "BULK" end
+        end
+        if SmartDistribution._storeToDebug then SmartDistribution.log("advstore: %s [%s] form=%s", placeableName(asset), fillTypeName(ft), tostring(form)) end
+        local myFarm = SmartDistribution._ownerFarmId(asset)
+        local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+        for _, p in ipairs(ps ~= nil and ps.placeables or {}) do
+            if p ~= asset and p.rootNode ~= nil then
+                local en = isEnrolled(p)
+                local sameFarm = SmartDistribution._ownerFarmId(p) == myFarm
+                local valid = SmartDistribution.storeToTargetValid ~= nil and SmartDistribution.storeToTargetValid(form, p, ft)
+                if SmartDistribution._storeToDebug and (getAssetClass(p) == "SHED" or getAssetClass(p) == "SILO" or getAssetClass(p) == "HEAP") then
+                    SmartDistribution.log("advstore:   cand %s cls=%s enrolled=%s sameFarm=%s valid=%s",
+                        placeableName(p), getAssetClass(p), tostring(en), tostring(sameFarm), tostring(valid))
+                end
+                if en and sameFarm and valid then
+                local puid = getUid(p)
+                local tx, _, tz = getWorldTranslation(p.rootNode)
+                local rank = SmartDistribution.destRank(srcUid, ft, puid)
+                local blk  = SmartDistribution.isDestBlocked(srcUid, ft, puid)
+                local status
+                if blk then status = SmartDistribution.LINK.BLOCKED
+                elseif SmartDistribution.fedBy(puid, ft, srcUid) > 0 then status = SmartDistribution.LINK.ACTIVE
+                else status = SmartDistribution.LINK.IDLE end
+                out[#out + 1] = {
+                    uid = puid, name = placeableName(p), kind = "STORE",
+                    dist = math.sqrt((tx - x) ^ 2 + (tz - z) ^ 2),
+                    rank = rank, listed = rank ~= nil, blocked = blk,
+                    status = status, statusLabel = (SmartDistribution.LINK_LABEL or {})[status] or "",
+                }
+                end   -- if en and sameFarm and valid
+            end   -- if p ~= asset and rootNode
+        end
+        table.sort(out, function(a, b)
+            if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+            if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+            return a.dist < b.dist
+        end)
+        return out
+    end
+
+    -- DEMANDS: buildings that consume ft (from the network sink list).
+    for _, s in ipairs(SmartDistribution.sinksFor(srcUid, ft)) do
+        local p = SmartDistribution.placeableByUid(s.uid)
+        if p ~= nil and p.rootNode ~= nil then
+            local cls = getAssetClass(p)
+            local isStore = (cls == "SILO" or cls == "SHED" or cls == "HEAP")
+            if (not isStore) and showDemands then
+                local tx, _, tz = getWorldTranslation(p.rootNode)
+                local dist = math.sqrt((tx - x) ^ 2 + (tz - z) ^ 2)
+                local rank    = SmartDistribution.destRank(srcUid, ft, s.uid)
+                local blocked = SmartDistribution.isDestBlocked(srcUid, ft, s.uid)   -- this output blocks that demand
+                local status
+                if blocked then status = SmartDistribution.LINK.BLOCKED
+                elseif SmartDistribution.fedBy(s.uid, ft, srcUid) > 0 then status = SmartDistribution.LINK.ACTIVE
+                else status = SmartDistribution.LINK.IDLE end
+                out[#out + 1] = {
+                    uid = s.uid, name = s.name, icon = s.icon, kind = "DEMAND",
+                    dist = dist, rank = rank, listed = rank ~= nil, blocked = blocked,
+                    status = status, statusLabel = (SmartDistribution.LINK_LABEL or {})[status] or "",
+                }
+            end
+        end
+    end
+
+    -- ranked (in order) first, then nearest-first
+    table.sort(out, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return a.dist < b.dist
+    end)
+    return out
+end
+
+-- ---- input link status (shared by every building category) ------------------
+-- Public uid accessor: the UI holds placeables, the link API is keyed by uid.
+function SmartDistribution.assetUid(p)
+    return getUid(p)
+end
+
+-- The UI needs to say, for each input a building takes, whether distribution is currently feeding it,
+-- and the same for each individual source that could feed it. Three states, deliberately open for the
+-- planned player-blocking feature:
+--   ACTIVE  - the link is live AND product moved on the most recent pass
+--   IDLE    - the link is live but nothing moved (no demand, source empty, consumer full)
+--   BLOCKED - the player has blocked it (SmartDistribution.control.blocked; nothing sets this yet)
+-- Category-agnostic on purpose: silos, storages, productions, animal pens and markets all resolve the
+-- same way, and each category page just gates on whether it supports inputs at all.
+SmartDistribution.LINK = { ACTIVE = "ACTIVE", IDLE = "IDLE", BLOCKED = "BLOCKED" }
+SmartDistribution.LINK_LABEL = {
+    ACTIVE  = "Active (Receiving)",   -- product actually moved last pass
+    IDLE    = "Active (Idle)",        -- link live, nothing needed to move
+    BLOCKED = "Blocked",              -- player-blocked (future feature)
+}
+-- status colours (shared, so every category page reads identically): green = feeding, orange = live but
+-- nothing moving, red = blocked by the player.
+SmartDistribution.LINK_COLOR = {
+    ACTIVE  = { 0.45, 0.78, 0.13, 1 },   -- green
+    IDLE    = { 1.00, 0.55, 0.05, 1 },   -- orange
+    BLOCKED = { 0.86, 0.20, 0.18, 1 },   -- red
+}
+
+-- feed log from the most recent pass: _feed[consumerUid][ft][sourceUid] = litres moved.
+-- Rebuilt each pass (see beginFeedPass) so "Active" always means "on the last pass", not "ever".
+SmartDistribution._feed     = SmartDistribution._feed or {}
+SmartDistribution._feedPrev = SmartDistribution._feedPrev or {}
+
+-- called at the start of each pass: the pass being built becomes current, the previous one is what the
+-- UI reads (a pass in progress is incomplete, so reading it would flicker rows between Active and Idle).
+function SmartDistribution.beginFeedPass()
+    SmartDistribution._feedPrev = SmartDistribution._feed or {}
+    SmartDistribution._feed = {}
+end
+
+function SmartDistribution.recordFeed(consumer, ft, source, litres)
+    if consumer == nil or ft == nil or source == nil or (litres or 0) <= 0 then return end
+    local cu, su = getUid(consumer), getUid(source)
+    if cu == nil or su == nil then return end
+    local f = SmartDistribution._feed
+    f[cu] = f[cu] or {}
+    f[cu][ft] = f[cu][ft] or {}
+    f[cu][ft][su] = (f[cu][ft][su] or 0) + litres
+end
+
+-- litres a given source moved into a consumer for ft on the last completed pass (0 if none)
+function SmartDistribution.fedBy(consumerUid, ft, sourceUid)
+    local f = SmartDistribution._feedPrev
+    local c = f ~= nil and f[consumerUid] or nil
+    local t = c ~= nil and c[ft] or nil
+    return (t ~= nil and t[sourceUid]) or 0
+end
+
+-- total litres a consumer received for ft on the last completed pass
+function SmartDistribution.fedTotal(consumerUid, ft)
+    local f = SmartDistribution._feedPrev
+    local c = f ~= nil and f[consumerUid] or nil
+    local t = c ~= nil and c[ft] or nil
+    local sum = 0
+    if t ~= nil then for _, v in pairs(t) do sum = sum + v end end
+    return sum
+end
+
+-- status of ONE source's link into a consumer for ft
+function SmartDistribution.sourceLinkStatus(consumerUid, ft, sourceUid)
+    local L = SmartDistribution.LINK
+    if SmartDistribution.isSourceBlocked(consumerUid, ft, sourceUid) then return L.BLOCKED end
+    if SmartDistribution.fedBy(consumerUid, ft, sourceUid) > 0 then return L.ACTIVE end
+    return L.IDLE
+end
+
+-- overall status of an INPUT row on a building page: Active if anything fed it last pass; Blocked only
+-- when it has possible sources and every one of them is blocked; otherwise Idle.
+function SmartDistribution.inputLinkStatus(consumerUid, ft)
+    local L = SmartDistribution.LINK
+    if consumerUid == nil or ft == nil then return L.IDLE end
+    if SmartDistribution.fedTotal(consumerUid, ft) > 0 then return L.ACTIVE end
+    local srcs = SmartDistribution.sourcesFor(consumerUid, ft)
+    if #srcs > 0 then
+        local allBlocked = true
+        for _, s in ipairs(srcs) do
+            if not s.blocked then allBlocked = false; break end
+        end
+        if allBlocked then return L.BLOCKED end
+    end
+    return L.IDLE
+end
+
+-- The sources that could fulfil an input, each with its link status. This is what the (future) input
+-- drill-down shows; sourcesFor() already handles farm scoping + the blocked flag.
+function SmartDistribution.inputSources(consumerUid, ft)
+    local out = SmartDistribution.sourcesFor(consumerUid, ft)
+    for _, s in ipairs(out) do
+        s.status = SmartDistribution.sourceLinkStatus(consumerUid, ft, s.uid)
+        s.label  = SmartDistribution.LINK_LABEL[s.status]
+        s.fed    = SmartDistribution.fedBy(consumerUid, ft, s.uid)
+    end
+    return out
+end
+
+-- Can placeable p accept ft as a sink (production input / storage sink / pallet shed)?
+-- Returns supports(bool), active(bool) -- active means a running production consumes ft.
+function SmartDistribution.canAccept(p, ft)
+    local pp = getProductionPoint(p)
+    if pp ~= nil then
+        local supports = type(pp.inputFillTypeIds) == "table" and pp.inputFillTypeIds[ft] == true
+        if supports then
+            return true, (getActiveHourlyConsumption(pp, ft) > 0)
+        end
+    end
+    if (p.spec_silo ~= nil or isManurePit(p)) then
+        for _, s in ipairs(getAllStorages(p)) do if storageSupports(s, ft) then return true, true end end
+    end
+    if p.spec_objectStorage ~= nil and isPalletShedSink(p, ft) then return true, true end
+    return false, false
+end
+
+-- All network sinks that can accept ft from the source (uid), with the source's current
+-- priority rank for each (0 = unranked). Ordered ranked-first (by rank), then by name.
+function SmartDistribution.sinksFor(sourceUid, ft)
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return out end
+    local pr = SmartDistribution.control.priority
+    local pf = pr ~= nil and pr[sourceUid] or nil
+    local list = pf ~= nil and pf[ft] or nil
+    local rank = {}
+    if list ~= nil then for i = 1, #list do rank[list[i]] = i end end
+    local myFarm = SmartDistribution._playerFarmId()
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil and isEnrolled(p) then
+            local of = SmartDistribution._ownerFarmId(p)
+            local u = getUid(p)
+            if u ~= sourceUid and (myFarm == nil or of == nil or of == myFarm) then
+                local supports, active = SmartDistribution.canAccept(p, ft)
+                if supports then
+                    out[#out + 1] = {
+                        uid = u, name = placeableName(p), icon = SmartDistribution.assetIconFile(p),
+                        active = active, rank = rank[u] or 0,
+                    }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        local ar = a.rank == 0 and math.huge or a.rank
+        local br = b.rank == 0 and math.huge or b.rank
+        if ar ~= br then return ar < br end
+        return tostring(a.name) < tostring(b.name)
+    end)
+    return out
+end
+
+-- ---- dev console commands: direct registration -----------------------------
+-- The earlier registration block was not taking effect (sdManureProbe reported "command not found"),
+-- so register here at file scope, after every cmd* function above is defined. Guarded so it is a no-op
+-- if the console is unavailable or the command was already registered.
+if addConsoleCommand ~= nil then
+    pcall(addConsoleCommand, "sdManureProbe",
+        "Dump manure heaps/extensions + barn manure/slurry storage [dev]",
+        "cmdManureProbe", SmartDistribution)
+    print("[SmartDistribution] sdManureProbe registered")
+else
+    print("[SmartDistribution] addConsoleCommand unavailable -- console commands disabled by the game")
+end
+
+-- ---- pooled input share: a blocked product gives its share back -------------
+-- A pooled store splits its capacity evenly across the products sharing it, so 250,000 L across 2 products
+-- defaults to 50% (125,000 L) each.  Once a product is BLOCKED it needs no reservation at all, and its
+-- share should return to the rest instead of sitting idle: block one of three and the remaining two should
+-- read 50% each, not 33%.  These wrappers apply that to the DEFAULT share and to the headroom test.  An
+-- explicitly set percentage is the player's and is never overwritten -- only the default moves.
+if type(SmartDistribution.defaultInputCapPct) == "function" then
+    SmartDistribution._origDefaultInputCapPct = SmartDistribution.defaultInputCapPct
+    SmartDistribution.defaultInputCapPct = function(p, ft)
+        local pool = (SmartDistribution.pooledInputCapacity ~= nil)
+            and SmartDistribution.pooledInputCapacity(p) or nil
+        if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
+           and SmartDistribution.assetUid ~= nil then
+            -- isInputBlocked is keyed by RECEIVER UID (control.inputBlock[rcvUid][ft]), not the placeable
+            local uid = SmartDistribution.assetUid(p)
+            -- only products that actually SHARE the pool get the redistributed split; one with its own
+            -- individual tank (straw / water beside a food pool) is unaffected by what the pool does.
+            local inPool, active = false, 0
+            for _, f in ipairs(pool.fts) do
+                if f == ft then inPool = true end
+                if uid ~= nil and not SmartDistribution.isInputBlocked(uid, f) then active = active + 1 end
+            end
+            if uid ~= nil and inPool and active > 0 then
+                return math.floor(100 / active + 0.5)
+            end
+        end
+        return SmartDistribution._origDefaultInputCapPct(p, ft)
+    end
+end
+
+-- Headroom for raising a pooled product's share is 100 minus what the OTHER products hold.  A blocked
+-- product holds nothing, so the share it used to reserve becomes available to the rest.
+if type(SmartDistribution.inputCapPctHeadroom) == "function" then
+    SmartDistribution._origInputCapPctHeadroom = SmartDistribution.inputCapPctHeadroom
+    SmartDistribution.inputCapPctHeadroom = function(p, ft)
+        local pool = (SmartDistribution.pooledInputCapacity ~= nil)
+            and SmartDistribution.pooledInputCapacity(p) or nil
+        if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
+           and SmartDistribution.inputCapPct ~= nil and SmartDistribution.assetUid ~= nil then
+            local uid = SmartDistribution.assetUid(p)
+            local inPool = false
+            for _, f in ipairs(pool.fts) do
+                if f == ft then inPool = true; break end
+            end
+            if uid ~= nil and inPool then
+                local used = 0
+                for _, f in ipairs(pool.fts) do
+                    if f ~= ft and not SmartDistribution.isInputBlocked(uid, f) then
+                        used = used + (SmartDistribution.inputCapPct(p, f) or 0)
+                    end
+                end
+                return math.max(0, 100 - used)
+            end
+        end
+        return SmartDistribution._origInputCapPctHeadroom(p, ft)
+    end
+end
+
+-- ---- blocking a pooled input hands its share back ---------------------------
+-- Blocking or unblocking changes how the pool should divide, but a product carrying an EXPLICIT
+-- percentage ignores the default and so never rescales -- it stays pinned at whatever it was last set to
+-- while every other product redistributes around it.  Clearing the stored percentages across that pool on
+-- each block change returns them all to the automatic share, which is the behaviour the split is meant to
+-- have.  Wrapped on setInputBlocked rather than done in the dialog so it runs identically when the change
+-- arrives as a DistributionControlEvent from another player.
+-- Only a product that actually SHARES the pool triggers this: blocking an individual tank (straw / water
+-- beside a food pool) leaves the pool's percentages alone.
+if type(SmartDistribution.setInputBlocked) == "function" then
+    SmartDistribution._origSetInputBlocked = SmartDistribution.setInputBlocked
+    SmartDistribution.setInputBlocked = function(rcvUid, ft, flag, ...)
+        local res = SmartDistribution._origSetInputBlocked(rcvUid, ft, flag, ...)
+        if rcvUid ~= nil and ft ~= nil and SmartDistribution.clearInputCapPct ~= nil
+           and SmartDistribution.pooledInputCapacity ~= nil and SmartDistribution.assetUid ~= nil then
+            -- setInputBlocked is keyed by uid, pooledInputCapacity wants the placeable
+            local owner = nil
+            local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+            if ps ~= nil and ps.placeables ~= nil then
+                for _, cand in ipairs(ps.placeables) do
+                    if SmartDistribution.assetUid(cand) == rcvUid then owner = cand; break end
+                end
+            end
+            if owner ~= nil then
+                local pool = SmartDistribution.pooledInputCapacity(owner)
+                if pool ~= nil and type(pool.fts) == "table" then
+                    local shares = false
+                    for _, f in ipairs(pool.fts) do
+                        if f == ft then shares = true; break end
+                    end
+                    if shares then
+                        for _, f in ipairs(pool.fts) do
+                            pcall(SmartDistribution.clearInputCapPct, rcvUid, f)
+                        end
+                    end
+                end
+            end
+        end
+        return res
+    end
+end

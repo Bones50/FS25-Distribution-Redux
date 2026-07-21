@@ -42,6 +42,14 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "On", "Off" },
     },
+    includeMarkets = {
+        order   = 1.7,
+        label   = "Markets & Kiosks",
+        tooltip = "Include markets and kiosks in the distribution network. Off removes them: farm-owned products are no longer routed to them for selling, and the Markets tab is hidden.",
+        default = 1,                                            -- On
+        values  = { true, false },
+        strings = { "On", "Off" },
+    },
     radius = {
         order   = 2,
         label   = "Proximity radius",
@@ -187,6 +195,7 @@ function DistributionSettings.apply()
     local g = SD.settings.global
     g.includeHusbandry  = DistributionSettings.includeHusbandry
     g.includeSilosSheds = DistributionSettings.includeSilosSheds
+    g.includeMarkets    = DistributionSettings.includeMarkets
     g.radius      = DistributionSettings.radius
     g.bufferHours = DistributionSettings.bufferHours
     g.sellEnabled = DistributionSettings.sellEnabled
@@ -200,8 +209,8 @@ function DistributionSettings.apply()
     g.bestPriceDefault = DistributionSettings.bestPriceDefault
     SD.debug = DistributionSettings.debugEnabled
     if SD.debug then
-        print(string.format("[DistributionSettings] applied scope=%s husbandry=%s silos/sheds=%s radius=%d buffer=%dh selling=%s cost=%s($%d/%dm)",
-            tostring(DistributionSettings.scope), tostring(g.includeHusbandry), tostring(g.includeSilosSheds), g.radius, g.bufferHours, tostring(g.sellEnabled),
+        print(string.format("[DistributionSettings] applied scope=%s husbandry=%s silos/sheds=%s markets=%s radius=%d buffer=%dh selling=%s cost=%s($%d/%dm)",
+            tostring(DistributionSettings.scope), tostring(g.includeHusbandry), tostring(g.includeSilosSheds), tostring(g.includeMarkets), g.radius, g.bufferHours, tostring(g.sellEnabled),
             tostring(g.distCostEnabled), g.distCostBase, g.distCostThreshold))
     end
 end
@@ -221,6 +230,7 @@ function DistributionSettings.save()
     setXMLString(xml, "distributionRedux.settings#scope",       tostring(DistributionSettings.scope))
     setXMLBool(xml,   "distributionRedux.settings#includeHusbandry",  DistributionSettings.includeHusbandry)
     setXMLBool(xml,   "distributionRedux.settings#includeSilosSheds", DistributionSettings.includeSilosSheds)
+    setXMLBool(xml,   "distributionRedux.settings#includeMarkets",    DistributionSettings.includeMarkets)
     setXMLInt(xml,    "distributionRedux.settings#radius",      DistributionSettings.radius)
     setXMLInt(xml,    "distributionRedux.settings#bufferHours", DistributionSettings.bufferHours)
     setXMLBool(xml,   "distributionRedux.settings#sellEnabled", DistributionSettings.sellEnabled)
@@ -254,6 +264,9 @@ function DistributionSettings.load()
 
     local incSilos = getXMLBool(xml, "distributionRedux.settings#includeSilosSheds")
     if incSilos ~= nil then DistributionSettings.includeSilosSheds = incSilos end
+
+    local incMarkets = getXMLBool(xml, "distributionRedux.settings#includeMarkets")
+    if incMarkets ~= nil then DistributionSettings.includeMarkets = incMarkets end
 
     local radius = getXMLInt(xml, "distributionRedux.settings#radius")
     if radius ~= nil and isAllowed("radius", radius) then DistributionSettings.radius = radius end
@@ -378,6 +391,81 @@ function DistributionSettingsEvent.sendCurrent()
     end
 end
 
+-- Event: one distribution-control edit (input block / output priority / Store To target). Same shape as
+-- the settings event -- a client sends it to the server, the server applies + rebroadcasts, everyone
+-- converges. Any farm member may edit, matching how the mode events already work.
+DistributionControlEvent = {}
+local DistributionControlEvent_mt = Class(DistributionControlEvent, Event)
+InitEventClass(DistributionControlEvent, "DistributionControlEvent")
+DistributionControlEvent.ACT_NUM_BITS = 3   -- up to 7 actions; 4 used
+-- Unified output->destination control. For EVERY action a=source output, b=destination (demand,
+-- store or market -- they are all the same edge now). No per-kind actions any more.
+DistributionControlEvent.ACT = {
+    BLOCK       = 1,   -- a=source, b=dest, flag=blocked
+    PRIO_TOGGLE = 2,   -- a=source, b=dest
+    PRIO_MOVE   = 3,   -- a=source, b=dest, delta
+    PRIO_CLEAR  = 4,   -- a=source
+    INPUT_BLOCK = 5,   -- a=receiver, flag=blocked (receiver-side input block)
+    INPUT_CAP   = 6,   -- a=receiver, delta=pct 0..100 (receiver-side per-product max %)
+}
+
+function DistributionControlEvent.emptyNew() return Event.new(DistributionControlEvent_mt) end
+function DistributionControlEvent.new(act, a, ft, b, delta, flag)
+    local self = DistributionControlEvent.emptyNew()
+    self.act, self.a, self.ft, self.b = act, a or "", ft or 0, b or ""
+    self.delta, self.flag = delta or 0, flag and true or false
+    return self
+end
+function DistributionControlEvent:writeStream(streamId, connection)
+    streamWriteUIntN(streamId, self.act, DistributionControlEvent.ACT_NUM_BITS)
+    streamWriteString(streamId, self.a)
+    streamWriteString(streamId, self.b)
+    streamWriteUIntN(streamId, self.ft, FillTypeManager.SEND_NUM_BITS)
+    streamWriteInt8(streamId, self.delta)
+    streamWriteBool(streamId, self.flag)
+end
+function DistributionControlEvent:readStream(streamId, connection)
+    self.act   = streamReadUIntN(streamId, DistributionControlEvent.ACT_NUM_BITS)
+    self.a     = streamReadString(streamId)
+    self.b     = streamReadString(streamId)
+    self.ft    = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
+    self.delta = streamReadInt8(streamId)
+    self.flag  = streamReadBool(streamId)
+    self:run(connection)
+end
+function DistributionControlEvent:run(connection)
+    if not connection:getIsServer() then
+        g_server:broadcastEvent(self, false, connection)      -- server relays to the other clients
+    end
+    DistributionControlEvent.applyLocal(self.act, self.a, self.ft, self.b, self.delta, self.flag)
+end
+
+-- apply on this machine only (no echo) -- used by run() and by the local sender
+function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
+    local SD = SmartDistribution
+    if SD == nil then return end
+    local A = DistributionControlEvent.ACT
+    if     act == A.BLOCK       then SD.setDestBlocked(a, ft, b, flag)
+    elseif act == A.PRIO_TOGGLE then SD.toggleDestPriority(a, ft, b)
+    elseif act == A.PRIO_MOVE   then SD.moveDestPriority(a, ft, b, delta)
+    elseif act == A.PRIO_CLEAR  then SD.clearDestPriority(a, ft)
+    elseif act == A.INPUT_BLOCK then SD.setInputBlocked(a, ft, flag)
+    elseif act == A.INPUT_CAP   then SD.setInputCapPct(a, ft, delta)
+    end
+end
+
+-- The UI calls this. Applies locally straight away (so the menu responds), then syncs: the host
+-- broadcasts, a client asks the server (which applies + relays to everyone else).
+function DistributionControlEvent.send(act, a, ft, b, delta, flag)
+    DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
+    local e = DistributionControlEvent.new(act, a, ft, b, delta, flag)
+    if g_server ~= nil then
+        g_server:broadcastEvent(e)
+    elseif g_client ~= nil then
+        g_client:getServerConnection():sendEvent(e)
+    end
+end
+
 -- Event: a joining client asks the server for the current state; the server replies (to that one
 -- connection) with the settings event + every per-asset override, so the client's display and
 -- behaviour match the host immediately instead of showing its own local defaults.
@@ -409,6 +497,42 @@ function DistributionStateRequestEvent:run(connection)
         SmartDistribution.forEachAssetSellTiming(function(placeable, ft, value) -- per-asset sell-timing
             connection:sendEvent(DistributionSellTimingEvent.new(placeable, ft, value))
         end)
+    end
+    if SmartDistribution ~= nil and SmartDistribution.forEachMarketTiming ~= nil
+       and DistributionMarketTimingEvent ~= nil then
+        SmartDistribution.forEachMarketTiming(function(placeable, ft, mode) -- per-(market, ft) sell mode
+            connection:sendEvent(DistributionMarketTimingEvent.new(placeable, ft, mode))
+        end)
+    end
+    -- distribution control: output->destination blocks + destination priority (source-keyed, DR-owned).
+    -- Replayed as individual edits so the joining client rebuilds the same two tables the server holds.
+    if SmartDistribution ~= nil and SmartDistribution.control ~= nil and DistributionControlEvent ~= nil then
+        local A = DistributionControlEvent.ACT
+        local C = SmartDistribution.control
+        for srcUid, byFt in pairs(C.blocked or {}) do
+            for ft, dests in pairs(byFt) do
+                for destUid in pairs(dests) do
+                    connection:sendEvent(DistributionControlEvent.new(A.BLOCK, srcUid, ft, destUid, 0, true))
+                end
+            end
+        end
+        for srcUid, byFt in pairs(C.priority or {}) do
+            for ft, list in pairs(byFt) do
+                for _, destUid in ipairs(list) do   -- appended in rank order, so the order is preserved
+                    connection:sendEvent(DistributionControlEvent.new(A.PRIO_TOGGLE, srcUid, ft, destUid, 0, false))
+                end
+            end
+        end
+        for rcvUid, byFt in pairs(C.inputBlock or {}) do   -- receiver-side input blocks
+            for ft, on in pairs(byFt) do
+                if on then connection:sendEvent(DistributionControlEvent.new(A.INPUT_BLOCK, rcvUid, ft, "", 0, true)) end
+            end
+        end
+        for rcvUid, byFt in pairs(C.inputCapPct or {}) do   -- receiver-side per-product max %
+            for ft, pct in pairs(byFt) do
+                if type(pct) == "number" then connection:sendEvent(DistributionControlEvent.new(A.INPUT_CAP, rcvUid, ft, "", pct, false)) end
+            end
+        end
     end
     if DistributionStatsEvent ~= nil and DistributionStatsEvent.broadcast ~= nil then
         DistributionStatsEvent.broadcast(connection)                            -- monthly /mo stats for the joining client

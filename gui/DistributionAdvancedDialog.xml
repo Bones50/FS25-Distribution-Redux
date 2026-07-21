@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Distribution Redux: Advanced window, scoped to ONE selected output.
+     Two lists: DEMANDS (left) and STORAGE-or-MARKETS (right). Selection is
+     mutually exclusive across them (handled in Lua), so one row is highlighted
+     at a time and the buttons act on that single selection.
+
+     LAYOUT NOTE: the SDList profile is anchorStretchingYLeft + pivotTopLeft, so
+     list elements are positioned from the BOX'S LEFT EDGE with POSITIVE X. Only the
+     centre-anchored Text elements (title/subtitle) sit at x=0. Box is 1400x780.
+     Buttons must use profile "buttonOK" (capital K); the lowercase spelling renders as a white bar. -->
+<GUI name="DistributionAdvancedDialog" onOpen="onOpen" onClose="onClose">
+    <GuiElement type="empty" profile="newLayer" />
+    <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
+
+    <GuiElement profile="SDAdvDialogBox" id="dialogElement">
+        <ThreePartBitmap profile="fs25_dialogBgMiddleSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgTopSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgBottom" />
+
+        <GuiElement profile="fs25_dialogContentContainer">
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="Advanced" position="0px -30px" />
+            <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""        position="0px -78px" />
+
+            <!-- LEFT: demands -->
+            <Bitmap profile="SDList" position="40px -122px" size="640px 34px">
+                <Text profile="SDHeaderLeft" position="12px 0px"  text="DEMANDS" />
+                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="DISTANCE" />
+                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="ORDER" />
+                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="STATUS" />
+                <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+            </Bitmap>
+            <GuiElement profile="SDList" position="40px -160px" size="640px 480px">
+                <SmoothList profile="SDList" id="demandList" position="0px 0px" size="640px 480px"
+                            onSelectionChanged="onListSelectionChanged">
+                    <ListItem profile="SDListItem" name="rowTemplate" size="640px 46px" onClick="onClickDemandRow">
+                        <Text profile="SDRowCell" position="12px 0px"  size="310px 46px" textSize="17px" name="name" />
+                        <Text profile="SDRowCell" position="330px 0px" size="110px 46px" textSize="16px" name="dist" />
+                        <Text profile="SDRowCell" position="440px 0px" size="70px 46px"  textSize="16px" name="rank" />
+                        <Text profile="SDRowCell" position="520px 0px" size="200px 46px" textSize="16px" name="status" />
+                    </ListItem>
+                </SmoothList>
+            </GuiElement>
+
+            <!-- RIGHT: storage or markets (header text set in Lua) -->
+            <Bitmap profile="SDList" position="720px -122px" size="640px 34px">
+                <Text profile="SDHeaderLeft" position="12px 0px"  id="rightHeaderElement" text="STORAGE" />
+                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="DISTANCE" />
+                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="ORDER" />
+                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="STATUS" />
+                <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+            </Bitmap>
+            <GuiElement profile="SDList" position="720px -160px" size="640px 480px">
+                <SmoothList profile="SDList" id="rightList" position="0px 0px" size="640px 480px"
+                            onSelectionChanged="onListSelectionChanged">
+                    <ListItem profile="SDListItem" name="rowTemplate" size="640px 46px" onClick="onClickRightRow">
+                        <Text profile="SDRowCell" position="12px 0px"  size="310px 46px" textSize="17px" name="name" />
+                        <Text profile="SDRowCell" position="330px 0px" size="110px 46px" textSize="16px" name="dist" />
+                        <Text profile="SDRowCell" position="440px 0px" size="70px 46px"  textSize="16px" name="rank" />
+                        <Text profile="SDRowCell" position="520px 0px" size="200px 46px" textSize="16px" name="status" />
+                    </ListItem>
+                </SmoothList>
+            </GuiElement>
+        </GuiElement>
+
+        <!-- action buttons -->
+        <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
+            <Button profile="buttonOK"   text="Priority Up"   onClick="onMoveUp"    id="upButton"     inputActionName="MENU_EXTRA_1" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Priority Down" onClick="onMoveDown"  id="downButton"   inputActionName="MENU_EXTRA_2" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Toggle"        onClick="onToggle"    id="toggleButton" inputActionName="MENU_ACCEPT" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Clear"         onClick="onClear"     id="clearButton"  inputActionName="MENU_ACTIVATE" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="Block All"     onClick="onToggleAll" id="toggleAllButton" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonBack" text="Close"         onClick="onClickBack" id="noButton" />
+        </BoxLayout>
+    </GuiElement>
+</GUI>

@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
-<GUI name="distributionStoragePage">
+<GUI name="distributionMarketsPage">
     <GuiElement profile="fs25_menuContainer">
         <GuiElement profile="fs25_menuHeaderPanel">
             <Bitmap profile="fs25_menuHeaderIconBg">
-                <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_options_gameSettings2"/>
+                <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_prices"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="Distribution - Storage"/>
+            <Text profile="fs25_menuHeaderTitle" text="Distribution - Markets"/>
         </GuiElement>
 
-        <!-- left: building list -->
+        <!-- left: market list -->
         <Bitmap profile="SDList" position="0px -46px" size="370px 40px">
-            <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="BUILDINGS" />
+            <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="MARKETS" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <SmoothList profile="SDList" id="assetList" position="0px -90px" size="370px 720px"
@@ -24,8 +24,8 @@
             </ListItem>
         </SmoothList>
 
-        <!-- right: INCOMING PRODUCTS (inputs). Same products the building can hold, with the Animal
-             Husbandry column set; rows are selectable, ready for the input drill-down. -->
+        <!-- right: INCOMING PRODUCTS (what the market receives). Animal Husbandry column set;
+             rows selectable, ready for the input drill-down. -->
         <Bitmap profile="SDList" position="390px -46px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="300px 40px" text="INCOMING PRODUCTS" />
             <Text profile="SDHeaderLeft" position="360px 0px" size="220px 40px" text="RECEIVED /mo" />
@@ -49,14 +49,13 @@
             </ThreePartBitmap>
         </GuiElement>
 
-        <!-- OUTGOING PRODUCTS (outputs; carries the mode) -->
+        <!-- OUTGOING PRODUCTS (what the market sells; carries the mode) -->
         <Bitmap profile="SDList" position="390px -430px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="196px 40px" text="OUTGOING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="244px 0px" size="128px 40px" text="HELD (L)" />
-            <Text profile="SDHeaderLeft" position="376px 0px" size="128px 40px" text="DISTR. /mo" />
-            <Text profile="SDHeaderLeft" position="508px 0px" size="128px 40px" text="SOLD /mo" />
-            <Text profile="SDHeaderLeft" position="640px 0px" size="128px 40px" text="STORED /mo" />
-            <Text profile="SDHeaderLeft" position="772px 0px" size="318px 40px" text="OUTPUT TYPE" />
+            <Text profile="SDHeaderLeft" position="250px 0px" size="150px 40px" text="RECEIVED /mo" />
+            <Text profile="SDHeaderLeft" position="410px 0px" size="240px 40px" text="HELD (L)" />
+            <Text profile="SDHeaderLeft" position="660px 0px" size="230px 40px" text="SOLD /mo" />
+            <Text profile="SDHeaderLeft" position="900px 0px" size="190px 40px" text="MODE" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
@@ -66,11 +65,10 @@
                 <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickDetailRow">
                     <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell" position="44px 0px"  size="196px 52px" textSize="18px" name="fillName" />
-                    <Text profile="SDRowCell" position="244px 0px" size="128px 52px" textSize="18px" name="heldText" />
-                    <Text profile="SDRowCell" position="376px 0px" size="128px 52px" textSize="18px" name="distText" />
-                    <Text profile="SDRowCell" position="508px 0px" size="128px 52px" textSize="18px" name="soldText" />
-                    <Text profile="SDRowCell" position="640px 0px" size="128px 52px" textSize="18px" name="storedText" />
-                    <Text profile="SDRowCell" position="772px 0px" size="318px 52px" textSize="18px" name="modeText" />
+                    <Text profile="SDRowCell" position="250px 0px" size="150px 52px" textSize="18px" name="distText" />
+                    <Text profile="SDRowCell" position="410px 0px" size="240px 52px" textSize="18px" name="heldText" />
+                    <Text profile="SDRowCell" position="660px 0px" size="230px 52px" textSize="18px" name="soldText" />
+                    <Text profile="SDRowCell" position="900px 0px" size="190px 52px" textSize="18px" name="modeText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 336px" with="anchorTopRight">

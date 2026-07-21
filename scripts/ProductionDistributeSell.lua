@@ -42,7 +42,8 @@ local function dbg(fmt, ...)
     if SD.debug then print("[ProductionDistributeSell] " .. string.format(fmt, ...)) end
 end
 
-local KEEP, DISTRIBUTE, SELL, DISTSELL, DISTSTORE, STORE = 0, 1, 2, 3, 4, 5
+local KEEP, DISTRIBUTE, SELL, DISTSELL, DISTSTORE, STORE, TRANSFER, DISTMARKET = 0, 1, 2, 3, 4, 5, 6, 7
+local HOLD_INTERNAL_V = 8   -- Hold Internal: keep output as bulk (engine KEEP) but suppress the auto pallet-spawn
 
 local function vanillaModes()
     local OM = ProductionPoint.OUTPUT_MODE or {}
@@ -103,7 +104,10 @@ local function seedV(pp, ft)
     if raw == SD.MODE.DISTRIBUTE_STORE then return DISTSTORE end
     if raw == SD.MODE.DISTRIBUTE_SELL then return DISTSELL end
     if raw == SD.MODE.SELL then return SELL end
+    if raw == SD.MODE.TRANSFER_MARKET then return TRANSFER end
+    if raw == SD.MODE.DISTRIBUTE_MARKET then return DISTMARKET end
     if raw == SD.MODE.HOLD then return KEEP end
+    if raw == SD.MODE.HOLD_INTERNAL then return HOLD_INTERNAL_V end   -- distinct virtual state so the cycle/label can tell it from Hold Pallets
     if raw == SD.MODE.DISTRIBUTE then return DISTRIBUTE end
     -- no explicit choice (INHERIT): honour an engine flag the base game restored on load...
     local _, auto, sell = vanillaModes()
@@ -198,6 +202,15 @@ local function applyVLocal(pp, ft, v)
             origSet(pp, ft, sell, true)
             if pl ~= nil then SD.applyAssetMode(pl, ft, M.INHERIT, true) end
         end
+    elseif v == TRANSFER then
+        origSet(pp, ft, store, true)                            -- keep the output in pp.storage so marketTransferPhase can drain it to the market
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.TRANSFER_MARKET, true) end
+    elseif v == DISTMARKET then
+        origSet(pp, ft, store, true)                            -- keep output in pp.storage; the allocator distributes first, the remainder transfers
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_MARKET, true) end
+    elseif v == HOLD_INTERNAL_V then
+        origSet(pp, ft, store, true)                            -- engine KEEP so output accumulates as bulk; the updateProduction gate suppresses the auto pallet-spawn
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.HOLD_INTERNAL, true) end
     else
         local flag = (v == DISTRIBUTE) and auto or store
         origSet(pp, ft, flag, true)
@@ -226,7 +239,7 @@ local POME_mt = Class(ProductionOutputModeEvent, Event)
 -- REQUIRED: register the event's network id, else a client's send is silently undeliverable and
 -- only the host's local change would apply (the multiplayer mode-change bug).
 InitEventClass(ProductionOutputModeEvent, "ProductionOutputModeEvent")
-ProductionOutputModeEvent.VSTATE_NUM_BITS = 3   -- virtual states 0..4 fit in 3 bits
+ProductionOutputModeEvent.VSTATE_NUM_BITS = 4   -- virtual states 0..8 need 4 bits (Distribute+Market=7, Hold Internal=8)
 
 function ProductionOutputModeEvent.emptyNew()
     return Event.new(POME_mt)
@@ -273,14 +286,86 @@ function ProductionOutputModeEvent.sendEvent(placeable, fillTypeIndex, vstate)
     end
 end
 
+-- Spawn N pallets of a production output from its held stock. Spawning is server-authoritative, so a
+-- client just asks the server to do it; the pallets themselves sync via normal object replication, so we
+-- never relay this on. On host / single-player we spawn straight away.
+DistributionSpawnEvent = {}
+local DSE_mt = Class(DistributionSpawnEvent, Event)
+InitEventClass(DistributionSpawnEvent, "DistributionSpawnEvent")
+DistributionSpawnEvent.COUNT_NUM_BITS = 6   -- up to 63 per request (spawnPalletsFromProduction caps at 50)
+
+local function ppOf(placeable)
+    return (placeable ~= nil and placeable.spec_productionPoint ~= nil) and placeable.spec_productionPoint.productionPoint or nil
+end
+
+function DistributionSpawnEvent.emptyNew() return Event.new(DSE_mt) end
+function DistributionSpawnEvent.new(placeable, fillTypeIndex, count)
+    local self = DistributionSpawnEvent.emptyNew()
+    self.placeable = placeable
+    self.fillTypeIndex = fillTypeIndex
+    self.count = count or 1
+    return self
+end
+function DistributionSpawnEvent:writeStream(streamId, connection)
+    NetworkUtil.writeNodeObject(streamId, self.placeable)
+    streamWriteUIntN(streamId, self.fillTypeIndex, FillTypeManager.SEND_NUM_BITS)
+    streamWriteUIntN(streamId, self.count, DistributionSpawnEvent.COUNT_NUM_BITS)
+end
+function DistributionSpawnEvent:readStream(streamId, connection)
+    self.placeable = NetworkUtil.readNodeObject(streamId)
+    self.fillTypeIndex = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
+    self.count = streamReadUIntN(streamId, DistributionSpawnEvent.COUNT_NUM_BITS)
+    self:run(connection)
+end
+function DistributionSpawnEvent:run(connection)
+    if connection:getIsServer() then return end   -- only the server acts on this; ignore if a client somehow receives it
+    local pp = ppOf(self.placeable)
+    if pp ~= nil and SD.spawnPalletsFromProduction ~= nil then
+        SD.spawnPalletsFromProduction(pp, self.fillTypeIndex, self.count)
+    end
+end
+-- Host/SP: spawn directly. Client: ask the server. Returns true if the request was issued/handled.
+function DistributionSpawnEvent.request(placeable, fillTypeIndex, count)
+    if placeable == nil or fillTypeIndex == nil then return false end
+    if g_server ~= nil then
+        local pp = ppOf(placeable)
+        if pp ~= nil and SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count) end
+        return true
+    elseif g_client ~= nil then
+        g_client:getServerConnection():sendEvent(DistributionSpawnEvent.new(placeable, fillTypeIndex, count))
+        return true
+    end
+    return false
+end
+
 -- ---- shared cycle + public API --------------------------------------------
 -- One step of the 5-state virtual mode, applied locally and synced in MP. This
 -- is the SINGLE seam both the production-screen click (HOOK 1) and the Distribution
 -- dialog drive, so the two surfaces always agree.
 local VLABEL = { [KEEP]="Hold", [DISTRIBUTE]="Distribute", [SELL]="Sell",
-                 [DISTSELL]="Distribute + Sell", [DISTSTORE]="Distribute + Store", [STORE]="Store" }
+                 [DISTSELL]="Distribute + Sell", [DISTSTORE]="Distribute + Store", [STORE]="Store",
+                 [TRANSFER]="Market Supply", [DISTMARKET]="Distribute + Market Supply", [HOLD_INTERNAL_V]="Hold Internal" }
+-- Explicit cycle order (was a plain modulo): Hold -> [Hold Internal, pallet outputs only] -> Distribute ->
+-- Sell -> Distribute+Sell -> Distribute+Store -> Store -> [Market Supply, Distribute+Market] -> Hold.
+local function nextVirtual(v, hasMarket, hasPallets)
+    if v == KEEP            then return hasPallets and HOLD_INTERNAL_V or DISTRIBUTE end
+    if v == HOLD_INTERNAL_V then return DISTRIBUTE end
+    if v == DISTRIBUTE      then return SELL end
+    if v == SELL            then return DISTSELL end
+    if v == DISTSELL        then return DISTSTORE end
+    if v == DISTSTORE       then return STORE end
+    if v == STORE           then return hasMarket and TRANSFER or KEEP end
+    if v == TRANSFER        then return DISTMARKET end
+    if v == DISTMARKET      then return KEEP end
+    return KEEP
+end
 local function cycleVirtual(pp, ft)
-    local nv = (getV(pp, ft) + 1) % 6
+    local pl = placeableOf(pp)
+    -- market modes only when a market can actually take THIS product (a market that doesn't accept, say,
+    -- slurry is not an endpoint for it), not merely when some market is in range.
+    local hasMarket  = pl ~= nil and SD.hasMarketEndpoint ~= nil and SD.hasMarketEndpoint(pl, ft)
+    local hasPallets = pp.palletSpawner ~= nil                                            -- Hold Internal only where pallets auto-spawn
+    local nv = nextVirtual(getV(pp, ft), hasMarket, hasPallets)
     applyVLocal(pp, ft, nv)                              -- apply on this machine immediately
     if isMP() then                                      -- and sync the rest of the session
         ProductionOutputModeEvent.sendEvent(placeableOf(pp), ft, nv)
@@ -344,7 +429,9 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.populateCellFo
         if ft ~= nil then
             local activity = cell:getAttribute("activity")
             if activity ~= nil then
-                local nm = VLABEL[getV(pp, ft)]   -- our mode label for every output (Hold / Distribute / Sell / ... / Store)
+                local v  = getV(pp, ft)
+                local nm = VLABEL[v]   -- our mode label for every output (Hold / Distribute / Sell / ... / Store)
+                if v == KEEP and pp.palletSpawner ~= nil then nm = "Hold Pallets" end   -- palletisable output: plain Hold auto-spawns pallets
                 if nm ~= nil then activity:setText(nm) end
             end
         end
@@ -353,6 +440,52 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.populateCellFo
         Utils.appendedFunction(InGameMenuProductionFrame.populateCellForItemInSection, distSellCellLabel)
 else
     dbg("InGameMenuProductionFrame.populateCellForItemInSection missing; in-menu label disabled.")
+end
+
+-- HOOK 3: a "Spawn Pallets" footer button on the vanilla production menu, for parity with DR's own tab.
+-- Appends to updateMenuButtons (where the frame rebuilds its footer) and adds a button when the selected
+-- production has a Hold Internal output; it opens the shared spawn dialog for that output.
+if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.updateMenuButtons ~= nil then
+    -- the selected product qualifies only if it's a Hold Internal output holding at least one pallet's worth
+    local function spawnableSelection(frame)
+        if frame == nil or frame.getSelectedProduction == nil then return nil end
+        local production, pp = frame:getSelectedProduction()
+        if production == nil or pp == nil or pp.palletSpawner == nil then return nil end
+        local ft = production.primaryProductFillType
+        local pl = (ft ~= nil) and placeableOf(pp) or nil
+        if pl == nil then return nil end
+        if SD.getAssetMode(uidOf(pl), ft) ~= SD.MODE.HOLD_INTERNAL then return nil end
+        local cap  = SD.palletCapacityFor and SD.palletCapacityFor(pp, ft) or nil
+        local held = pp.getFillLevel and pp:getFillLevel(ft) or 0
+        if cap == nil or cap <= 0 or held < cap then return nil end
+        return pl, ft
+    end
+    local function onOwnedTab(frame)
+        return frame.pointsSelector == nil or InGameMenuProductionFrame.POINTS_OWNED == nil
+            or frame.pointsSelector:getState() == InGameMenuProductionFrame.POINTS_OWNED
+    end
+    local function mayManage()
+        return g_currentMission == nil or g_currentMission.getHasPlayerPermission == nil
+            or g_currentMission:getHasPlayerPermission("manageProductions")
+    end
+    local function distSpawnMenuButton(self)
+        if self == nil or self.menuButtonInfo == nil then return end
+        if not onOwnedTab(self) or not mayManage() then return end
+        local pl, ft = spawnableSelection(self)
+        if pl == nil then return end
+        self.menuButtonInfo[#self.menuButtonInfo + 1] = {
+            profile     = "buttonOk",
+            inputAction = InputAction.ACTIVATE_OBJECT,
+            text        = "Spawn Pallets",
+            callback    = function()
+                if SD.openSpawnDialog ~= nil then
+                    SD.openSpawnDialog(pl, ft, function(_, n) DistributionSpawnEvent.request(pl, ft, n) end)
+                end
+            end,
+        }
+    end
+    InGameMenuProductionFrame.updateMenuButtons = Utils.appendedFunction(InGameMenuProductionFrame.updateMenuButtons, distSpawnMenuButton)
+    dbg("vanilla production-menu Spawn button installed.")
 end
 
 -- A biogas plant is a production with sellDirectly grid outputs (electricity / methane). Its non-grid
@@ -426,7 +559,10 @@ local function sellRemainder(manager)
                                     g_currentMission:addMoney(sell * price, farmId, mt, true, false)
                                 end
                                 pp.storage:setFillLevel(level - sell, ft)
-                                if SD.recordCycleStat ~= nil then SD.recordCycleStat(pl, ft, "sold", sell) end
+                                if SD.recordCycleStat ~= nil then
+                                    SD.recordCycleStat(pl, ft, "sold", sell)
+                                    SD.recordCycleStat(pl, ft, "money", sell * price)   -- so the SOLD /mo column shows the value in brackets, like the other tabs
+                                end
                                 dbg("prod-sell %d %s @ %.4f = %d  [%s]", sell, ftName, unit, math.floor(sell * unit + 0.5), plName)
                             elseif unit <= 0 then
                                 dbg("prod-skip %s: no market price; %d L stays in plant  [%s]", ftName, level, plName)
@@ -456,3 +592,35 @@ else
 end
 
 dbg("loaded - output modes 'Distribute + Sell' and 'Distribute + Store' active.")
+
+-- ---------------------------------------------------------------------------
+-- Hold Internal: suppress the engine's AUTOMATIC pallet spawn for a production
+-- whose palletisable output(s) the player set to Hold Internal. We gate the base
+-- spawn with the production's own waitingForPalletToSpawn flag for the duration of
+-- the base update tick, then restore it -- our own code, using a base-game flag.
+-- Outputs on any other mode (incl. Hold Pallets) are left to vanilla auto-spawn.
+-- v1 caveat: waitingForPalletToSpawn is per-PRODUCTION, so on a multi-output point,
+-- setting ANY output to Hold Internal pauses spawning for all of them. Fine for the
+-- common single-output case; can be made per-output later if needed.
+-- ---------------------------------------------------------------------------
+if ProductionPoint.updateProduction ~= nil then
+    local origUpdateProduction = ProductionPoint.updateProduction
+    ProductionPoint.updateProduction = function(self, ...)
+        if self.palletSpawner == nil then return origUpdateProduction(self, ...) end   -- no spawner -> nothing to suppress
+        local gate = false
+        local pl = placeableOf(self)
+        if pl ~= nil and SD.getAssetMode ~= nil and self.outputFillTypeIds ~= nil then
+            local uid = uidOf(pl)
+            for ft in pairs(self.outputFillTypeIds) do
+                if SD.getAssetMode(uid, ft) == SD.MODE.HOLD_INTERNAL then gate = true; break end
+            end
+        end
+        if not gate then return origUpdateProduction(self, ...) end
+        local prev = self.waitingForPalletToSpawn
+        self.waitingForPalletToSpawn = true                 -- gate the base auto-spawn for this tick
+        local a, b = origUpdateProduction(self, ...)
+        self.waitingForPalletToSpawn = prev                 -- restore whatever it was
+        return a, b
+    end
+    dbg("Hold Internal pallet-spawn suppression installed.")
+end
