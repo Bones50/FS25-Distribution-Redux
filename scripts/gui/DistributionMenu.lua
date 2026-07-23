@@ -51,7 +51,7 @@ function DistributionMenu:setupPages()
             back,
             btn(InputAction.MENU_EXTRA_1, "Cycle Output", function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
             btn(InputAction.MENU_EXTRA_2, "Advanced",     function() local p = getPage(); if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
-            btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = getPage(); if p ~= nil then p:onSellTiming() end end, "sellTiming"),
+            btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = getPage(); if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
         }
     end
 

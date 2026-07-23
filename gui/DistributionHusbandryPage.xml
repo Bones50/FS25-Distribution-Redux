@@ -50,15 +50,16 @@
             </ThreePartBitmap>
         </GuiElement>
 
-        <!-- outgoing products (outputs) -->
+        <!-- outgoing products (outputs; carries the mode + send status) -->
         <Bitmap profile="SDList" position="390px -430px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="150px 40px" text="Outgoing Products" />
-            <Text profile="SDHeaderLeft" position="200px 0px" size="110px 40px" text="PRODUCED /mo" />
-            <Text profile="SDHeaderLeft" position="314px 0px" size="110px 40px" text="DISTR. /mo" />
-            <Text profile="SDHeaderLeft" position="428px 0px" size="110px 40px" text="STORED /mo" />
-            <Text profile="SDHeaderLeft" position="542px 0px" size="130px 40px" text="SOLD /mo" />
-            <Text profile="SDHeaderLeft" position="676px 0px" size="140px 40px" text="HELD (L)" />
-            <Text profile="SDHeaderLeft" position="820px 0px" size="270px 40px" text="MODE" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="140px 40px" text="Outgoing Products" />
+            <Text profile="SDHeaderLeft" position="190px 0px" size="104px 40px" text="PRODUCED /mo" />
+            <Text profile="SDHeaderLeft" position="300px 0px" size="100px 40px" text="DISTR. /mo" />
+            <Text profile="SDHeaderLeft" position="404px 0px" size="100px 40px" text="STORED /mo" />
+            <Text profile="SDHeaderLeft" position="508px 0px" size="118px 40px" text="SOLD /mo" />
+            <Text profile="SDHeaderLeft" position="630px 0px" size="118px 40px" text="HELD (L)" />
+            <Text profile="SDHeaderLeft" position="750px 0px" size="170px 40px" text="MODE" />
+            <Text profile="SDHeaderLeft" position="920px 0px" size="170px 40px" text="STATUS" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -474px" size="1090px 336px">
@@ -66,13 +67,14 @@
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickOutputRow">
                     <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="150px 52px" textSize="18px" name="fillName" />
-                    <Text profile="SDRowCell" position="200px 0px" size="110px 52px" textSize="18px" name="prodText" />
-                    <Text profile="SDRowCell" position="314px 0px" size="110px 52px" textSize="18px" name="distText" />
-                    <Text profile="SDRowCell" position="428px 0px" size="110px 52px" textSize="18px" name="storedText" />
-                    <Text profile="SDRowCell" position="542px 0px" size="130px 52px" textSize="18px" name="soldText" />
-                    <Text profile="SDRowCell" position="676px 0px" size="140px 52px" textSize="18px" name="heldText" />
-                    <Text profile="SDRowCell" position="820px 0px" size="270px 52px" textSize="18px" name="modeText" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="140px 52px" textSize="18px" name="fillName" />
+                    <Text profile="SDRowCell" position="190px 0px" size="104px 52px" textSize="18px" name="prodText" />
+                    <Text profile="SDRowCell" position="300px 0px" size="100px 52px" textSize="18px" name="distText" />
+                    <Text profile="SDRowCell" position="404px 0px" size="100px 52px" textSize="18px" name="storedText" />
+                    <Text profile="SDRowCell" position="508px 0px" size="118px 52px" textSize="18px" name="soldText" />
+                    <Text profile="SDRowCell" position="630px 0px" size="118px 52px" textSize="18px" name="heldText" />
+                    <Text profile="SDRowCell" position="750px 0px" size="170px 52px" textSize="18px" name="modeText" />
+                    <Text profile="SDRowCell" position="920px 0px" size="170px 52px" textSize="16px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 336px" with="anchorTopRight">

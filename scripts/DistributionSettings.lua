@@ -50,6 +50,14 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "On", "Off" },
     },
+    advancedRouting = {
+        order   = 1.9,                                          -- with the network toggles, above the range/buffer dials
+        label   = "Advanced routing",
+        tooltip = "Master switch for Advanced Outputs (source-side blocking + priority + Move To) and Advanced Inputs (per-receiver input blocking + caps + fill targets). Off hides those buttons and reverts distribution to the default nearest-first, distance-based behaviour. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they are reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch.",
+        default = 1,                                            -- On
+        values  = { true, false },
+        strings = { "On", "Off" },
+    },
     radius = {
         order   = 2,
         label   = "Proximity radius",
@@ -196,6 +204,13 @@ function DistributionSettings.apply()
     g.includeHusbandry  = DistributionSettings.includeHusbandry
     g.includeSilosSheds = DistributionSettings.includeSilosSheds
     g.includeMarkets    = DistributionSettings.includeMarkets
+    g.advancedRoutingEnabled = DistributionSettings.advancedRouting
+    -- Advanced routing OFF resets every advanced input/output override to default (not just ignores them):
+    -- clear the source blocks / priority + receiver input blocks / caps / targets. Runs after loadOverrides
+    -- on load (source-file order) and on every settings change / MP sync, so an OFF state always means clean.
+    if DistributionSettings.advancedRouting == false and SD.clearAdvancedControl ~= nil then
+        SD.clearAdvancedControl()
+    end
     g.radius      = DistributionSettings.radius
     g.bufferHours = DistributionSettings.bufferHours
     g.sellEnabled = DistributionSettings.sellEnabled
@@ -231,6 +246,7 @@ function DistributionSettings.save()
     setXMLBool(xml,   "distributionRedux.settings#includeHusbandry",  DistributionSettings.includeHusbandry)
     setXMLBool(xml,   "distributionRedux.settings#includeSilosSheds", DistributionSettings.includeSilosSheds)
     setXMLBool(xml,   "distributionRedux.settings#includeMarkets",    DistributionSettings.includeMarkets)
+    setXMLBool(xml,   "distributionRedux.settings#advancedRouting",   DistributionSettings.advancedRouting)
     setXMLInt(xml,    "distributionRedux.settings#radius",      DistributionSettings.radius)
     setXMLInt(xml,    "distributionRedux.settings#bufferHours", DistributionSettings.bufferHours)
     setXMLBool(xml,   "distributionRedux.settings#sellEnabled", DistributionSettings.sellEnabled)
@@ -267,6 +283,9 @@ function DistributionSettings.load()
 
     local incMarkets = getXMLBool(xml, "distributionRedux.settings#includeMarkets")
     if incMarkets ~= nil then DistributionSettings.includeMarkets = incMarkets end
+
+    local advRouting = getXMLBool(xml, "distributionRedux.settings#advancedRouting")
+    if advRouting ~= nil then DistributionSettings.advancedRouting = advRouting end
 
     local radius = getXMLInt(xml, "distributionRedux.settings#radius")
     if radius ~= nil and isAllowed("radius", radius) then DistributionSettings.radius = radius end
@@ -407,6 +426,7 @@ DistributionControlEvent.ACT = {
     PRIO_CLEAR  = 4,   -- a=source
     INPUT_BLOCK = 5,   -- a=receiver, flag=blocked (receiver-side input block)
     INPUT_CAP   = 6,   -- a=receiver, delta=pct 0..100 (receiver-side per-product max %)
+    INPUT_TARGET = 7,  -- a=receiver, delta=pct 0..100 (receiver-side fill target %); delta<0 clears
 }
 
 function DistributionControlEvent.emptyNew() return Event.new(DistributionControlEvent_mt) end
@@ -451,6 +471,7 @@ function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
     elseif act == A.PRIO_CLEAR  then SD.clearDestPriority(a, ft)
     elseif act == A.INPUT_BLOCK then SD.setInputBlocked(a, ft, flag)
     elseif act == A.INPUT_CAP   then SD.setInputCapPct(a, ft, delta)
+    elseif act == A.INPUT_TARGET then SD.setInputTargetPct(a, ft, (delta ~= nil and delta >= 0) and delta or nil)   -- delta<0 clears
     end
 end
 
@@ -531,6 +552,11 @@ function DistributionStateRequestEvent:run(connection)
         for rcvUid, byFt in pairs(C.inputCapPct or {}) do   -- receiver-side per-product max %
             for ft, pct in pairs(byFt) do
                 if type(pct) == "number" then connection:sendEvent(DistributionControlEvent.new(A.INPUT_CAP, rcvUid, ft, "", pct, false)) end
+            end
+        end
+        for rcvUid, byFt in pairs(C.inputTarget or {}) do   -- receiver-side fill target %
+            for ft, pct in pairs(byFt) do
+                if type(pct) == "number" then connection:sendEvent(DistributionControlEvent.new(A.INPUT_TARGET, rcvUid, ft, "", pct, false)) end
             end
         end
     end

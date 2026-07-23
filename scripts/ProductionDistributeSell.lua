@@ -317,19 +317,25 @@ function DistributionSpawnEvent:readStream(streamId, connection)
     self.count = streamReadUIntN(streamId, DistributionSpawnEvent.COUNT_NUM_BITS)
     self:run(connection)
 end
+-- spawn from a production storage OR, when the placeable is a pallet-spawner husbandry (coop / sheep),
+-- from its internal pending buffer. Both run server-side and sync the pallet like any world object.
+local function serverSpawn(placeable, fillTypeIndex, count)
+    local pp = ppOf(placeable)
+    if pp ~= nil then
+        if SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count) end
+    elseif placeable ~= nil and placeable.spec_husbandryPallets ~= nil and SD.spawnPalletsFromHusbandry ~= nil then
+        SD.spawnPalletsFromHusbandry(placeable, fillTypeIndex, count)
+    end
+end
 function DistributionSpawnEvent:run(connection)
     if connection:getIsServer() then return end   -- only the server acts on this; ignore if a client somehow receives it
-    local pp = ppOf(self.placeable)
-    if pp ~= nil and SD.spawnPalletsFromProduction ~= nil then
-        SD.spawnPalletsFromProduction(pp, self.fillTypeIndex, self.count)
-    end
+    serverSpawn(self.placeable, self.fillTypeIndex, self.count)
 end
 -- Host/SP: spawn directly. Client: ask the server. Returns true if the request was issued/handled.
 function DistributionSpawnEvent.request(placeable, fillTypeIndex, count)
     if placeable == nil or fillTypeIndex == nil then return false end
     if g_server ~= nil then
-        local pp = ppOf(placeable)
-        if pp ~= nil and SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count) end
+        serverSpawn(placeable, fillTypeIndex, count)
         return true
     elseif g_client ~= nil then
         g_client:getServerConnection():sendEvent(DistributionSpawnEvent.new(placeable, fillTypeIndex, count))

@@ -113,6 +113,18 @@ local function setStatusCell(cell, placeable, ft)
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) end
 end
 
+-- OUTGOING (source-side) status for an output row: Active (Sending) / Active (Idle) / Blocked, same colours.
+local function setOutputStatusCell(cell, placeable, ft)
+    local c = cell:getAttribute("statusText")
+    if c == nil then return end
+    local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
+        and SmartDistribution.outputLinkStatus(placeable, ft) or nil
+    if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
+    local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
+    if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
+    elseif c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
+end
+
 -- fill-type icon (base game hud overlay) -- same approach as the Silos/Husbandry page
 local function fillIconFile(ft)
     if g_fillTypeManager == nil or g_fillTypeManager.getFillTypeByIndex == nil then return nil end
@@ -363,6 +375,7 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     local method = o.modeName or "-"
     if o.sellTiming ~= nil then method = method .. " - " .. o.sellTiming end
     setc("method", method)
+    setOutputStatusCell(cell, self.selectedAsset, o.ft)
     setIcon(cell, o.ft)
 end
 
@@ -445,24 +458,27 @@ function DistributionProductionsPage:updateSellTimingButton()
     if all == nil then return end
     local o = self:selectedOutput()
     local label = o ~= nil and o.sellTiming or nil
-    -- Shared CANCEL slot: "Spawn Pallets" for a Hold Internal output, else "Sell Timing" for a sell
-    -- output, else hidden. The two never apply together (Hold Internal is not a sell mode).
-    local holdInternal = o ~= nil and o.ft ~= nil and self.selectedAsset ~= nil
-        and SmartDistribution.resolvedAssetMode ~= nil and SmartDistribution.MODE ~= nil
-        and SmartDistribution.resolvedAssetMode(self.selectedAsset, o.ft) == SmartDistribution.MODE.HOLD_INTERNAL
+    -- Shared CANCEL slot: "Spawn Pallets" for a Hold Internal output holding at least one full pallet's
+    -- worth, else "Sell Timing" for a sell output, else hidden. The two never apply together. The
+    -- palletSpawnReady gate hides the button below one pallet's worth (matches the husbandry + vanilla menus).
+    local spawnReady = o ~= nil and o.ft ~= nil and self.selectedAsset ~= nil
+        and SmartDistribution.palletSpawnReady ~= nil
+        and SmartDistribution.palletSpawnReady(self.selectedAsset, o.ft)
+    -- Advanced routing master switch (Settings): off hides both Advanced buttons entirely.
+    local adv = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
     -- Advanced only applies to a configurable output (distribute / store / market, incl. combos).
-    local showAdvancedOut = o ~= nil and o.ft ~= nil and self.selectedAsset ~= nil
+    local showAdvancedOut = adv and o ~= nil and o.ft ~= nil and self.selectedAsset ~= nil
         and SmartDistribution.modeConfigurable ~= nil
         and SmartDistribution.modeConfigurable(self.selectedAsset, o.ft)
     -- Advanced Inputs applies whenever the production has at least one input product to cap/block.
-    local showAdvancedIn = self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
+    local showAdvancedIn = adv and self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
         and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
     -- Single CONTEXTUAL Advanced button: input focus -> Advanced Inputs, else Advanced Outputs.
     local focus = self._focusRole or "output"
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if holdInternal then b.text = "Spawn Pallets"; vis[#vis + 1] = b
+            if spawnReady then b.text = "Spawn Pallets"; vis[#vis + 1] = b
             elseif label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end
         elseif b._role == "advanced" then
             if focus == "input" then
@@ -542,8 +558,7 @@ end
 function DistributionProductionsPage:onSellTimingOrSpawn()
     local o = self:selectedOutput()
     if o == nil or o.ft == nil or self.selectedAsset == nil then return end
-    if SmartDistribution.resolvedAssetMode ~= nil and SmartDistribution.MODE ~= nil
-       and SmartDistribution.resolvedAssetMode(self.selectedAsset, o.ft) == SmartDistribution.MODE.HOLD_INTERNAL then
+    if SmartDistribution.palletSpawnReady ~= nil and SmartDistribution.palletSpawnReady(self.selectedAsset, o.ft) then
         self:onSpawn()
     else
         self:onSellTiming()

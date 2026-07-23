@@ -39,6 +39,13 @@
             </Bitmap>
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="advancedRouting">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Master switch for Advanced Outputs (source-side blocking / priority / Move To) and Advanced Inputs (input blocking / caps / fill targets). Off hides those buttons and reverts to the default nearest-first, distance-based distribution. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Advanced routing"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="radius">
                     <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="How far a consumer reaches for sources in Proximity mode."/>
                 </MultiTextOption>

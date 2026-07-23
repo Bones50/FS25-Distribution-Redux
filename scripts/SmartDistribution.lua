@@ -48,6 +48,7 @@ local S = {
         includeHusbandry  = true,              -- Settings: include animal husbandry (barns/coops/beehives) in the network
         includeSilosSheds = true,              -- Settings: include silos + pallet storage sheds in the network
         includeMarkets    = true,              -- Settings: include markets / kiosks in the network
+        advancedRoutingEnabled = true,         -- Settings: master switch for Advanced Outputs (source blocks/priority) + Advanced Inputs (input blocks/caps). Off -> pure distance-based
         mode              = MODE.DISTRIBUTE,   -- default behaviour for sources
         radius            = 50,                -- metres, used when reach == PROXIMITY
         bufferHours       = 2,                 -- hours of feedstock kept at a consumer
@@ -368,12 +369,17 @@ function SmartDistribution.isGrazingPasture(p)
     if p == nil then return false end
     -- FS25 gives each mod its own Lua environment, so DR cannot see PastureFeedOverride and cannot rely on
     -- the pasture mod's own API.  Structural test instead, verified against sdManureProbe output:
-    --   Cow Barn (large)     -> spec_husbandryMeadow yes, spec_husbandryLiquidManure YES  -> normal barn
-    --   Grazing Pasture      -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO   -> pasture
-    --   Chicken shed / silos -> no meadow spec                                            -> normal
-    -- A grazing husbandry that produces no slurry is a pasture; vanilla meadow barns all have a slurry
-    -- spec.  Type names are kept as a secondary match in case the structural test ever misses.
-    if p.spec_husbandryMeadow ~= nil and p.spec_husbandryLiquidManure == nil then return true end
+    --   Cow Barn (large)     -> spec_husbandryMeadow yes, spec_husbandryLiquidManure YES                 -> normal barn
+    --   Grazing Pasture      -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO,  no pallets     -> pasture
+    --   Chicken coop         -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO,  spec_husbandryPallets YES (EGG) -> normal barn
+    --   Chicken shed / silos -> no meadow spec                                                           -> normal
+    -- A grazing pasture (cow/sheep/horse from FS25_GrazingPasture) is a pure grazing area: no slurry AND
+    -- no pallet output.  A chicken coop shares the meadow + no-slurry shape but emits EGG pallets, so it
+    -- must NOT be treated as a pasture -- exclude any pallet-spawner husbandry here (spec_husbandryPallets
+    -- / spec_beehivePalletSpawner).  Type names are kept as a secondary match in case the structural test
+    -- ever misses; all known pastures also match by name below.
+    if p.spec_husbandryMeadow ~= nil and p.spec_husbandryLiquidManure == nil
+       and p.spec_husbandryPallets == nil and p.spec_beehivePalletSpawner == nil then return true end
     local tn = p.typeName
     if type(tn) == "string" then
         if tn == "baseHusbandryPasture" or tn == "cowHusbandryPastureFeed"
@@ -638,6 +644,22 @@ end
 -- read from spec_husbandryMilk.fillTypes, so normal / buffalo / goat (and any
 -- modded) milk are ALL covered automatically; liquid manure from its own spec;
 -- plus the named manure family. Per-building, not one fixed global list.
+-- Does this husbandry actually PRODUCE manure / slurry? Slurry barns have spec_husbandryLiquidManure; straw
+-- / bedding barns convert bedding to a manure-family output (spec_husbandryStraw / husbandryBeddingMulti
+-- with a MANURE/LIQUIDMANURE/SLURRY outputFillType). A plain egg coop (base chickenHusbandryPasture) has
+-- none of these -- it produces only eggs, so it must NOT be listed as a manure source or given a manure
+-- slot. A modded coop that DOES declare straw->manure (e.g. Nordkirchen chickenManure) still qualifies.
+function SmartDistribution.husbandryProducesManure(p)
+    if p == nil then return false end
+    if p.spec_husbandryLiquidManure ~= nil then return true end
+    local mset = outputNamedSet()
+    local ss = p.spec_husbandryStraw
+    if ss ~= nil and ss.outputFillType ~= nil and mset[ss.outputFillType] then return true end
+    local bm = p.spec_husbandryBeddingMulti
+    if bm ~= nil and bm.outputFillType ~= nil and mset[bm.outputFillType] then return true end
+    return false
+end
+
 local function husbandryOutputFillTypes(p)
     local out = {}
     -- A PASTURE produces nothing: no milk, no manure, no slurry. It is a grazing area, not a barn, so it
@@ -649,19 +671,21 @@ local function husbandryOutputFillTypes(p)
     if p.spec_husbandryLiquidManure ~= nil and p.spec_husbandryLiquidManure.fillType ~= nil then
         out[p.spec_husbandryLiquidManure.fillType] = true
     end
-    -- The manure family (MANURE / LIQUIDMANURE / SLURRY) is NOT universal: a chicken coop produces eggs
-    -- and nothing else. Only list the ones this pen actually supports -- either the husbandry itself says
-    -- so, or it has a storage that holds it (the barn's own manure patch).
-    for ft in pairs(outputNamedSet()) do
-        local supported = false
-        if p.getHusbandryIsFillTypeSupported ~= nil then
-            local ok, r = pcall(p.getHusbandryIsFillTypeSupported, p, ft)
-            supported = ok and r == true
+    -- The manure family (MANURE / LIQUIDMANURE / SLURRY) is NOT universal: a chicken coop produces eggs and
+    -- nothing else. Only list it for barns that ACTUALLY produce manure (straw/bedding or slurry) -- a plain
+    -- egg coop that DR happened to give a manure patch must not show manure as an output.
+    if SmartDistribution.husbandryProducesManure(p) then
+        for ft in pairs(outputNamedSet()) do
+            local supported = false
+            if p.getHusbandryIsFillTypeSupported ~= nil then
+                local ok, r = pcall(p.getHusbandryIsFillTypeSupported, p, ft)
+                supported = ok and r == true
+            end
+            if not supported and SmartDistribution.assetHoldsFillType ~= nil then
+                supported = SmartDistribution.assetHoldsFillType(p, ft)
+            end
+            if supported then out[ft] = true end
         end
-        if not supported and SmartDistribution.assetHoldsFillType ~= nil then
-            supported = SmartDistribution.assetHoldsFillType(p, ft)
-        end
-        if supported then out[ft] = true end
     end
     return out
 end
@@ -1892,7 +1916,8 @@ local function collectProductionSlots(points, slots)
             local x, _, z = getWorldTranslation(placeable.rootNode)
             local farmId  = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
             for ft in pairs(pp.inputFillTypeIds) do
-                local need = getPullAmount(pp, ft)
+                -- default = recipe pull; a fill target instead demands toward its set level and then holds it
+                local need = SmartDistribution.effectiveInputNeed(placeable, ft, getPullAmount(pp, ft), getLevel(pp.storage, ft))
                 if need > ALLOC_EPS then
                     local cands = buildSlotCandidates(pp, placeable, { ft }, x, z, farmId, nil)
                     if SmartDistribution.debug then
@@ -1929,34 +1954,202 @@ local function collectFoodSlots(slots)
     if ps == nil then return end
     for _, p in ipairs(ps.placeables) do
         local fs = p.spec_husbandryFood
-        if fs ~= nil and p.rootNode ~= nil and p.addFood ~= nil and isEnrolled(p) then
+        if fs ~= nil and p.rootNode ~= nil and p.addFood ~= nil and isEnrolled(p)
+           and SmartDistribution.feedingRobotOf(p) == nil then   -- robot barns feed their bunkers, not the food pool
             local rate = SmartDistribution.husbandryInputRate(p, fs.litersPerHour, "food")
             if rate > 0 then
                 local current = 0
                 for _, lvl in pairs(fs.fillLevels) do current = current + lvl end
                 local capacity = fs.capacity or 0
-                local need = math.min(rate * S.global.bufferHours - current, capacity - current)
-                if need > ALLOC_EPS then
-                    local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
-                    local x, _, z = getWorldTranslation(p.rootNode)
-                    local fts = {}
-                    for ft in pairs(fs.supportedFillTypes) do
-                        if not S.global.excludedFillTypes[ft] and ft ~= waterFillType() then fts[#fts + 1] = ft end
+                local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
+                local x, _, z = getWorldTranslation(p.rootNode)
+                local qmap = foodQualityMap(p) or {}
+                local rcvUid = getUid(p)
+                local fts = {}
+                for ft in pairs(fs.supportedFillTypes) do
+                    -- skip water, excluded types, and any food the player has BLOCKED on Advanced Inputs
+                    if not S.global.excludedFillTypes[ft] and ft ~= waterFillType()
+                       and not (rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft)) then
+                        fts[#fts + 1] = ft
                     end
-                    local cands = buildSlotCandidates(nil, p, fts, x, z, farmId, foodQualityMap(p))
-                    if #cands > 0 then
-                        slots[#slots + 1] = {
-                            placeable = p, farmId = farmId, need = need, cands = cands, blocked = {},
-                            deposit = function(dft, amount, dry)
-                                local tot = 0
-                                for _, l in pairs(fs.fillLevels) do tot = tot + l end
-                                local room = (fs.capacity or 0) - tot
-                                local mv = math.min(amount, room)
-                                if mv <= 0 then return 0 end
-                                if dry then return mv end
-                                return p:addFood(farmId, mv, dft, nil, nil, nil) or 0
-                            end,
-                        }
+                end
+                -- shared-pool deposit: add `dft` up to the pool's live remaining room
+                local function foodDeposit(dft, amount, dry)
+                    local tot = 0
+                    for _, l in pairs(fs.fillLevels) do tot = tot + l end
+                    local mv = math.min(amount, capacity - tot)
+                    if mv <= 0 then return 0 end
+                    if dry then return mv end
+                    return p:addFood(farmId, mv, dft, nil, nil, nil) or 0
+                end
+                -- Pool fill level to demand toward: the highest fill TARGET % set across the food types, applied
+                -- to the FULL pool capacity (the pool is shared, so one setpoint governs it); else buffer-hours.
+                local tgtPct = nil
+                if SmartDistribution.advancedEnabled() then
+                    local uid = getUid(p)
+                    if uid ~= nil then
+                        for _, ft in ipairs(fts) do
+                            local up = SmartDistribution.getInputTargetPct(uid, ft)
+                            if up ~= nil and (tgtPct == nil or up > tgtPct) then tgtPct = up end
+                        end
+                    end
+                end
+                local desired  = tgtPct ~= nil and (capacity * tgtPct / 100) or (rate * S.global.bufferHours)
+                local poolNeed = math.min(desired - current, capacity - current)
+                if poolNeed > ALLOC_EPS and #fts > 0 then
+                    -- Fill BEST-QUALITY-FIRST to maximise animal health: fill the highest-quality food tier that
+                    -- has stock, splitting proportionally among EQUAL-quality types (so a 3-grain chicken coop
+                    -- mixes evenly, while a graded barn takes TMR first and only falls back to lower-quality
+                    -- feed if the better one runs short). Higher tiers are sized first, so lower tiers only get
+                    -- the remainder the better feed couldn't cover.
+                    table.sort(fts, function(a, b) return (qmap[a] or 0) > (qmap[b] or 0) end)
+                    local remaining, i = poolNeed, 1
+                    while i <= #fts and remaining > ALLOC_EPS do
+                        local q, tier = (qmap[fts[i]] or 0), {}
+                        while i <= #fts and (qmap[fts[i]] or 0) == q do tier[#tier + 1] = fts[i]; i = i + 1 end
+                        local tierInfo, tierStock = {}, 0
+                        for _, ft in ipairs(tier) do
+                            local cands, stock = buildSlotCandidates(nil, p, { ft }, x, z, farmId, qmap), 0
+                            for _, c in ipairs(cands) do stock = stock + (getLevel(c.storage, c.ft) or 0) end
+                            tierInfo[ft] = { cands = cands, stock = stock }
+                            tierStock = tierStock + stock
+                        end
+                        if tierStock > ALLOC_EPS then
+                            local tierFill = math.min(remaining, tierStock)
+                            for _, ft in ipairs(tier) do
+                                local ti = tierInfo[ft]
+                                if #ti.cands > 0 and ti.stock > 0 then
+                                    local share = tierFill * (ti.stock / tierStock)
+                                    if share > ALLOC_EPS then
+                                        slots[#slots + 1] = { placeable = p, farmId = farmId, need = share, cands = ti.cands, blocked = {}, deposit = foodDeposit }
+                                    end
+                                end
+                            end
+                            remaining = remaining - tierFill
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ---- feeding-robot (Lely Vector / GEA) bunkers ----------------------------
+-- A cowHusbandryBarnMilkFeedingRobot mixes feed from per-fill-type ingredient BUNKERS (unloadingSpots on
+-- spec_husbandryFeedingRobot.feedingRobot) instead of a single "food" pool. The FeedingRobot object exposes
+-- getFillLevel / getFreeCapacity / getIsFillTypeAllowed / addFillLevelFromTool keyed by fill type, plus
+-- fillTypeToUnloadingSpot[ft] -> the bunker. Read + write validated via sdRobotProbe / sdRobotFill.
+-- (SmartDistribution.* fields, not top-level locals, to respect the 200-local main-chunk ceiling.)
+function SmartDistribution.feedingRobotOf(p)
+    local spec = p ~= nil and p.spec_husbandryFeedingRobot or nil
+    return spec ~= nil and spec.feedingRobot or nil
+end
+function SmartDistribution.robotBunkerFillTypes(p)
+    local out = {}
+    local fr = SmartDistribution.feedingRobotOf(p)
+    if fr ~= nil and type(fr.fillTypeToUnloadingSpot) == "table" then
+        for ft, spot in pairs(fr.fillTypeToUnloadingSpot) do
+            if type(ft) == "number" and spot ~= nil then out[ft] = true end
+        end
+    end
+    return out
+end
+function SmartDistribution.robotBunkerCapacity(p, ft)
+    local fr = SmartDistribution.feedingRobotOf(p)
+    local spot = (fr ~= nil and type(fr.fillTypeToUnloadingSpot) == "table") and fr.fillTypeToUnloadingSpot[ft] or nil
+    return spot ~= nil and (spot.capacity or 0) or 0
+end
+function SmartDistribution.robotBunkerLevel(p, ft)
+    local fr = SmartDistribution.feedingRobotOf(p)
+    if fr == nil then return 0 end
+    if fr.getFillLevel ~= nil then local ok, v = pcall(fr.getFillLevel, fr, ft); if ok and type(v) == "number" then return v end end
+    local spot = type(fr.fillTypeToUnloadingSpot) == "table" and fr.fillTypeToUnloadingSpot[ft] or nil
+    return spot ~= nil and (spot.fillLevel or 0) or 0
+end
+function SmartDistribution.robotBunkerFree(p, ft)
+    local fr = SmartDistribution.feedingRobotOf(p)
+    if fr == nil then return 0 end
+    if fr.getFreeCapacity ~= nil then local ok, v = pcall(fr.getFreeCapacity, fr, ft); if ok and type(v) == "number" then return v end end
+    return math.max(0, SmartDistribution.robotBunkerCapacity(p, ft) - SmartDistribution.robotBunkerLevel(p, ft))
+end
+function SmartDistribution.robotBunkerAdd(p, ft, liters, farmId)
+    local fr = SmartDistribution.feedingRobotOf(p)
+    if fr == nil or fr.addFillLevelFromTool == nil or (liters or 0) <= 0 then return 0 end
+    local ok, added = pcall(fr.addFillLevelFromTool, fr, farmId, liters, ft, nil, nil, nil)
+    return (ok and type(added) == "number") and added or 0
+end
+
+-- The mixer recipe's ingredient list (spec.feedingRobot.robot.recipe.ingredients): each entry has a
+-- fillTypes table + a ratio (fraction of the mixed feed made from that ingredient). nil if unreadable.
+function SmartDistribution.robotRecipeIngredients(p)
+    local fr = SmartDistribution.feedingRobotOf(p)
+    local robot = fr ~= nil and fr.robot or nil
+    local rec = robot ~= nil and robot.recipe or nil
+    return (type(rec) == "table" and type(rec.ingredients) == "table") and rec.ingredients or nil
+end
+
+-- Default LEVEL (litres) DR keeps in the bunker for `ft`: the animals' food need over the buffer window
+-- (foodRate x bufferHours) times THIS ingredient's recipe ratio -- so DR only tops each bunker to what the
+-- herd actually needs, not to capacity. Returns nil when the recipe or food rate can't be read (caller then
+-- falls back to keep-full), and 0 when the barn has no food demand (empty / no animals).
+function SmartDistribution.robotBunkerDefaultLevel(p, ft)
+    local ings = SmartDistribution.robotRecipeIngredients(p)
+    if ings == nil then return nil end
+    local fs = p.spec_husbandryFood
+    local rate = fs ~= nil and SmartDistribution.husbandryInputRate(p, fs.litersPerHour, "food") or 0
+    if rate <= 0 then return 0 end
+    local ratio = nil
+    for _, ing in ipairs(ings) do
+        if type(ing.fillTypes) == "table" then
+            for _, ift in pairs(ing.fillTypes) do
+                if ift == ft then ratio = ing.ratio; break end
+            end
+        end
+        if ratio ~= nil then break end
+    end
+    if type(ratio) ~= "number" then return nil end          -- ft not in the recipe -> keep-full fallback
+    return rate * S.global.bufferHours * ratio
+end
+
+-- phase 1b-robot: feeding-robot ingredient bunkers. One demand per bunker; DR delivers each ingredient to
+-- its own spot (silage / hay / straw / mineral feed) and the robot mixes + feeds the herd automatically.
+-- Default tops each bunker to just the herd's buffer-hours need for that ingredient (from the mixer recipe);
+-- a per-input fill target (Advanced Inputs) overrides it.
+SmartDistribution.collectRobotFeedSlots = function(slots)
+    if not S.global.feedHusbandryEnabled then return end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if SmartDistribution.feedingRobotOf(p) ~= nil and p.rootNode ~= nil and isEnrolled(p) then
+            local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
+            local x, _, z = getWorldTranslation(p.rootNode)
+            local rcvUid = getUid(p)
+            for ft in pairs(SmartDistribution.robotBunkerFillTypes(p)) do
+                if not S.global.excludedFillTypes[ft]
+                   and not (rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft)) then   -- respect Advanced-Inputs block
+                    local cur  = SmartDistribution.robotBunkerLevel(p, ft)
+                    local free = SmartDistribution.robotBunkerFree(p, ft)
+                    -- default = buffer-hours of this ingredient per the mixer recipe (only what the herd needs);
+                    -- falls back to keep-full if the recipe/rate is unreadable. A fill target overrides to its
+                    -- set level.
+                    local defLevel = SmartDistribution.robotBunkerDefaultLevel(p, ft)
+                    local defNeed  = (defLevel ~= nil) and (defLevel - cur) or (SmartDistribution.robotBunkerCapacity(p, ft) - cur)
+                    local base = SmartDistribution.effectiveInputNeed(p, ft, defNeed, cur)
+                    local need = math.min(base, free)
+                    if need > ALLOC_EPS then
+                        local cands = buildSlotCandidates(nil, p, { ft }, x, z, farmId, nil)
+                        if #cands > 0 then
+                            slots[#slots + 1] = {
+                                placeable = p, farmId = farmId, need = need, cands = cands, blocked = {},
+                                deposit = function(dft, amount, dry)
+                                    local fc = SmartDistribution.robotBunkerFree(p, dft)
+                                    local mv = math.min(amount, fc)
+                                    if mv <= 0 then return 0 end
+                                    if dry then return mv end
+                                    return SmartDistribution.robotBunkerAdd(p, dft, mv, farmId)
+                                end,
+                            }
+                        end
                     end
                 end
             end
@@ -1974,31 +2167,42 @@ local function collectStrawSlots(slots)
     for _, p in ipairs(ps.placeables) do
         local ss = p.spec_husbandryStraw
         if ss ~= nil and p.rootNode ~= nil and p.addHusbandryFillLevelFromTool ~= nil and
-           p.getHusbandryIsFillTypeSupported ~= nil and p:getHusbandryIsFillTypeSupported(STRAW) and isEnrolled(p) then
+           p.getHusbandryIsFillTypeSupported ~= nil and p:getHusbandryIsFillTypeSupported(STRAW) and isEnrolled(p)
+           and not (getUid(p) ~= nil and SmartDistribution.isInputBlocked(getUid(p), STRAW)) then   -- respect Advanced-Inputs block
             -- pastures DO take straw (as in the base pasture mod); manure is prevented at the sink side:
             -- they get no manure storage slot and never link to a heap/pit, so the conversion has nowhere
             -- to go and is discarded exactly as it is without DR.
-            local rate = SmartDistribution.husbandryInputRate(p, ss.inputLitersPerHour, "straw")
-            if rate > 0 then
-                local current = p:getHusbandryFillLevel(STRAW) or 0
-                local free    = p:getHusbandryFreeCapacity(STRAW) or 0
-                local need    = math.min(rate * S.global.bufferHours - current, free)
-                if need > ALLOC_EPS then
-                    local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
-                    local x, _, z = getWorldTranslation(p.rootNode)
-                    local cands = buildSlotCandidates(nil, p, { STRAW }, x, z, farmId, nil)
-                    if #cands > 0 then
-                        slots[#slots + 1] = {
-                            placeable = p, farmId = farmId, need = need, cands = cands, blocked = {},
-                            deposit = function(dft, amount, dry)
-                                local fr = p:getHusbandryFreeCapacity(STRAW) or 0
-                                local mv = math.min(amount, fr)
-                                if mv <= 0 then return 0 end
-                                if dry then return mv end
-                                return p:addHusbandryFillLevelFromTool(farmId, mv, STRAW, nil, nil, nil) or 0
-                            end,
-                        }
-                    end
+            local rate    = SmartDistribution.husbandryInputRate(p, ss.inputLitersPerHour, "straw")
+            local current = p:getHusbandryFillLevel(STRAW) or 0
+            local free    = p:getHusbandryFreeCapacity(STRAW) or 0
+            -- Straw-bedding barns that publish no per-hour straw rate AND whose animal subtype has no
+            -- "straw" input curve (e.g. the modded Nordkirchen chicken coop, which bolts a <straw> block
+            -- onto a chicken husbandry) resolve to rate 0 -- yet they genuinely accept straw as bedding.
+            -- Fall back to topping their straw storage up to free capacity, exactly as a player would by
+            -- hand, so they still register as a demand slot. When a real rate IS known (cows/pigs/horses,
+            -- via the spec or the animal curve) keep the normal buffer-hours cap.
+            local defNeed = (rate > 0) and (rate * S.global.bufferHours - current) or free
+            -- fill target (bedding straw): demand toward the set level instead. Skipped on robot barns,
+            -- where STRAW is a robot feed bunker fed separately (its target lives on that bunker).
+            if SmartDistribution.feedingRobotOf(p) == nil then
+                defNeed = SmartDistribution.effectiveInputNeed(p, STRAW, defNeed, current)
+            end
+            local need    = math.min(defNeed, free)
+            if need > ALLOC_EPS then
+                local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
+                local x, _, z = getWorldTranslation(p.rootNode)
+                local cands = buildSlotCandidates(nil, p, { STRAW }, x, z, farmId, nil)
+                if #cands > 0 then
+                    slots[#slots + 1] = {
+                        placeable = p, farmId = farmId, need = need, cands = cands, blocked = {},
+                        deposit = function(dft, amount, dry)
+                            local fr = p:getHusbandryFreeCapacity(STRAW) or 0
+                            local mv = math.min(amount, fr)
+                            if mv <= 0 then return 0 end
+                            if dry then return mv end
+                            return p:addHusbandryFillLevelFromTool(farmId, mv, STRAW, nil, nil, nil) or 0
+                        end,
+                    }
                 end
             end
         end
@@ -2018,12 +2222,14 @@ local function collectHusbandryWaterSlots(slots)
         local ws = p.spec_husbandryWater
         if ws ~= nil and not ws.automaticWaterSupply and p.rootNode ~= nil and
            p.addHusbandryFillLevelFromTool ~= nil and p.getHusbandryIsFillTypeSupported ~= nil and
-           p:getHusbandryIsFillTypeSupported(WATER) and isEnrolled(p) then
+           p:getHusbandryIsFillTypeSupported(WATER) and isEnrolled(p)
+           and not (getUid(p) ~= nil and SmartDistribution.isInputBlocked(getUid(p), WATER)) then   -- respect Advanced-Inputs block
             local rate = SmartDistribution.husbandryInputRate(p, ws.litersPerHour, "water")
             if rate > 0 then
                 local current = p:getHusbandryFillLevel(WATER) or 0
                 local free    = p:getHusbandryFreeCapacity(WATER) or 0
-                local need    = math.min(rate * S.global.bufferHours - current, free)
+                -- fill target: demand toward the set level instead of the buffer-hours default
+                local need    = math.min(SmartDistribution.effectiveInputNeed(p, WATER, rate * S.global.bufferHours - current, current), free)
                 if need > ALLOC_EPS then
                     local farmId = p.getOwnerFarmId ~= nil and p:getOwnerFarmId() or p.ownerFarmId
                     local x, _, z = getWorldTranslation(p.rootNode)
@@ -2381,12 +2587,11 @@ local function computeSeasonalBudget()
         end
     end
     if next(want) == nil then return nil end
-    local fallback = S.global.seasonalFallbackMonths or 13
     local budget = {}
     for ft in pairs(want) do
         local held = 0
         for _, p in ipairs(ps.placeables) do held = held + (SmartDistribution.assetHeld(p, ft) or 0) end
-        local months  = SmartDistribution.monthsToCover(S.harvestMonths and S.harvestMonths[ft]) or fallback
+        local months  = SmartDistribution.cropReserveMonths(ft)
         local reserve = SmartDistribution.monthlyDemand(ft) * months
         local surplus = held - reserve
         budget[ft] = surplus > 0 and surplus or 0
@@ -4001,6 +4206,7 @@ function SmartDistribution.runHourly(manager)
         collectProductionSlots(farmTable.productionPoints, slots)
     end
     collectFoodSlots(slots)
+    SmartDistribution.collectRobotFeedSlots(slots)             -- feeding-robot ingredient bunkers
     collectStrawSlots(slots)
     collectHusbandryWaterSlots(slots)
     allocate(slots, bill)
@@ -4131,13 +4337,18 @@ local function saveOverrides(missionInfo)
     -- FS25 fires FSCareerMissionInfo:saveToXMLFile(missionInfo) on every game save; prefer the
     -- savegame dir it hands us (gated on isValid), else fall back to g_currentMission.missionInfo.
     local mi = missionInfo or (g_currentMission ~= nil and g_currentMission.missionInfo) or nil
-    if mi ~= nil and mi.isValid == false then return end
+    if mi ~= nil and mi.isValid == false then
+        print("[SmartDistribution persist] SAVE skipped: missionInfo.isValid == false")
+        return
+    end
     local dir = (mi ~= nil and mi.savegameDirectory ~= nil and mi.savegameDirectory ~= "")
         and (mi.savegameDirectory .. "/") or getSaveDir()
-    if dir == nil then log("save skipped: savegame directory unresolved") return end
+    print(string.format("[SmartDistribution persist] SAVE fired: dir=%s  mi.savegameDirectory=%s",
+        tostring(dir), tostring(mi ~= nil and mi.savegameDirectory or "nil")))
+    if dir == nil then print("[SmartDistribution persist] SAVE skipped: savegame directory unresolved") return end
     local path = dir .. "smartDistribution.xml"
     local xml = createXMLFile("SmartDistributionXML", path, "smartDistribution")
-    if xml == nil or xml == 0 then log("save failed: createXMLFile(%s)", path) return end
+    if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] SAVE FAILED: createXMLFile(%s)", tostring(path))) return end
     setXMLInt(xml, "smartDistribution#version", PERSIST_VERSION)
     local i = 0
     for uid, fts in pairs(S.assets) do
@@ -4248,6 +4459,18 @@ local function saveOverrides(missionInfo)
             end
         end
     end
+    local iti = 0
+    for rcvUid, byFt in pairs(SmartDistribution.control.inputTarget or {}) do
+        for ft, pct in pairs(byFt) do
+            if type(pct) == "number" then
+                local k = string.format("smartDistribution.inputTarget(%d)", iti)
+                setXMLString(xml, k .. "#receiver", tostring(rcvUid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLInt(xml,    k .. "#pct",      pct)
+                iti = iti + 1
+            end
+        end
+    end
     -- rolling 24-cycle "monthly" transaction window (dist/sold/stored/received per asset+ft)
     setXMLInt(xml, "smartDistribution.monthly#pos", monthlyPos)
     local ci = 0
@@ -4279,17 +4502,20 @@ local function saveOverrides(missionInfo)
     end
     saveXMLFile(xml)
     delete(xml)
+    print(string.format("[SmartDistribution persist] SAVED %d mode(s) + %d timing + %d marketBuf + %d marketTiming -> %s", i, t, mb, mtc, tostring(path)))
     log("saved %d per-asset override(s) + %d timing(s) + %d crop window(s) + %d monthly cycle(s) + %d marketBuf + %d marketTiming -> %s", i, t, j, ci, mb, mtc, path)
 end
 
 local function loadOverrides()
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end
     local dir = getSaveDir()
-    if dir == nil then return end
+    local sgd = (g_currentMission.missionInfo ~= nil) and g_currentMission.missionInfo.savegameDirectory or nil
+    print(string.format("[SmartDistribution persist] LOAD fired: dir=%s  mi.savegameDirectory=%s", tostring(dir), tostring(sgd)))
+    if dir == nil then print("[SmartDistribution persist] LOAD skipped: savegame directory unresolved") return end
     local path = dir .. "smartDistribution.xml"
-    if not fileExists(path) then log("no persisted overrides at %s (fresh save)", path) return end
+    if not fileExists(path) then print(string.format("[SmartDistribution persist] LOAD: no file at %s (fresh save, or save wrote a different path)", tostring(path))) return end
     local xml = loadXMLFile("SmartDistributionXML", path)
-    if xml == nil or xml == 0 then return end
+    if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] LOAD FAILED: loadXMLFile(%s)", tostring(path))) return end
     local i, n = 0, 0
     while true do
         local k = string.format("smartDistribution.asset(%d)", i)
@@ -4326,7 +4552,7 @@ local function loadOverrides()
     end
     -- distribution control: output->destination blocks + destination priority (source-keyed, DR-owned),
     -- plus receiver-side input block + max %% (must include ALL fields or later accessors index nil)
-    SmartDistribution.control = { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {} }
+    SmartDistribution.control = { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {}, inputTarget = {} }
     local bi = 0
     while true do
         local k = string.format("smartDistribution.block(%d)", bi)
@@ -4379,6 +4605,17 @@ local function loadOverrides()
         local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
         if ft ~= nil and pct ~= nil then SmartDistribution.setInputCapPct(receiver, ft, pct) end
         ici = ici + 1
+    end
+    local iti = 0
+    while true do
+        local k = string.format("smartDistribution.inputTarget(%d)", iti)
+        local receiver = getXMLString(xml, k .. "#receiver")
+        if receiver == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local pct    = getXMLInt(xml, k .. "#pct")
+        local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
+        if ft ~= nil and pct ~= nil then SmartDistribution.setInputTargetPct(receiver, ft, pct) end
+        iti = iti + 1
     end
     -- per-asset sell-timing overrides
     local t, tn = 0, 0
@@ -4468,6 +4705,7 @@ local function loadOverrides()
         ci = ci + 1
     end
     delete(xml)
+    print(string.format("[SmartDistribution persist] LOADED %d mode(s) + %d timing from %s", n, tn, tostring(path)))
     log("loaded %d per-asset override(s) + %d timing(s) + %d crop window(s) + %d monthly cycle(s) from %s", n, tn, c, mloaded, path)
 end
 
@@ -4475,6 +4713,9 @@ local function installPersistence()
     if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
         Mission00.loadMission00Finished = Utils.appendedFunction(
             Mission00.loadMission00Finished, function(...) pcall(loadOverrides) end)
+        print("[SmartDistribution persist] load hook attached (Mission00.loadMission00Finished)")
+    else
+        print("[SmartDistribution persist] LOAD HOOK NOT ATTACHED -- Mission00.loadMission00Finished missing")
     end
     -- FS25's savegame writer is FSCareerMissionInfo:saveToXMLFile(missionInfo) -- the same hook
     -- EasyDevControls uses to persist into the savegame folder.  (The old FSCareerMission.saveSavegame
@@ -4482,6 +4723,9 @@ local function installPersistence()
     if FSCareerMissionInfo ~= nil and FSCareerMissionInfo.saveToXMLFile ~= nil then
         FSCareerMissionInfo.saveToXMLFile = Utils.appendedFunction(
             FSCareerMissionInfo.saveToXMLFile, function(self, ...) pcall(saveOverrides, self) end)
+        print("[SmartDistribution persist] save hook attached (FSCareerMissionInfo.saveToXMLFile)")
+    else
+        print("[SmartDistribution persist] SAVE HOOK NOT ATTACHED -- FSCareerMissionInfo.saveToXMLFile missing")
     end
 end
 
@@ -4581,9 +4825,11 @@ function SmartDistribution.spawnPalletsFromProduction(pp, ft, count)
 end
 
 -- Read a pallet's per-unit capacity (litres) from its XML, cached by filename. Returns nil if unknown.
-function SmartDistribution.palletCapacityFor(pp, ft)
-    if pp == nil or pp.palletSpawner == nil or ft == nil then return nil end
-    local map = pp.palletSpawner.fillTypeIdToPallet
+-- Works off any PalletSpawner instance (productions use pp.palletSpawner; a husbandry uses its per-fill-type
+-- spec.fillTypeIndexToPalletSpawner[ft]), so both spawn paths share one capacity reader.
+function SmartDistribution._palletCapacityFromSpawner(spawner, ft)
+    if spawner == nil or ft == nil then return nil end
+    local map = spawner.fillTypeIdToPallet
     local entry = map ~= nil and map[ft] or nil
     local filename = entry ~= nil and entry.filename or nil
     if filename == nil or filename == "nope" then return nil end
@@ -4600,6 +4846,22 @@ function SmartDistribution.palletCapacityFor(pp, ft)
     end)
     SmartDistribution._palletCapCache[filename] = cap or false
     return cap
+end
+function SmartDistribution.palletCapacityFor(pp, ft)
+    if pp == nil then return nil end
+    return SmartDistribution._palletCapacityFromSpawner(pp.palletSpawner, ft)
+end
+-- The PalletSpawner a husbandry uses for ft (per-fill-type map, else the single shared spawner).
+function SmartDistribution.husbandryPalletSpawner(p, ft)
+    local hs = p ~= nil and p.spec_husbandryPallets or nil
+    if hs == nil then return nil end
+    if type(hs.fillTypeIndexToPalletSpawner) == "table" and hs.fillTypeIndexToPalletSpawner[ft] ~= nil then
+        return hs.fillTypeIndexToPalletSpawner[ft]
+    end
+    return hs.palletSpawner
+end
+function SmartDistribution.palletCapacityForHusbandry(p, ft)
+    return SmartDistribution._palletCapacityFromSpawner(SmartDistribution.husbandryPalletSpawner(p, ft), ft)
 end
 
 -- Build the list of spawn options for a production output. v1: the single pallet type the production's
@@ -4631,6 +4893,273 @@ function SmartDistribution.cmdSpawn(self, indexStr, ftName, countStr)
     if ft == nil then return "unknown fill type: " .. tostring(ftName) end
     local n = SmartDistribution.spawnPalletsFromProduction(pp, ft, tonumber(countStr) or 1)
     return string.format("spawned %d pallet(s) of %s from %s", n, string.upper(ftName), placeableName(p))
+end
+
+-- ---- manual pallet spawn from a pallet-spawner HUSBANDRY (coops / sheep) ----
+-- Parallel to the production path, but the source is the coop's internal buffer (spec_husbandryPallets
+-- .pendingLiters[ft]) rather than a production storage, and the spawner is the coop's per-fill-type one.
+-- Fill a freshly spawned pallet from that buffer and debit it. Serial, one pallet at a time.
+function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
+    local hs = p ~= nil and p.spec_husbandryPallets or nil
+    if hs == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
+    if type(hs.pendingLiters) ~= "table" then return 0 end
+    local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
+    local unit
+    if pallet.getFillUnits ~= nil then
+        local units = pallet:getFillUnits() or {}
+        for i = 1, #units do
+            if pallet.getFillUnitSupportsFillType == nil or pallet:getFillUnitSupportsFillType(i, ft) then unit = i; break end
+        end
+    end
+    unit = unit or 1
+    local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
+    local avail  = hs.pendingLiters[ft] or 0
+    local amount = math.min(cap > 0 and cap or avail, avail)
+    if amount <= 0 then return 0 end
+    local added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
+    if added > 0 then hs.pendingLiters[ft] = math.max(0, avail - added) end
+    if added > 0 and SmartDistribution._spawnCompleteCb ~= nil then pcall(SmartDistribution._spawnCompleteCb) end
+    return added
+end
+
+-- Spawn up to `count` filled pallets of `ft` from a husbandry's internal buffer, SERIALLY (each fills +
+-- debits pendingLiters in its load callback before the next spawns). Stops early when the buffer drops
+-- below one pallet. Uses the coop's own base-game PalletSpawner. Returns pallets requested (best effort).
+function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count)
+    local hs = p ~= nil and p.spec_husbandryPallets or nil
+    if hs == nil or ft == nil or type(hs.pendingLiters) ~= "table" then return 0 end
+    local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
+    if spawner == nil or spawner.spawnPallet == nil then return 0 end
+    count = math.max(1, math.min(math.floor(count or 1), 50))
+    local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
+    local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
+    local function spawnNext(remaining)
+        if remaining <= 0 then return end
+        if (hs.pendingLiters[ft] or 0) < (cap > 0 and cap or 1) then return end
+        pcall(function()
+            spawner:spawnPallet(farmId, ft, function(_, pallet)
+                SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
+                spawnNext(remaining - 1)
+            end, p)
+        end)
+    end
+    spawnNext(count)
+    return count
+end
+
+-- dev: test the husbandry pallet-spawn primitive before wiring it to the UI. sdSpawnHusb <index> [count]
+function SmartDistribution.cmdSpawnHusb(self, indexStr, countStr)
+    local idx = tonumber(indexStr)
+    if idx == nil then return "usage: sdSpawnHusb <index> [count]  (index from sdList; spawns pallets from a coop/sheep internal buffer)" end
+    local p = listedPlaceables()[idx]
+    if p == nil then return "no placeable at index " .. tostring(idx) end
+    local hs = p.spec_husbandryPallets
+    if hs == nil then return placeableName(p) .. " is not a pallet-spawner husbandry" end
+    local fts = palletSpawnerFillTypes(p)
+    local ft = fts ~= nil and fts[1] or nil
+    if ft == nil then return placeableName(p) .. " has no pallet fill type" end
+    local before = (type(hs.pendingLiters) == "table" and hs.pendingLiters[ft]) or 0
+    local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
+    local palBefore = palletFillLevel(p, ft)
+    local n = SmartDistribution.spawnPalletsFromHusbandry(p, ft, tonumber(countStr) or 1)
+    local after = (type(hs.pendingLiters) == "table" and hs.pendingLiters[ft]) or 0
+    return string.format("%s [%s]: requested=%d cap=%s pending %.1f->%.1f palletLiters %.1f->%.1f",
+        placeableName(p), tostring(fillTypeName(ft)), n, tostring(cap), before, after, palBefore, palletFillLevel(p, ft))
+end
+
+-- dev: dump a feeding-robot husbandry (base-game Lely Vector / standalone GEA) so DR can be wired to its
+-- ingredient bunkers (unloadingSpots) instead of the generic food pool. Reveals the runtime spec layout +
+-- class methods -- the field/method names we can't read from the encrypted base scripts.
+function SmartDistribution.cmdRobotProbe(self)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem" end
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local function scalar(v)
+        local t = type(v)
+        if t == "number" or t == "string" or t == "boolean" then return tostring(v) end
+        return "<" .. t .. ">"
+    end
+    local function classFuncs(cls, label)
+        if type(cls) ~= "table" then dump(label .. " = " .. type(cls)); return end
+        local fns = {}
+        for k, v in pairs(cls) do if type(v) == "function" then fns[#fns + 1] = tostring(k) end end
+        table.sort(fns)
+        dump(label .. " funcs (" .. #fns .. "): " .. table.concat(fns, ", "))
+    end
+    classFuncs(_G["PlaceableHusbandryFeedingRobot"], "PlaceableHusbandryFeedingRobot")
+    classFuncs(_G["FeedingRobot"], "FeedingRobot")
+    local n = 0
+    for _, p in ipairs(ps.placeables) do
+        local spec = p.spec_husbandryFeedingRobot
+        if spec ~= nil then
+            n = n + 1
+            dump(string.format("[robot %d] %s  type=%s foodSpec=%s", n, tostring(placeableName(p)),
+                tostring(p.typeName), tostring(p.spec_husbandryFood ~= nil)))
+            local fields = {}
+            for k, v in pairs(spec) do fields[#fields + 1] = tostring(k) .. ":" .. type(v) end
+            table.sort(fields)
+            dump("   spec fields: " .. table.concat(fields, ", "))
+            -- The real robot object hangs off spec.feedingRobot; its unloadingSpots hold the ingredient
+            -- bunkers. Recurse into it: dump its fields, every list-of-tables it holds (each spot's
+            -- fillType / capacity / fillLevel), and its class method surface.
+            local fr = spec.feedingRobot
+            if type(fr) == "table" then
+                local frf = {}
+                for k, v in pairs(fr) do frf[#frf + 1] = tostring(k) .. ":" .. type(v) end
+                table.sort(frf)
+                dump("   feedingRobot fields: " .. table.concat(frf, ", "))
+                for k, v in pairs(fr) do
+                    if type(v) == "table" then
+                        local rows = {}
+                        for kk, e in pairs(v) do
+                            if type(e) == "table" then
+                                local sub = {}
+                                for k2, v2 in pairs(e) do sub[#sub + 1] = tostring(k2) .. "=" .. scalar(v2) end
+                                table.sort(sub)
+                                rows[#rows + 1] = "[" .. tostring(kk) .. "]{ " .. table.concat(sub, ", ") .. " }"
+                            end
+                        end
+                        if #rows > 0 then dump("      feedingRobot." .. tostring(k) .. ": " .. table.concat(rows, "  ")) end
+                    end
+                end
+                -- recipe (mixing ratios) -- the input for a demand-based (not keep-full) default per bunker
+                local robot = fr.robot
+                if type(robot) == "table" and type(robot.recipe) == "table" then
+                    local rec = robot.recipe
+                    local rf = {}
+                    for k, v in pairs(rec) do if type(v) ~= "table" then rf[#rf + 1] = tostring(k) .. "=" .. scalar(v) end end
+                    table.sort(rf)
+                    dump("   recipe scalars: { " .. table.concat(rf, ", ") .. " }")
+                    if type(rec.ingredients) == "table" then
+                        for kk, ing in pairs(rec.ingredients) do
+                            if type(ing) == "table" then
+                                local sub = {}
+                                for k2, v2 in pairs(ing) do
+                                    if type(v2) == "table" then
+                                        local inner = {}
+                                        for k3, v3 in pairs(v2) do inner[#inner + 1] = tostring(k3) .. "=" .. scalar(v3) end
+                                        table.sort(inner)
+                                        sub[#sub + 1] = tostring(k2) .. "={" .. table.concat(inner, ",") .. "}"
+                                    else
+                                        sub[#sub + 1] = tostring(k2) .. "=" .. scalar(v2)
+                                    end
+                                end
+                                table.sort(sub)
+                                dump(string.format("   recipe.ingredients[%s]: { %s }", tostring(kk), table.concat(sub, ", ")))
+                            end
+                        end
+                    end
+                end
+                local mt = getmetatable(fr)
+                if type(mt) == "table" and type(mt.__index) == "table" then classFuncs(mt.__index, "   feedingRobot class") end
+            end
+            local fsp = p.spec_husbandryFood
+            if fsp ~= nil then
+                dump(string.format("   spec_husbandryFood: litersPerHour=%s capacity=%s animalTypeIndex=%s",
+                    tostring(fsp.litersPerHour), tostring(fsp.capacity), tostring(fsp.animalTypeIndex)))
+            end
+        end
+    end
+    if n == 0 then return "no feeding-robot husbandries (spec_husbandryFeedingRobot) found" end
+    return string.format("probed %d feeding-robot barn(s) -- see log", n)
+end
+
+-- dev: validate the feeding-robot READ + WRITE API on the (first) robot barn before wiring the feed pass.
+-- sdRobotFill <fillType> [liters]  -- e.g. sdRobotFill SILAGE 5000
+function SmartDistribution.cmdRobotFill(self, ftName, litersStr)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    local p, fr
+    for _, pl in ipairs(ps ~= nil and ps.placeables or {}) do
+        if pl.spec_husbandryFeedingRobot ~= nil and pl.spec_husbandryFeedingRobot.feedingRobot ~= nil then
+            p = pl; fr = pl.spec_husbandryFeedingRobot.feedingRobot; break
+        end
+    end
+    if fr == nil then return "no feeding-robot barn found" end
+    if ftName == nil then return "usage: sdRobotFill <fillType> [liters]  (e.g. sdRobotFill SILAGE 5000)" end
+    local ft = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName(string.upper(ftName)) or nil
+    if ft == nil then return "unknown fill type: " .. tostring(ftName) end
+    local spot = type(fr.fillTypeToUnloadingSpot) == "table" and fr.fillTypeToUnloadingSpot[ft] or nil
+    if spot == nil then return placeableName(p) .. " has no bunker for " .. string.upper(ftName) end
+    local liters = tonumber(litersStr) or 1000
+    local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
+    local before = spot.fillLevel or 0
+    local getL   = fr.getFillLevel ~= nil and select(2, pcall(fr.getFillLevel, fr, ft)) or "n/a"
+    local getFree = fr.getFreeCapacity ~= nil and select(2, pcall(fr.getFreeCapacity, fr, ft)) or "n/a"
+    local allowed = fr.getIsFillTypeAllowed ~= nil and select(2, pcall(fr.getIsFillTypeAllowed, fr, ft)) or "n/a"
+    local added = "n/a"
+    if fr.addFillLevelFromTool ~= nil then
+        local ok, r = pcall(fr.addFillLevelFromTool, fr, farmId, liters, ft, nil, nil, nil)
+        added = ok and tostring(r) or ("ERR:" .. tostring(r))
+    end
+    return string.format("%s [%s]: cap=%s fillLevel %.0f->%.0f  getFillLevel=%s getFree=%s allowed=%s addReturned=%s",
+        placeableName(p), string.upper(ftName), tostring(spot.capacity), before, spot.fillLevel or 0,
+        tostring(getL), tostring(getFree), tostring(allowed), tostring(added))
+end
+
+-- dev: set / clear / query an input FILL TARGET (%) on the first feeding-robot barn, to test the demand
+-- override before the Advanced Inputs UI exists. sdTarget <fillType> <pct|off>  (e.g. sdTarget SILAGE 50)
+function SmartDistribution.cmdTarget(self, ftName, pctStr)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    local p
+    for _, pl in ipairs(ps ~= nil and ps.placeables or {}) do
+        if pl.spec_husbandryFeedingRobot ~= nil then p = pl; break end
+    end
+    if p == nil then return "no feeding-robot barn found" end
+    if ftName == nil then return "usage: sdTarget <fillType> <pct|off>  (e.g. sdTarget SILAGE 50)" end
+    local ft = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName(string.upper(ftName)) or nil
+    if ft == nil then return "unknown fill type: " .. tostring(ftName) end
+    local uid = getUid(p)
+    if pctStr == "off" or pctStr == "clear" then
+        SmartDistribution.setInputTargetPct(uid, ft, nil)
+        return string.format("%s [%s]: target cleared", placeableName(p), string.upper(ftName))
+    end
+    local pct = tonumber(pctStr)
+    if pct == nil then
+        local cur = SmartDistribution.getInputTargetPct(uid, ft)
+        return string.format("%s [%s]: target=%s  held=%.0f cap=%.0f", placeableName(p), string.upper(ftName),
+            cur ~= nil and (cur .. "%") or "none",
+            SmartDistribution.husbandryInputHeld(p, ft), SmartDistribution.husbandryInputCapacity(p, ft))
+    end
+    SmartDistribution.setInputTargetPct(uid, ft, pct)
+    return string.format("%s [%s]: target=%d%% (%.0f L)  held=%.0f cap=%.0f", placeableName(p), string.upper(ftName),
+        pct, SmartDistribution.inputTargetLiters(p, ft) or 0,
+        SmartDistribution.husbandryInputHeld(p, ft), SmartDistribution.husbandryInputCapacity(p, ft))
+end
+
+-- Spawn options for a pallet-spawner husbandry output: the single pallet type its spawner uses, maxCount
+-- capped by internally-held (pending) litres / unit capacity. Mirrors getSpawnOptions (production side).
+function SmartDistribution.getSpawnOptionsHusbandry(p, ft)
+    local opts = {}
+    if p == nil or ft == nil then return opts end
+    local held = SmartDistribution.palletPendingLiters(p, ft)
+    local cap  = SmartDistribution.palletCapacityForHusbandry(p, ft)
+    if cap ~= nil and cap > 0 then
+        local volStr = (g_i18n ~= nil and g_i18n.formatVolume ~= nil) and g_i18n:formatVolume(cap, 0) or (tostring(math.floor(cap)) .. " l")
+        opts[#opts + 1] = { kind = "pallet", name = "Pallet - " .. volStr, fillType = ft, capacity = cap, maxCount = math.floor(held / cap) }
+    end
+    return opts
+end
+
+-- Is a manual "Spawn Pallets" action meaningful for (asset, ft)? Requires Hold Internal AND at least one
+-- FULL pallet's worth held internally. Handles productions (storage) and pallet-spawner husbandries
+-- (pending buffer). Single gate for the footer button on every page + the vanilla-menu hooks, so the
+-- button is hidden below one pallet's worth everywhere.
+function SmartDistribution.palletSpawnReady(asset, ft)
+    if asset == nil or ft == nil or MODE == nil then return false end
+    if SmartDistribution.resolvedAssetMode == nil
+       or SmartDistribution.resolvedAssetMode(asset, ft) ~= MODE.HOLD_INTERNAL then return false end
+    local pp = getProductionPoint(asset)
+    if pp ~= nil then
+        local cap  = SmartDistribution.palletCapacityFor(pp, ft)
+        local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
+        return cap ~= nil and cap > 0 and held >= cap
+    end
+    if asset.spec_husbandryPallets ~= nil then
+        local cap  = SmartDistribution.palletCapacityForHusbandry(asset, ft)
+        local held = SmartDistribution.palletPendingLiters(asset, ft)
+        return cap ~= nil and cap > 0 and held >= cap
+    end
+    return false
 end
 
 function SmartDistribution.cmdShow(self)
@@ -4745,6 +5274,21 @@ function SmartDistribution.cmdPalletProbe(self)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return "no placeableSystem" end
     local function dump(s) print("[SmartDistribution] " .. s) end
+    -- [DR hold-internal probe] dump the base specialization + PalletSpawner class functions ONCE. Base
+    -- classes live in the sandbox global scope BEHIND a metatable, so use _G[name] (rawget bypasses it and
+    -- returns nil). This reveals the spawn/update driver we must override for Hold Internal.
+    local function classFuncs(cls, label)
+        if type(cls) ~= "table" then dump(label .. " = " .. type(cls)); return end
+        local fns = {}
+        for k, v in pairs(cls) do if type(v) == "function" then fns[#fns + 1] = tostring(k) end end
+        local mt = getmetatable(cls)
+        dump(string.format("%s: %d own funcs; metatable=%s __index=%s", label, #fns,
+            tostring(mt ~= nil), tostring(type(mt) == "table" and type(mt.__index) or "n/a")))
+        table.sort(fns)
+        if #fns > 0 then dump("   " .. label .. " funcs: " .. table.concat(fns, ", ")) end
+    end
+    classFuncs(_G["PlaceableHusbandryPallets"], "PlaceableHusbandryPallets")
+    classFuncs(_G["PalletSpawner"], "PalletSpawner")
     local sheds = {}
     for _, p in ipairs(ps.placeables) do
         if p.spec_objectStorage ~= nil and p.rootNode ~= nil then sheds[#sheds + 1] = p end
@@ -4760,12 +5304,61 @@ function SmartDistribution.cmdPalletProbe(self)
             dump(string.format("[pallet-asset %d] %s  class=%s enrolled=%s reach=%s owner=%s",
                 n, tostring(placeableName(p)), tostring(getAssetClass(p)), tostring(isEnrolled(p)),
                 tostring(resolveReach(p)), tostring(p.ownerFarmId)))
+            -- [DR hold-internal probe] reveal the base-game egg-pallet spawn interception point. Walk the
+            -- placeable's class chain for pallet/spawn methods, and dump the husbandry-pallet spec's data
+            -- fields (maxNumPallets / spawnPlaces / fillLevels / pendingLiters / palletSpawner). One-shot:
+            -- tells us exactly which function to override to suppress spawning under Hold Internal.
+            do
+                local names, seen, mt = {}, {}, p
+                for _ = 1, 24 do
+                    mt = getmetatable(mt); if type(mt) ~= "table" then break end
+                    local idx = mt.__index
+                    if type(idx) == "table" then
+                        for k, v in pairs(idx) do
+                            if type(v) == "function" and not seen[k] then
+                                local kl = tostring(k):lower()
+                                if kl:find("pallet") or kl:find("spawn") then seen[k] = true; names[#names + 1] = tostring(k) end
+                            end
+                        end
+                        mt = idx
+                    end
+                end
+                table.sort(names)
+                dump("   class pallet/spawn methods: " .. (#names > 0 and table.concat(names, ", ") or "(none)"))
+                if spec ~= nil then
+                    local fields = {}
+                    for k, v in pairs(spec) do fields[#fields + 1] = tostring(k) .. ":" .. type(v) end
+                    table.sort(fields)
+                    dump("   spec_husbandryPallets fields: " .. table.concat(fields, ", "))
+                    dump(string.format("   maxNumPallets=%s numSpawnPlaces=%s pendingLiters=%s palletSpawner=%s",
+                        tostring(spec.maxNumPallets),
+                        tostring(type(spec.spawnPlaces) == "table" and #spec.spawnPlaces or spec.spawnPlaces),
+                        tostring(spec.pendingLiters), tostring(spec.palletSpawner)))
+                    if type(spec.palletSpawner) == "table" then
+                        local psmt = getmetatable(spec.palletSpawner)
+                        local cls = type(psmt) == "table" and psmt.__index or nil
+                        if type(cls) == "table" then classFuncs(cls, "spec.palletSpawner class")
+                        else dump("   spec.palletSpawner metatable __index = " .. tostring(type(cls))) end
+                    end
+                end
+            end
             for _, ft in ipairs(fts) do
                 local buf = (spec ~= nil and spec.fillLevels ~= nil and spec.fillLevels[ft])
                     or (p.spec_beehivePalletSpawner ~= nil and p.spec_beehivePalletSpawner.pendingLiters) or 0
                 dump(string.format("   ft %s: mode=%s  buffer=%s  palletLiters=%s  fullLiters=%s",
                     tostring(fillTypeName(ft)), tostring(resolveMode(p, ft)), tostring(buf),
                     tostring(palletFillLevel(p, ft)), tostring(fullPalletLiters(p, ft))))
+                if spec ~= nil then
+                    dump(string.format("      spec[ft] maxNumPallets=%s capacity=%s fillLevel=%s pending=%s fillPending=%s capPending=%s litersPerHour=%s limitReached=%s numSpawnsPending=%s",
+                        tostring(spec.maxNumPallets and spec.maxNumPallets[ft]),
+                        tostring(spec.capacities and spec.capacities[ft]),
+                        tostring(spec.fillLevels and spec.fillLevels[ft]),
+                        tostring(spec.pendingLiters and spec.pendingLiters[ft]),
+                        tostring(spec.fillLevelsPending and spec.fillLevelsPending[ft]),
+                        tostring(spec.capacitiesPending and spec.capacitiesPending[ft]),
+                        tostring(spec.litersPerHour and spec.litersPerHour[ft]),
+                        tostring(spec.palletLimitReached), tostring(spec.numSpawnsPending)))
+                end
                 if spec ~= nil and type(spec.pallets) == "table" then
                     local k = 0
                     for pallet in pairs(spec.pallets) do
@@ -5852,15 +6445,20 @@ function SmartDistribution.modeHasEndpoint(asset, ft, m)
     local sell   = SmartDistribution.hasSellEndpoint(asset, ft)
     local store  = SmartDistribution.hasStoreEndpoint(asset, ft)
     local market = SmartDistribution.hasMarketEndpoint(asset, ft)
+    -- Move To (Store To) is an Advanced-routing feature -- configured in the Advanced Outputs dialog and
+    -- driven by the block/priority model -- so it is only offered when the Advanced routing master switch is
+    -- on. With it off, STORE_TO / DISTRIBUTE_STORE_TO report no endpoint, so the mode cycle skips them and
+    -- enforceValidModes reverts any existing Move To output back to Hold.
+    local storeTo = SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
     if m == M.DISTRIBUTE         then return dist end
     if m == M.SELL               then return sell end
     if m == M.STORE              then return store end
     if m == M.TRANSFER_MARKET    then return market end
-    if m == M.STORE_TO           then return SmartDistribution.hasStoreToEndpoint(asset, ft) end
+    if m == M.STORE_TO           then return storeTo end
     if m == M.DISTRIBUTE_SELL    then return dist and sell end
     if m == M.DISTRIBUTE_STORE   then return dist and store end
     if m == M.DISTRIBUTE_MARKET  then return dist and market end
-    if m == M.DISTRIBUTE_STORE_TO then return dist and SmartDistribution.hasStoreToEndpoint(asset, ft) end
+    if m == M.DISTRIBUTE_STORE_TO then return dist and storeTo end
     return true
 end
 
@@ -6036,6 +6634,24 @@ end
 -- ---- asset dialog: held + last-cycle distributed/sold/stored ---------------
 -- current held liters of ft across an asset's storages, plus shed (object
 -- storage) and pallet-spawner (eggs/wool/honey) holdings. Guarded; never throws.
+-- Eggs / wool / honey a pallet-spawner husbandry holds INTERNALLY but hasn't materialised as pallets: the
+-- base game's per-fill-type pending queue (spec_husbandryPallets.pendingLiters[ft]; a scalar on a beehive
+-- spawner). Normally near zero -- updatePallets drains it into pallets each tick -- but under Hold Internal
+-- DR suppresses that spawn, so produced eggs pile up here instead. Counting it as held makes the amount
+-- VISIBLE and growing (else the display sits on the frozen spawned-pallet total) and keeps the husbandry
+-- produced-throughput stat correct. It is NOT a distributable source: gatherSources still pulls only real
+-- spawned pallets (palletFillLevel), so nothing tries to drain this queue directly.
+function SmartDistribution.palletPendingLiters(p, ft)
+    if p == nil or ft == nil then return 0 end
+    local hs = p.spec_husbandryPallets
+    if hs ~= nil and type(hs.pendingLiters) == "table" then
+        local v = hs.pendingLiters[ft]; if type(v) == "number" then return v end
+    end
+    local bs = p.spec_beehivePalletSpawner
+    if bs ~= nil and bs.fillType == ft and type(bs.pendingLiters) == "number" then return bs.pendingLiters end
+    return 0
+end
+
 function SmartDistribution.assetHeld(p, ft)
     if p == nil or ft == nil then return 0 end
     local total = 0
@@ -6047,7 +6663,18 @@ function SmartDistribution.assetHeld(p, ft)
         local ok, v = pcall(shedStoredLiters, p, ft); if ok and type(v) == "number" then total = total + v end
     end
     if (p.spec_husbandryPallets ~= nil or p.spec_beehivePalletSpawner ~= nil) and palletFillLevel ~= nil then
-        local ok, v = pcall(palletFillLevel, p, ft); if ok and type(v) == "number" then total = total + v end
+        -- Under Hold Internal the "held" is the INTERNAL buffer only (pending litres): a manually spawned
+        -- pallet is released physical inventory to be collected, so counting it too would freeze the number
+        -- after a spawn (buffer drops, pallet rises, total unchanged). Buffer-only makes held GROW as eggs
+        -- accumulate and DROP by a pallet's worth on each spawn. Other modes: the pallets ARE the inventory
+        -- (the buffer drains to them immediately, so it's ~0), so count those instead.
+        local holdInternal = SmartDistribution.resolvedAssetMode ~= nil and MODE ~= nil
+            and SmartDistribution.resolvedAssetMode(p, ft) == MODE.HOLD_INTERNAL
+        if holdInternal then
+            total = total + SmartDistribution.palletPendingLiters(p, ft)
+        else
+            local ok, v = pcall(palletFillLevel, p, ft); if ok and type(v) == "number" then total = total + v end
+        end
     end
     return total
 end
@@ -6529,8 +7156,109 @@ function SmartDistribution.isCropFillType(ft)
     return ok and idx ~= nil and idx ~= 0
 end
 
+-- Perennial / multi-cut forage (grass and similar): regrows and is harvested several times a
+-- year, so it needs far less seasonal reserve than an annual crop. Base game marks grass with
+-- foliageState regrowthStart="true"; that flag isn't reliably exposed at runtime, so we match
+-- the fruit's NAME against a forage keyword set (covers base GRASS plus common mod forages such
+-- as alfalfa / clover / meadow / ryegrass). Annual grains, roots and oilseeds return false.
+SmartDistribution.REGROW_CROP_KEYWORDS = { "GRASS", "MEADOW", "ALFALFA", "LUCERNE", "LUZERNE", "CLOVER", "RYEGRASS", "HERBAL" }
+function SmartDistribution.isRegrowCrop(ft)
+    if ft == nil then return false end
+    local ftm = g_fruitTypeManager
+    if ftm == nil or ftm.getFruitTypeIndexByFillTypeIndex == nil then return false end
+    local ok, idx = pcall(ftm.getFruitTypeIndexByFillTypeIndex, ftm, ft)
+    if not ok or idx == nil or idx == 0 then return false end
+    local ftype = ftm.getFruitTypeByIndex ~= nil and ftm:getFruitTypeByIndex(idx) or nil
+    local name = ftype ~= nil and ftype.name or nil
+    if type(name) ~= "string" then return false end
+    name = string.upper(name)
+    for _, kw in ipairs(SmartDistribution.REGROW_CROP_KEYWORDS) do
+        if string.find(name, kw, 1, true) ~= nil then return true end
+    end
+    return false
+end
+
+-- Reserve horizon (months of feedstock to hold) for a crop in the seasonal reserve. Regrowing
+-- forage regrows every few months, so it holds only GRASS_RESERVE_MONTHS; annual crops use the
+-- learned single-season harvest-window cover (monthsToCover), else the configured fallback.
+SmartDistribution.GRASS_RESERVE_MONTHS = 3
+function SmartDistribution.cropReserveMonths(ft)
+    if SmartDistribution.isRegrowCrop(ft) then return SmartDistribution.GRASS_RESERVE_MONTHS end
+    local fallback = S.global.seasonalFallbackMonths or 13
+    return SmartDistribution.monthsToCover(S.harvestMonths and S.harvestMonths[ft]) or fallback
+end
+
+-- Monthly feed demand a single husbandry places on a specific crop fill type, for the
+-- seasonal reserve.
+--   * Feeding-robot barns take each ingredient into its own BUNKER, so a crop ingredient's
+--     demand is simply the herd's food rate x that ingredient's recipe ratio (e.g. grass in
+--     a TMR mix) -- no group attribution needed.
+--   * Shared food-pool barns (chicken / pig / etc.) eat a food GROUP of interchangeable crops
+--     at ONE aggregate rate with no per-crop split, so we attribute that rate only to the crops
+--     the pen is actually eating -- weighted by recent per-ft consumption, or (no history yet)
+--     by what's currently loaded in the food pool. A feed crop the animals aren't touching gets
+--     weight 0 and stays fully sellable.
+-- Returns 0 for pens that don't eat ft and for water.
+function SmartDistribution.husbandryFeedDemand(p, ft)
+    if p == nil or ft == nil or not isHusbandryBuilding(p) then return 0 end
+    if ft == waterFillType() then return 0 end
+    local env = g_currentMission ~= nil and g_currentMission.environment or nil
+    local hpm = 24 * ((env ~= nil and env.daysPerPeriod) or 1)   -- hours per economic month (period)
+
+    -- feeding-robot barns: one bunker per ingredient. Demand for a crop ingredient is the herd's
+    -- food rate x this ingredient's mixer-recipe ratio. Non-bunker / non-recipe fts demand nothing.
+    if SmartDistribution.feedingRobotOf(p) ~= nil then
+        if not SmartDistribution.robotBunkerFillTypes(p)[ft] then return 0 end
+        local rfs = p.spec_husbandryFood
+        local rrate = rfs ~= nil and SmartDistribution.husbandryInputRate(p, rfs.litersPerHour, "food") or 0
+        if rrate <= 0 then return 0 end
+        local ings = SmartDistribution.robotRecipeIngredients(p)
+        if ings == nil then return 0 end
+        for _, ing in ipairs(ings) do
+            if type(ing.fillTypes) == "table" then
+                for _, ift in pairs(ing.fillTypes) do
+                    if ift == ft and type(ing.ratio) == "number" then return rrate * ing.ratio * hpm end
+                end
+            end
+        end
+        return 0
+    end
+
+    -- shared food-pool husbandry
+    local fs = p.spec_husbandryFood
+    if fs == nil or fs.supportedFillTypes == nil or not fs.supportedFillTypes[ft] then return 0 end
+    local rate = SmartDistribution.husbandryInputRate(p, fs.litersPerHour, "food")
+    if not rate or rate <= 0 then return 0 end
+    local monthly = rate * hpm
+    if monthly <= 0 then return 0 end
+    -- attribution weight: share of the food rate to charge to ft. primary = recent per-ft
+    -- consumption (what it's really eating); fallback = current per-ft holdings in the pool.
+    local ftShare, total = 0, 0
+    for f in pairs(fs.supportedFillTypes) do
+        if f ~= waterFillType() then
+            local c = SmartDistribution.monthlyConsumed(p, f) or 0
+            total = total + c
+            if f == ft then ftShare = c end
+        end
+    end
+    if total <= 0 then
+        ftShare, total = 0, 0
+        if fs.fillLevels ~= nil then
+            for f, lvl in pairs(fs.fillLevels) do
+                if f ~= waterFillType() then
+                    total = total + (lvl or 0)
+                    if f == ft then ftShare = (lvl or 0) end
+                end
+            end
+        end
+    end
+    if total <= 0 then return 0 end     -- can't tell what it eats -> reserve nothing (don't freeze cash crops)
+    return monthly * (ftShare / total)
+end
+
 -- total monthly INPUT demand for a fill type across all ACTIVE production lines
--- (cyclesPerMonth x input amount, summed). Husbandry feed demand is a later add.
+-- (cyclesPerMonth x input amount, summed) PLUS husbandry feed demand for the crops each
+-- pen is actually eating (husbandryFeedDemand). Used by the seasonal harvest reserve.
 function SmartDistribution.monthlyDemand(ft)
     if ft == nil then return 0 end
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
@@ -6545,6 +7273,8 @@ function SmartDistribution.monthlyDemand(ft)
                     if i.type == ft then total = total + (i.amount or 0) * cpm end
                 end
             end
+        elseif pp == nil and isHusbandryBuilding(p) then
+            total = total + SmartDistribution.husbandryFeedDemand(p, ft)
         end
     end
     return total
@@ -6916,6 +7646,15 @@ end
 function SmartDistribution.husbandryInputFillTypes(p)
     local out = {}
     if p == nil then return out end
+    -- Feeding-robot barns take ingredients into per-fill-type BUNKERS, not a shared food pool: list the
+    -- bunker fill types (silage / hay / straw / mineral feed) instead of the generic food supportedFillTypes.
+    -- Water still applies if not auto-supplied. (Straw bedding shares the STRAW bunker ft here.)
+    if SmartDistribution.feedingRobotOf(p) ~= nil then
+        for ft in pairs(SmartDistribution.robotBunkerFillTypes(p)) do out[ft] = true end
+        local water = waterFillType()
+        if water ~= nil and p.spec_husbandryWater ~= nil and not p.spec_husbandryWater.automaticWaterSupply then out[water] = true end
+        return out
+    end
     local fmap = foodQualityMap(p)
     if fmap ~= nil then for ft in pairs(fmap) do out[ft] = true end end
     if p.getHusbandryIsFillTypeSupported ~= nil then
@@ -6944,6 +7683,9 @@ end
 -- read their own husbandry fill levels.
 function SmartDistribution.husbandryInputHeld(p, ft)
     if p == nil or ft == nil then return 0 end
+    if SmartDistribution.feedingRobotOf(p) ~= nil and SmartDistribution.robotBunkerFillTypes(p)[ft] then
+        return SmartDistribution.robotBunkerLevel(p, ft)
+    end
     local fs = p.spec_husbandryFood
     if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= waterFillType() then
         local total = 0
@@ -6957,6 +7699,9 @@ function SmartDistribution.husbandryInputHeld(p, ft)
 end
 function SmartDistribution.husbandryInputCapacity(p, ft)
     if p == nil or ft == nil then return 0 end
+    if SmartDistribution.feedingRobotOf(p) ~= nil and SmartDistribution.robotBunkerFillTypes(p)[ft] then
+        return SmartDistribution.robotBunkerCapacity(p, ft)
+    end
     local fs = p.spec_husbandryFood
     if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= waterFillType() then
         return fs.capacity or 0
@@ -7401,10 +8146,24 @@ function SmartDistribution.receiverInputRows(p)
             maxLiters = cap * (pct / 100),
             held = SmartDistribution.inputHeldLevel(p, ft),
             explicit = rcvUid ~= nil and SmartDistribution.hasExplicitInputCapPct(rcvUid, ft) or false,
+            targetPct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil,
+            targetLiters = SmartDistribution.inputTargetLiters(p, ft),
+        }
+    end
+    -- Feeding-robot barn: append a READ-ONLY row for the internal mixed-feed / food level (the robot mixes
+    -- the bunkers into this and feeds the herd from it; shown for reference only, not settable).
+    if SmartDistribution.feedingRobotOf(p) ~= nil and p.spec_husbandryFood ~= nil then
+        local fs = p.spec_husbandryFood
+        local held = 0
+        if type(fs.fillLevels) == "table" then for _, lvl in pairs(fs.fillLevels) do held = held + (lvl or 0) end end
+        rows[#rows + 1] = {
+            ft = 0, name = "Mixed feed", readOnly = true, pooled = false, blocked = false,
+            pct = 100, capLiters = fs.capacity or 0, maxLiters = fs.capacity or 0, held = held,
         }
     end
     table.sort(rows, function(a, b)
-        if a.pooled ~= b.pooled then return a.pooled end   -- pooled products first
+        if (a.readOnly or false) ~= (b.readOnly or false) then return not a.readOnly end   -- read-only rows last
+        if a.pooled ~= b.pooled then return a.pooled end   -- then pooled products first
         return tostring(a.name) < tostring(b.name)
     end)
     return rows, (pool ~= nil and pool.liters or nil)
@@ -7462,11 +8221,17 @@ end
 -- Open the manual pallet-spawn pop-up for a production output. onConfirm(option, count) is invoked
 -- when the player presses Spawn. Returns true if the dialog was shown.
 function SmartDistribution.openSpawnDialog(placeable, ft, onConfirm)
-    if g_gui == nil or SmartDistribution._spawnDialog == nil then return false end
+    if g_gui == nil or SmartDistribution._spawnDialog == nil or ft == nil then return false end
     local pp = getProductionPoint(placeable)
-    if pp == nil or ft == nil then return false end
-    local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
-    SmartDistribution._spawnDialog:setup(pp, ft, held, onConfirm)
+    if pp ~= nil then
+        local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
+        SmartDistribution._spawnDialog:setup(pp, ft, held, onConfirm)
+    elseif placeable ~= nil and placeable.spec_husbandryPallets ~= nil then
+        local held = SmartDistribution.palletPendingLiters(placeable, ft)
+        SmartDistribution._spawnDialog:setupHusbandry(placeable, ft, held, onConfirm)
+    else
+        return false
+    end
     g_gui:showDialog("DistributionSpawnDialog")
     return true
 end
@@ -7558,6 +8323,7 @@ local MANURE_STORAGE_CAPACITY = 50000
 local function patchHusbandryManureStorage(placeable)
     if placeable == nil or placeable.spec_husbandry == nil then return end
     if placeable.spec_manureHeap ~= nil then return end          -- already has a heap
+    if not SmartDistribution.husbandryProducesManure(placeable) then return end   -- egg-only coops make no manure -> no slot
     -- The Grazing Pasture mod's pastures ship MANURE capacity 0 on purpose and must keep it; every other
     -- husbandry (including vanilla barns, which also declare 0) gets the slot as designed.
     local grazing = SmartDistribution.isGrazingPasture(placeable)
@@ -7836,6 +8602,39 @@ else
     log("rename unlock: PlaceableSystem.addPlaceable not found; renaming left as the base game set it.")
 end
 
+-- ---- Hold Internal: suppress vanilla egg / wool / honey pallet spawning -----
+-- A pallet-spawner husbandry (chicken coop, sheep barn) set to Hold Internal should keep its product in
+-- the building's internal buffer (spec_husbandryPallets.fillLevels), NOT spawn physical pallets. The base
+-- game accumulates output in updateOutput / addPendingLiters and SPAWNS separately in
+-- PlaceableHusbandryPallets.updatePallets (confirmed via sdPalletProbe). Overriding updatePallets to
+-- no-op while EVERY spawner fill type is HOLD_INTERNAL stops the spawn but leaves accumulation intact --
+-- switch the mode back and the accumulated buffer spawns as pallets again. Because the override re-checks
+-- the resolved mode on every call it survives save/reload (the prior symptom, Open Item 6.1). The server
+-- runs the pallet update, so this replicates in multiplayer. SmartDistribution.* fields, never top-level
+-- locals, to respect the 200-local main-chunk ceiling.
+function SmartDistribution.shouldHoldPalletsInternal(p)
+    if p == nil or p.spec_husbandryPallets == nil or not isEnrolled(p) then return false end
+    local fts = palletSpawnerFillTypes(p)
+    if fts == nil or #fts == 0 then return false end
+    for _, ft in ipairs(fts) do
+        if resolveMode(p, ft) ~= MODE.HOLD_INTERNAL then return false end   -- any non-held output -> let vanilla spawn
+    end
+    return true
+end
+function SmartDistribution.installHoldInternalPalletSuppression()
+    if PlaceableHusbandryPallets == nil or PlaceableHusbandryPallets.updatePallets == nil then
+        log("hold-internal pallet suppression: PlaceableHusbandryPallets.updatePallets not found [VERIFY]")
+        return
+    end
+    PlaceableHusbandryPallets.updatePallets = Utils.overwrittenFunction(
+        PlaceableHusbandryPallets.updatePallets,
+        function(self, superFunc, ...)
+            if SmartDistribution.shouldHoldPalletsInternal(self) then return end   -- suppress spawn; keep buffer
+            return superFunc(self, ...)
+        end)
+    log("hold-internal pallet suppression installed")
+end
+
 install()
 installPersistence()
 -- installConsole()   -- dev console commands (sdList / sdMode / sdSpawn / sd*Probe / ...) disabled for release. Uncomment to re-enable for testing.
@@ -7845,6 +8644,7 @@ installPersistence()
 -- end
 installInteraction()
 installHusbandryPatch()
+SmartDistribution.installHoldInternalPalletSuppression()
 installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
@@ -7890,7 +8690,7 @@ end
 -- Everything here is SmartDistribution.* fields -- the file is at Lua's 200 main-chunk
 -- local ceiling, so no new top-level locals may be introduced.
 -- ============================================================================
-SmartDistribution.control = SmartDistribution.control or { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {} }
+SmartDistribution.control = SmartDistribution.control or { blocked = {}, priority = {}, inputBlock = {}, inputCapPct = {}, inputTarget = {} }
 
 function SmartDistribution.setControl(t)
     if type(t) ~= "table" then t = {} end
@@ -7899,7 +8699,19 @@ function SmartDistribution.setControl(t)
         priority    = t.priority    or {},   -- [srcUid][ft] = { destUid, ... } : ranked order; unranked -> distance
         inputBlock  = t.inputBlock  or {},   -- [rcvUid][ft] = true : building refuses this product on the way IN
         inputCapPct = t.inputCapPct or {},   -- [rcvUid][ft] = 0..100 : max % of the (pooled) capacity this product may take
+        inputTarget = t.inputTarget or {},   -- [rcvUid][ft] = 0..100 : fill target as % of that product's capacity share
     }
+end
+
+-- Reset ALL advanced input/output overrides to default (empty the source blocks / priority, and the
+-- receiver input blocks / caps / targets). Called when the Advanced routing master switch is turned OFF,
+-- so switching it off truly resets those settings rather than just ignoring them until it's turned back on.
+-- Move To modes aren't stored here -- they lose their endpoint with Advanced off and enforceValidModes
+-- reverts them to Hold on the next hourly pass.
+function SmartDistribution.clearAdvancedControl()
+    local C = SmartDistribution.control
+    if C == nil then return end
+    C.blocked, C.priority, C.inputBlock, C.inputCapPct, C.inputTarget = {}, {}, {}, {}, {}
 end
 
 -- ============================================================================
@@ -7933,7 +8745,17 @@ function SmartDistribution.setDestBlocked(srcUid, ft, destUid, blocked)
     end
 end
 
+-- Master switch for the Advanced routing overrides (source-side blocks + priority, receiver-side input
+-- blocks + caps). When OFF, the four accessors below return their NEUTRAL value, so the hourly pass ignores
+-- every stored override and reverts to the default nearest-first, distance-based behaviour -- the stored
+-- edits are kept (not wiped), so flipping it back on restores them. Default ON.
+function SmartDistribution.advancedEnabled()
+    local g = SmartDistribution.settings and SmartDistribution.settings.global
+    return g == nil or g.advancedRoutingEnabled ~= false
+end
+
 function SmartDistribution.isDestBlocked(srcUid, ft, destUid)
+    if not SmartDistribution.advancedEnabled() then return false end
     local b = SmartDistribution.control.blocked
     local bs = b ~= nil and b[srcUid] or nil
     local bf = bs ~= nil and bs[ft] or nil
@@ -8022,6 +8844,12 @@ end
 --   * bulk store: pooled when ONE storage tank supports 2+ fill types.
 function SmartDistribution.pooledInputCapacity(p)
     if p == nil then return nil end
+    -- Feeding-robot barns take ingredients into INDIVIDUAL per-fill-type bunkers (unloadingSpots), each with
+    -- its own capacity. They also carry a generic spec_husbandryFood pool whose supported types include
+    -- silage / hay -- but that pool is NOT a DR target here, and matching it would mislabel the bunkers as
+    -- pooled (silage + hay shown sharing 60k at 25% each). Never pool a robot barn: each bunker is its own
+    -- tank, resolved individually by inputProductCapacity -> husbandryInputCapacity.
+    if SmartDistribution.feedingRobotOf(p) ~= nil then return nil end
     -- object-storage shed (hay loft, pallet shed): shared slot pool
     local spec = p.spec_objectStorage
     if spec ~= nil then
@@ -8169,6 +8997,7 @@ function SmartDistribution.setInputBlocked(rcvUid, ft, blocked)
     end
 end
 function SmartDistribution.isInputBlocked(rcvUid, ft)
+    if not SmartDistribution.advancedEnabled() then return false end
     local ib = SmartDistribution.control.inputBlock
     local b = ib ~= nil and ib[rcvUid] or nil
     return b ~= nil and b[ft] == true
@@ -8221,8 +9050,54 @@ function SmartDistribution.clearInputCapPct(rcvUid, ft)
         if next(C[rcvUid]) == nil then C[rcvUid] = nil end
     end
 end
+
+-- ---- input FILL TARGET ------------------------------------------------------
+-- A per-(receiver, ft) setpoint: fill this product up to targetPct % of its capacity SHARE, then just hold
+-- that level (top up what's consumed each cycle) instead of the default recipe / buffer-hours demand. As a
+-- percentage it rides capacity changes automatically. nil = no target (default demand). Set nil to clear.
+function SmartDistribution.setInputTargetPct(rcvUid, ft, pct)
+    local C = SmartDistribution.control
+    C.inputTarget = C.inputTarget or {}
+    local T = C.inputTarget
+    if pct == nil then
+        if T[rcvUid] ~= nil then T[rcvUid][ft] = nil; if next(T[rcvUid]) == nil then T[rcvUid] = nil end end
+        return
+    end
+    pct = math.max(0, math.min(100, math.floor(pct + 0.5)))
+    T[rcvUid] = T[rcvUid] or {}
+    T[rcvUid][ft] = pct
+end
+function SmartDistribution.getInputTargetPct(rcvUid, ft)
+    local T = SmartDistribution.control.inputTarget
+    local C = T ~= nil and T[rcvUid] or nil
+    return C ~= nil and C[ft] or nil
+end
+-- The target LEVEL in litres for (p, ft): targetPct % of the product's cap-adjusted capacity (pool share or
+-- own tank). nil when no target is set, or when Advanced routing is off (targets are an advanced override).
+function SmartDistribution.inputTargetLiters(p, ft)
+    if not SmartDistribution.advancedEnabled() then return nil end
+    local rcvUid = getUid(p)
+    local pct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil
+    if pct == nil then return nil end
+    local cap = SmartDistribution.inputProductCapacity(p, ft)
+    if cap == nil or cap <= 0 then return nil end
+    local capPct = SmartDistribution.inputCapPct(p, ft) or 100
+    return cap * (capPct / 100) * (pct / 100)
+end
+-- Effective demand for (p, ft) this cycle: if a fill target is set, demand toward that LEVEL (target - cur,
+-- clamped >= 0) so DR fills to it then holds it; otherwise the caller's default (recipe / buffer / keep-full).
+function SmartDistribution.effectiveInputNeed(p, ft, defaultNeed, cur)
+    local tgt = SmartDistribution.inputTargetLiters(p, ft)
+    if tgt == nil then return defaultNeed end
+    return math.max(0, tgt - (cur or 0))
+end
 -- the effective % for (rcv, ft): the player's explicit value, else the default.
 function SmartDistribution.inputCapPct(p, ft)
+    -- Advanced off: no input constraint at all -- return 100% so inputAcceptableLiters lets each product
+    -- fill the whole (shared) tank, the base-game first-come approach. The pooled even-split only mattered
+    -- for moving product between storages, which is itself disabled with Advanced off, so nothing is left
+    -- for the split to protect.
+    if not SmartDistribution.advancedEnabled() then return 100 end
     local rcvUid = getUid(p)
     local T = SmartDistribution.control.inputCapPct
     local C = (rcvUid ~= nil and T ~= nil) and T[rcvUid] or nil
@@ -8280,6 +9155,7 @@ end
 -- so the default (no priority) path is byte-identical to the original engine.
 -- uidOf(claim) -> the claim's CONSUMER uid.
 function SmartDistribution.priorityOrder(sourceUid, ft, claims, uidOf)
+    if not SmartDistribution.advancedEnabled() then return nil end   -- default proportional/distance split
     local pr = SmartDistribution.control.priority
     local pf = pr ~= nil and pr[sourceUid] or nil
     local list = pf ~= nil and pf[ft] or nil
@@ -8570,6 +9446,66 @@ function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores
     return out
 end
 
+-- ---- output link status (source side; mirror of inputLinkStatus) ------------
+-- Same three states + colours as the input side, but ACTIVE reads "Sending" (a source sends; a receiver
+-- receives), so outgoing rows use OUT_LINK_LABEL.
+SmartDistribution.OUT_LINK_LABEL = {
+    ACTIVE  = "Active (Sending)",
+    IDLE    = "Active (Idle)",
+    BLOCKED = "Blocked",
+}
+
+-- The destinations relevant to (asset, ft)'s CURRENT mode -- demands for a distribute mode, stores for a
+-- store / Move To mode, markets for a market mode (combined for combo modes) -- each carrying a .blocked
+-- flag. Mirrors DistributionAdvancedDialog:resolveOutput so the status matches what the Advanced dialog shows.
+function SmartDistribution.outputDestinationsForMode(asset, ft)
+    local out = {}
+    if asset == nil or ft == nil then return out end
+    local showDemands, rightKind = false, nil
+    local pp = getProductionPoint(asset)
+    if pp ~= nil then
+        local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
+        showDemands = (v == 1 or v == 3 or v == 4 or v == 7)
+        if v == 4 or v == 5 then rightKind = "STORE" elseif v == 6 or v == 7 then rightKind = "MARKET" end
+    else
+        local m = SmartDistribution.resolvedAssetMode(asset, ft)
+        local M = MODE
+        showDemands = (SmartDistribution.modeDistributes ~= nil) and SmartDistribution.modeDistributes(m) or false
+        if m == M.STORE or m == M.DISTRIBUTE_STORE or m == M.STORE_TO or m == M.DISTRIBUTE_STORE_TO then rightKind = "STORE"
+        elseif m == M.TRANSFER_MARKET or m == M.DISTRIBUTE_MARKET then rightKind = "MARKET" end
+    end
+    local function append(list) for _, d in ipairs(list or {}) do out[#out + 1] = d end end
+    if showDemands then append(SmartDistribution.outputDestinations(asset, ft, true, false, false)) end
+    if rightKind == "STORE" then append(SmartDistribution.outputDestinations(asset, ft, false, true, false))
+    elseif rightKind == "MARKET" then append(SmartDistribution.outputDestinations(asset, ft, false, false, true)) end
+    return out
+end
+
+-- Overall status of an OUTGOING product row: Sending if it moved product anywhere last cycle; Blocked if it
+-- has routable destinations but every one is blocked; otherwise Idle. Returns nil for a non-sending mode
+-- (Hold / Hold Internal / Inherit / production Keep) so the status column stays blank there.
+function SmartDistribution.outputLinkStatus(p, ft)
+    if p == nil or ft == nil then return nil end
+    local L, M = SmartDistribution.LINK, MODE
+    local pp = getProductionPoint(p)
+    if pp ~= nil then
+        local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
+        if v == nil or v == 0 then return nil end            -- 0 = Keep (Hold)
+    else
+        local m = SmartDistribution.resolvedAssetMode(p, ft)
+        if m == nil or m == M.INHERIT or m == M.HOLD or m == M.HOLD_INTERNAL then return nil end
+    end
+    local dist, sold, stored = SmartDistribution.lastCycleStats(p, ft)
+    if (dist + sold + stored) > 0 then return L.ACTIVE end   -- Sending
+    local dests = SmartDistribution.outputDestinationsForMode(p, ft)
+    if #dests > 0 then
+        local allBlocked = true
+        for _, d in ipairs(dests) do if not d.blocked then allBlocked = false; break end end
+        if allBlocked then return L.BLOCKED end
+    end
+    return L.IDLE
+end
+
 -- ---- input link status (shared by every building category) ------------------
 -- Public uid accessor: the UI holds placeables, the link API is keyed by uid.
 function SmartDistribution.assetUid(p)
@@ -8685,6 +9621,15 @@ function SmartDistribution.canAccept(p, ft)
             return true, (getActiveHourlyConsumption(pp, ft) > 0)
         end
     end
+    -- Husbandry buildings are sinks for their animal inputs (food / straw / water). Without this branch the
+    -- endpoint gate (sinksFor -> hasDistributeEndpoint) never sees a barn, so a source holding straw/food
+    -- for animals is offered NO Distribute mode -- and enforceValidModes then reverts that source to Hold
+    -- every hour, so it never feeds the barn at runtime either. This is why a hay loft could not be set to
+    -- distribute straw to the modded chicken coop. Mirrors receiverInputFillTypes' husbandry branch.
+    if isHusbandryBuilding(p) and SmartDistribution.husbandryInputFillTypes ~= nil
+       and SmartDistribution.husbandryInputFillTypes(p)[ft] then
+        return true, true
+    end
     if (p.spec_silo ~= nil or isManurePit(p)) then
         for _, s in ipairs(getAllStorages(p)) do if storageSupports(s, ft) then return true, true end end
     end
@@ -8736,7 +9681,28 @@ if addConsoleCommand ~= nil then
     pcall(addConsoleCommand, "sdManureProbe",
         "Dump manure heaps/extensions + barn manure/slurry storage [dev]",
         "cmdManureProbe", SmartDistribution)
-    print("[SmartDistribution] sdManureProbe registered")
+    -- installConsole() is disabled for release (see its call site), so the probes it registered never
+    -- take effect. Re-register the ones needed for the Hold-Internal pallet investigation the proven way,
+    -- directly at file scope after their cmd* functions are defined.
+    pcall(addConsoleCommand, "sdPalletProbe",
+        "Dump husbandry pallet assets (coops/sheep) + spawn methods [dev]",
+        "cmdPalletProbe", SmartDistribution)
+    pcall(addConsoleCommand, "sdList",
+        "List placeables: index | uniqueId | name | class | overrides",
+        "cmdList", SmartDistribution)
+    pcall(addConsoleCommand, "sdSpawnHusb",
+        "Spawn pallets from a coop/sheep internal buffer: sdSpawnHusb <index> [count] [dev]",
+        "cmdSpawnHusb", SmartDistribution)
+    pcall(addConsoleCommand, "sdRobotProbe",
+        "Dump feeding-robot husbandry (Lely Vector / GEA) ingredient bunkers [dev]",
+        "cmdRobotProbe", SmartDistribution)
+    pcall(addConsoleCommand, "sdRobotFill",
+        "Test feeding-robot bunker fill: sdRobotFill <fillType> [liters] [dev]",
+        "cmdRobotFill", SmartDistribution)
+    pcall(addConsoleCommand, "sdTarget",
+        "Set input fill target on the robot barn: sdTarget <fillType> <pct|off> [dev]",
+        "cmdTarget", SmartDistribution)
+    print("[SmartDistribution] sd* probes + sdSpawnHusb / sdRobotFill / sdTarget registered")
 else
     print("[SmartDistribution] addConsoleCommand unavailable -- console commands disabled by the game")
 end

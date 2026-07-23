@@ -132,6 +132,20 @@ local function setStatusCell(cell, placeable, ft)
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) end
 end
 
+-- OUTGOING (source-side) status into a row's statusText cell + the same green/orange/red colours:
+-- Active (Sending) when it moved product last cycle, Active (Idle) when configured but nothing moved,
+-- Blocked when every routable destination is blocked. Blank for Hold / non-sending modes.
+local function setOutputStatusCell(cell, placeable, ft)
+    local c = cell:getAttribute("statusText")
+    if c == nil then return end
+    local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
+        and SmartDistribution.outputLinkStatus(placeable, ft) or nil
+    if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
+    local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
+    if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
+    elseif c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
+end
+
 function DistributionStoragePage.new(target, custom_mt)
     local self = DistributionMenuPage.new(target, custom_mt or DistributionStoragePage_mt)
     self.pageName = "DISTREDUX_STORAGE"
@@ -295,6 +309,7 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         if timing ~= nil then text = text .. "  -  " .. timing end
         modeCell:setText(text)
     end
+    setOutputStatusCell(cell, self.selectedAsset, row.ft)
 end
 
 function DistributionStoragePage:onListSelectionChanged(list, section, index)
@@ -361,15 +376,23 @@ function DistributionStoragePage:updateSellTimingButton()
     -- row focused it becomes "Advanced Inputs"; with an output/detail row focused it's "Advanced Outputs".
     local focus = self._focusRole or "output"
     local row = self:selectedDetailRow()
-    local showAdvancedOut = row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
+    -- Advanced routing master switch (Settings): off hides both Advanced buttons entirely.
+    local adv = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
+    local showAdvancedOut = adv and row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
         and SmartDistribution.modeConfigurable ~= nil
         and SmartDistribution.modeConfigurable(self.selectedAsset, row.ft)
-    local showAdvancedIn = self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
+    local showAdvancedIn = adv and self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
         and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
+    -- Shared CANCEL slot: "Spawn Pallets" for a Hold Internal pallet output holding at least one pallet's
+    -- worth (coops / sheep), else "Sell Timing" for a sell output, else hidden. The two never overlap.
+    local spawnReady = row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
+        and SmartDistribution.palletSpawnReady ~= nil
+        and SmartDistribution.palletSpawnReady(self.selectedAsset, row.ft)
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end
+            if spawnReady then b.text = "Spawn Pallets"; vis[#vis + 1] = b
+            elseif label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end
         elseif b._role == "advanced" then
             if focus == "input" then
                 if showAdvancedIn then b.text = "Advanced Inputs"; vis[#vis + 1] = b end
@@ -423,6 +446,47 @@ function DistributionStoragePage:onSellTiming()
     if not SmartDistribution.toggleSellTiming(self.selectedAsset, row.ft) then return end
     if self.detailList ~= nil then self.detailList:reloadData() end
     self:updateSellTimingButton()
+end
+
+-- The shared CANCEL footer slot dispatches to Spawn (a ready Hold Internal pallet output) or Sell Timing.
+function DistributionStoragePage:onSellTimingOrSpawn()
+    local row = self:selectedDetailRow()
+    if row == nil or row.ft == nil or self.selectedAsset == nil then return end
+    if SmartDistribution.palletSpawnReady ~= nil and SmartDistribution.palletSpawnReady(self.selectedAsset, row.ft) then
+        self:onSpawn()
+    else
+        self:onSellTiming()
+    end
+end
+
+-- Spawn `count` pallet(s) of the selected Hold Internal output from its internal buffer (MP-safe via the
+-- event). Opens the shared count pop-up; the completion hook refreshes this page as each pallet fills.
+function DistributionStoragePage:onSpawn(count)
+    local row = self:selectedDetailRow()
+    if row == nil or row.ft == nil or self.selectedAsset == nil then return end
+    local page, asset, ft = self, self.selectedAsset, row.ft
+    local function refreshHook()
+        SmartDistribution._spawnCompleteCb = function()
+            pcall(function()
+                -- the husbandry layout has no detailList (inputs/outputs are split lists); reload whatever exists
+                if page.detailList ~= nil then page.detailList:reloadData() end
+                if page.outputList ~= nil then page.outputList:reloadData() end
+                page:updateSellTimingButton()
+            end)
+        end
+    end
+    if SmartDistribution.openSpawnDialog ~= nil and SmartDistribution.openSpawnDialog(asset, ft, function(_, n)
+            if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
+                refreshHook()
+                DistributionSpawnEvent.request(asset, ft, n)
+            end
+        end) then
+        return
+    end
+    if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
+        refreshHook()
+        DistributionSpawnEvent.request(asset, ft, count or 1)
+    end
 end
 
 -- [ + gaze entry: jump the building list to a specific placeable and select it
@@ -562,6 +626,7 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
             if timing ~= nil then text = text .. "  -  " .. timing end
             modeCell:setText(text)
         end
+        setOutputStatusCell(cell, self.selectedAsset, row.ft)
     end
 end
 
@@ -717,8 +782,11 @@ function DistributionMarketsPage:updateTimingButton()
         if b._role == "sellTiming" then
             if label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end   -- hidden while the product is Held
         elseif b._role == "advanced" then
-            -- markets are sell endpoints (no inputs): the Advanced button always means Advanced Outputs
-            b.text = "Advanced Outputs"; vis[#vis + 1] = b
+            -- markets are sell endpoints (no inputs): the Advanced button always means Advanced Outputs.
+            -- Hidden when the Advanced routing master switch (Settings) is off.
+            if SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled() then
+                b.text = "Advanced Outputs"; vis[#vis + 1] = b
+            end
         else
             vis[#vis + 1] = b
         end

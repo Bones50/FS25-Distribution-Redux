@@ -32,11 +32,26 @@ end
 -- Populate the dialog for a production output. onConfirm(option, count) fires on Spawn.
 function DistributionSpawnDialog:setup(pp, ft, held, onConfirm)
     self.pp = pp
+    self.husbandry = nil
     self.ft = ft
     self.held = held or 0
     self.onConfirm = onConfirm
     self.options = (SmartDistribution ~= nil and SmartDistribution.getSpawnOptions ~= nil)
         and SmartDistribution.getSpawnOptions(pp, ft) or {}
+    self.optIndex = 1
+    self.count = (#self.options > 0 and (self.options[1].maxCount or 0) > 0) and 1 or 0
+end
+
+-- Populate for a pallet-spawner HUSBANDRY output (coop / sheep). Source is the coop's internal buffer
+-- (pending litres), not a production storage; otherwise identical to setup(). onConfirm(option, count).
+function DistributionSpawnDialog:setupHusbandry(p, ft, held, onConfirm)
+    self.pp = nil
+    self.husbandry = p
+    self.ft = ft
+    self.held = held or 0
+    self.onConfirm = onConfirm
+    self.options = (SmartDistribution ~= nil and SmartDistribution.getSpawnOptionsHusbandry ~= nil)
+        and SmartDistribution.getSpawnOptionsHusbandry(p, ft) or {}
     self.optIndex = 1
     self.count = (#self.options > 0 and (self.options[1].maxCount or 0) > 0) and 1 or 0
 end
@@ -84,7 +99,14 @@ function DistributionSpawnDialog:refresh()
     local maxN = self:maxForSelected()
     local o = self:option()
     if self.dialogTextElement ~= nil then
-        local held = (self.pp ~= nil and self.pp.getFillLevel ~= nil) and self.pp:getFillLevel(self.ft) or self.held
+        local held
+        if self.pp ~= nil and self.pp.getFillLevel ~= nil then
+            held = self.pp:getFillLevel(self.ft)
+        elseif self.husbandry ~= nil and SmartDistribution ~= nil and SmartDistribution.palletPendingLiters ~= nil then
+            held = SmartDistribution.palletPendingLiters(self.husbandry, self.ft)
+        else
+            held = self.held
+        end
         local capTxt = (o ~= nil and o.capacity ~= nil) and (fmt(o.capacity) .. " l") or "?"
         self.dialogTextElement:setText(string.format("Held: %s l    Pallet: %s    Max: %d", fmt(held), capTxt, maxN))
     end

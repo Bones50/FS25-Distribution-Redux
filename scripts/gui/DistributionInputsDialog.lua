@@ -23,7 +23,8 @@
 DistributionInputsDialog = {}
 local Dlg_mt = Class(DistributionInputsDialog, MessageDialog)
 
-local CAP_STEP = 5   -- percent per -/+ press
+local CAP_STEP = 5      -- percent per -/+ Max press
+local TARGET_STEP = 5   -- percent per -/+ Target press
 
 local function fillTypeTitle(ft)
     if g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeByIndex ~= nil then
@@ -107,19 +108,35 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
     end
     local r = self.rows[index]
     if r == nil then return end
-    setc("name", fillTypeTitle(r.ft))
-    setc("kind", r.pooled and "Pooled" or "Individual")
+    setc("name", r.readOnly and (r.name or "") or fillTypeTitle(r.ft))
+    setc("kind", r.readOnly and "Internal" or (r.pooled and "Pooled" or "Individual"))
     setc("held", fmtL(r.held) .. " L")
-    if r.blocked then
+    if r.readOnly then
+        setc("cap", fmtL(r.maxLiters) .. " L")   -- capacity, informational
+        setc("target", "-")
+    elseif r.blocked then
         setc("cap", "BLOCKED")
+        setc("target", "-")
     else
         setc("cap", string.format("%d%%  (%s L)", r.pct, fmtL(r.maxLiters)))
+        if r.targetPct ~= nil then
+            setc("target", string.format("%d%%  (%s L)", r.targetPct, fmtL(r.targetLiters or 0)))
+        else
+            setc("target", "Off")
+        end
     end
-    -- icon
+    -- icon (hidden for the read-only internal row)
     local ic = cell:getAttribute("fillIcon")
-    if ic ~= nil and ic.setImageFilename ~= nil and g_fillTypeManager ~= nil then
-        local def = g_fillTypeManager:getFillTypeByIndex(r.ft)
-        if def ~= nil and def.hudOverlayFilename ~= nil then ic:setImageFilename(def.hudOverlayFilename) end
+    if ic ~= nil then
+        if r.readOnly then
+            if ic.setVisible ~= nil then ic:setVisible(false) end
+        else
+            if ic.setVisible ~= nil then ic:setVisible(true) end
+            if ic.setImageFilename ~= nil and g_fillTypeManager ~= nil then
+                local def = g_fillTypeManager:getFillTypeByIndex(r.ft)
+                if def ~= nil and def.hudOverlayFilename ~= nil then ic:setImageFilename(def.hudOverlayFilename) end
+            end
+        end
     end
 end
 
@@ -164,7 +181,7 @@ end
 
 function DistributionInputsDialog:onToggleBlock()
     local r = self:selectedRow()
-    if r == nil then return end
+    if r == nil or r.readOnly then return end
     local A = DistributionControlEvent.ACT
     self:apply(A.INPUT_BLOCK, r.ft, 0, not r.blocked)
 end
@@ -200,22 +217,44 @@ function DistributionInputsDialog:updateBlockAllLabel()
     self.blockAllButton:setText(anyAllowed and "Block All" or "Allow All")
 end
 
-function DistributionInputsDialog:onCapDelta(delta)
+-- Max-in (cap %) stepper, now a WRAPPING ring: steps by CAP_STEP and loops 0 <-> max. For an individual
+-- product max is 100; for a pooled one it's the remaining headroom (100 - the other pooled products' caps),
+-- so the shares still can't sum past 100%.
+function DistributionInputsDialog:onCapDelta(dir)
     local r = self:selectedRow()
-    if r == nil or r.blocked then return end
-    local A = DistributionControlEvent.ACT
-    local pct = math.max(0, math.min(100, r.pct + delta))
-    -- pooled products: the shares must sum to <= 100%, so cap the rise at the remaining headroom
-    -- (100 - the other pooled products' caps). Individual products return 100 (unconstrained).
-    if r.pooled and delta > 0 and SmartDistribution.inputCapPctHeadroom ~= nil then
-        local headroom = SmartDistribution.inputCapPctHeadroom(self.asset, r.ft)
-        if pct > headroom then pct = headroom end
+    if r == nil or r.blocked or r.readOnly then return end
+    local maxPct = 100
+    if r.pooled and SmartDistribution.inputCapPctHeadroom ~= nil then
+        maxPct = math.max(0, math.min(100, SmartDistribution.inputCapPctHeadroom(self.asset, r.ft) or 100))
     end
-    if pct == r.pct then return end   -- nothing to change (already at the ceiling)
-    self:apply(A.INPUT_CAP, r.ft, pct, false)
+    local pct = (r.pct or 0) + dir * CAP_STEP
+    if pct > maxPct then pct = 0            -- wrap past the top
+    elseif pct < 0 then pct = maxPct end    -- wrap past the bottom
+    if pct == r.pct then return end
+    self:apply(DistributionControlEvent.ACT.INPUT_CAP, r.ft, pct, false)
 end
-function DistributionInputsDialog:onCapDown() self:onCapDelta(-CAP_STEP) end
-function DistributionInputsDialog:onCapUp()   self:onCapDelta( CAP_STEP) end
+function DistributionInputsDialog:onCapDown() self:onCapDelta(-1) end
+function DistributionInputsDialog:onCapUp()   self:onCapDelta( 1) end
+
+-- Fill target stepper, as a WRAPPING ring: Off -> 0% -> 5% -> ... -> 100% -> Off. Off and 0% are distinct
+-- (Off = default recipe/buffer demand; 0% = a real "keep empty" setpoint). dir = +1 (up) / -1 (down); it
+-- wraps at both ends. The event carries the pct to set, or -1 to clear (Off).
+function DistributionInputsDialog:onTargetDelta(dir)
+    local r = self:selectedRow()
+    if r == nil or r.readOnly or r.blocked then return end
+    local n = 2 + math.floor(100 / TARGET_STEP)          -- ring positions: Off(0), 0%(1) .. 100%(n-1)
+    local curIdx = (r.targetPct == nil) and 0 or (1 + math.floor((r.targetPct or 0) / TARGET_STEP))
+    local newIdx = (curIdx + dir) % n
+    if newIdx < 0 then newIdx = newIdx + n end            -- (defensive; Lua % is already non-negative here)
+    local A = DistributionControlEvent.ACT
+    if newIdx == 0 then
+        self:apply(A.INPUT_TARGET, r.ft, -1, false)       -- Off (clear the target)
+    else
+        self:apply(A.INPUT_TARGET, r.ft, (newIdx - 1) * TARGET_STEP, false)
+    end
+end
+function DistributionInputsDialog:onTargetDown() self:onTargetDelta(-1) end
+function DistributionInputsDialog:onTargetUp()   self:onTargetDelta( 1) end
 
 function DistributionInputsDialog:onClickBack()
     self:close()
