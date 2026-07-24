@@ -24,6 +24,7 @@ Fixed
 5) Fixed Animal Husbandries that produce pallets to ensure they don't spawn pallets when Hold - Internal is selected.
 6) Animal Pastures (ie no barn) no longer produce and store manure in line with base game functionality
 7) Updated how buildings with shared (pooled)storage function/show in the UI. If a silo is filled over the reserved amount for a specific product manually, the remaining products reserved levels will adjust to reflect what room is left rather than showing volumes that simply aren't available.
+8) Fixed distribution and selling of non-market items (e.g. electric charge) to support mods that can consume them.
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -32,6 +33,8 @@ Added
 4) Firmed up the detection and management of modded animal husbandries to better support mods in general. Note this may help with some mods and not others, please raise a GitHub issue if you have a mod that is not working.
 5) Support Added for modded buildings in the Nordkirchen_x4 Map Mo
 6) Added support for Bunker Silo's and Bulk Halls
+7) Added support for the FS25_Fed_Produktions_Pack Mod.
+7) Made UI numbers update realtime rather than only on UI close and reopen.
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:

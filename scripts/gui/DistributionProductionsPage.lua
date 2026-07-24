@@ -296,8 +296,17 @@ function DistributionProductionsPage:selectAsset(index)
     self:updateSellTimingButton()
 end
 
+-- Called by the base 2 Hz refresh: this page caches received/produced/sold/held in row objects (built in
+-- buildSections), so recompute them from live data before the base reloads the cells. Does NOT touch the
+-- selected line/output index -- buildSections only rebuilds the row arrays, and reloadData keeps selection
+-- for an unchanged row count.
+function DistributionProductionsPage:rebuildRealtimeData()
+    if self.selectedAsset ~= nil and self.buildSections ~= nil then self:buildSections() end
+end
+
 function DistributionProductionsPage:onFrameOpen()
     DistributionProductionsPage:superClass().onFrameOpen(self)
+    self._realtimeLists = { "inputList", "outputList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
     self:selectAsset(1)

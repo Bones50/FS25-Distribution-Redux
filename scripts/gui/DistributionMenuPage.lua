@@ -63,9 +63,53 @@ end
 -- Hide each list's scrollbar TRACK (fs25_listSliderBox) whenever that list has no overflow. A list
 -- needs the bar only when its item count exceeds the whole rows that fit in its frame. Each page sets
 -- self._scrollMap = { { sliderId, listId, rowsThatFit }, ... } in onGuiSetupFinished; this runs for all.
+-- Real-time number refresh. A page opts in by setting self._realtimeLists = { "inputList", "detailList" }
+-- (the lists whose CELLS show live figures -- never the asset-picker list). Every REALTIME_REFRESH_MS the
+-- open page re-reads those cells so held / distributed / sold track the game without a tab-switch. Cheap:
+-- it is the same SmoothList:reloadData the page already runs on a selection change, just throttled to ~2 Hz,
+-- and the selected row is preserved so it never fights the player's navigation. Note the distribution
+-- figures themselves only change on the hourly pass; between hours this mainly keeps held-litres live.
+DistributionMenuPage.REALTIME_REFRESH_MS = 500
+
+function DistributionMenuPage:refreshRealtimeLists()
+    local names = self._realtimeLists
+    if names == nil or self._focusing then return end   -- _focusing: a selection event is mid-flight; skip
+    -- Pages that CACHE their row figures (e.g. Productions stores received/produced/sold in row objects it
+    -- builds on selection) recompute them here; pages whose populate reads live (e.g. Storage) need nothing.
+    if self.rebuildRealtimeData ~= nil then pcall(function() self:rebuildRealtimeData() end) end
+    -- reloadData re-runs populateCellForItemInSection for the visible cells and keeps the selected index for
+    -- an unchanged row count -- which holds here, since a refresh never changes WHICH products an asset has.
+    for i = 1, #names do
+        local list = self[names[i]]
+        if list ~= nil and list.reloadData ~= nil then
+            pcall(function() list:reloadData() end)
+        end
+    end
+end
+
 function DistributionMenuPage:update(dt)
     local sc = DistributionMenuPage:superClass()
     if sc.update ~= nil then sc.update(self, dt) end
+
+    -- throttled real-time refresh of the open page's number lists. Wall-clock (getTimeSec, real seconds) so
+    -- it is immune to whatever units dt is in.
+    if self._realtimeLists ~= nil then
+        local now = (getTimeSec ~= nil) and getTimeSec() or nil
+        if now ~= nil then
+            if self._rtLast == nil or (now - self._rtLast) >= (DistributionMenuPage.REALTIME_REFRESH_MS / 1000) then
+                self._rtLast = now
+                pcall(function() self:refreshRealtimeLists() end)
+            end
+        else
+            -- no clock: fall back to accumulating dt (assumes dt in ms)
+            self._rtAccum = (self._rtAccum or 0) + (dt or 0)
+            if self._rtAccum >= DistributionMenuPage.REALTIME_REFRESH_MS then
+                self._rtAccum = 0
+                pcall(function() self:refreshRealtimeLists() end)
+            end
+        end
+    end
+
     local map = self._scrollMap
     if map == nil or self.getNumberOfItemsInSection == nil then return end
     for i = 1, #map do

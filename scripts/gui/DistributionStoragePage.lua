@@ -228,6 +228,7 @@ end
 
 function DistributionStoragePage:onFrameOpen()
     DistributionStoragePage:superClass().onFrameOpen(self)
+    self._realtimeLists = { "inputList", "detailList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
     self:selectAsset(1)

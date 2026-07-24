@@ -83,7 +83,7 @@ SmartDistribution.settings = S
 SmartDistribution.modDir = g_currentModDirectory or ""
 
 -- cross-cutting toggles
-SmartDistribution.debug  = true
+SmartDistribution.debug  = false
 SmartDistribution.dryRun = false
 SmartDistribution._prodThruDebug = true   -- TEMP: dump production throughput math (remove after)
 -- Reproduce vanilla's sellDirectly-output income (biogas electric charge + methane): our full
@@ -200,11 +200,32 @@ local function setLevel(storage, ft, level, farmId, delta)
 end
 
 -- ---- production-point helper ----------------------------------------------
+-- Resolve a placeable's ProductionPoint. The vanilla spec is spec_productionPoint, but production MODS
+-- wrap the base ProductionPoint in their own specialization under a namespaced field -- e.g. the Fed
+-- Produktions Pack registers spec_<modName>.extendedProductionPoint (its class subclasses ProductionPoint,
+-- so DR's engine drives it identically once found). Checking only spec_productionPoint made every such mod
+-- invisible to DR. So: fast-path the vanilla field, else find any spec_* field carrying a .productionPoint.
+-- Memoised per placeable (weak keys) because this is a hot path -- the scan runs once, then direct lookup.
+SmartDistribution._ppCache = setmetatable({}, { __mode = "k" })
 local function getProductionPoint(placeable)
     if placeable == nil then return nil end
     if placeable.spec_productionPoint ~= nil then
-        return placeable.spec_productionPoint.productionPoint
+        return placeable.spec_productionPoint.productionPoint    -- vanilla fast path
     end
+    local cached = SmartDistribution._ppCache[placeable]
+    if cached ~= nil then
+        if cached == false then return nil end                  -- memoised "no production point here"
+        return cached.productionPoint
+    end
+    for k, v in pairs(placeable) do
+        -- a spec_* field whose value carries a .productionPoint object (any wrapper specialization)
+        if type(k) == "string" and k:sub(1, 5) == "spec_" and type(v) == "table"
+           and type(v.productionPoint) == "table" then
+            SmartDistribution._ppCache[placeable] = v
+            return v.productionPoint
+        end
+    end
+    SmartDistribution._ppCache[placeable] = false               -- remember the miss; don't rescan every call
     return nil
 end
 
@@ -1565,6 +1586,17 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
                        getLevel(pp2.storage, ft) > 0 then
                         sources[#sources+1] = { storage = pp2.storage, d2 = d2, placeable = p }
                     end
+                    -- (a2) virtual sellDirectly output (electricity / methane / modded intangibles) set to a
+                    -- Distribute mode. These are never in pp.storage, so branch (a) can't see them; they are
+                    -- served from this cycle's virtual stock (collectVirtualProduction) via a stable proxy.
+                    -- The unsold remainder is settled in sellDirectProduction.
+                    if pp2 ~= nil and pp2 ~= consumerPP then
+                        local vs = SmartDistribution._virtualStock[pp2]
+                        local e  = vs ~= nil and vs[ft] or nil
+                        if e ~= nil and e.remaining > ALLOC_EPS then
+                            sources[#sources+1] = { storage = e.proxy, d2 = d2, placeable = p }
+                        end
+                    end
                     -- (b) raw silo / husbandry / manure storages holding ft
                     for _, s in ipairs(getRawStorages(p, ft)) do
                         if getLevel(s, ft) > 0 then
@@ -2860,6 +2892,16 @@ local function fillTypeBasePrice(ft)
     return 0
 end
 
+-- Public: the FLAT grid sell price per litre for a fill type -- the fillType base price scaled by the
+-- economic difficulty, the SAME figure sellDirectProduction pays for sellDirectly grid outputs. Grid
+-- products (electricity / methane) have a real fixed value but return 0 from economyManager:getPricePerLiter
+-- (no market), so ProductionDistributeSell's HOOK 3 uses THIS to sell the Distribute+Sell surplus of a
+-- non-sellDirectly grid output (e.g. the Fed pack BGA's electricity) instead of skipping it.
+function SmartDistribution.gridSellPricePerLiter(ft)
+    if ft == nil then return 0 end
+    return fillTypeBasePrice(ft) * economyDifficultySellMultiplier()
+end
+
 -- would this production complete >=1 hour of cycles right now?  inputs must cover the hour's draw,
 -- and each STORED (non-sellDirectly) output needs room or the vanilla cycle stalls (and would make
 -- no sellDirectly output either).  Mirrors vanilla's "can run" gate closely enough to avoid crediting
@@ -2878,6 +2920,71 @@ local function productionCanRun(pp, prod)
     return true
 end
 
+-- ---- virtual (sellDirectly) outputs as a DISTRIBUTE source -----------------
+-- sellDirectly outputs (biogas electricity / methane, and any modded intangible) never enter pp.storage --
+-- vanilla sells them the instant they are produced. That made them impossible to distribute: gatherSources
+-- branch (a) needs stock in pp.storage, which is always 0 here. Base game has no consumers for these, but
+-- many mods do. So each cycle, BEFORE allocation, we materialise the hour's would-be production of any
+-- sellDirectly output whose mode Distributes into a virtual per-cycle stock, offer it as a source through a
+-- thin proxy (same transfer + billing path as pallets / water / bunkers), and let sellDirectProduction sell
+-- only what was NOT distributed. Keyed by the ProductionPoint object; rebuilt every cycle.
+SmartDistribution._virtualStock = SmartDistribution._virtualStock or {}
+
+-- stable per-(pp,ft) proxy so allocate() groups contested claims correctly (it keys on storage identity)
+function SmartDistribution.makeVirtualSourceProxy(pp, ft)
+    return {
+        getFillLevel = function(_, f)
+            if f ~= ft then return 0 end
+            local vs = SmartDistribution._virtualStock[pp]
+            local e  = vs ~= nil and vs[f] or nil
+            return (e ~= nil) and math.max(0, e.remaining) or 0
+        end,
+        addFillLevel = function(_, _farmId, f, delta)   -- source-only: only a negative delta (a pull) matters
+            if delta ~= nil and delta < 0 and f == ft then
+                local vs = SmartDistribution._virtualStock[pp]
+                local e  = vs ~= nil and vs[f] or nil
+                if e ~= nil then e.remaining = math.max(0, e.remaining + delta) end
+            end
+        end,
+    }
+end
+
+-- Build this cycle's virtual stock. Mirrors sellDirectProduction's gate (productionCanRun + not excluded),
+-- but only for outputs whose resolved mode Distributes -- a plain SELL / default output is left entirely to
+-- the legacy sell path, so nothing changes for anyone not using the new behaviour.
+function SmartDistribution.collectVirtualProduction(manager)
+    SmartDistribution._virtualStock = {}
+    if manager == nil then return end
+    for _, farmTable in pairs(manager.farmIds or {}) do
+        for _, pp in ipairs(farmTable.productionPoints or {}) do
+            local placeable = pp.owningPlaceable
+            if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil and isEnrolled(placeable) then
+                for _, prod in ipairs(getActiveProductionDefs(pp)) do
+                    if productionCanRun(pp, prod) then
+                        local cph = prod.cyclesPerHour or 1
+                        for _, o in ipairs(prod.outputs or {}) do
+                            if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type]
+                               and SmartDistribution.modeDistributes(resolveMode(placeable, o.type)) then
+                                local amount = (o.amount or 0) * cph
+                                local vs = SmartDistribution._virtualStock[pp]
+                                if vs == nil then vs = {}; SmartDistribution._virtualStock[pp] = vs end
+                                local e = vs[o.type]
+                                if e == nil then
+                                    e = { total = 0, remaining = 0, placeable = placeable,
+                                          proxy = SmartDistribution.makeVirtualSourceProxy(pp, o.type) }
+                                    vs[o.type] = e
+                                end
+                                e.total = e.total + amount            -- accumulate across lines emitting the same ft
+                                e.remaining = e.remaining + amount
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function sellDirectProduction(manager)
     local mt = MoneyType ~= nil and (MoneyType.INCOME_BGA or MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
     for _, farmTable in pairs(manager.farmIds or {}) do
@@ -2891,8 +2998,20 @@ local function sellDirectProduction(manager)
                         for _, o in ipairs(prod.outputs or {}) do
                             if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type] then
                                 local amount = (o.amount or 0) * cph
+                                -- DISTRIBUTE-FIRST for virtual outputs: if this output was set to a Distribute
+                                -- mode it was offered to consumers this cycle from the virtual stock, so sell
+                                -- only what is LEFT -- and only if the mode also sells. Pure DISTRIBUTE sells
+                                -- nothing. Outputs NOT set to a Distribute mode never touch the virtual stock,
+                                -- so they fall straight through here selling the full amount exactly as before.
+                                local vmode = resolveMode(placeable, o.type)
+                                if SmartDistribution.modeDistributes(vmode) then
+                                    local vs = SmartDistribution._virtualStock[pp]
+                                    local e  = vs ~= nil and vs[o.type] or nil
+                                    local remaining = (e ~= nil) and math.max(0, e.remaining) or amount
+                                    amount = SmartDistribution.modeSells(vmode) and remaining or 0
+                                end
                                 local price  = fillTypeBasePrice(o.type) * economyDifficultySellMultiplier()
-                                if price > 0 then
+                                if amount > 0 and price > 0 then
                                     if SmartDistribution.dryRun or not SmartDistribution.sellDirectEnabled then
                                         log("[sell-direct OFF] would sell %.0f %s @ %.4f = %.0f  [%s]",
                                             amount, fillTypeName(o.type), price, amount * price, placeableName(placeable))
@@ -4302,6 +4421,7 @@ function SmartDistribution.runHourly(manager)
     SmartDistribution.observeHusbandryProduction()            -- record husbandry output produced since last cycle (pre-drain)
     local bill = {}
     local slots = {}
+    SmartDistribution.collectVirtualProduction(manager)        -- materialise sellDirectly outputs set to Distribute (electricity/methane) as sources BEFORE allocation
     for _, farmTable in pairs(manager.farmIds or {}) do        -- phases 1 + 1b + 1c: unified allocation
         collectProductionSlots(farmTable.productionPoints, slots)
     end
@@ -4322,6 +4442,11 @@ function SmartDistribution.runHourly(manager)
         SmartDistribution.marketSellPhase(manager)             -- phase 2d: markets sell their buffers (native price + 20% bonus)
     end
     sellDirectProduction(manager)                              -- phase 2b: plant sellDirectly outputs (biogas electric/methane)
+    -- phase 2e: sell the surplus of Distribute+Sell / Sell production OUTPUTS (incl. modded grid products like
+    -- electricity) that phase 1 did not distribute. MUST run here, after distribute -- it used to be appended
+    -- to hourChanged and, because runHourly is deferred in normal play, ran BEFORE distribute and drained the
+    -- whole surplus first, so nothing was ever distributed. (No-op if the ProductionDistributeSell add-on is absent.)
+    if SmartDistribution.sellProductionRemainder ~= nil then SmartDistribution.sellProductionRemainder(manager) end
     SmartDistribution.commitHusbandryProduction()             -- baseline husbandry output levels for next cycle's produced calc
     SmartDistribution.recordProductionThroughput(cycleAcc)    -- production consumed/produced this cycle (delta + this cycle's flows, aligned windows)
     SmartDistribution.recordHusbandryConsumption(cycleAcc)    -- husbandry feed/water/straw consumed this cycle
@@ -6508,9 +6633,26 @@ function SmartDistribution.hasStoreEndpoint(asset, ft)
     return shedSinks ~= nil and #shedSinks > 0
 end
 
+-- Is ft a sellDirectly (virtual grid) output of this placeable -- electricity / methane / a modded
+-- intangible? These never enter pp.storage and sell at a FIXED grid price, not a market price.
+function SmartDistribution.isSellDirectlyFillType(p, ft)
+    local pp = getProductionPoint(p)
+    if pp == nil or ft == nil or type(pp.productions) ~= "table" then return false end
+    for _, prod in ipairs(pp.productions) do
+        for _, o in ipairs(prod.outputs or {}) do
+            if o.type == ft and o.sellDirectly then return true end
+        end
+    end
+    return false
+end
+
 -- something in the game actually buys this fill type
 function SmartDistribution.hasSellEndpoint(asset, ft)
     if ft == nil then return false end
+    -- grid outputs (electricity / methane) always have a sell endpoint: they are sold at a fixed grid price
+    -- by sellDirectProduction, NOT through the market economy, so getPricePerLiter reads 0 and would wrongly
+    -- hide Sell / Distribute+Sell for them.
+    if SmartDistribution.isSellDirectlyFillType(asset, ft) then return true end
     local econ = g_currentMission ~= nil and g_currentMission.economyManager or nil
     if econ == nil or econ.getPricePerLiter == nil then return true end   -- unknown -> don't hide the option
     local ok, price = pcall(econ.getPricePerLiter, econ, ft)
@@ -9540,6 +9682,11 @@ function SmartDistribution.modeDistributes(m)
         or m == MODE.DISTRIBUTE_MARKET
         or m == MODE.DISTRIBUTE_STORE_TO
 end
+-- Does this mode sell? Used for sellDirectly (virtual) outputs where "distribute first, then sell the
+-- remainder" needs to know whether the leftover should be sold at all.
+function SmartDistribution.modeSells(m)
+    return m == MODE.SELL or m == MODE.DISTRIBUTE_SELL
+end
 
 -- Destinations of one kind for (asset, ft), for the Advanced window. Called once per section, so exactly
 -- one of showDemands/showStores/showMarkets is set. Each row carries rank/listed/blocked + link status.
@@ -10746,6 +10893,108 @@ function SmartDistribution.cmdCoverage(self)
     return string.format("coverage audit: %d suspect(s) -- see log", suspects)
 end
 
+-- [dev] Dump how each production represents its "energy"/virtual outputs, to see whether a modded plant
+-- (e.g. Fed Produktions Pack BGA, an ExtendedProductionPoint) actually uses the vanilla o.sellDirectly
+-- flag + standard prod.outputs the distribute-first feature keys on, or a custom path DR can't see.
+-- Dumps every production line's raw output/input tables plus the pp-level fill-type registries and storage.
+function SmartDistribution.cmdVirtualProbe(self)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem" end
+    local function ftn(i) return tostring(fillTypeName(i)) .. "(" .. tostring(i) .. ")" end
+    local function setKeys(t)
+        if type(t) ~= "table" then return tostring(t) end
+        local out = {}
+        for k, v in pairs(t) do out[#out + 1] = ftn(k) .. "=" .. tostring(v) end
+        table.sort(out); return #out > 0 and table.concat(out, ", ") or "(empty)"
+    end
+    -- Membership check: is each production point actually in the ProductionChainManager's per-farm list
+    -- that collectProductionSlots / collectVirtualProduction / sellDirectProduction iterate? A modded pp
+    -- that DR finds via ps.placeables (getProductionPoint) but that is NOT in this list gets no demand slot
+    -- and is never a virtual source -- which would explain a willing source + willing sink that never move.
+    local inManager = {}
+    do
+        local pcm = g_currentMission ~= nil and (g_currentMission.productionChainManager
+            or (g_currentMission.getProductionChainManager and g_currentMission:getProductionChainManager())) or nil
+        local farmIds = pcm ~= nil and (pcm.farmIds or pcm.farmIdToProductionPoints) or nil
+        local total = 0
+        if type(farmIds) == "table" then
+            for _, ft2 in pairs(farmIds) do
+                local list = type(ft2) == "table" and (ft2.productionPoints or ft2) or nil
+                if type(list) == "table" then
+                    for _, ppx in ipairs(list) do inManager[ppx] = true; total = total + 1 end
+                end
+            end
+        end
+        dump(string.format("ProductionChainManager present=%s  farm-registered productionPoints=%d",
+            tostring(pcm ~= nil), total))
+    end
+    for _, p in ipairs(ps.placeables) do
+        local pp = getProductionPoint(p)
+        if pp ~= nil and p.rootNode ~= nil then
+            dump(string.format("==== %s  enrolled=%s  inChainManager=%s ====",
+                tostring(placeableName(p)), tostring(isEnrolled(p)), tostring(inManager[pp] == true)))
+            dump("   outputFillTypeIds:           " .. setKeys(pp.outputFillTypeIds))
+            dump("   outputFillTypeIdsDirectSell: " .. setKeys(pp.outputFillTypeIdsDirectSell))
+            dump("   outputFillTypeIdsAutoDeliver:" .. setKeys(pp.outputFillTypeIdsAutoDeliver))
+            dump("   inputFillTypeIds:            " .. setKeys(pp.inputFillTypeIds))
+            -- raw production defs: the exact tables collectVirtualProduction / getActiveProductionDefs read
+            local defs = getActiveProductionDefs(pp)
+            dump(string.format("   active production defs: %d", #defs))
+            for di, prod in ipairs(defs) do
+                dump(string.format("   [line %d] name=%s cyclesPerHour=%s", di,
+                    tostring(prod.name), tostring(prod.cyclesPerHour)))
+                for _, o in ipairs(prod.outputs or {}) do
+                    -- dump EVERY field of the output entry so a custom flag/field is visible
+                    local fields = {}
+                    for k, v in pairs(o) do fields[#fields + 1] = tostring(k) .. "=" .. tostring(v) end
+                    table.sort(fields)
+                    dump(string.format("      OUT %s  storageLvl=%s  {%s}", ftn(o.type),
+                        tostring(pp.storage and getLevel(pp.storage, o.type)), table.concat(fields, ", ")))
+                    -- THE decisive line: why will / won't DR distribute this output right now?
+                    local m   = resolveMode(p, o.type)
+                    local exc = S.global.excludedFillTypes[o.type] == true
+                    local can = canSourceDistribute(p, o.type)
+                    dump(string.format("          -> resolveMode=%s(%s)  excluded=%s  canSourceDistribute=%s  sinks=%d",
+                        tostring(m), tostring(SmartDistribution.modeName and SmartDistribution.modeName(m) or "?"),
+                        tostring(exc), tostring(can),
+                        SmartDistribution.sinksFor and #SmartDistribution.sinksFor(getUid(p), o.type) or -1))
+                end
+                for _, i in ipairs(prod.inputs or {}) do
+                    dump(string.format("      IN  %s  storageLvl=%s amount=%s", ftn(i.type),
+                        tostring(pp.storage and getLevel(pp.storage, i.type)), tostring(i.amount)))
+                    -- Replay the ACTUAL allocation lookup for this input: what sources does gatherSources
+                    -- offer (with distance + reach), and can the input storage even accept a deposit? This is
+                    -- the real path collectProductionSlots -> buildSlotCandidates -> gatherSources takes.
+                    if p.rootNode ~= nil then
+                        local x, _, z = getWorldTranslation(p.rootNode)
+                        local farmId = SmartDistribution._ownerFarmId and SmartDistribution._ownerFarmId(p) or p.ownerFarmId
+                        local okG, srcs = pcall(gatherSources, pp, p, i.type, x, z, farmId)
+                        if okG and type(srcs) == "table" then
+                            if #srcs == 0 then
+                                dump("          gatherSources: NONE (no in-range distributing source for this input)")
+                            end
+                            for _, s in ipairs(srcs) do
+                                local sp = s.placeable
+                                dump(string.format("          src <- %s  dist=%.0fm reach=%s lvl=%s",
+                                    tostring(placeableName(sp)), math.sqrt(s.d2 or 0),
+                                    tostring(sp and resolveReach(sp)), tostring(getLevel(s.storage, i.type))))
+                            end
+                        else
+                            dump("          gatherSources ERROR: " .. tostring(srcs))
+                        end
+                        local need = SmartDistribution.effectiveInputNeed(p, i.type, getPullAmount(pp, i.type), getLevel(pp.storage, i.type))
+                        local room = SmartDistribution.inputAcceptableLiters and SmartDistribution.inputAcceptableLiters(p, i.type) or -1
+                        dump(string.format("          need=%.0f  getFree=%.0f  inputAcceptable=%.0f  radius=%s",
+                            need, getFree(pp.storage, i.type), room, tostring(S.global.radius)))
+                    end
+                end
+            end
+        end
+    end
+    return "virtual probe done -- see log"
+end
+
 -- ---- dev console commands: direct registration -----------------------------
 -- The earlier registration block was not taking effect (sdManureProbe reported "command not found"),
 -- so register here at file scope, after every cmd* function above is defined. Guarded so it is a no-op
@@ -10754,6 +11003,12 @@ if addConsoleCommand ~= nil then
     pcall(addConsoleCommand, "sdManureProbe",
         "Dump manure heaps/extensions + barn manure/slurry storage [dev]",
         "cmdManureProbe", SmartDistribution)
+    -- sdVirtualProbe: DISABLED for release (production output / energy-path investigation -- solved). The
+    -- cmdVirtualProbe body is kept above (costs nothing unregistered) for the next time a mod's productions
+    -- misbehave.
+    -- pcall(addConsoleCommand, "sdVirtualProbe",
+    --     "Dump how each production represents its outputs (find sellDirectly / custom energy path) [dev]",
+    --     "cmdVirtualProbe", SmartDistribution)
     -- installConsole() is disabled for release (see its call site), so the probes it registered never
     -- take effect. Re-register the ones needed for the Hold-Internal pallet investigation the proven way,
     -- directly at file scope after their cmd* functions are defined.

@@ -166,16 +166,40 @@ end
 -- emits a network event. Callers fire ProductionOutputModeEvent to sync peers.
 local function applyVLocal(pp, ft, v)
     setV(pp, ft, v)
-    -- sellDirectly outputs (biogas electricity / methane) reject every vanilla distribution mode;
-    -- skip the engine write + the (meaningless) mod override. Their income is booked by
-    -- SmartDistribution.sellDirectProduction regardless of mode; we keep the cached virtual state
-    -- above so the production-menu label stays consistent.
-    if isSellDirectlyOutput(pp, ft) then return end
-    local store, auto, sell = vanillaModes()
     local pl = placeableOf(pp)
     local M  = SD.MODE
+    -- sellDirectly outputs (biogas electricity / methane, modded intangibles) reject the vanilla engine
+    -- write -- origSet throws "is not an output fillType" -- so we must NOT call it. But we DO record the
+    -- DR-side mode (unlike before, which returned early and left it at INHERIT): that makes the choice
+    -- persist AND lets SmartDistribution's distribute-first path (collectVirtualProduction /
+    -- sellDirectProduction) act on it. Storage / market states are meaningless for a storage-less,
+    -- price-less product, so map them to the nearest sensible mode. Income for the unsold remainder is
+    -- still booked by SmartDistribution.sellDirectProduction.
+    if isSellDirectlyOutput(pp, ft) then
+        if pl ~= nil then
+            local drMode = M.HOLD
+            if     v == DISTRIBUTE then drMode = M.DISTRIBUTE
+            elseif v == DISTSELL   then drMode = M.DISTRIBUTE_SELL
+            elseif v == DISTSTORE  then drMode = M.DISTRIBUTE_SELL   -- can't store a virtual product: sell the remainder
+            elseif v == DISTMARKET then drMode = M.DISTRIBUTE_SELL   -- no market buffer for a virtual product
+            elseif v == SELL       then drMode = M.SELL
+            elseif v == TRANSFER   then drMode = M.SELL
+            -- KEEP / STORE / HOLD_INTERNAL_V -> HOLD: nothing to store or hold-as-pallets for a virtual product
+            end
+            SD.applyAssetMode(pl, ft, drMode, true)
+        end
+        return
+    end
+    local store, _, sell = vanillaModes()   -- AUTO_DELIVER (2nd) no longer used: every distribute mode keeps STORE
     if v == DISTSELL then
-        origSet(pp, ft, auto, true)
+        -- STORE, not AUTO_DELIVER. AUTO_DELIVER hands the output to the engine's own auto-delivery, which
+        -- for an output with a delivery target (e.g. a mod's electricity grid) SELLS it before DR's phase-1
+        -- allocator can distribute -- so the product only ever got sold, never distributed (the reported
+        -- bug). STORE keeps it in pp.storage: phase 1 distributes FIRST, then HOOK 3 (sellRemainder) sells
+        -- the priced surplus. Mirrors how DISTSTORE / DISTMARKET already work. (The old comment claimed
+        -- AUTO_DELIVER let "the base engine distribute the surplus", but DR suppresses the base engine pass,
+        -- so that never happened -- it only enabled the premature sell.)
+        origSet(pp, ft, store, true)
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_SELL, true) end
     elseif v == DISTSTORE then
         origSet(pp, ft, store, true)                            -- STORE so the production spawns its output as pallets;
@@ -212,12 +236,14 @@ local function applyVLocal(pp, ft, v)
         origSet(pp, ft, store, true)                            -- engine KEEP so output accumulates as bulk; the updateProduction gate suppresses the auto pallet-spawn
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.HOLD_INTERNAL, true) end
     else
-        local flag = (v == DISTRIBUTE) and auto or store
-        origSet(pp, ft, flag, true)
+        -- DISTRIBUTE and KEEP(Hold) both keep the output in pp.storage (engine STORE) so DR's phase-1
+        -- allocator distributes from it. Plain DISTRIBUTE previously used AUTO_DELIVER, which for an output
+        -- with a delivery target drained storage before DR could distribute (same root cause as DISTSELL
+        -- above) -- and for a "Distribute" (no-sell) output, auto-delivering/selling it was wrong anyway.
+        origSet(pp, ft, store, true)
         -- Record the base-state choice in the mod's OWN table so the resolver can tell Hold from
-        -- Distribute (the engine auto-deliver flag alone cannot, and an output left on the global
-        -- Distribute default must be usable as a source). Both persist (save skips only INHERIT) and
-        -- sync exactly as before -- this only changes the stored value, not the engine flag above.
+        -- Distribute (the engine flag alone cannot, and an output left on the global Distribute default
+        -- must be usable as a source). Both persist (save skips only INHERIT) and sync exactly as before.
         if pl ~= nil then SD.applyAssetMode(pl, ft, (v == DISTRIBUTE) and M.DISTRIBUTE or M.HOLD, true) end
     end
 end
@@ -271,7 +297,11 @@ function ProductionOutputModeEvent:run(connection)
         g_server:broadcastEvent(self, false, connection)        -- server relays to the other clients
     end
     local pl = self.placeable
-    local pp = (pl ~= nil and pl.spec_productionPoint ~= nil) and pl.spec_productionPoint.productionPoint or nil
+    -- resolve through DR's helper so MODDED productions (wrapper specs, e.g. Fed Produktions Pack) are
+    -- handled too, not just vanilla spec_productionPoint
+    local pp = (SmartDistribution ~= nil and SmartDistribution.productionPointOf ~= nil)
+        and SmartDistribution.productionPointOf(pl)
+        or ((pl ~= nil and pl.spec_productionPoint ~= nil) and pl.spec_productionPoint.productionPoint or nil)
     if pp ~= nil then
         applyVLocal(pp, self.fillTypeIndex, self.vstate)        -- local apply only; never re-emits
     end
@@ -295,6 +325,10 @@ InitEventClass(DistributionSpawnEvent, "DistributionSpawnEvent")
 DistributionSpawnEvent.COUNT_NUM_BITS = 6   -- up to 63 per request (spawnPalletsFromProduction caps at 50)
 
 local function ppOf(placeable)
+    -- prefer DR's resolver so modded/wrapper production specs are found (falls back to the vanilla field)
+    if SmartDistribution ~= nil and SmartDistribution.productionPointOf ~= nil then
+        return SmartDistribution.productionPointOf(placeable)
+    end
     return (placeable ~= nil and placeable.spec_productionPoint ~= nil) and placeable.spec_productionPoint.productionPoint or nil
 end
 
@@ -494,20 +528,26 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.updateMenuButt
     dbg("vanilla production-menu Spawn button installed.")
 end
 
--- A biogas plant is a production with sellDirectly grid outputs (electricity / methane). Its non-grid
--- byproduct (digestate) is sold by HOOK 3 below; book that income under the biogas-plant finance
--- category (INCOME_BGA -> "Biogas income"), alongside the plant's grid power, rather than generic
--- product sales. Cached per production point.
+-- Is this a BIOGAS plant (so its income books under INCOME_BGA -> "Biogas income" rather than generic
+-- product sales)? The defining feature of a biogas plant is not that it makes electricity -- solar panels,
+-- wind turbines and other generators do too, and their power is NOT biogas income -- but that it FERMENTS
+-- biomass, whose byproduct is DIGESTATE. So a plant qualifies iff it produces DIGESTATE (both the base-game
+-- biogas plant and modded ones like the Fed Produktions Pack BGA do; generators do not). The legacy
+-- sellDirectly test is kept as a belt-and-braces fallback for a base biogas plant should the digestate
+-- fill type ever be unavailable. Cached per production point.
 local BIOGAS_CACHE = setmetatable({}, { __mode = "k" })
 local function isBiogasPlant(pp)
     if pp == nil then return false end
     local c = BIOGAS_CACHE[pp]
     if c ~= nil then return c end
+    local digestate = (g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeIndexByName ~= nil)
+        and g_fillTypeManager:getFillTypeIndexByName("DIGESTATE") or nil
     local r = false
     if type(pp.productions) == "table" then
         for _, prod in ipairs(pp.productions) do
             for _, o in ipairs(prod.outputs or {}) do
-                if o.sellDirectly then r = true; break end
+                if digestate ~= nil and o.type == digestate then r = true; break end   -- fermentation byproduct: biogas-specific
+                if o.sellDirectly then r = true; break end                              -- base-game biogas fallback
             end
             if r then break end
         end
@@ -533,22 +573,32 @@ local function sellRemainder(manager)
                             or (pp.owningPlaceable ~= nil and pp.owningPlaceable.ownerFarmId) or 1
                 for ft in pairs(pp.outputFillTypeIds) do
                     local sellMode = nil
-                    if not excluded[ft] then
+                    -- sellDirectly outputs (base-game biogas electricity / methane) are grid-sold by
+                    -- SmartDistribution.sellDirectProduction; selling them here too would double-book.
+                    if not excluded[ft] and not isSellDirectlyOutput(pp, ft) then
                         if isDistSell(pp, ft) then sellMode = SD.MODE.DISTRIBUTE_SELL
                         elseif isSell(pp, ft) then sellMode = SD.MODE.SELL end   -- plain Sell: mod sells the whole output at best price
                     end
                     if sellMode ~= nil then
                         local level = pp.storage.getFillLevel ~= nil and pp.storage:getFillLevel(ft) or 0
                         if level > 0 then
-                            -- best-price: hold for the seasonal peak, releasing only enough to keep
-                            -- the output storage from filling (same gate as silos). DISTRIBUTE_SELL
-                            -- sells the post-distribution surplus; SELL sells the whole output.
+                            -- Market price if the product has one; otherwise the FLAT grid price (electricity /
+                            -- methane read 0 from getPricePerLiter but have a real fixed value). This is what
+                            -- makes Distribute+Sell actually SELL a grid product's surplus each cycle instead of
+                            -- letting it pile up in the plant.
+                            local unit   = econ:getPricePerLiter(ft) or 0
+                            local isGrid = false
+                            if unit <= 0 and SD.gridSellPricePerLiter ~= nil then
+                                unit = SD.gridSellPricePerLiter(ft) or 0
+                                isGrid = unit > 0
+                            end
+                            -- Grid products sell the WHOLE surplus immediately -- a flat price has no seasonal
+                            -- peak to hold for. Priced goods keep the best-price holding gate (as silos do).
                             local sell = level
                             local pl = placeableOf(pp)
-                            if pl ~= nil and SD.bestPriceSellAmount ~= nil then
+                            if not isGrid and pl ~= nil and SD.bestPriceSellAmount ~= nil then
                                 sell = SD.bestPriceSellAmount(pl, ft, sellMode, pp.storage, level, level)
                             end
-                            local unit  = econ:getPricePerLiter(ft) or 0
                             local price = sell > 0 and unit or 0
                             local ftName = (g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeNameByIndex ~= nil)
                                            and g_fillTypeManager:getFillTypeNameByIndex(ft) or tostring(ft)
@@ -583,12 +633,16 @@ local function sellRemainder(manager)
     end
 end
 
+-- Exposed so SmartDistribution.runHourly calls it as the LAST sell step, AFTER phase-1 distribute. It must
+-- NOT be appended to hourChanged: in normal play DR DEFERS runHourly to a later update tick, so an appended
+-- sellRemainder would run BEFORE the distribute pass and sell the whole surplus first -- leaving nothing to
+-- distribute (a grid output like electricity then only ever got sold, never distributed). Calling it inside
+-- runHourly guarantees distribute-then-sell in both the deferred (normal) and synchronous (fast-forward) paths.
+SD.sellProductionRemainder = sellRemainder
+
 if ProductionChainManager ~= nil and ProductionChainManager.hourChanged ~= nil then
-    ProductionChainManager.hourChanged =
-        Utils.appendedFunction(ProductionChainManager.hourChanged, sellRemainder)
-    -- Flush the per-cycle money summary AFTER this surplus-sell pass, as its own appended step so it
-    -- runs unconditionally (independent of sellRemainder's early-outs), in the SAME hourly tick the
-    -- money was applied. On clients the tally is empty (the hourly pass is server-only) so it's a no-op.
+    -- Flush the per-cycle money summary. Kept as an hourChanged append (independent of any early-outs); the
+    -- surplus-sell now runs inside runHourly before runHourly's own flush, so its sales fold into the total.
     ProductionChainManager.hourChanged =
         Utils.appendedFunction(ProductionChainManager.hourChanged, function(_)
             if SD.flushCycleSummary ~= nil then SD.flushCycleSummary() end
