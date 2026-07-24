@@ -69,6 +69,11 @@ local function inputMaxLiters(placeable, ft)
     if SmartDistribution.inputProductCapacity == nil then return nil end
     local ok, cap = pcall(SmartDistribution.inputProductCapacity, placeable, ft)
     if not ok or type(cap) ~= "number" or cap <= 0 or cap >= math.huge then return nil end
+    -- pooled storage resolves elastically against what it really holds (twin of the StoragePage helper)
+    if SmartDistribution.inputEffectiveMaxLiters ~= nil then
+        local okE, v = pcall(SmartDistribution.inputEffectiveMaxLiters, placeable, ft)
+        if okE and type(v) == "number" and v >= 0 and v < math.huge then return v end
+    end
     local pct = 100
     if SmartDistribution.inputCapPct ~= nil then
         local okP, v = pcall(SmartDistribution.inputCapPct, placeable, ft)

@@ -797,6 +797,81 @@ end
 -- therefore never its own asset -- its capacity is folded into the parent silo via
 -- parentExtensionStorages() everywhere we read spec_silo.storages.
 
+-- ---- Highlands bulk hall (Fishing Pack, spec placeableStorageHeap) ----------
+-- A "Bulk hall" (grainShed01/02) is a grain shed with 2-3 floor bays. Structurally it is NOT a silo -- it
+-- has no spec_silo, which is why getAssetClass fell through to OTHER and DR ignored it entirely. But each
+-- bay carries a REAL Storage object at spec.sections[i].storageHeap, and every DR storage helper already
+-- falls back to the method form that bay implements (getFillLevel / getFreeCapacity / getCapacity /
+-- getIsFillTypeSupported / setFillLevel), so handing those storages to the engine is all that is needed.
+-- VERIFIED in-game via sdBunkerProbe: grainShed01 = 2 bays x 200,000 L, grainShed02 = 3 bays x 300,000 L,
+-- each bay supporting BARLEY CANOLA MAIZE OAT RICE RICELONGGRAIN SORGHUM SOYBEAN SUNFLOWER WHEAT.
+-- NOTE a bay carries a scalar `capacity` and NO capacities[ft] table (unlike a silo Storage), and its
+-- `fillTypes` lists only the crop currently piled there while `supportedFillTypes` lists what it can take.
+-- SmartDistribution.* fields, not top-level locals, per the 200-local main-chunk ceiling.
+function SmartDistribution.bulkHallSpec(p)
+    if p == nil then return nil end
+    -- the DLC also exposes the spec under its namespaced key; check both
+    return p.spec_placeableStorageHeap or p["spec_pdlc_highlandsFishingPack.placeableStorageHeap"]
+end
+
+function SmartDistribution.bulkHallStorages(p)
+    local out = {}
+    local spec = SmartDistribution.bulkHallSpec(p)
+    if spec == nil or type(spec.sections) ~= "table" then return out end
+    for _, sec in pairs(spec.sections) do
+        if type(sec) == "table" and type(sec.storageHeap) == "table" then out[#out + 1] = sec.storageHeap end
+    end
+    return out
+end
+
+-- The hall's bays are ONE SHARED POOL, not N independent tanks: 3 x 300,000 L = 900,000 L spread across
+-- whichever of the 10 crops the player uses. Modelling it any other way breaks the numbers -- the generic
+-- "individual tank" path returns the FIRST matching bay, so a full 3-bay hall read 900,000 L held out of
+-- 300,000 L capacity. Returning a pool here also means DR's existing pooled-% machinery applies for free:
+-- capping wheat at 33% limits it to roughly one bay's worth.
+-- Returns the pool table pooledInputCapacity expects, or nil when p is not a hall.
+function SmartDistribution.bulkHallCapacity(p)
+    local stores = SmartDistribution.bulkHallStorages(p)
+    if #stores == 0 then return nil end
+    local total, fts, seen = 0, {}, {}
+    for _, s in ipairs(stores) do
+        local cap = s.capacity                                  -- bays carry a scalar capacity, no capacities[ft]
+        if type(cap) ~= "number" or cap <= 0 then               -- fall back to level + free
+            local lvl = 0
+            if type(s.fillLevels) == "table" then
+                for _, v in pairs(s.fillLevels) do lvl = lvl + (tonumber(v) or 0) end
+            end
+            local free = 0
+            if s.getFreeCapacity ~= nil then
+                local ok, v = pcall(s.getFreeCapacity, s)
+                if ok and type(v) == "number" then free = v end
+            end
+            cap = lvl + free
+        end
+        if type(cap) == "number" and cap > 0 and cap < INF then total = total + cap end
+        local sup = s.supportedFillTypes or s.fillTypes
+        if type(sup) == "table" then
+            for ft in pairs(sup) do
+                if not seen[ft] then seen[ft] = true; fts[#fts + 1] = ft end
+            end
+        end
+    end
+    if total <= 0 or #fts == 0 then return nil end
+    return { liters = total, fts = fts, kind = "HALL" }
+end
+
+-- A bay is a floor heap: physically it holds ONE crop at a time. Only treat it as able to RECEIVE ft when
+-- it is empty or already piled with ft, so DR never tries to tip barley onto a wheat heap.
+function SmartDistribution.bulkHallBayAccepts(storage, ft)
+    if storage == nil or ft == nil then return false end
+    local levels = storage.fillLevels
+    if type(levels) ~= "table" then return true end
+    for k, v in pairs(levels) do
+        if k ~= ft and type(v) == "number" and v > 0 then return false end
+    end
+    return true
+end
+
 local function getRawStorages(p, ft)
     local result = {}
     if isHusbandryBuilding(p) and not isHusbandryOutput(p, ft) then return result end
@@ -806,6 +881,7 @@ local function getRawStorages(p, ft)
     if p.spec_silo ~= nil and p.spec_silo.storages ~= nil then
         for _, s in ipairs(p.spec_silo.storages) do result[#result+1] = s end
     end
+    for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
     if p.spec_husbandry ~= nil then
         local h = p.spec_husbandry
@@ -821,6 +897,7 @@ local function getAllStorages(p)
     if p.spec_silo ~= nil and p.spec_silo.storages ~= nil then
         for _, s in ipairs(p.spec_silo.storages) do result[#result+1] = s end
     end
+    for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
     if p.spec_husbandry ~= nil then
         local h = p.spec_husbandry
@@ -961,7 +1038,11 @@ local function getAssetClass(p)
     if SmartDistribution.isMarket(p) then return "MARKET" end   -- owned sell point / kiosk
     if isManurePit(p) then return "HEAP" end              -- manure pit (standalone manure heap)
     if isLiquidManureSilo(p) then return "HEAP" end       -- slurry pit (liquid-manure silo) -- rides with husbandry
-    if p.spec_silo ~= nil then return "SILO" end
+    -- a Highlands bulk hall has no spec_silo but is functionally a multi-bay silo (see bulkHallStorages)
+    if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil then return "SILO" end
+    -- bunker silos are READ-ONLY members: they show their uncovered silage on the Storage tab but are
+    -- neither a source nor a sink (see canProvide / the bunker notes) until the heap-redraw blocker is solved
+    if SmartDistribution.isBunkerSiloPlaceable(p) then return "SILO" end
     if isHusbandryBuilding(p) then return "HUSBANDRY" end
     -- a beehive honey spawner is a pallet-output asset like a coop, so it shares the HUSBANDRY class
     -- bucket (mode/reach/store-capable/enrolled) while isHusbandryBuilding() stays false so the
@@ -1499,6 +1580,12 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
                     -- pallet liters via a thin proxy (same transfer + billing path)
                     if p.spec_objectStorage ~= nil and shedStoredLiters(p, ft) > 0 then
                         sources[#sources+1] = { storage = makeShedSourceProxy(p), d2 = d2, placeable = p }
+                    end
+                    -- (f) bunker silos distributing SILAGE: only UNCOVERED bays count (bunkerPlaceableSilage
+                    -- returns 0 while filling or sealed), pulled through a proxy like the two above
+                    if SmartDistribution.isBunkerSiloPlaceable(p)
+                       and SmartDistribution.bunkerPlaceableSilage(p) > 0 then
+                        sources[#sources+1] = { storage = SmartDistribution.makeBunkerSourceProxy(p), d2 = d2, placeable = p }
                     end
                 end
             end
@@ -2279,11 +2366,18 @@ end
 local function getSinkStorages(p, ft)
     local result = {}
     local isSilo = p.spec_silo ~= nil
+    local hall = SmartDistribution.bulkHallSpec(p) ~= nil
     local pit = isManurePit(p)
-    if not (isSilo or pit) then return result end
+    if not (isSilo or hall or pit) then return result end
     local stores = {}
     if isSilo and p.spec_silo.storages ~= nil then
         for _, s in ipairs(p.spec_silo.storages) do stores[#stores+1] = s end
+    end
+    if hall then
+        -- one crop per bay: skip any bay already piled with a different product
+        for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do
+            if SmartDistribution.bulkHallBayAccepts(s, ft) then stores[#stores+1] = s end
+        end
     end
     if isSilo then
         for _, s in ipairs(parentExtensionStorages(p)) do stores[#stores+1] = s end
@@ -4194,6 +4288,12 @@ end
 
 function SmartDistribution.runHourly(manager)
     if not S.master then return end
+    -- DEDICATED SERVER safety net: if the load hook deferred because the savegame path was not yet
+    -- resolved, retry here. This runs server-side every hour and the path is always populated by now, so
+    -- the overrides load before the first pass acts on them. A no-op once _persistLoaded is set.
+    if not SmartDistribution._persistLoaded and SmartDistribution.loadOverrides ~= nil then
+        pcall(SmartDistribution.loadOverrides)
+    end
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
     SmartDistribution.enforceValidModes()                      -- drop any mode whose endpoint has gone away
     SmartDistribution.beginFeedPass()                          -- start a fresh feed log; the UI reads the previous (complete) one
@@ -4508,12 +4608,20 @@ end
 
 local function loadOverrides()
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    if SmartDistribution._persistLoaded then return end          -- already loaded; never load twice
     local dir = getSaveDir()
     local sgd = (g_currentMission.missionInfo ~= nil) and g_currentMission.missionInfo.savegameDirectory or nil
     print(string.format("[SmartDistribution persist] LOAD fired: dir=%s  mi.savegameDirectory=%s", tostring(dir), tostring(sgd)))
-    if dir == nil then print("[SmartDistribution persist] LOAD skipped: savegame directory unresolved") return end
+    -- DEDICATED SERVER: loadMission00Finished can fire before missionInfo.savegameDirectory is populated.
+    -- Previously that skipped the load permanently and every setting silently reverted to defaults. Leave
+    -- _persistLoaded false so the retry below (first hourly tick) picks it up once the path is known.
+    if dir == nil then print("[SmartDistribution persist] LOAD deferred: savegame directory unresolved -- will retry") return end
     local path = dir .. "smartDistribution.xml"
-    if not fileExists(path) then print(string.format("[SmartDistribution persist] LOAD: no file at %s (fresh save, or save wrote a different path)", tostring(path))) return end
+    if not fileExists(path) then
+        print(string.format("[SmartDistribution persist] LOAD: no file at %s (fresh save, or save wrote a different path)", tostring(path)))
+        SmartDistribution._persistLoaded = true                  -- genuinely absent: a fresh save, stop retrying
+        return
+    end
     local xml = loadXMLFile("SmartDistributionXML", path)
     if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] LOAD FAILED: loadXMLFile(%s)", tostring(path))) return end
     local i, n = 0, 0
@@ -4705,9 +4813,11 @@ local function loadOverrides()
         ci = ci + 1
     end
     delete(xml)
+    SmartDistribution._persistLoaded = true                      -- success: stop the deferred-load retry
     print(string.format("[SmartDistribution persist] LOADED %d mode(s) + %d timing from %s", n, tn, tostring(path)))
     log("loaded %d per-asset override(s) + %d timing(s) + %d crop window(s) + %d monthly cycle(s) from %s", n, tn, c, mloaded, path)
 end
+SmartDistribution.loadOverrides = loadOverrides                  -- exposed so the deferred-load retry can reach it
 
 local function installPersistence()
     if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
@@ -6261,6 +6371,14 @@ local function siloFillTypes(silo)
             end
         end
     end
+    -- Bulk hall bays: use supportedFillTypes, NOT fillTypes -- on a floor heap `fillTypes` lists only the
+    -- crop currently piled there, so it would hide the nine other crops the bay can accept.
+    for _, storage in ipairs(SmartDistribution.bulkHallStorages(silo)) do
+        local sup = storage.supportedFillTypes or storage.fillTypes
+        if sup ~= nil then
+            for ft in pairs(sup) do fts[ft] = true; any = true end
+        end
+    end
     if not any and silo.fillTypes ~= nil then          -- fallback: placeable-level supported set
         for ft in pairs(silo.fillTypes) do fts[ft] = true; any = true end
     end
@@ -6337,7 +6455,14 @@ end
 local function assetConfigFillTypes(p)
     if p == nil then return {}, false end
     if getProductionPoint(p) ~= nil then return productionOutputFillTypes(p) end
-    if p.spec_silo ~= nil then return siloFillTypes(p) end
+    if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil then return siloFillTypes(p) end
+    -- bunker silo: a single SILAGE row, shown even while filling/fermenting (it reads 0 L then) so the
+    -- player can watch a batch mature rather than having the building appear only once it is ready
+    if SmartDistribution.isBunkerSiloPlaceable(p) then
+        local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+        if silage ~= nil then return { [silage] = true }, true end
+        return {}, false
+    end
     if isManurePit(p) then return heapFillTypes(p) end
     if isHusbandryBuilding(p) then return husbandryConfigFillTypes(p) end
     if isBeehiveSpawner(p) then                          -- beehive honey spawner: single HONEY output
@@ -6654,6 +6779,13 @@ end
 
 function SmartDistribution.assetHeld(p, ft)
     if p == nil or ft == nil then return 0 end
+    -- bunker silos own no Storage; their held silage comes from the terrain heap, and only counts once
+    -- the silo is uncovered (bunkerSilageLiters enforces that)
+    if SmartDistribution.isBunkerSiloPlaceable(p) then
+        local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+        if ft == silage then return SmartDistribution.bunkerPlaceableSilage(p) end
+        return 0
+    end
     local total = 0
     local okS, storages = pcall(getAllStorages, p)
     if okS and type(storages) == "table" then
@@ -7407,6 +7539,20 @@ local function assetInteractionNodes(p)
             out[#out + 1] = p.spec_silo.playerActionTrigger
         end
     end
+    -- bulk hall: a placeable-level pair of stations plus one pair per bay
+    local hall = SmartDistribution.bulkHallSpec(p)
+    if hall ~= nil then
+        collectStationNodes(hall.loadingStation, out)
+        collectStationNodes(hall.unloadingStation, out)
+        if type(hall.sections) == "table" then
+            for _, sec in pairs(hall.sections) do
+                if type(sec) == "table" then
+                    collectStationNodes(sec.loadingStation, out)
+                    collectStationNodes(sec.unloadingStation, out)
+                end
+            end
+        end
+    end
     if p.spec_husbandry ~= nil then
         collectStationNodes(p.spec_husbandry.loadingStation, out)
         collectStationNodes(p.spec_husbandry.unloadingStation, out)
@@ -7512,6 +7658,7 @@ function SmartDistribution.findNearestConfigurableAsset()
         if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then return isEnrolled(p) end   -- markets/kiosks: [ opens the Markets tab (only while the Markets group is on)
         local cfg = p.spec_silo ~= nil or isHusbandryBuilding(p) or p.spec_objectStorage ~= nil
                  or isManurePit(p) or isBeehiveSpawner(p) or getProductionPoint(p) ~= nil
+                 or SmartDistribution.bulkHallSpec(p) ~= nil
         return cfg and isEnrolled(p)
     end)
 end
@@ -8143,7 +8290,9 @@ function SmartDistribution.receiverInputRows(p)
             blocked = rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft) or false,
             pct = pct,
             capLiters = cap,
-            maxLiters = cap * (pct / 100),
+            -- elastic: reflects what the pool can REALLY still take, not the flat share (see
+            -- inputEffectiveMaxLiters) -- so the dialog never advertises space another product occupies
+            maxLiters = SmartDistribution.inputEffectiveMaxLiters(p, ft) or (cap * (pct / 100)),
             held = SmartDistribution.inputHeldLevel(p, ft),
             explicit = rcvUid ~= nil and SmartDistribution.hasExplicitInputCapPct(rcvUid, ft) or false,
             targetPct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil,
@@ -8906,6 +9055,10 @@ function SmartDistribution.pooledInputCapacity(p)
         end
         return nil   -- a husbandry's non-food inputs (straw, water) are individual, never pooled
     end
+    -- Highlands bulk hall: every floor bay draws on one shared hall total (see bulkHallCapacity). Must come
+    -- before the generic single-storage test below, which would only ever see one bay.
+    local hallPool = SmartDistribution.bulkHallCapacity(p)
+    if hallPool ~= nil then return hallPool end
     -- bulk storage that supports several fts in ONE storage = pooled
     for _, s in ipairs(getAllStorages(p)) do
         local fts = {}
@@ -8978,6 +9131,8 @@ function SmartDistribution.inputHeldLevel(p, ft)
     if isHusbandryBuilding(p) and SmartDistribution.husbandryInputHeld ~= nil then
         return SmartDistribution.husbandryInputHeld(p, ft) or 0
     end
+    -- bulk hall: the crop can be piled across several bays, so held is the sum (assetHeld), not one bay
+    if SmartDistribution.bulkHallSpec(p) ~= nil then return SmartDistribution.assetHeld(p, ft) or 0 end
     local s = SmartDistribution._bulkStorageFor(p, ft)
     if s ~= nil then return getLevel(s, ft) or 0 end
     return SmartDistribution.assetHeld(p, ft)
@@ -9008,6 +9163,12 @@ end
 -- it (250k pool, 2 products -> 125k -> 50% each); individual storage defaults to 100% (no restriction).
 function SmartDistribution.defaultInputCapPct(p, ft)
     local pool = SmartDistribution.pooledInputCapacity(p)
+    -- A bulk hall is the exception to the even split. Its bays are REALLOCATABLE -- an empty bay takes
+    -- whichever crop turns up -- so there is no space to pre-reserve, and splitting evenly across the ten
+    -- crops it accepts capped each one at a tenth of the hall (a 900,000 L hall offered 90,000 L of wheat).
+    -- Default the whole hall to every crop; an explicit per-crop % set by the player is still honoured, and
+    -- the physical one-crop-per-bay limit is enforced separately by bulkHallBayAccepts.
+    if pool ~= nil and pool.kind == "HALL" then return 100 end
     if pool ~= nil then
         for _, pf in ipairs(pool.fts) do
             if pf == ft then
@@ -9025,6 +9186,9 @@ end
 function SmartDistribution.inputCapPctHeadroom(p, ft)
     local pool = SmartDistribution.pooledInputCapacity(p)
     if pool == nil then return 100 end
+    -- hall crops each default to 100% (see defaultInputCapPct), so the "shares must sum to 100" rule does
+    -- not apply -- without this exemption the others would total 900% and pin every crop's headroom to 0.
+    if pool.kind == "HALL" then return 100 end
     local inPool = false
     for _, pf in ipairs(pool.fts) do if pf == ft then inPool = true; break end end
     if not inPool then return 100 end
@@ -9111,6 +9275,48 @@ function SmartDistribution.hasExplicitInputCapPct(rcvUid, ft)
     return C ~= nil and C[ft] ~= nil
 end
 
+-- ---- elastic pooled limits --------------------------------------------------
+-- A per-product % is a share of a SHARED pool, but nothing stops the player tipping a load in by hand, so
+-- a product can end up ABOVE its share. The flat `capacity x pct` sum then advertises space that is not
+-- physically there: a 250,000 L silo already holding 200,000 L of wheat still offered barley "125,000 L".
+-- This resolves the pool against what it actually holds:
+--   * a product OVER its share has its limit raised to what it really holds -- that space is genuinely gone
+--   * the products still under their share divide what is LEFT, in proportion to their configured %s
+--   * nothing is ever offered more than the pool space the others do not already occupy
+-- Shares totalling over 100% are NOT a partition (a bulk hall defaults every crop to 100%, so ten crops
+-- total 1000%), so the proportional divisor is capped at 100 -- dividing by the raw total would cut every
+-- hall crop to a tenth, which is the bug this pooling change already had to fix once.
+-- Returns the effective litre ceiling for ft; falls back to the plain nominal share when p has no pool.
+function SmartDistribution.inputEffectiveMaxLiters(p, ft)
+    local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
+    if type(cap) ~= "number" or cap <= 0 or cap >= INF then return cap end
+    local pct = SmartDistribution.inputCapPct(p, ft) or 100
+    local nominal = cap * pct / 100
+    if pool == nil or type(pool.fts) ~= "table" or #pool.fts < 2 then return nominal end
+    local rcvUid = getUid(p)
+    local usedOver, denom, othersHeld, ftIsOver = 0, 0, 0, false
+    for _, f in ipairs(pool.fts) do
+        local held  = SmartDistribution.inputHeldLevel(p, f) or 0
+        local fPct  = SmartDistribution.inputCapPct(p, f) or 100
+        local over  = held > (cap * fPct / 100) + 0.5           -- tolerance: litres are fractional
+        if f ~= ft then othersHeld = othersHeld + held else ftIsOver = over end
+        if over then
+            usedOver = usedOver + held                          -- occupied beyond its share: really spoken for
+        elseif rcvUid == nil or not SmartDistribution.isInputBlocked(rcvUid, f) then
+            denom = denom + fPct                                -- a blocked product reserves nothing
+        end
+    end
+    -- over its own share: the limit rises to match what is actually piled there
+    if ftIsOver then return SmartDistribution.inputHeldLevel(p, ft) or nominal end
+    local remaining = math.max(0, cap - usedOver)
+    local div = math.min(100, denom)
+    local eff = (div > 0) and (remaining * pct / div) or 0
+    if eff > nominal then eff = nominal end                     -- never exceed the player's own share
+    local freeForFt = math.max(0, cap - othersHeld)             -- never promise space the others occupy
+    if eff > freeForFt then eff = freeForFt end
+    return eff
+end
+
 -- ENFORCEMENT: how many more litres of `ft` this building will accept right now, given its input block
 -- and its per-product cap. Every fill path clamps its deposit to this. Returns a big number when the
 -- product is unconstrained (blocked -> 0; no pooled cap and no explicit cap -> the normal free space).
@@ -9118,10 +9324,10 @@ function SmartDistribution.inputAcceptableLiters(p, ft)
     local rcvUid = getUid(p)
     if rcvUid == nil then return INF end
     if SmartDistribution.isInputBlocked(rcvUid, ft) then return 0 end
-    local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
+    local cap = SmartDistribution.inputProductCapacity(p, ft)
     if cap <= 0 then return INF end                            -- unknown capacity: don't constrain
-    local pct = SmartDistribution.inputCapPct(p, ft)
-    local maxL = cap * (pct / 100)
+    local maxL = SmartDistribution.inputEffectiveMaxLiters(p, ft)
+    if type(maxL) ~= "number" then return INF end
     local held = SmartDistribution.inputHeldLevel(p, ft)
     return math.max(0, maxL - held)
 end
@@ -9274,6 +9480,12 @@ end
 
 -- Can placeable p provide ft into the network (mode/enrolment gate + physically holds/outputs it)?
 function SmartDistribution.canProvide(p, ft)
+    -- bunker silos supply SILAGE only, and only from uncovered bays (never a sink -- they own no Storage,
+    -- so the sink paths skip them naturally)
+    if SmartDistribution.isBunkerSiloPlaceable(p) then
+        if not canSourceDistribute(p, ft) then return false end
+        return SmartDistribution.bunkerPlaceableSilage(p) > 0
+    end
     if not canSourceDistribute(p, ft) then return false end
     local pp = getProductionPoint(p)
     if pp ~= nil and type(pp.outputFillTypeIds) == "table" and pp.outputFillTypeIds[ft] then return true end
@@ -9633,6 +9845,11 @@ function SmartDistribution.canAccept(p, ft)
     if (p.spec_silo ~= nil or isManurePit(p)) then
         for _, s in ipairs(getAllStorages(p)) do if storageSupports(s, ft) then return true, true end end
     end
+    if SmartDistribution.bulkHallSpec(p) ~= nil then
+        for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do
+            if storageSupports(s, ft) and SmartDistribution.bulkHallBayAccepts(s, ft) then return true, true end
+        end
+    end
     if p.spec_objectStorage ~= nil and isPalletShedSink(p, ft) then return true, true end
     return false, false
 end
@@ -9673,6 +9890,862 @@ function SmartDistribution.sinksFor(sourceUid, ft)
     return out
 end
 
+-- ---- bunker silos: SOURCE-ONLY, uncovered silage only ----------------------
+-- A bunker silo is a density-map terrain heap, not a Storage (see fs25-bunker-silo-heap-api). DR treats it
+-- as a SOURCE ONLY: it may distribute silage out, but is never a Store To / Move To destination, so DR
+-- never has to write into a heap (which has no sanctioned API). That falls out for free -- a bunker owns no
+-- Storage object, so getRawStorages/getAllStorages return empty and getSinkStorages/canAccept already skip
+-- it. Nothing to enforce; just do not add bunkers to any sink path.
+-- Only UNCOVERED silage counts. The heap physically holds inputFillType (CHAFF) while filling and
+-- fermentingFillType while sealed; it is only SILAGE once opened, so the fill type must always be resolved
+-- from the terrain rather than assumed.
+-- SmartDistribution.* fields, not top-level locals, per the 200-local main-chunk ceiling.
+SmartDistribution.BUNKER_STATE_FILL      = 0
+SmartDistribution.BUNKER_STATE_CLOSED    = 1
+SmartDistribution.BUNKER_STATE_FERMENTED = 2
+SmartDistribution.BUNKER_STATE_DRAIN     = 3
+
+-- Every BunkerSilo object in the world, flattened. spec_bunkerSilo holds one; spec_multiBunkerSilo (the
+-- Highlands covered bunker) holds an array of ordinary BunkerSilo objects -- same handling, N per placeable.
+function SmartDistribution.bunkerUnits()
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return out end
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil then
+            local bs = p.spec_bunkerSilo
+            if bs ~= nil and bs.bunkerSilo ~= nil then
+                out[#out + 1] = { p = p, silo = bs.bunkerSilo, tag = "", index = #out + 1 }
+            end
+            local ms = p.spec_multiBunkerSilo
+            if ms ~= nil and type(ms.bunkerSilos) == "table" then
+                for i, one in ipairs(ms.bunkerSilos) do
+                    out[#out + 1] = { p = p, silo = one, tag = " bay " .. tostring(i), index = #out + 1 }
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- Does this placeable carry one or more bunker silos?
+function SmartDistribution.isBunkerSiloPlaceable(p)
+    if p == nil then return false end
+    return p.spec_bunkerSilo ~= nil or p.spec_multiBunkerSilo ~= nil
+end
+
+-- Total network-available (uncovered) silage across every bay on this placeable.
+function SmartDistribution.bunkerPlaceableSilage(p)
+    if not SmartDistribution.isBunkerSiloPlaceable(p) then return 0 end
+    local total = 0
+    local bs = p.spec_bunkerSilo
+    if bs ~= nil and bs.bunkerSilo ~= nil then
+        total = total + SmartDistribution.bunkerSilageLiters(bs.bunkerSilo)
+    end
+    local ms = p.spec_multiBunkerSilo
+    if ms ~= nil and type(ms.bunkerSilos) == "table" then
+        for _, one in ipairs(ms.bunkerSilos) do
+            total = total + SmartDistribution.bunkerSilageLiters(one)
+        end
+    end
+    return total
+end
+
+-- Take up to `wanted` litres of silage from this placeable's uncovered bays. Removal is metered by
+-- read-only search (bunkerBandForLiters) then measured before/after, because removeFromGroundByArea's
+-- return value is unreliable -- it reported 0 while removing 4,746 L. Only the measured delta is credited,
+-- so DR can never distribute silage it did not actually take. Returns litres taken.
+-- KNOWN COSMETIC ISSUE: the mound keeps its old shape (recoloured) until the player next scoops it or the
+-- save reloads. The geometry invalidation fires from vehicle-side code we cannot reach; the underlying
+-- terrain, the silo's level and the savegame are all correct. Accepted deliberately -- the recolouring
+-- makes it visible that the material is gone rather than silently wrong.
+function SmartDistribution.bunkerTakeSilage(p, ft, wanted)
+    if p == nil or ft == nil or wanted == nil or wanted <= 0 then return 0 end
+    -- MULTIPLAYER: this mutates the shared terrain, so it is SERVER-ONLY. The distribute phase already
+    -- runs server-side (onHourChanged returns early for clients), but this is a public entry point --
+    -- guard it here too rather than rely on every future caller knowing that.
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return 0 end
+    if not SmartDistribution.isBunkerSiloPlaceable(p) then return 0 end
+    local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+    if silage == nil or ft ~= silage then return 0 end
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if not ok or type(util) ~= "table" or type(util.removeFromGroundByArea) ~= "function" then return 0 end
+
+    local taken, remaining = 0, wanted
+    for _, u in ipairs(SmartDistribution.bunkerUnits()) do
+        if u.p == p and remaining > 0 then
+            local silo = u.silo
+            if SmartDistribution.bunkerSilageLiters(silo) > 0 then
+                local from, to, planned = SmartDistribution.bunkerBandForLiters(silo, ft, remaining)
+                if planned > 0 then
+                    local before = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
+                    local sx, sz, wx, wz, hx, hz = SmartDistribution.bunkerBand(silo, from, to)
+                    pcall(util.removeFromGroundByArea, sx, sz, wx, wz, hx, hz, ft)
+                    local after = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
+                    local got = math.max(0, before - after)
+                    -- resync the silo's cached level so the game's own HUD agrees with the terrain, then
+                    -- flag it dirty so that corrected level replicates to clients (BunkerSilo carries
+                    -- writeUpdateStream + bunkerSiloDirtyFlag; without this a client's HUD keeps the old
+                    -- number even though its terrain read is right)
+                    pcall(function() return silo:updateFillLevel() end)
+                    pcall(function() return silo:raiseDirtyFlags(silo.bunkerSiloDirtyFlag) end)
+                    taken, remaining = taken + got, remaining - got
+                end
+            end
+        end
+    end
+    if SmartDistribution.debug and taken > 0 then
+        Logging.info("[DR bunker] %s: took %.0f L silage of %.0f L wanted",
+            tostring(placeableName(p)), taken, wanted)
+    end
+    return taken
+end
+
+-- Duck-typed Storage the distribute phase can drive, mirroring makePalletSourceProxy: DR's transfer and
+-- billing paths stay untouched. Source-only by construction -- a positive delta is ignored, so nothing can
+-- ever push silage back into a bunker.
+function SmartDistribution.makeBunkerSourceProxy(p)
+    return {
+        getFillLevel = function(_, ft)
+            local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+            if ft ~= silage then return 0 end
+            return SmartDistribution.bunkerPlaceableSilage(p)
+        end,
+        addFillLevel = function(_, farmId, ft, delta)
+            if delta ~= nil and delta < 0 then SmartDistribution.bunkerTakeSilage(p, ft, -delta) end
+        end,
+    }
+end
+
+-- Can this fill type exist as a terrain heap at all? Only heap types may be passed to the
+-- DensityMapHeightUtil area calls -- querying a non-heap type (MANURE, WOODCHIPS, a production good) is
+-- meaningless and risks upsetting the engine's density-map state. Cheap guard, use it before every query.
+function SmartDistribution.isHeapFillType(ft)
+    if ft == nil or g_densityMapHeightManager == nil then return false end
+    local ok, desc = pcall(g_densityMapHeightManager.getDensityMapHeightTypeByFillTypeIndex,
+        g_densityMapHeightManager, ft)
+    return ok and desc ~= nil
+end
+
+-- The fill type physically piled in this silo's area right now (nil when the terrain cannot be read).
+function SmartDistribution.bunkerHeapFillType(silo)
+    local a = silo ~= nil and silo.bunkerSiloArea or nil
+    if a == nil or a.sx == nil then return nil end
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if not ok or type(util) ~= "table" or type(util.getFillTypeAtArea) ~= "function" then return nil end
+    local okT, ft = pcall(util.getFillTypeAtArea, a.sx, a.sz, a.wx, a.wz, a.hx, a.hz)
+    if okT and type(ft) == "number" and ft > 0 then return ft end
+    return nil
+end
+
+-- Litres of NETWORK-AVAILABLE silage in this silo: uncovered (STATE_DRAIN) and actually holding silage.
+-- Anything still filling or sealed reads 0 -- it is not product yet.
+function SmartDistribution.bunkerSilageLiters(silo)
+    if silo == nil then return 0 end
+    if silo.state ~= SmartDistribution.BUNKER_STATE_DRAIN then return 0 end
+    local heapFt = SmartDistribution.bunkerHeapFillType(silo)
+    local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+    if silage == nil then silage = silo.outputFillType end
+    if heapFt == nil or silage == nil or heapFt ~= silage then return 0 end
+    local a = silo.bunkerSiloArea
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if ok and type(util) == "table" and type(util.getFillLevelAtArea) == "function" and a ~= nil then
+        local okL, lv = pcall(util.getFillLevelAtArea, silage, a.sx, a.sz, a.wx, a.wz, a.hx, a.hz)
+        if okL and type(lv) == "number" and lv > 0 then return lv end
+    end
+    return tonumber(silo.fillLevel) or 0     -- cached fallback (probe-confirmed to match to the litre)
+end
+
+-- The sub-rectangle covering `frac` of the way along the silo from its start edge (full width). Removing
+-- from a slice is how DR meters a withdrawal: the engine's removeFromGroundByArea takes an AREA, never a
+-- litre amount.
+-- A BAND of the silo between two fractions of its length (full width). Anchoring only at the start edge
+-- was too coarse: once the near end has been emptied, the amount available jumps straight from 0 L to
+-- several thousand as the band reaches the remaining pile, so "largest slice not exceeding N" could pick
+-- one holding nothing and quietly remove nothing (a 2,000 L request did exactly that).
+function SmartDistribution.bunkerBand(silo, fromFrac, toFrac)
+    local a = silo ~= nil and silo.bunkerSiloArea or nil
+    if a == nil or a.sx == nil then return nil end
+    local ax, az = a.sx + (a.hx - a.sx) * fromFrac, a.sz + (a.hz - a.sz) * fromFrac
+    local bx, bz = a.sx + (a.hx - a.sx) * toFrac,   a.sz + (a.hz - a.sz) * toFrac
+    return ax, az, ax + (a.wx - a.sx), az + (a.wz - a.sz), bx, bz   -- start, width corner, height corner
+end
+
+function SmartDistribution.bunkerSlice(silo, frac)
+    return SmartDistribution.bunkerBand(silo, 0, frac)
+end
+
+function SmartDistribution.bunkerBandLiters(silo, ft, fromFrac, toFrac)
+    if ft == nil or not SmartDistribution.isHeapFillType(ft) then return 0 end
+    local sx, sz, wx, wz, hx, hz = SmartDistribution.bunkerBand(silo, fromFrac, toFrac)
+    if sx == nil then return 0 end
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if not ok or type(util) ~= "table" or type(util.getFillLevelAtArea) ~= "function" then return 0 end
+    local okL, lv = pcall(util.getFillLevelAtArea, ft, sx, sz, wx, wz, hx, hz)
+    return (okL and type(lv) == "number" and lv > 0) and lv or 0
+end
+
+-- Best band holding NO MORE than `wanted`, searched read-only from BOTH ends and keeping whichever gets
+-- closer. Two anchors matter because the remaining pile can sit anywhere along the silo: growing inward
+-- from the far end gives fine control over a pile the near-edge anchor can only reach in one coarse jump.
+-- Returns fromFrac, toFrac, litres.
+function SmartDistribution.bunkerBandForLiters(silo, ft, wanted)
+    if silo == nil or ft == nil or wanted == nil or wanted <= 0 then return 0, 0, 0 end
+    local whole = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
+    if whole <= 0 then return 0, 0, 0 end
+    if whole <= wanted then return 0, 1, whole end          -- the lot fits inside the demand
+    -- anchor at the START edge: grow `to` outward, litres increase with it
+    local lo, hi, bestTo, bestA = 0, 1, 0, 0
+    for _ = 1, 14 do
+        local mid = (lo + hi) / 2
+        local lv = SmartDistribution.bunkerBandLiters(silo, ft, 0, mid)
+        if lv <= wanted then lo, bestTo, bestA = mid, mid, lv else hi = mid end
+    end
+    -- anchor at the FAR edge: grow `from` inward, litres DEcrease as `from` rises
+    local lo2, hi2, bestFrom, bestB = 0, 1, 1, 0
+    for _ = 1, 14 do
+        local mid = (lo2 + hi2) / 2
+        local lv = SmartDistribution.bunkerBandLiters(silo, ft, mid, 1)
+        if lv <= wanted then hi2, bestFrom, bestB = mid, mid, lv else lo2 = mid end
+    end
+    if bestB > bestA then return bestFrom, 1, bestB end
+    return 0, bestTo, bestA
+end
+
+-- Litres of `ft` sitting inside that slice. A pure READ -- this is what makes metered withdrawal safe.
+function SmartDistribution.bunkerSliceLiters(silo, ft, frac)
+    local sx, sz, wx, wz, hx, hz = SmartDistribution.bunkerSlice(silo, frac)
+    if sx == nil or ft == nil then return 0 end
+    if not SmartDistribution.isHeapFillType(ft) then return 0 end   -- never query a non-heap type
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if not ok or type(util) ~= "table" or type(util.getFillLevelAtArea) ~= "function" then return 0 end
+    local okL, lv = pcall(util.getFillLevelAtArea, ft, sx, sz, wx, wz, hx, hz)
+    return (okL and type(lv) == "number" and lv > 0) and lv or 0
+end
+
+-- Largest slice holding NO MORE than `wanted` litres, found by binary search over read-only area queries.
+-- Litres grow monotonically with the fraction, so this converges; searching costs nothing because
+-- getFillLevelAtArea only reads. Returns fraction, litres. Deliberately biased to UNDER-take: removing
+-- more than the network asked for would strand silage that has nowhere to go, whereas taking too little
+-- just leaves it in the bunker for the next cycle.
+function SmartDistribution.bunkerSliceForLiters(silo, ft, wanted)
+    if silo == nil or ft == nil or wanted == nil or wanted <= 0 then return 0, 0 end
+    local whole = SmartDistribution.bunkerSliceLiters(silo, ft, 1)
+    if whole <= 0 then return 0, 0 end
+    if whole <= wanted then return 1, whole end             -- the lot fits inside the demand
+    local lo, hi, bestF, bestL = 0, 1, 0, 0
+    for _ = 1, 14 do                                        -- ~1/16000 of the silo length: ample precision
+        local mid = (lo + hi) / 2
+        local lv = SmartDistribution.bunkerSliceLiters(silo, ft, mid)
+        if lv <= wanted then lo, bestF, bestL = mid, mid, lv else hi = mid end
+    end
+    return bestF, bestL
+end
+
+-- ---- [dev] bunker silo + silo-category asset probe --------------------------
+-- Two unknowns this settles, both of which need live facts (base scripts are encrypted in dataS.gar, and
+-- the Highlands bulk hall lives inside an unreadable .dlc archive):
+--   1. Bunker silos (type="bunkerSilo") carry NO Storage object -- they are a density-map heap with a
+--      FILL -> CLOSED(ferment) -> DRAIN state machine -- so DR's Storage-based engine cannot see them at
+--      all. We need the BunkerSilo read/write API before any of it can be wired up.
+--   2. Which specialization the bulk hall actually uses, and why DR is not already picking it up.
+-- A SmartDistribution.* field, not a top-level local, per the 200-local main-chunk ceiling.
+function SmartDistribution.cmdBunkerProbe(self)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    -- _G[name] respects the per-mod sandbox metatable; rawget(_G, name) bypasses it and returns nil
+    local function dumpMethods(name)
+        local ok, cls = pcall(function() return _G[name] end)
+        if not ok or type(cls) ~= "table" then dump(name .. " = " .. tostring(ok and cls or "nil")); return end
+        local fns = {}
+        for k, v in pairs(cls) do
+            if type(v) == "function" and type(k) == "string" then fns[#fns + 1] = k end
+        end
+        table.sort(fns)
+        dump(name .. " (" .. #fns .. " funcs): " .. table.concat(fns, ", "))
+    end
+    local function dumpFields(label, t)
+        if type(t) ~= "table" then dump("   " .. label .. " = " .. tostring(t)); return end
+        local parts = {}
+        for k, v in pairs(t) do
+            local ty = type(v)
+            if ty == "string" or ty == "number" or ty == "boolean" then
+                parts[#parts + 1] = tostring(k) .. "=" .. tostring(v)
+            else
+                parts[#parts + 1] = tostring(k) .. ":" .. ty
+            end
+        end
+        table.sort(parts)
+        dump("   " .. label .. ": " .. table.concat(parts, ", "))
+    end
+
+    -- non-function class fields: this is where BunkerSilo.STATE_* lives, and we need to know which state
+    -- number means "open, silage ready to take" before anything can be pulled out
+    local function dumpConsts(name)
+        local ok, cls = pcall(function() return _G[name] end)
+        if not ok or type(cls) ~= "table" then return end
+        local parts = {}
+        for k, v in pairs(cls) do
+            local ty = type(v)
+            if type(k) == "string" and (ty == "number" or ty == "string" or ty == "boolean") then
+                parts[#parts + 1] = tostring(k) .. "=" .. tostring(v)
+            end
+        end
+        table.sort(parts)
+        dump(name .. " consts: " .. (next(parts) and table.concat(parts, ", ") or "(none)"))
+    end
+    -- A placeable's methods hide behind a FUNCTION __index, so walking the metatable finds nothing --
+    -- direct indexing does resolve them. Test the names DR's engine would need to drive this asset.
+    local function dumpApi(label, obj)
+        if obj == nil then return end
+        local names = { "getFillLevel", "getFillLevels", "getCapacity", "getFreeCapacity", "getStorage",
+                        "getStorages", "getSupportedFillTypes", "getIsFillTypeSupported", "addFillLevel",
+                        "setFillLevel", "changeFillLevel", "removeFillLevel", "getFillType", "getStates" }
+        local hits = {}
+        for _, n in ipairs(names) do
+            local ok, v = pcall(function() return obj[n] end)
+            if ok and type(v) == "function" then hits[#hits + 1] = n end
+        end
+        dump("   " .. label .. " api: " .. (next(hits) and table.concat(hits, ", ") or "(none of the storage API)"))
+    end
+
+    -- resolve a fill-type index table (either ft->true or list-of-ft) to readable names
+    local function dumpFtList(label, t)
+        if type(t) ~= "table" then return end
+        local names = {}
+        for k, v in pairs(t) do
+            local ft = nil
+            if type(v) == "number" and type(k) == "number" then ft = v          -- list of indices
+            elseif type(k) == "number" and v ~= nil and v ~= false then ft = k  -- index -> true / level
+            end
+            if ft ~= nil then
+                local d = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeByIndex(ft) or nil
+                local lvl = (type(v) == "number" and type(k) == "number" and v ~= ft) and ("=" .. tostring(v)) or ""
+                names[#names + 1] = (d ~= nil and d.name or ("ft" .. tostring(ft))) .. lvl
+            end
+        end
+        table.sort(names)
+        if next(names) then dump("   " .. label .. ": " .. table.concat(names, ", ")) end
+    end
+
+    dump("---- bunker probe: base classes ----")
+    dumpMethods("BunkerSilo")
+    dumpConsts("BunkerSilo")
+    dumpMethods("PlaceableBunkerSilo")
+    -- Highlands Fishing Pack specs found by the category scan below: the bulk hall (grainShed01/02) uses
+    -- placeableStorageHeap, the covered bunker silo (clampShed01) uses multiBunkerSilo. Neither is
+    -- spec_silo, which is why DR classes both as OTHER and ignores them.
+    dumpMethods("PlaceableStorageHeap")
+    dumpMethods("PlaceableMultiBunkerSilo")
+    -- the DLC namespaces its specs, so the class may not sit under the plain name
+    dump("---- globals matching heap / bunker / storage ----")
+    local gnames = {}
+    local okg = pcall(function()
+        for k, v in pairs(_G) do
+            if type(k) == "string" and type(v) == "table" then
+                local lk = k:lower()
+                if lk:find("heap") or lk:find("bunker") or lk:find("storage") then gnames[#gnames + 1] = k end
+            end
+        end
+    end)
+    table.sort(gnames)
+    dump(okg and (next(gnames) and table.concat(gnames, ", ") or "(no matches)") or "(_G not iterable here)")
+
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem -- load a savegame first" end
+
+    dump("---- placeables with spec_bunkerSilo ----")
+    local nb = 0
+    for _, p in ipairs(ps.placeables) do
+        local spec = p.spec_bunkerSilo
+        if spec ~= nil and p.rootNode ~= nil then
+            nb = nb + 1
+            dump(string.format("[bunker %d] %s  class=%s enrolled=%s owner=%s cat=%s",
+                nb, tostring(placeableName(p)), tostring(getAssetClass(p)), tostring(isEnrolled(p)),
+                tostring(p.ownerFarmId), tostring(SmartDistribution.storeCategoryName(p))))
+            dumpFields("spec_bunkerSilo", spec)
+            -- the BunkerSilo object's field name varies by version (.bunkerSilo / .bunkerSilos / .silo),
+            -- so find it structurally: any nested table carrying a fillLevel / capacity / state
+            local found = 0
+            for k, v in pairs(spec) do
+                if type(v) == "table" and (v.fillLevel ~= nil or v.capacity ~= nil or v.state ~= nil) then
+                    found = found + 1
+                    dumpFields("spec_bunkerSilo." .. tostring(k), v)
+                    local fns, mt = {}, getmetatable(v)
+                    local idx = type(mt) == "table" and mt.__index or nil
+                    if type(idx) == "table" then
+                        for fk, fv in pairs(idx) do if type(fv) == "function" then fns[#fns + 1] = fk end end
+                    end
+                    table.sort(fns)
+                    dump("   " .. tostring(k) .. " methods: " ..
+                        (next(fns) and table.concat(fns, ", ") or "(none via metatable -- see BunkerSilo above)"))
+                end
+            end
+            if found == 0 then dump("   (no fillLevel/capacity/state-bearing table inside spec_bunkerSilo)") end
+        end
+    end
+    if nb == 0 then dump("   (none found -- place a bunker silo first)") end
+
+    -- Highlands Fishing Pack: bulk hall (spec_placeableStorageHeap) + covered bunker silo
+    -- (spec_multiBunkerSilo). The decisive question for each is whether it owns a real Storage object --
+    -- if it does, DR's existing Storage engine works and this is a classification change only; if it is
+    -- another ground heap, it needs the same special-casing as a bunker silo.
+    dump("---- Highlands DLC storage placeables ----")
+    local nd = 0
+    for _, p in ipairs(ps.placeables) do
+        local spec = p.spec_placeableStorageHeap or p.spec_multiBunkerSilo
+        if spec ~= nil and p.rootNode ~= nil then
+            nd = nd + 1
+            dump(string.format("[dlc %d] %s  spec=%s class=%s enrolled=%s owner=%s",
+                nd, tostring(placeableName(p)),
+                p.spec_placeableStorageHeap ~= nil and "placeableStorageHeap" or "multiBunkerSilo",
+                tostring(getAssetClass(p)), tostring(isEnrolled(p)), tostring(p.ownerFarmId)))
+            dumpApi("placeable", p)
+            -- the hall exposes getFillLevel/getCapacity on the placeable -- find out what they answer
+            for _, fn in ipairs({ "getFillLevel", "getCapacity" }) do
+                local ok0, v0 = pcall(function() return p[fn](p) end)
+                dump(string.format("   p:%s() -> %s / %s", fn, tostring(ok0), tostring(v0)))
+            end
+            -- Bounded recursive walk. The decisive question: does a real Storage object (fillLevels +
+            -- capacities) hide anywhere in here? If yes, DR's existing engine drives this asset as-is and
+            -- the work is classification only.
+            local walk
+            walk = function(path, t, depth)
+                if depth > 4 or type(t) ~= "table" then return end
+                dumpFields(path, t)
+                if t.fillLevels ~= nil or t.capacities ~= nil then
+                    dump("   ^^ " .. path .. " IS a real Storage (fillLevels/capacities present)")
+                    dumpApi(path, t)
+                    dumpFtList(path .. " holds", t.fillLevels)
+                end
+                for k, v in pairs(t) do
+                    local lk = tostring(k):lower()
+                    if type(v) == "table" and lk ~= "actionevents" and lk ~= "owningplaceable"
+                       and (type(k) == "number" or lk:find("storage") or lk:find("station")
+                            or lk:find("section") or lk:find("silo") or lk:find("heap")) then
+                        walk(path .. "." .. tostring(k), v, depth + 1)
+                    elseif type(v) == "table" and lk:find("filltype") then
+                        dumpFtList(path .. "." .. tostring(k), v)
+                    end
+                end
+            end
+            walk("spec", spec, 1)
+        end
+    end
+    if nd == 0 then dump("   (none found)") end
+
+    -- A bunker silo's fillLevel is a cache of the terrain heap, so taking silage out means removing it
+    -- from the density map. Find out what primitives exist before committing to that.
+    dump("---- density map height manager ----")
+    local okd, dmm = pcall(function() return g_densityMapHeightManager end)
+    if not okd or type(dmm) ~= "table" then
+        dump("g_densityMapHeightManager = " .. tostring(okd and dmm or "nil"))
+    else
+        -- last run reported 0 funcs: its methods sit behind a FUNCTION __index (the same sandbox quirk as
+        -- placeables), so pairs() finds nothing. Test the candidate names by direct index instead.
+        local cand = { "getFillLevelAtWorldPos", "getFillLevelAtArea", "setFillLevelAtArea",
+                       "removeFillLevelAtArea", "changeFillLevelAtArea", "addFillLevelAtArea",
+                       "tipToGroundAroundLine", "removeFromPhysics", "clearArea", "getHeightAtWorldPos",
+                       "getDensityMapHeightTypeByFillTypeIndex", "setCollisionMapAreaDirty" }
+        local hits, miss = {}, {}
+        for _, n in ipairs(cand) do
+            local ok2, v2 = pcall(function() return dmm[n] end)
+            if ok2 and type(v2) == "function" then hits[#hits + 1] = n else miss[#miss + 1] = n end
+        end
+        dump("g_densityMapHeightManager HAS: " .. (next(hits) and table.concat(hits, ", ") or "(none)"))
+        dump("g_densityMapHeightManager lacks: " .. table.concat(miss, ", "))
+    end
+    -- engine-level bunker/heap functions live as bare globals, not on the manager
+    for _, n in ipairs({ "addDensityMapHeightAtWorldPos", "getDensityMapHeightAtWorldPos",
+                         "setDensityMapHeightAtWorldPos", "removeDensityMapHeightAtArea",
+                         "getFillTypeAtWorldPos" }) do
+        local ok3, v3 = pcall(function() return _G[n] end)
+        dump("   global " .. n .. " = " .. tostring(ok3 and type(v3) or "err"))
+    end
+    -- The real heap read/write API is DensityMapHeightUtil, not the manager. removeFromGroundByArea is the
+    -- one that matters: it takes the same start/width/height corner triple a bunkerSiloArea already carries
+    -- and returns the litres actually removed -- a metered partial withdrawal rather than clearSiloArea's
+    -- all-or-nothing wipe. getFillLevelAtArea would let DR verify the heap before and after.
+    dumpMethods("DensityMapHeightUtil")
+    local oku, dmu = pcall(function() return DensityMapHeightUtil end)
+    if oku and type(dmu) == "table" then
+        local want = { "getFillLevelAtArea", "removeFromGroundByArea", "tipToGroundAroundLine",
+                       "getFillLevelAtLine", "removeFromGroundByLine", "getFillTypeAtArea",
+                       "getFillTypeIndexAtWorldPos" }
+        local hits, miss = {}, {}
+        for _, n in ipairs(want) do
+            local ok4, v4 = pcall(function() return dmu[n] end)
+            if ok4 and type(v4) == "function" then hits[#hits + 1] = n else miss[#miss + 1] = n end
+        end
+        dump("DensityMapHeightUtil HAS: " .. (next(hits) and table.concat(hits, ", ") or "(none)"))
+        dump("DensityMapHeightUtil lacks: " .. table.concat(miss, ", "))
+        -- live read: does getFillLevelAtArea agree with the bunker's own cached fillLevel? If it does, the
+        -- heap is addressable and metered withdrawal is on the table.
+        -- Last run read 0 litres from every area even where the silo cached 50,000, so the address is wrong
+        -- somewhere. Stop guessing the fill type: ask the terrain what is actually there (getFillTypeAtArea),
+        -- then read that. Also try the INNER area -- bunkerSiloArea carries both, and the heap may only sit
+        -- inside the walls. Whichever combination returns a non-zero litre count is the addressing DR needs.
+        -- CONFIRMED by the previous run: getFillLevelAtArea matches the silo's cached fillLevel exactly,
+        -- but ONLY when asked about the fill type physically in the heap -- which is inputFillType (CHAFF)
+        -- while filling and fermentingFillType (148) once sealed, NEVER outputFillType until the silo is
+        -- opened. So always resolve the type with getFillTypeAtArea first. Still missing: a STATE_DRAIN
+        -- (open) silo, the only state where SILAGE actually exists and the one DR would withdraw from --
+        -- hence the multiBunkerSilo bays are walked here too (the covered hall had an open bay).
+        if type(dmu.getFillLevelAtArea) == "function" then
+            local units = SmartDistribution.bunkerUnits()
+            local STATE = { [0] = "FILL", [1] = "CLOSED", [2] = "FERMENTED", [3] = "DRAIN" }
+            for _, u in ipairs(units) do
+                local p, silo = u.p, u.silo
+                local a = silo ~= nil and silo.bunkerSiloArea or nil
+                if a ~= nil and a.sx ~= nil then
+                    dump(string.format("   >>> [%d] %s%s  state=%s(%s) opened front=%s back=%s ferment=%.2f  DR-silage=%s L",
+                        u.index, tostring(placeableName(p)), u.tag, tostring(silo.state),
+                        tostring(STATE[silo.state] or "?"), tostring(silo.isOpenedAtFront),
+                        tostring(silo.isOpenedAtBack), tonumber(silo.fermentingPercent) or -1,
+                        tostring(SmartDistribution.bunkerSilageLiters(silo))))
+                    dump(string.format("   [%s] cached fillLevel=%s state=%s in=%s ferment=%s out=%s",
+                        tostring(placeableName(p)), tostring(silo.fillLevel), tostring(silo.state),
+                        tostring(silo.inputFillType), tostring(silo.fermentingFillType),
+                        tostring(silo.outputFillType)))
+                    local areas = { { "outer", a } }
+                    if type(a.inner) == "table" and a.inner.sx ~= nil then areas[#areas + 1] = { "inner", a.inner } end
+                    for _, e in ipairs(areas) do
+                        local nm, ar = e[1], e[2]
+                        if type(dmu.getFillTypeAtArea) == "function" then
+                            local okT, ftAt = pcall(dmu.getFillTypeAtArea, ar.sx, ar.sz, ar.wx, ar.wz, ar.hx, ar.hz)
+                            local d = (okT and type(ftAt) == "number" and g_fillTypeManager ~= nil)
+                                and g_fillTypeManager:getFillTypeByIndex(ftAt) or nil
+                            dump(string.format("      %s getFillTypeAtArea -> ok=%s ft=%s (%s)",
+                                nm, tostring(okT), tostring(ftAt), tostring(d ~= nil and d.name or "?")))
+                            if okT and type(ftAt) == "number" and ftAt > 0 then
+                                local okL, lv = pcall(dmu.getFillLevelAtArea, ftAt, ar.sx, ar.sz, ar.wx, ar.wz, ar.hx, ar.hz)
+                                dump(string.format("      %s level@thatFt -> ok=%s %s", nm, tostring(okL), tostring(lv)))
+                            end
+                        end
+                        for _, ft in ipairs({ silo.inputFillType, silo.fermentingFillType, silo.outputFillType }) do
+                            local okL, lv = pcall(dmu.getFillLevelAtArea, ft, ar.sx, ar.sz, ar.wx, ar.wz, ar.hx, ar.hz)
+                            if okL and type(lv) == "number" and lv > 0 then
+                                dump(string.format("      %s level@ft%s -> %s  <== NON-ZERO", nm, tostring(ft), tostring(lv)))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Every placeable the build menu files under a silo/storage-ish tab, with the class DR gives it. This
+    -- is what identifies the bulk hall: if it lands on class=OTHER, DR ignores it and we learn which spec
+    -- to teach it; if it is already SILO/SHED, the problem is enrolment or products, not detection.
+    dump("---- silo/storage-category placeables as DR sees them ----")
+    local ns = 0
+    for _, p in ipairs(ps.placeables) do
+        local cat = p.rootNode ~= nil and SmartDistribution.storeCategoryName(p) or nil
+        if cat ~= nil and p.spec_bunkerSilo == nil
+           and (cat:find("silo") or cat:find("storage") or cat:find("hall") or cat:find("shed") or cat:find("bulk")) then
+            ns = ns + 1
+            local prod = SmartDistribution.assetProducts(p)
+            dump(string.format("[cat %d] %s  cat=%s class=%s enrolled=%s owner=%s in=%d out=%d",
+                ns, tostring(placeableName(p)), tostring(cat), tostring(getAssetClass(p)),
+                tostring(isEnrolled(p)), tostring(p.ownerFarmId), #prod.inputs, #prod.outputs))
+            local specs = {}
+            for k in pairs(p) do
+                if type(k) == "string" and k:sub(1, 5) == "spec_" then specs[#specs + 1] = k end
+            end
+            table.sort(specs)
+            dump("   cfg=" .. tostring(p.configFileName))
+            dump("   specs: " .. table.concat(specs, ", "))
+        end
+    end
+    if ns == 0 then dump("   (none found)") end
+
+    return string.format("bunker probe: %d bunker silo(s), %d silo-category placeable(s) -- see log", nb, ns)
+end
+
+-- [dev] READ-ONLY: what DR would do to satisfy a demand of <liters> from a bunker, without removing
+-- anything. Exercises the same bunkerSliceForLiters binary search the real withdrawal will use, so the
+-- metering can be validated safely and repeatedly before any silage is actually touched.
+-- Usage: sdBunkerPlan <index> <liters>
+function SmartDistribution.cmdBunkerPlan(self, idxArg, litersArg)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local units = SmartDistribution.bunkerUnits()
+    local idx = tonumber(idxArg)
+    if idx == nil or units[idx] == nil then
+        dump("usage: sdBunkerPlan <index> <liters>  -- units:")
+        for _, u in ipairs(units) do
+            dump(string.format("   [%d] %s%s state=%s DR-silage=%s L", u.index,
+                tostring(placeableName(u.p)), u.tag, tostring(u.silo.state),
+                tostring(SmartDistribution.bunkerSilageLiters(u.silo))))
+        end
+        return "listed " .. tostring(#units) .. " bunker unit(s)"
+    end
+    local u = units[idx]
+    local silo = u.silo
+    local avail = SmartDistribution.bunkerSilageLiters(silo)
+    if avail <= 0 then
+        return string.format("unit %d holds no network silage (state=%s -- must be 3/DRAIN and uncovered)",
+            idx, tostring(silo.state))
+    end
+    local ft = SmartDistribution.bunkerHeapFillType(silo)
+    local wanted = tonumber(litersArg) or 5000
+    dump(string.format("sdBunkerPlan [%d] %s%s available=%.0f L, want %.0f L",
+        idx, tostring(placeableName(u.p)), u.tag, avail, wanted))
+    -- the shape of the heap along the silo, to show how far from linear the slice mapping really is
+    for _, f in ipairs({ 0.1, 0.25, 0.5, 0.75, 1.0 }) do
+        dump(string.format("   slice %.0f%% of length -> %.0f L (%.1f%% of contents)",
+            f * 100, SmartDistribution.bunkerSliceLiters(silo, ft, f),
+            100 * SmartDistribution.bunkerSliceLiters(silo, ft, f) / math.max(1, avail)))
+    end
+    local frac, litres = SmartDistribution.bunkerSliceForLiters(silo, ft, wanted)
+    dump(string.format("   -> chosen slice %.4f of length = %.0f L (%.0f L short of the %.0f L asked; never overshoots)",
+        frac, litres, wanted - litres, wanted))
+    -- WHAT IS ACTUALLY IN THERE. After a direct removeFromGroundByArea the heap stayed visible but changed
+    -- colour, so material of some OTHER type is still sitting in the silo. Scan every plausible type across
+    -- the whole area to identify it, and compare the terrain totals against the silo's own cached figure.
+    dump("   ---- area contents by fill type (whole silo) ----")
+    -- only types a bunker can plausibly contain, and only ones that are real heap types (isHeapFillType)
+    local names = { "SILAGE", "CHAFF", "GRASS_WINDROW", "DRYGRASS_WINDROW", "STRAW" }
+    local seen, total = {}, 0
+    for _, n in ipairs(names) do
+        local i = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName(n) or nil
+        if i ~= nil and SmartDistribution.isHeapFillType(i) then seen[i] = n end
+    end
+    if silo.fermentingFillType ~= nil then seen[silo.fermentingFillType] = seen[silo.fermentingFillType] or "fermenting" end
+    if silo.inputFillType ~= nil then seen[silo.inputFillType] = seen[silo.inputFillType] or "input" end
+    for i, n in pairs(seen) do
+        local lv = SmartDistribution.bunkerSliceLiters(silo, i, 1)
+        if lv > 0 then
+            total = total + lv
+            dump(string.format("      ft %-4s %-18s = %.0f L", tostring(i), n, lv))
+        end
+    end
+    dump(string.format("      terrain total = %.0f L   vs silo cached fillLevel = %s   (mismatch = desync)",
+        total, tostring(silo.fillLevel)))
+    -- HEIGHT PROFILE along the silo. The heap changes colour but does not flatten after a removal, then
+    -- comes back correctly flattened on reload. The suspicion: removeFromGroundByArea clears the fill TYPE
+    -- but leaves the HEIGHT standing, so it renders as a different material at unchanged geometry, and the
+    -- load path later discards height carrying no valid type. If an already-emptied stretch still reports
+    -- height here, that is confirmed -- and the render fix has to drop the height, not just re-draw.
+    dump("   ---- height profile along the silo (0 = start edge) ----")
+    local okH, util2 = pcall(function() return DensityMapHeightUtil end)
+    if okH and type(util2) == "table" and type(util2.getHeightAtWorldPos) == "function" then
+        local ar = silo.bunkerSiloArea
+        for _, f in ipairs({ 0.1, 0.3, 0.5, 0.7, 0.9 }) do
+            -- centre of the width, `f` of the way along the length
+            local x = ar.sx + (ar.hx - ar.sx) * f + (ar.wx - ar.sx) * 0.5
+            local z = ar.sz + (ar.hz - ar.sz) * f + (ar.wz - ar.sz) * 0.5
+            local okV, h = pcall(util2.getHeightAtWorldPos, x, ar.sy, z)
+            local tn = "?"
+            if type(util2.getHeightTypeDescAtWorldPos) == "function" then
+                local okT2, desc = pcall(util2.getHeightTypeDescAtWorldPos, x, ar.sy, z)
+                if okT2 and type(desc) == "table" then tn = tostring(desc.fillTypeIndex or desc.name or "?") end
+            end
+            -- report height ABOVE THE SILO FLOOR, and judge each sample against the litres actually there,
+            -- instead of printing a fixed conclusion (an earlier version asserted its own hypothesis no
+            -- matter what the numbers said, which would have "confirmed" it either way)
+            local above = (okV and type(h) == "number") and (h - ar.sy) or nil
+            local litresHere = SmartDistribution.bunkerSliceLiters(silo, ft, math.min(1, f + 0.05))
+                             - SmartDistribution.bunkerSliceLiters(silo, ft, math.max(0, f - 0.05))
+            local verdict = "?"
+            if above ~= nil then
+                local hasHeight, hasLitres = above > 0.02, litresHere > 1
+                if hasHeight == hasLitres then verdict = "consistent"
+                elseif hasHeight then verdict = "HEIGHT WITHOUT LITRES (geometry left behind)"
+                else verdict = "LITRES WITHOUT HEIGHT" end
+            end
+            dump(string.format("      at %3.0f%% of length: +%.3f m above floor, ~%.0f L nearby, type=%s -> %s",
+                f * 100, above or -1, litresHere, tn, verdict))
+        end
+    else
+        dump("      getHeightAtWorldPos unavailable")
+    end
+    return string.format("plan: take %.0f L of the %.0f L wanted from unit %d -- see log", litres, wanted, idx)
+end
+
+-- [dev] DESTRUCTIVE and deliberately hand-invoked -- never called from the probe or the hourly pass.
+-- The last unknown for bunker withdrawal: removeFromGroundByArea takes an AREA, not a litre amount, so DR
+-- cannot simply ask for 5,000 L. The plan is to hand it a SUB-RECTANGLE (a slice from one end, like a
+-- shovel bite) and credit whatever it actually returns -- never inventing product. This measures how
+-- faithfully a fractional slice maps to litres removed, and confirms the argument order + return shape.
+-- Usage: sdBunkerTake <index> [fraction]   index from sdBunkerProbe's ">>> [n]" list, fraction default 0.1
+function SmartDistribution.cmdBunkerTake(self, idxArg, fracArg)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local units = SmartDistribution.bunkerUnits()
+    local idx = tonumber(idxArg)
+    if idx == nil then
+        dump("usage: sdBunkerTake <index> [litres>1 | fraction<=1]  -- units:")
+        for _, u in ipairs(units) do
+            dump(string.format("   [%d] %s%s state=%s silage=%s L", u.index,
+                tostring(placeableName(u.p)), u.tag, tostring(u.silo.state),
+                tostring(SmartDistribution.bunkerSilageLiters(u.silo))))
+        end
+        return "listed " .. tostring(#units) .. " bunker unit(s)"
+    end
+    local u = units[idx]
+    if u == nil then return "no bunker unit " .. tostring(idx) .. " (run sdBunkerTake with no args to list)" end
+    local silo = u.silo
+    local a = silo.bunkerSiloArea
+    if a == nil or a.sx == nil then return "unit " .. tostring(idx) .. " has no readable area" end
+    local ok, util = pcall(function() return DensityMapHeightUtil end)
+    if not ok or type(util) ~= "table" or type(util.removeFromGroundByArea) ~= "function" then
+        return "DensityMapHeightUtil.removeFromGroundByArea unavailable"
+    end
+    local heapFt = SmartDistribution.bunkerHeapFillType(silo)
+    if heapFt == nil then return "nothing readable in that silo's area" end
+    local d = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeByIndex(heapFt) or nil
+    local function levelNow()
+        local okL, lv = pcall(util.getFillLevelAtArea, heapFt, a.sx, a.sz, a.wx, a.wz, a.hx, a.hz)
+        return (okL and type(lv) == "number") and lv or -1
+    end
+    local before = levelNow()
+    -- Second argument is LITRES when > 1, a raw fraction when <= 1. Litres is the real code path: it runs
+    -- the same bunkerSliceForLiters search DR will use, which scans the WHOLE length -- so it still finds
+    -- the product when the near end has already been emptied, whereas a hand-picked fraction silently hits
+    -- an empty zone and removes nothing (which is exactly what a manual 0.5 did once the near half was gone).
+    local arg2 = tonumber(fracArg) or 5000
+    local frac, planned
+    if arg2 > 1 then
+        frac, planned = SmartDistribution.bunkerSliceForLiters(silo, heapFt, arg2)
+        dump(string.format("   planner: want %.0f L -> slice %.4f of length holding %.0f L", arg2, frac, planned))
+        if frac <= 0 then return string.format("planner found no slice under %.0f L -- silo may be empty", arg2) end
+    else
+        frac = arg2
+        if frac <= 0 then return "fraction must be > 0" end
+    end
+    -- PREDICT: read how much sits inside the slice before touching it. If this matches the delta the removal
+    -- actually produces, the read-only search is trustworthy and DR can meter exactly, never over-removing.
+    local predicted = SmartDistribution.bunkerSliceLiters(silo, heapFt, frac)
+    local sx, sz, wx, wz, shx, shz = SmartDistribution.bunkerSlice(silo, frac)
+    dump(string.format("sdBunkerTake [%d] %s%s ft=%s(%s) state=%s frac=%.3f before=%.0f L predicted-in-slice=%.0f L",
+        idx, tostring(placeableName(u.p)), u.tag, tostring(heapFt),
+        tostring(d ~= nil and d.name or "?"), tostring(silo.state), frac, before, predicted))
+    local r1, r2, r3 = nil, nil, nil
+    local okR, e1, e2, e3 = pcall(util.removeFromGroundByArea, sx, sz, wx, wz, shx, shz, heapFt)
+    if okR then r1, r2, r3 = e1, e2, e3 else dump("   removeFromGroundByArea ERROR: " .. tostring(e1)) end
+    dump(string.format("   returns: %s | %s | %s  (return value is unreliable -- measure before/after)",
+        tostring(r1), tostring(r2), tostring(r3)))
+    local after = levelNow()
+    local delta = before - after
+    dump(string.format("   after=%.0f L  actual delta=%.0f L  predicted=%.0f L  error=%.0f L  cached fillLevel=%s",
+        after, delta, predicted, predicted - delta, tostring(silo.fillLevel)))
+    dump("   -> predicted ~= actual means metered withdrawal is exact and safe")
+    -- LIVE REFRESH. Confirmed by reloading the save: the removal itself is CORRECT and persists -- the
+    -- density map is the real stored state and silo.fillLevel is only a cache the game rebuilds on load
+    -- (which is why the mound came back correctly flattened after a restart). So nothing is corrupted; the
+    -- heap render and the cached level simply do not refresh mid-session. Find the call that does it.
+    dump("   ---- live refresh attempts (cached fillLevel was " .. tostring(silo.fillLevel) .. ") ----")
+    local okU = pcall(function() return silo:updateFillLevel() end)
+    dump("      silo:updateFillLevel()        ok=" .. tostring(okU) .. " fillLevel=" .. tostring(silo.fillLevel))
+    if not okU then
+        local okU2 = pcall(function() return silo:updateFillLevel(after, heapFt) end)
+        dump("      silo:updateFillLevel(lvl,ft)  ok=" .. tostring(okU2) .. " fillLevel=" .. tostring(silo.fillLevel))
+    end
+    -- the standard FS pattern for "this object changed, re-render + replicate it"
+    local okD = pcall(function() return silo:raiseDirtyFlags(silo.bunkerSiloDirtyFlag) end)
+    dump("      raiseDirtyFlags               ok=" .. tostring(okD))
+    local okM = pcall(function()
+        return g_densityMapHeightManager:setCollisionMapAreaDirty(sx, sz, wx, wz, shx, shz)
+    end)
+    dump("      setCollisionMapAreaDirty      ok=" .. tostring(okM))
+    -- DO NOT call DensityMapHeightUtil.clearCache() here. It is engine teardown, not a render refresh: it
+    -- nils an internal table that the engine's own per-frame update then dereferences, producing
+    -- "DensityMapHeightUtil.lua:156: attempt to index nil with 'getFillLevelAtArea'" every frame until the
+    -- game is restarted. Never call an unknown engine function speculatively on a live session.
+    -- the silo's own per-frame update may recompute from the terrain if simply poked
+    local okT = pcall(function() return silo:updateTick(0) end)
+    dump("      silo:updateTick(0)            ok=" .. tostring(okT) .. " fillLevel=" .. tostring(silo.fillLevel))
+    dump("      final cached fillLevel=" .. tostring(silo.fillLevel) .. "  terrain=" .. tostring(levelNow()))
+    -- LAST RESORT for the pinned heap render. Walking the map and back did not refresh it, so this is not
+    -- terrain LOD streaming -- the draw is genuinely held. The game itself MUST redraw the heap when a
+    -- player opens a silo, so the silo's own state machine is the most likely trigger. setState is the
+    -- BunkerSilo class's own documented method with a known enum (not an unknown engine internal, which is
+    -- the mistake that cost a session earlier). Re-asserting the CURRENT state should be the mildest poke
+    -- that still runs whatever redraw opening performs.
+    -- Side effects are the risk (a re-run open animation, or a disturbed ferment), so capture before/after.
+    local st0, fp0, fl0 = silo.state, silo.fermentingPercent, silo.fillLevel
+    dump(string.format("   ---- setState poke (before: state=%s ferment=%s fillLevel=%s) ----",
+        tostring(st0), tostring(fp0), tostring(fl0)))
+    local okS = pcall(function() return silo:setState(st0) end)
+    dump(string.format("      setState(%s) ok=%s -> state=%s ferment=%s fillLevel=%s",
+        tostring(st0), tostring(okS), tostring(silo.state), tostring(silo.fermentingPercent),
+        tostring(silo.fillLevel)))
+    if silo.state ~= st0 or silo.fermentingPercent ~= fp0 then
+        dump("      !! setState CHANGED silo state/ferment -- side effect, do not use this in the real feature")
+    end
+    dump("      -> if the mound visibly drops NOW without reloading, withdrawal is buildable")
+    return string.format("took %.0f L (predicted %.0f) from unit %d -- see log", math.max(0, delta), predicted, idx)
+end
+
+-- [dev] COVERAGE AUDIT: which owned buildings is DR ignoring that look like they do something?
+-- DR classifies structurally (spec_productionPoint / spec_silo / spec_husbandry / spec_objectStorage), so
+-- DLC and mod content is picked up automatically -- a DLC production is still a production. What DOES slip
+-- through is a genuinely NEW specialization: the Highlands bulk hall was invisible for exactly that reason
+-- (placeableStorageHeap, a floor-heap shed nobody had modelled before), and a mod could do the same.
+-- So rather than trust the known spec list, look for CAPABILITY MARKERS inside whatever specs a placeable
+-- happens to carry -- storages, stations, sections, fill levels. Anything carrying those but landing in
+-- class OTHER is a candidate DR should probably understand. This would have flagged the bulk hall on day one.
+function SmartDistribution.cmdCoverage(self)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem -- load a savegame first" end
+    -- Audit EVERY farm-owned building, not just the player's own farm. Filtering to _playerFarmId() made
+    -- this report "coverage looks complete" after examining 7 of the map's buildings on a save whose
+    -- productions sit on a second farm id -- a self-confirming diagnostic, which is worse than none.
+    local MARKERS = { "storages", "storage", "loadingStation", "unloadingStation", "sections",
+                      "bunkerSilos", "bunkerSilo", "fillLevels", "capacity", "productionPoint",
+                      "sellingStation", "palletSpawner", "storageHeap" }
+    -- Count EVERYTHING. An audit that filters is an audit that lies: restricting to the player's farm hid
+    -- the productions behind a second farm id, and then restricting to farmId ~= 0 hid them again because
+    -- they report farm 0. Unowned map furniture carries no capability markers, so it cannot create false
+    -- suspects -- the ownership breakdown is reported alongside instead of used to exclude.
+    dump("---- DR coverage audit: every placeable vs what DR recognises ----")
+    local counts, ownedCounts, suspects, farms = {}, {}, 0, {}
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil then
+            local farmId = SmartDistribution._ownerFarmId(p) or 0
+            farms[farmId] = (farms[farmId] or 0) + 1
+            local cls = getAssetClass(p)
+            counts[cls] = (counts[cls] or 0) + 1
+            if farmId ~= 0 then ownedCounts[cls] = (ownedCounts[cls] or 0) + 1 end
+            if cls == "OTHER" then
+                -- does anything inside its specs look like storage / production / a station?
+                local hits = {}
+                for k, v in pairs(p) do
+                    if type(k) == "string" and k:sub(1, 5) == "spec_" and type(v) == "table" then
+                        for _, m in ipairs(MARKERS) do
+                            if v[m] ~= nil then hits[#hits + 1] = k:sub(6) .. "." .. m end
+                        end
+                    end
+                end
+                if #hits > 0 then
+                    suspects = suspects + 1
+                    dump(string.format("   [?] %s  farm=%s cat=%s", tostring(placeableName(p)),
+                        tostring(farmId), tostring(SmartDistribution.storeCategoryName(p))))
+                    dump("       cfg=" .. tostring(p.configFileName))
+                    dump("       capability markers: " .. table.concat(hits, ", "))
+                end
+            end
+        end
+    end
+    local parts = {}
+    for k, v in pairs(counts) do
+        parts[#parts + 1] = k .. "=" .. tostring(v) .. "(" .. tostring(ownedCounts[k] or 0) .. " owned)"
+    end
+    table.sort(parts)
+    dump("   recognised: " .. table.concat(parts, "  "))
+    -- show the farm spread too: if a class you expect is missing, check it is not sitting on another farm
+    local fparts = {}
+    for f, n in pairs(farms) do fparts[#fparts + 1] = "farm" .. tostring(f) .. "=" .. tostring(n) end
+    table.sort(fparts)
+    dump("   buildings per farm: " .. table.concat(fparts, "  ")
+        .. "   (player farm = " .. tostring(SmartDistribution._playerFarmId()) .. ")")
+    if suspects == 0 then
+        dump("   no unrecognised buildings carrying storage/production markers -- coverage looks complete")
+    else
+        dump(string.format("   %d building(s) above look functional but DR ignores them -- worth a look", suspects))
+    end
+    return string.format("coverage audit: %d suspect(s) -- see log", suspects)
+end
+
 -- ---- dev console commands: direct registration -----------------------------
 -- The earlier registration block was not taking effect (sdManureProbe reported "command not found"),
 -- so register here at file scope, after every cmd* function above is defined. Guarded so it is a no-op
@@ -9702,6 +10775,22 @@ if addConsoleCommand ~= nil then
     pcall(addConsoleCommand, "sdTarget",
         "Set input fill target on the robot barn: sdTarget <fillType> <pct|off> [dev]",
         "cmdTarget", SmartDistribution)
+    -- Bulk-hall / bunker-silo investigation probes -- DISABLED for release. The cmd* bodies are kept above
+    -- (they cost nothing while unregistered) because the bunker heap-redraw blocker is still open and these
+    -- are how it gets picked up again. sdBunkerTake in particular is DESTRUCTIVE -- it really removes
+    -- silage from a heap -- so it must never ship registered.
+    -- pcall(addConsoleCommand, "sdBunkerProbe",
+    --     "Dump bunker silos (BunkerSilo API + state) and silo-category placeables as DR classes them [dev]",
+    --     "cmdBunkerProbe", SmartDistribution)
+    -- pcall(addConsoleCommand, "sdCoverage",
+    --     "READ-ONLY audit: owned buildings DR ignores that carry storage/production markers [dev]",
+    --     "cmdCoverage", SmartDistribution)
+    -- pcall(addConsoleCommand, "sdBunkerPlan",
+    --     "READ-ONLY: how DR would meter a silage withdrawal: sdBunkerPlan <index> <liters> [dev]",
+    --     "cmdBunkerPlan", SmartDistribution)
+    -- pcall(addConsoleCommand, "sdBunkerTake",
+    --     "DESTRUCTIVE test: take silage from a bunker: sdBunkerTake <index> <litres> (or a fraction <=1) [dev]",
+    --     "cmdBunkerTake", SmartDistribution)
     print("[SmartDistribution] sd* probes + sdSpawnHusb / sdRobotFill / sdTarget registered")
 else
     print("[SmartDistribution] addConsoleCommand unavailable -- console commands disabled by the game")
@@ -9718,6 +10807,9 @@ if type(SmartDistribution.defaultInputCapPct) == "function" then
     SmartDistribution.defaultInputCapPct = function(p, ft)
         local pool = (SmartDistribution.pooledInputCapacity ~= nil)
             and SmartDistribution.pooledInputCapacity(p) or nil
+        -- bulk hall bays are reallocatable: no even split, no block-redistribution -- every crop may use
+        -- the whole hall by default (see the base defaultInputCapPct for the reasoning)
+        if pool ~= nil and pool.kind == "HALL" then return 100 end
         if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
            and SmartDistribution.assetUid ~= nil then
             -- isInputBlocked is keyed by RECEIVER UID (control.inputBlock[rcvUid][ft]), not the placeable
@@ -9744,6 +10836,8 @@ if type(SmartDistribution.inputCapPctHeadroom) == "function" then
     SmartDistribution.inputCapPctHeadroom = function(p, ft)
         local pool = (SmartDistribution.pooledInputCapacity ~= nil)
             and SmartDistribution.pooledInputCapacity(p) or nil
+        -- hall crops are not constrained to sum to 100% (see the base inputCapPctHeadroom)
+        if pool ~= nil and pool.kind == "HALL" then return 100 end
         if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
            and SmartDistribution.inputCapPct ~= nil and SmartDistribution.assetUid ~= nil then
             local uid = SmartDistribution.assetUid(p)

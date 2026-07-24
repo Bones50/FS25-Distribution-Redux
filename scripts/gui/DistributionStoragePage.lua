@@ -81,6 +81,13 @@ local function inputMaxLiters(placeable, ft)
         if ok and type(c) == "number" then cap = c end
     end
     if cap == nil or cap <= 0 or cap >= math.huge then return nil end
+    -- Pooled storage resolves elastically against what the pool actually holds, so a product that has been
+    -- overfilled by hand no longer leaves the others advertising space that is not there. Engine-side so
+    -- the number shown matches what inputAcceptableLiters will really let in (and holds in multiplayer).
+    if SmartDistribution.inputEffectiveMaxLiters ~= nil then
+        local ok, v = pcall(SmartDistribution.inputEffectiveMaxLiters, placeable, ft)
+        if ok and type(v) == "number" and v >= 0 and v < math.huge then return v end
+    end
     local pct = 100
     if SmartDistribution.inputCapPct ~= nil then
         local ok, v = pcall(SmartDistribution.inputCapPct, placeable, ft)
