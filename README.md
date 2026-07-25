@@ -24,7 +24,7 @@ Fixed
 5) Fixed Animal Husbandries that produce pallets to ensure they don't spawn pallets when Hold - Internal is selected.
 6) Animal Pastures (ie no barn) no longer produce and store manure in line with base game functionality
 7) Updated how buildings with shared (pooled)storage function/show in the UI. If a silo is filled over the reserved amount for a specific product manually, the remaining products reserved levels will adjust to reflect what room is left rather than showing volumes that simply aren't available.
-8) Fixed distribution and selling of non-market items (e.g. electric charge) to support mods that can consume them.
+8) Fixed distribution and selling of non-market items (e.g. electric charge) to support mods that can consume them as well as sell them.
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -34,7 +34,8 @@ Added
 5) Support Added for modded buildings in the Nordkirchen_x4 Map Mo
 6) Added support for Bunker Silo's and Bulk Halls
 7) Added support for the FS25_Fed_Produktions_Pack Mod.
-7) Made UI numbers update realtime rather than only on UI close and reopen.
+8) Made UI numbers update realtime rather than only on UI close and reopen.
+9) Adjust how inputs and outputs are shown on the production UI. Inputs and outputs will now only show for production lines that are turned on.
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
@@ -48,6 +49,6 @@ New Features
 Notes
 1) Storages with pooled stroage spaces will now reserve a portion of that space for each type of possible input by deafult. For example a silo with 400,000l of storage and 10 inputs will automatically be set to only store 40,000l of each type by default. You will need to change the input settings to store more of a particular type of product (e.g. block or set to zero the storage reserved for all other products and max out wheat). If a silo is not getting the amount you expect this is the first thing to check! Note that the reserved space only applies to distirbution, manually filling the silo works as per base game (can put as much of anything you want in up to the max storage space), however if you overfill a particular product, distribution will stop feeding any additional product until the stored amount goes below the reserved storage space.
 2) Many people have reported issues with Manure Heaps/Slurry Pits and the related extensions. To keep everything consistent the mod very much modifies how these items work. If you just place the manure pit near a cow farm for example, nothing will happen unlike base game. You now need to set the manure/slurry output on the farm to a Store To mode to have the output go into the heap/pit. Extensions now can only be placed within 50m of a matching storage and will just increase the manure stored in the nearest heap/pit.
-3) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breather though :))
+3) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
 4) By Default setting a storage output set to Move To does nothing unless you sepcify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check teh advanced output settings.
 5) Bunker silo's for silage are a bit weird. The distribution system will work, however the way it updates the heap level is a bit werid. If DR removes silage from the heap a part of the heap will change colour but not level. A game reload or picking up some remaining silage with a tractor will update the fill level properly.

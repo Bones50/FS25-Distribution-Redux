@@ -543,6 +543,16 @@ function DistributionAnimalHusbandryPage:onGuiSetupFinished()
     self._scrollMap = { { "inputSlider", "inputList", 5 }, { "outputSlider", "outputList", 6 } }
 end
 
+-- This layout's output rows live in outputList (there is no detailList), so the inherited onFrameOpen's
+-- realtime set { inputList, detailList } never refreshes the output side -- husbandry distributed/sold/held
+-- would sit stale between selections. Re-point the realtime set at outputList after super runs. Output cells
+-- read all figures live in populateCellForItemInSection, so a plain reloadData refreshes them; no
+-- rebuildRealtimeData needed. Safe from focus-stealing now that refreshRealtimeLists holds the _focusing guard.
+function DistributionAnimalHusbandryPage:onFrameOpen()
+    DistributionStoragePage.onFrameOpen(self)
+    self._realtimeLists = { "inputList", "outputList" }
+end
+
 function DistributionAnimalHusbandryPage:buildDetailRows()
     self.inputRows = {}
     self.outputRows = {}

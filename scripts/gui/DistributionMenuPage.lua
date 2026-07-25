@@ -79,12 +79,20 @@ function DistributionMenuPage:refreshRealtimeLists()
     if self.rebuildRealtimeData ~= nil then pcall(function() self:rebuildRealtimeData() end) end
     -- reloadData re-runs populateCellForItemInSection for the visible cells and keeps the selected index for
     -- an unchanged row count -- which holds here, since a refresh never changes WHICH products an asset has.
+    -- BUT reloadData ALSO synchronously re-fires each list's onListSelectionChanged (see _focusOn's recursion
+    -- note), and that handler calls _focusOn -> FocusManager:setFocus. Left unguarded, the refresh yanks
+    -- keyboard focus onto whichever list is reloaded LAST every ~500 ms, overriding the row the player picked
+    -- (input<->output oscillation). Hold the _focusing guard across the whole reload so those re-fired
+    -- handlers no-op on focus (every page's _focusOn early-returns while _focusing) and the player's selection
+    -- is left exactly where they put it.
+    self._focusing = true
     for i = 1, #names do
         local list = self[names[i]]
         if list ~= nil and list.reloadData ~= nil then
             pcall(function() list:reloadData() end)
         end
     end
+    self._focusing = false
 end
 
 function DistributionMenuPage:update(dt)

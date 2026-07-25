@@ -316,9 +316,10 @@ local function installExtensionBlock()
     if UnloadingStation ~= nil and UnloadingStation.addTargetStorage ~= nil then
         local orig = UnloadingStation.addTargetStorage
         UnloadingStation.addTargetStorage = function(self, storage, ...)
-            -- A PASTURE never links to a manure heap or slurry pit: refuse the attach so the heap stays
-            -- free to bind to the nearest real barn instead. Water troughs / bale feeders still attach.
-            if S.master and storage ~= nil and self ~= nil
+            -- A PASTURE never links to an EXTERNAL manure heap or slurry pit: refuse the attach so the heap
+            -- stays free to bind to the nearest real barn instead. Water troughs / bale feeders still attach.
+            -- The pasture's OWN registered manure sink (flagged) is exempt -- that IS the manure destination.
+            if S.master and storage ~= nil and self ~= nil and not storage._sdPastureManure
                and SmartDistribution.isGrazingPasture(self.owningPlaceable)
                and SmartDistribution.storageHoldsManure(storage) then
                 return
@@ -338,10 +339,10 @@ local function installExtensionBlock()
     if LoadingStation ~= nil and LoadingStation.addSourceStorage ~= nil then
         local orig = LoadingStation.addSourceStorage
         LoadingStation.addSourceStorage = function(self, storage, ...)
-            if S.master and storage ~= nil and self ~= nil
+            if S.master and storage ~= nil and self ~= nil and not storage._sdPastureManure
                and SmartDistribution.isGrazingPasture(self.owningPlaceable)
                and SmartDistribution.storageHoldsManure(storage) then
-                return                                             -- pastures never source from manure heaps/pits
+                return                                             -- pastures never source from EXTERNAL manure heaps/pits
             end
             if S.master and SmartDistribution.blocksSiloSelfExtension(self, storage) then return end
             if S.master and storage ~= nil and storage.isExtension == true and isStorageSiloStation(self) then
@@ -683,9 +684,13 @@ end
 
 local function husbandryOutputFillTypes(p)
     local out = {}
-    -- A PASTURE produces nothing: no milk, no manure, no slurry. It is a grazing area, not a barn, so it
-    -- must never appear as a source of any output and must never be offered manure/slurry routing.
-    if SmartDistribution.isGrazingPasture(p) then return out end
+    -- A grazing pasture (FS25_GrazingPasture) is NOT output-less: like a vanilla barn it converts straw
+    -- bedding to MANURE (<straw><manure factor=..>), so it must report manure as an output. It flows through
+    -- the normal path below -- husbandryProducesManure() gates the manure family, so a pasture with a
+    -- straw->manure conversion lists it while a pure grazing area with no conversion still lists nothing.
+    -- (A pasture has no milk or slurry spec, so only the manure branch below can add anything for it.)
+    -- Standalone manure HEAPS are kept off the pasture separately, by the extension-attach refusal, so its
+    -- own straw-derived manure is never conflated with a nearby heap's stock.
     if p.spec_husbandryMilk ~= nil and p.spec_husbandryMilk.fillTypes ~= nil then
         for _, ft in ipairs(p.spec_husbandryMilk.fillTypes) do out[ft] = true end
     end
@@ -2276,7 +2281,42 @@ SmartDistribution.collectRobotFeedSlots = function(slots)
     end
 end
 
--- phase 1c: straw bedding (single STRAW type, main husbandry storage).
+-- Grazing-pasture straw sink. FS25_GrazingPasture stores a pasture's straw in linked "Animal Feeder"
+-- placeables (spec_silo storages, filled via the feeder's unloading station) and leaves the pasture's OWN
+-- husbandry STRAW storage unable to accept -- so the base p:addHusbandryFillLevelFromTool() accepts 0 for a
+-- pasture (confirmed by probe: req=1647, added=0, while a normal barn fills fine). Route the deposit through
+-- each linked feeder's unloading-station addFillLevelFromTool instead: that is the mod-wrapped intake a
+-- tipping vehicle uses -- it clamps to the feeder's free space, fills the feeder storage, and refreshes the
+-- straw plane. We try the base method first so any pasture variant that DOES hold straw natively still works,
+-- then top up the remainder from feeders. Feeders are matched by the shared field the mod stamps on each
+-- feeder (_pastureAnimalFeederPasture == this pasture); the deposit closure's earlier getHusbandryFreeCapacity
+-- call has already triggered the mod's lazy link, so the field is populated by the time we scan. DR cannot
+-- call the pasture mod's own Lua (isolated env) but may call methods on the shared, mod-patched station object
+-- and read the shared link field. A SmartDistribution.* field, not a top-level local (200-local ceiling).
+function SmartDistribution.depositPastureStraw(p, straw, amount, farmId)
+    local total = 0
+    if p.addHusbandryFillLevelFromTool ~= nil then
+        total = p:addHusbandryFillLevelFromTool(farmId, amount, straw, nil, nil, nil) or 0
+    end
+    local remaining = amount - total
+    if remaining <= ALLOC_EPS then return total end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return total end
+    for _, f in ipairs(ps.placeables) do
+        if remaining <= ALLOC_EPS then break end
+        if f._pastureAnimalFeederPasture == p and f.spec_silo ~= nil then
+            local station = f.spec_silo.unloadingStation
+            if station ~= nil and station.addFillLevelFromTool ~= nil then
+                local moved = station:addFillLevelFromTool(farmId, remaining, straw, nil, nil, nil) or 0
+                if moved > 0 then total = total + moved; remaining = remaining - moved end
+            end
+        end
+    end
+    return total
+end
+
+-- phase 1c: straw bedding (single STRAW type; base barns use the husbandry storage, grazing pastures the
+-- linked Animal Feeder -- see SmartDistribution.depositPastureStraw).
 local function collectStrawSlots(slots)
     if not S.global.feedHusbandryEnabled or not S.global.feedStrawEnabled then return end
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
@@ -2288,9 +2328,10 @@ local function collectStrawSlots(slots)
         if ss ~= nil and p.rootNode ~= nil and p.addHusbandryFillLevelFromTool ~= nil and
            p.getHusbandryIsFillTypeSupported ~= nil and p:getHusbandryIsFillTypeSupported(STRAW) and isEnrolled(p)
            and not (getUid(p) ~= nil and SmartDistribution.isInputBlocked(getUid(p), STRAW)) then   -- respect Advanced-Inputs block
-            -- pastures DO take straw (as in the base pasture mod); manure is prevented at the sink side:
-            -- they get no manure storage slot and never link to a heap/pit, so the conversion has nowhere
-            -- to go and is discarded exactly as it is without DR.
+            -- Pastures DO take straw (as in the base pasture mod) and now DO produce manure from it: DR gives
+            -- the pasture a manure slot like any barn, and the straw it converts accumulates there. Standalone
+            -- manure heaps are still kept off the pasture (extension-attach refusal) so only its own
+            -- straw-derived manure lands in that slot. Pasture straw is delivered via depositPastureStraw.
             local rate    = SmartDistribution.husbandryInputRate(p, ss.inputLitersPerHour, "straw")
             local current = p:getHusbandryFillLevel(STRAW) or 0
             local free    = p:getHusbandryFreeCapacity(STRAW) or 0
@@ -2315,10 +2356,15 @@ local function collectStrawSlots(slots)
                     slots[#slots + 1] = {
                         placeable = p, farmId = farmId, need = need, cands = cands, blocked = {},
                         deposit = function(dft, amount, dry)
-                            local fr = p:getHusbandryFreeCapacity(STRAW) or 0
+                            local fr = p:getHusbandryFreeCapacity(STRAW) or 0   -- also triggers the pasture mod's lazy feeder link
                             local mv = math.min(amount, fr)
                             if mv <= 0 then return 0 end
                             if dry then return mv end
+                            -- A grazing pasture stores straw in linked Animal Feeders, not its own husbandry
+                            -- storage, so route the deposit there; every other barn fills normally.
+                            if SmartDistribution.isGrazingPasture(p) then
+                                return SmartDistribution.depositPastureStraw(p, STRAW, mv, farmId)
+                            end
                             return p:addHusbandryFillLevelFromTool(farmId, mv, STRAW, nil, nil, nil) or 0
                         end,
                     }
@@ -5661,7 +5707,8 @@ function SmartDistribution.cmdManureProbe(self)
     local ftm = g_fillTypeManager
     local MANURE = ftm ~= nil and ftm:getFillTypeIndexByName("MANURE") or nil
     local SLURRY = ftm ~= nil and ftm:getFillTypeIndexByName("LIQUIDMANURE") or nil
-    dump(string.format("== manure probe == MANURE=%s LIQUIDMANURE=%s", tostring(MANURE), tostring(SLURRY)))
+    local STRAWP = ftm ~= nil and ftm:getFillTypeIndexByName("STRAW") or nil
+    dump(string.format("== manure probe == MANURE=%s LIQUIDMANURE=%s STRAW=%s", tostring(MANURE), tostring(SLURRY), tostring(STRAWP)))
     local nh, nb = 0, 0
     for _, p in ipairs(ps.placeables) do
         local mh = p.spec_manureHeap
@@ -5717,9 +5764,34 @@ function SmartDistribution.cmdManureProbe(self)
         if h ~= nil then
             nb = nb + 1
             local st = h.storage
-            dump(string.format("[barn %d] %s  hasHeapSpec=%s patched=%s owner=%s",
-                nb, tostring(placeableName(p)), tostring(p.spec_manureHeap ~= nil),
+            local grazing = SmartDistribution.isGrazingPasture ~= nil and SmartDistribution.isGrazingPasture(p)
+            dump(string.format("[barn %d] %s  typeName=%s grazing=%s producesManure=%s hasHeapSpec=%s patched=%s owner=%s",
+                nb, tostring(placeableName(p)), tostring(p.typeName), tostring(grazing),
+                tostring(SmartDistribution.husbandryProducesManure and SmartDistribution.husbandryProducesManure(p)),
+                tostring(p.spec_manureHeap ~= nil),
                 tostring(st ~= nil and st._sdManurePatch == true), tostring(p.ownerFarmId)))
+            if STRAWP and p.getHusbandryFillLevel ~= nil then
+                dump(string.format("   STRAW: supported=%s hbStorageLevel=%s hbStorageFree=%s cap=%s",
+                    tostring(p.getHusbandryIsFillTypeSupported and p:getHusbandryIsFillTypeSupported(STRAWP)),
+                    tostring(p:getHusbandryFillLevel(STRAWP)),
+                    tostring(p.getHusbandryFreeCapacity and p:getHusbandryFreeCapacity(STRAWP)),
+                    tostring(p.getHusbandryCapacity and p:getHusbandryCapacity(STRAWP))))
+                -- for a grazing pasture, also report the STRAW held in its linked Animal Feeder silos, so we can
+                -- see whether DR's straw landed in the husbandry storage (drives manure) or the feeder (does not)
+                if grazing then
+                    local nf = 0
+                    for _, f in ipairs(ps.placeables) do
+                        if f._pastureAnimalFeederPasture == p and f.spec_silo ~= nil then
+                            nf = nf + 1
+                            local fs = f.spec_silo.storages and f.spec_silo.storages[1] or nil
+                            local lvl = (fs ~= nil and fs.fillLevels and STRAWP and fs.fillLevels[STRAWP]) or "?"
+                            local cap = (fs ~= nil and fs.capacities and STRAWP and fs.capacities[STRAWP]) or "?"
+                            dump(string.format("      feeder %d STRAW level=%s cap=%s", nf, tostring(lvl), tostring(cap)))
+                        end
+                    end
+                    if nf == 0 then dump("      (no linked Animal Feeder found)") end
+                end
+            end
             if p.getHusbandryFillLevel ~= nil then
                 if MANURE then dump(string.format("   MANURE: supported=%s level=%s cap=%s",
                     tostring(p.getHusbandryIsFillTypeSupported and p:getHusbandryIsFillTypeSupported(MANURE)),
@@ -5735,6 +5807,35 @@ function SmartDistribution.cmdManureProbe(self)
                     tostring(st.capacities and MANURE and st.capacities[MANURE]),
                     tostring(st.fillLevels and MANURE and st.fillLevels[MANURE]),
                     tostring(st.capacity)))
+            end
+            -- Reflection dump: find EVERY husbandry sub-storage on this placeable and report its MANURE/STRAW
+            -- backing, so we can see which storage object getHusbandryCapacity(MANURE) actually reads from
+            -- (the barn-style patch only works if we raise the cap on THAT object). Scans every spec_* field,
+            -- following .storage / .storages[] / a direct .capacities table, plus a linked manure heap.
+            do
+                local seen = {}
+                local function reportStorage(tag, sto)
+                    if type(sto) ~= "table" or seen[sto] then return end
+                    seen[sto] = true
+                    if sto.capacities == nil and sto.fillLevels == nil then return end
+                    local mc = sto.capacities and MANURE and sto.capacities[MANURE]
+                    local ml = sto.fillLevels and MANURE and sto.fillLevels[MANURE]
+                    local sc = sto.capacities and STRAWP and sto.capacities[STRAWP]
+                    local sl = sto.fillLevels and STRAWP and sto.fillLevels[STRAWP]
+                    dump(string.format("     <%s> capMANURE=%s lvlMANURE=%s | capSTRAW=%s lvlSTRAW=%s | patched=%s isExt=%s",
+                        tag, tostring(mc), tostring(ml), tostring(sc), tostring(sl),
+                        tostring(sto._sdManurePatch), tostring(sto.isExtension)))
+                end
+                for k, v in pairs(p) do
+                    if type(k) == "string" and k:find("^spec_husbandry") and type(v) == "table" then
+                        if v.storage ~= nil then reportStorage(k .. ".storage", v.storage) end
+                        if type(v.storages) == "table" then
+                            for si, s2 in ipairs(v.storages) do reportStorage(string.format("%s.storages[%d]", k, si), s2) end
+                        end
+                        if v.capacities ~= nil or v.fillLevels ~= nil then reportStorage(k, v) end
+                        if type(v.manureHeap) == "table" then reportStorage(k .. ".manureHeap", v.manureHeap) end
+                    end
+                end
             end
         end
     end
@@ -8611,17 +8712,47 @@ end
 -- coexists with any other mod doing the same (e.g. legacy PDNE).
 local MANURE_STORAGE_CAPACITY = 50000
 
+-- Register a grazing pasture's own <husbandry><storage> into its husbandry unloading/loading stations, so the
+-- MANURE capacity patchHusbandryManureStorage put on it is actually seen by getHusbandryCapacity() and the
+-- vanilla straw->manure conversion can deposit there. The FS25_GrazingPasture mod never registers this storage
+-- (it wires the Animal Feeder in for straw instead), which is why a plain cap patch is invisible on a pasture
+-- but works on a barn. We use the mod's own storageSystem:addStorageTo*Station API. Made MANURE-ONLY (every
+-- other fill-type cap on the storage zeroed) so registering it cannot alter the mod's feeder-based straw math
+-- -- only manure ever lands here. A SmartDistribution.* field, never a top-level local (200-local ceiling).
+function SmartDistribution.registerPastureManureStorage(placeable, manureFT)
+    local spec = placeable ~= nil and placeable.spec_husbandry or nil
+    local storage = spec ~= nil and spec.storage or nil
+    local ss = g_currentMission ~= nil and g_currentMission.storageSystem or nil
+    if storage == nil or ss == nil or manureFT == nil then return end
+    if ss.addStorageToUnloadingStation == nil or ss.addStorageToLoadingStation == nil then return end
+    -- manure-only: drop every other fill type so this storage contributes nothing but manure to the husbandry
+    if storage.capacities ~= nil then
+        for ft in pairs(storage.capacities) do
+            if ft ~= manureFT then storage.capacities[ft] = 0 end
+        end
+    end
+    -- Mark it as the pasture's OWN manure sink so the extension-attach refusal (which blocks EXTERNAL manure
+    -- heaps/pits from attaching to a pasture) lets this one through -- otherwise our own guard would refuse
+    -- the very registration we are doing here, since the storage now holds manure and the owner is a pasture.
+    storage._sdPastureManure = true
+    local un = spec.unloadingStation
+    if un ~= nil and not (un.targetStorages ~= nil and un.targetStorages[storage] ~= nil) then
+        pcall(function() ss:addStorageToUnloadingStation(storage, un) end)
+    end
+    local ln = spec.loadingStation
+    if ln ~= nil and not (ln.sourceStorages ~= nil and ln.sourceStorages[storage] ~= nil) then
+        pcall(function() ss:addStorageToLoadingStation(storage, ln) end)
+    end
+end
+
 local function patchHusbandryManureStorage(placeable)
     if placeable == nil or placeable.spec_husbandry == nil then return end
     if placeable.spec_manureHeap ~= nil then return end          -- already has a heap
     if not SmartDistribution.husbandryProducesManure(placeable) then return end   -- egg-only coops make no manure -> no slot
-    -- The Grazing Pasture mod's pastures ship MANURE capacity 0 on purpose and must keep it; every other
-    -- husbandry (including vanilla barns, which also declare 0) gets the slot as designed.
-    local grazing = SmartDistribution.isGrazingPasture(placeable)
-    Logging.info("[DR manure] %s: typeName=%s grazing=%s -> %s",
-        tostring(placeable.getName ~= nil and placeable:getName() or placeable),
-        tostring(placeable.typeName), tostring(grazing), grazing and "SKIP (pasture)" or "patch")
-    if grazing then return end
+    -- A grazing pasture (FS25_GrazingPasture) declares MANURE capacity 0 exactly like a vanilla barn and
+    -- converts straw bedding to manure, so it earns the storage slot on the normal path below -- no pasture
+    -- special-case here. (Standalone manure heaps are still kept off the pasture by the extension-attach
+    -- refusal in installExtensionBlock, so this slot only ever holds the pasture's own straw-derived manure.)
     local manureFT = g_fillTypeManager ~= nil and
         g_fillTypeManager:getFillTypeIndexByName("MANURE") or nil
     if manureFT == nil or manureFT <= 0 then return end
@@ -8646,6 +8777,16 @@ local function patchHusbandryManureStorage(placeable)
                 end
             end
         end
+    end
+    -- A grazing pasture (FS25_GrazingPasture) does NOT register its own <husbandry><storage> into its
+    -- husbandry stations -- the mod routes fill types through external linked placeables (feeder for straw)
+    -- instead -- so the MANURE capacity we just set above is invisible to getHusbandryCapacity() and the
+    -- vanilla straw->manure conversion has nowhere to deposit (manure discarded). A barn, by contrast, DOES
+    -- register its own storage, which is why the same patch works there. Register the pasture's own storage
+    -- into its husbandry stations (the exact mechanism the pasture mod uses for feeders/troughs/heaps) so it
+    -- becomes a real, self-contained manure sink -- no manure heap required. Manure-only: see the helper.
+    if SmartDistribution.isGrazingPasture(placeable) then
+        SmartDistribution.registerPastureManureStorage(placeable, manureFT)
     end
 end
 
