@@ -83,7 +83,7 @@ SmartDistribution.settings = S
 SmartDistribution.modDir = g_currentModDirectory or ""
 
 -- cross-cutting toggles
-SmartDistribution.debug  = false
+SmartDistribution.debug  = true
 SmartDistribution.dryRun = false
 SmartDistribution._prodThruDebug = true   -- TEMP: dump production throughput math (remove after)
 -- Reproduce vanilla's sellDirectly-output income (biogas electric charge + methane): our full
@@ -3078,6 +3078,100 @@ local function sellDirectProduction(manager)
     end
 end
 
+-- ---- vanilla production RUNNING COSTS (costsPerActiveHour) -----------------
+-- Vanilla bills every running production line its costsPerActiveHour once an hour from INSIDE
+-- ProductionChainManager:hourChanged. Master-on suppresses that whole pass (onHourChanged never
+-- calls superFunc), so -- exactly like the sellDirectly grid income above -- the charge silently
+-- disappeared: a DR save's farms.xml <productionCosts> stays 0.000000 no matter how long a plant
+-- runs. Reproduce it here, on the SAME gate the income side uses (productionCanRun), so a starved
+-- or backed-up line is not billed for an hour it could not have run.
+-- Charged silently and booked to MoneyType.PRODUCTION_COSTS so it lands in the finances screen's
+-- own "Production costs" row -- deliberately NOT routed through applyMoney(): that would fold it
+-- into DR's per-cycle popup as a "Distribution cost", which it is not. Vanilla shows no popup for
+-- this either.
+--
+-- [UNVERIFIED -- CALIBRATION OPEN] The FACT of the missing charge is confirmed (0.000000 in every
+-- DR-era save). The exact per-hour FORMULA is not. A/B on one savegame1 night, grain mill + bakery:
+--     DR on,  flat costsPerActiveHour x0.40 econ multiplier -> $7
+--     DR off, vanilla                                       -> $53
+--
+-- ROOT CAUSE (measured, not inferred -- see the probe write-up):
+--   * The engine tallies the cost itself, into ProductionPoint.productionCostsToClaim, as production
+--     runs. That accumulator fills at EXACTLY the same rate whether DR is on or off -- DR does not
+--     affect the calculation at all.
+--   * The money is taken by ProductionPoint:claimProductionCosts(), driven from
+--     ProductionChainManager:update() (per frame), NOT from hourChanged.
+--   * hourChanged is what TRIGGERS that claim. Suppressing it means the claim never fires, so the
+--     accumulator just grows forever and the farm is never billed:
+--         DR off:  0.75 -> 0.97 -> 0.97 -> 0.97   (claimed every hour)
+--         DR on :  0.74 -> 1.75 -> 2.76 -> 3.76   (never claimed)
+--     This is why the loss was invisible to money/storage/call tracing of the hourly pass: vanilla's
+--     hourChanged moves no money and touches no storage. It only sets the trigger.
+--
+-- So DO NOT recompute the charge here. Every hand-rolled attempt was wrong (flat x0.40 -> 7.6x low;
+-- cost * cyclesPerHour -> 17x high) because it was guessing at a number the engine already knows.
+-- Instead, drain the engine's OWN accumulator through its OWN claim function: the amount, the
+-- money type, the difficulty handling and the silent-notification convention all come from vanilla,
+-- so there is nothing left to calibrate and nothing to re-verify after a GIANTS patch.
+SmartDistribution.productionCostsEnabled = true   -- flip to false to fall back to the old (free) behaviour
+SmartDistribution._claimWarned = false
+
+function SmartDistribution.chargeProductionCosts(manager)
+    if manager == nil or not SmartDistribution.productionCostsEnabled then return end
+    if SmartDistribution.dryRun then return end
+
+    -- ONE-TIME MIGRATION. productionCostsToClaim is persisted (savegame placeables.xml), so a save
+    -- that ran DR before this fix carries a backlog that has been growing for its whole life --
+    -- savegame1 already showed 23.90 and 59.73 after very little play. Claiming that would bill the
+    -- player in one lump for a period the mod was not charging them at all, with no explanation.
+    -- Write it off once, record that we did (persisted, so it cannot repeat), bill normally after.
+    if not SmartDistribution._backlogForgiven then
+        SmartDistribution._backlogForgiven = true          -- set first: never retry this on a later pass
+        local total = 0
+        for _, farmTable in pairs(manager.farmIds or {}) do
+            for _, pp in ipairs(farmTable.productionPoints or {}) do
+                local owed = (pp ~= nil) and tonumber(pp.productionCostsToClaim) or nil
+                if owed ~= nil and owed > 0 then
+                    total = total + owed
+                    pp.productionCostsToClaim = 0
+                end
+            end
+        end
+        if total > 0 and Logging ~= nil then
+            Logging.info("[SmartDistribution] wrote off %.2f in production costs accrued while the mod was not billing them; billing normally from now on.",
+                total)
+        end
+        return                                              -- nothing left to claim this pass
+    end
+
+    for _, farmTable in pairs(manager.farmIds or {}) do
+        for _, pp in ipairs(farmTable.productionPoints or {}) do
+            if pp ~= nil and type(pp.claimProductionCosts) == "function" then
+                local before = tonumber(pp.productionCostsToClaim) or 0
+                if before > 0 then
+                    local ok, err = pcall(function() return pp:claimProductionCosts() end)
+                    local after = tonumber(pp.productionCostsToClaim) or 0
+                    if not ok then
+                        if not SmartDistribution._claimWarned then
+                            SmartDistribution._claimWarned = true
+                            Logging.warning("[SmartDistribution] claimProductionCosts failed (%s); production costs not billed.",
+                                tostring(err))
+                        end
+                    elseif after >= before and not SmartDistribution._claimWarned then
+                        -- called cleanly but drained nothing: the engine signature changed and it
+                        -- wants an argument we are not passing. Say so instead of silently free power.
+                        SmartDistribution._claimWarned = true
+                        Logging.warning("[SmartDistribution] claimProductionCosts() did not drain productionCostsToClaim (%.4f -> %.4f); production costs may not be billed.",
+                            before, after)
+                    else
+                        log("claimed %.4f production costs  [%s]", before - after, placeableName(pp.owningPlaceable))
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function sellPhase(manager)
     seasonalBudget = computeSeasonalBudget()      -- nil unless the feature is on (and growth on)
     -- productions: vanilla "Sell directly" outputs
@@ -4480,6 +4574,7 @@ function SmartDistribution.runHourly(manager)
     palletPhase(manager, bill)                                 -- phase 1e: pallet-spawner outputs (eggs/wool/honey)
     shedPhase(manager)                                         -- phase 1f: shed (object storage) SELL / DISTRIBUTE_SELL remainders
     chargeDistribution(bill)                                   -- phase 1.5: distance-based billing
+    SmartDistribution.chargeProductionCosts(manager)           -- phase 1.5b: vanilla costsPerActiveHour, lost with the suppressed hourly pass
     if S.global.sellEnabled then                               -- phase 2
         sellPhase(manager)
     end
@@ -4621,6 +4716,8 @@ local function saveOverrides(missionInfo)
     local xml = createXMLFile("SmartDistributionXML", path, "smartDistribution")
     if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] SAVE FAILED: createXMLFile(%s)", tostring(path))) return end
     setXMLInt(xml, "smartDistribution#version", PERSIST_VERSION)
+    -- one-shot marker for the pre-fix production-cost backlog write-off (see chargeProductionCosts)
+    setXMLBool(xml, "smartDistribution#backlogForgiven", SmartDistribution._backlogForgiven == true)
     local i = 0
     for uid, fts in pairs(S.assets) do
         for ft, mode in pairs(fts) do
@@ -4795,6 +4892,8 @@ local function loadOverrides()
     end
     local xml = loadXMLFile("SmartDistributionXML", path)
     if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] LOAD FAILED: loadXMLFile(%s)", tostring(path))) return end
+    -- Absent on saves written before this fix -> false -> the write-off runs once, then persists true.
+    SmartDistribution._backlogForgiven = getXMLBool(xml, "smartDistribution#backlogForgiven") == true
     local i, n = 0, 0
     while true do
         local k = string.format("smartDistribution.asset(%d)", i)

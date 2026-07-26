@@ -25,6 +25,7 @@ Fixed
 6) Animal Pastures (ie no barn) no longer produce and store manure in line with base game functionality
 7) Updated how buildings with shared (pooled)storage function/show in the UI. If a silo is filled over the reserved amount for a specific product manually, the remaining products reserved levels will adjust to reflect what room is left rather than showing volumes that simply aren't available.
 8) Fixed distribution and selling of non-market items (e.g. electric charge) to support mods that can consume them as well as sell them.
+9) Productions are no longer free, daily cost for productions has returned!
 
 Added
 1) Support added for the Grazing Pastures Mod
