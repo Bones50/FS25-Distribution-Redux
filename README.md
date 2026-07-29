@@ -15,6 +15,7 @@ v1.0.0.2 - Released
 - Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
 
 V1.1.0.0 Release candidate Changelog (To Date)
+Changelog Last updated: 29/07/2026
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -26,6 +27,9 @@ Fixed
 7) Updated how buildings with shared (pooled)storage function/show in the UI. If a silo is filled over the reserved amount for a specific product manually, the remaining products reserved levels will adjust to reflect what room is left rather than showing volumes that simply aren't available.
 8) Fixed distribution and selling of non-market items (e.g. electric charge) to support mods that can consume them as well as sell them.
 9) Productions are no longer free, daily cost for productions has returned!
+10) Fixed issues caused by overlaping husbandy and/or production pallet control areas. Pallets are now limited to the spawn box of the production and properly owned by the producing buidling.
+11) Water extensions for greenhouses can now be placed again and add water storage to the greenhouse corrcetly.
+12) In-Game Help has been completely rewritten to match the new version.
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -36,16 +40,24 @@ Added
 6) Added support for Bunker Silo's and Bulk Halls
 7) Added support for the FS25_Fed_Produktions_Pack Mod.
 8) Made UI numbers update realtime rather than only on UI close and reopen.
-9) Adjust how inputs and outputs are shown on the production UI. Inputs and outputs will now only show for production lines that are turned on.
+9) Adjusted how inputs and outputs are shown on the production UI. Inputs and outputs will now only show for production lines that are turned on.
+10) Added an option in settings to make animal pens spawn pallets the same as production (i.e. wait until 1000l produced then spawn pallet). This ensures only full pallets are spawned and makes reporting of volumes more accurate, but can be turned off to revert to the original.
+11) Added ability to track manual adding or removal of material in the Overview (e.g. removig a plalet from a pallet spawner or removing/adding grain to silo with a trailer). 
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
 	a) Ability to Block, proportion reserved storage for products (for pooled storage only) and set target levels for inputs (overrides min required demand and tries to fill to the set level instead).
-	b) Ability to block and prioritise a buidlings outputs.    
+	b) Ability to block, prioritise and set a reserve for a buildings outputs.    
 	c) Added an indication in the buidling information that indicates wether the input/output is currently active, whether it is idle, or actually feeding product and if the product is blocked (applies to both inputs and outputs)
 2) Added Move To option for Silo's/Storages. Allows storages to move product to other storages that support that product. For example you can have remote drop-off points near fields all over the farm and sort and move them to a central storage location(s).
 	a) the input and output advanced settings also apply to these distributions allowing extensive configuration
 	b) The system automatically detects if a change in settings will create an infinite loop between storages (e.g. A-->B-->A, A-->B-->C-->A) and will prevent you from changing whatever setting you are trying to adjust. A message will appear at the top of window indicating that you tried to set something that would create a loop.
+3) Added a new Tab to the UI that provides an overview of all production and distribution numbers such as recieved, consumed, produced, etc. List can be filtered as needed. Number on the specific building UI have been simplified to reduce space consumed, details are now on this new UI. Filtering includes:
+	a) Filter by Building (see just inputs and outputs for one building)
+	b) Filter by Product (See all inputs and outputs for all buildings that have that product)
+	c) Filter by End Product (show entire chain leading to that product)
+	d) Combine Buildings (if you have multiple buildings of the same type will sum the numbers)
+	e) Note that lines only show if there is some activity/storage related to them, to keep the list a reasonable length.
 
 Notes
 1) Storages with pooled stroage spaces will now reserve a portion of that space for each type of possible input by deafult. For example a silo with 400,000l of storage and 10 inputs will automatically be set to only store 40,000l of each type by default. You will need to change the input settings to store more of a particular type of product (e.g. block or set to zero the storage reserved for all other products and max out wheat). If a silo is not getting the amount you expect this is the first thing to check! Note that the reserved space only applies to distirbution, manually filling the silo works as per base game (can put as much of anything you want in up to the max storage space), however if you overfill a particular product, distribution will stop feeding any additional product until the stored amount goes below the reserved storage space.

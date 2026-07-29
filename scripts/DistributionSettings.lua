@@ -146,6 +146,14 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "Sell at best price", "Sell immediately" },
     },
+    fullPalletSpawn = {
+        order   = 9.8,
+        label   = "Whole pallets from pens",
+        tooltip = "Animal pens hold their product internally and release a FULL pallet, the way productions do. Off: vanilla, a pallet appears immediately and fills up gradually.",
+        default = 1,                                            -- Enabled
+        values  = { true, false },
+        strings = { "Enabled", "Disabled" },
+    },
     debugEnabled = {
         order   = 10,
         label   = "Debug logging",
@@ -222,6 +230,7 @@ function DistributionSettings.apply()
     g.seasonalFallbackMonths = DistributionSettings.seasonalFallbackMonths
     g.bestPriceEnabled = DistributionSettings.bestPriceEnabled
     g.bestPriceDefault = DistributionSettings.bestPriceDefault
+    g.fullPalletSpawn  = DistributionSettings.fullPalletSpawn
     SD.debug = DistributionSettings.debugEnabled
     if SD.debug then
         print(string.format("[DistributionSettings] applied scope=%s husbandry=%s silos/sheds=%s markets=%s radius=%d buffer=%dh selling=%s cost=%s($%d/%dm)",
@@ -258,6 +267,7 @@ function DistributionSettings.save()
     setXMLInt(xml,    "distributionRedux.settings#seasonalFallbackMonths", DistributionSettings.seasonalFallbackMonths)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceEnabled", DistributionSettings.bestPriceEnabled)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceDefault", DistributionSettings.bestPriceDefault)
+    setXMLBool(xml,   "distributionRedux.settings#fullPalletSpawn", DistributionSettings.fullPalletSpawn)
     setXMLBool(xml,   "distributionRedux.settings#debugEnabled", DistributionSettings.debugEnabled)
     saveXMLFile(xml)
     delete(xml)
@@ -311,6 +321,7 @@ function DistributionSettings.load()
     local seasonal = getXMLBool(xml, "distributionRedux.settings#seasonalReserveEnabled")
     if seasonal ~= nil then DistributionSettings.seasonalReserveEnabled = seasonal end
 
+
     local fallback = getXMLInt(xml, "distributionRedux.settings#seasonalFallbackMonths")
     if fallback ~= nil and isAllowed("seasonalFallbackMonths", fallback) then DistributionSettings.seasonalFallbackMonths = fallback end
 
@@ -319,6 +330,9 @@ function DistributionSettings.load()
 
     local bpDefault = getXMLBool(xml, "distributionRedux.settings#bestPriceDefault")
     if bpDefault ~= nil then DistributionSettings.bestPriceDefault = bpDefault end
+
+    local fullPal = getXMLBool(xml, "distributionRedux.settings#fullPalletSpawn")
+    if fullPal ~= nil then DistributionSettings.fullPalletSpawn = fullPal end
 
     local dbg = getXMLBool(xml, "distributionRedux.settings#debugEnabled")
     if dbg ~= nil then DistributionSettings.debugEnabled = dbg end
@@ -416,7 +430,7 @@ end
 DistributionControlEvent = {}
 local DistributionControlEvent_mt = Class(DistributionControlEvent, Event)
 InitEventClass(DistributionControlEvent, "DistributionControlEvent")
-DistributionControlEvent.ACT_NUM_BITS = 3   -- up to 7 actions; 4 used
+DistributionControlEvent.ACT_NUM_BITS = 4   -- up to 15 actions; 8 used
 -- Unified output->destination control. For EVERY action a=source output, b=destination (demand,
 -- store or market -- they are all the same edge now). No per-kind actions any more.
 DistributionControlEvent.ACT = {
@@ -427,13 +441,16 @@ DistributionControlEvent.ACT = {
     INPUT_BLOCK = 5,   -- a=receiver, flag=blocked (receiver-side input block)
     INPUT_CAP   = 6,   -- a=receiver, delta=pct 0..100 (receiver-side per-product max %)
     INPUT_TARGET = 7,  -- a=receiver, delta=pct 0..100 (receiver-side fill target %); delta<0 clears
+    OUTPUT_RESERVE = 8, -- a=source, amount=litres the source keeps back; amount<=0 clears
 }
 
 function DistributionControlEvent.emptyNew() return Event.new(DistributionControlEvent_mt) end
-function DistributionControlEvent.new(act, a, ft, b, delta, flag)
+-- `amount` is a separate float because it carries LITRES: delta is an int8 (-128..127), which is fine
+-- for the percentage actions but nowhere near enough for a silo-sized reserve.
+function DistributionControlEvent.new(act, a, ft, b, delta, flag, amount)
     local self = DistributionControlEvent.emptyNew()
     self.act, self.a, self.ft, self.b = act, a or "", ft or 0, b or ""
-    self.delta, self.flag = delta or 0, flag and true or false
+    self.delta, self.flag, self.amount = delta or 0, flag and true or false, amount or 0
     return self
 end
 function DistributionControlEvent:writeStream(streamId, connection)
@@ -443,25 +460,27 @@ function DistributionControlEvent:writeStream(streamId, connection)
     streamWriteUIntN(streamId, self.ft, FillTypeManager.SEND_NUM_BITS)
     streamWriteInt8(streamId, self.delta)
     streamWriteBool(streamId, self.flag)
+    streamWriteFloat32(streamId, self.amount or 0)
 end
 function DistributionControlEvent:readStream(streamId, connection)
-    self.act   = streamReadUIntN(streamId, DistributionControlEvent.ACT_NUM_BITS)
-    self.a     = streamReadString(streamId)
-    self.b     = streamReadString(streamId)
-    self.ft    = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
-    self.delta = streamReadInt8(streamId)
-    self.flag  = streamReadBool(streamId)
+    self.act    = streamReadUIntN(streamId, DistributionControlEvent.ACT_NUM_BITS)
+    self.a      = streamReadString(streamId)
+    self.b      = streamReadString(streamId)
+    self.ft     = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
+    self.delta  = streamReadInt8(streamId)
+    self.flag   = streamReadBool(streamId)
+    self.amount = streamReadFloat32(streamId)
     self:run(connection)
 end
 function DistributionControlEvent:run(connection)
     if not connection:getIsServer() then
         g_server:broadcastEvent(self, false, connection)      -- server relays to the other clients
     end
-    DistributionControlEvent.applyLocal(self.act, self.a, self.ft, self.b, self.delta, self.flag)
+    DistributionControlEvent.applyLocal(self.act, self.a, self.ft, self.b, self.delta, self.flag, self.amount)
 end
 
 -- apply on this machine only (no echo) -- used by run() and by the local sender
-function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
+function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag, amount)
     local SD = SmartDistribution
     if SD == nil then return end
     local A = DistributionControlEvent.ACT
@@ -472,14 +491,15 @@ function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
     elseif act == A.INPUT_BLOCK then SD.setInputBlocked(a, ft, flag)
     elseif act == A.INPUT_CAP   then SD.setInputCapPct(a, ft, delta)
     elseif act == A.INPUT_TARGET then SD.setInputTargetPct(a, ft, (delta ~= nil and delta >= 0) and delta or nil)   -- delta<0 clears
+    elseif act == A.OUTPUT_RESERVE then SD.setOutputReserve(a, ft, (amount ~= nil and amount > 0) and amount or nil)  -- <=0 clears
     end
 end
 
 -- The UI calls this. Applies locally straight away (so the menu responds), then syncs: the host
 -- broadcasts, a client asks the server (which applies + relays to everyone else).
-function DistributionControlEvent.send(act, a, ft, b, delta, flag)
-    DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag)
-    local e = DistributionControlEvent.new(act, a, ft, b, delta, flag)
+function DistributionControlEvent.send(act, a, ft, b, delta, flag, amount)
+    DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag, amount)
+    local e = DistributionControlEvent.new(act, a, ft, b, delta, flag, amount)
     if g_server ~= nil then
         g_server:broadcastEvent(e)
     elseif g_client ~= nil then
@@ -557,6 +577,13 @@ function DistributionStateRequestEvent:run(connection)
         for rcvUid, byFt in pairs(C.inputTarget or {}) do   -- receiver-side fill target %
             for ft, pct in pairs(byFt) do
                 if type(pct) == "number" then connection:sendEvent(DistributionControlEvent.new(A.INPUT_TARGET, rcvUid, ft, "", pct, false)) end
+            end
+        end
+        for srcUid, byFt in pairs(C.outputReserve or {}) do   -- source-side output reserve (litres)
+            for ft, litres in pairs(byFt) do
+                if type(litres) == "number" and litres > 0 then
+                    connection:sendEvent(DistributionControlEvent.new(A.OUTPUT_RESERVE, srcUid, ft, "", 0, false, litres))
+                end
             end
         end
     end

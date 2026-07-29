@@ -43,6 +43,46 @@ local function soldWithMoney(liters, money)
     return base
 end
 
+-- Everything that LEFT the building over the window, as one figure: distributed + stored/moved + sold,
+-- with the sale value in brackets when any of it sold. The three-way split now lives on the Overview tab,
+-- which is where these pages point the player for detail.
+local function outTotalText(e)
+    if type(e) ~= "table" then return fmt(0) end
+    return soldWithMoney((e.dist or 0) + (e.stored or 0) + (e.sold or 0), e.money)
+end
+
+-- "473 L + 3,000 L (3p)" -- the internal buffer, then what stands on the pad, matching the Productions and
+-- Overview tabs. A pen's stock lives in BOTH places at once and the split is the useful information: one
+-- lump could not say whether the eggs were still buffering or already on pallets, and the figure used to
+-- change meaning with the mode (473 under Hold Internal, 3,473 under anything else) because assetHeld
+-- switched basis. assetHeld is now always the full stock, and this splits it back out for display.
+-- Pallets are counted as OBJECTS by palletCountOf, never litres/1000 -- a part-filled pallet is one pallet
+-- standing on the pad, not zero. Falls back to the plain total for anything that spawns no pallets, so
+-- milk / manure / slurry rows are unchanged.
+local function heldWithPallets(placeable, ft, held)
+    if placeable == nil or ft == nil or SmartDistribution == nil then return fmt(held) .. " L" end
+    local pallets, n = 0, 0
+    if SmartDistribution.palletLitresOf ~= nil then
+        local ok, v = pcall(SmartDistribution.palletLitresOf, placeable, ft)
+        if ok and type(v) == "number" then pallets = v end
+    end
+    if pallets > 0 and SmartDistribution.palletCountOf ~= nil then
+        local ok, v = pcall(SmartDistribution.palletCountOf, placeable, ft)
+        if ok and type(v) == "number" then n = v end
+    end
+    local internal = math.max(0, (held or 0) - pallets)
+    local text = fmt(internal) .. " L"
+    -- capacity sits directly beside the figure it qualifies, not trailing after the pad part
+    if SmartDistribution.outputCapacityTotal ~= nil then
+        local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft)
+        if ok and type(c) == "number" and c > 0 and c < math.huge then
+            text = text .. " (" .. fmt(c) .. " L)"
+        end
+    end
+    if pallets > 0 then text = text .. " + " .. fmt(pallets) .. " L (" .. tostring(n) .. "p)" end
+    return text
+end
+
 local function fillIconFile(ft)
     if g_fillTypeManager == nil or g_fillTypeManager.getFillTypeByIndex == nil then return nil end
     local ok, def = pcall(g_fillTypeManager.getFillTypeByIndex, g_fillTypeManager, ft)
@@ -97,11 +137,14 @@ local function inputMaxLiters(placeable, ft)
     return cap * pct / 100
 end
 
--- "12,345 L / 50,000 L" for an input row; drops the denominator when it can't be resolved.
+-- "12,345 L (50,000 L)" for an input row; drops the denominator when it can't be resolved.
+-- Bracket, not "/", so every held figure in the mod reads the same way: the amount, then what it can hold
+-- beside it, then any pallets. A "/" ratio here and a bracket on the output rows was the same information
+-- written two ways in adjacent lists.
 local function heldOfMaxText(placeable, ft, held)
     local maxL = inputMaxLiters(placeable, ft)
     if maxL == nil then return fmt(held) .. " L" end
-    return fmt(held) .. " L / " .. fmt(maxL) .. " L"
+    return fmt(held) .. " L (" .. fmt(maxL) .. " L)"
 end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
@@ -166,6 +209,7 @@ end
 
 function DistributionStoragePage:onGuiSetupFinished()
     DistributionStoragePage:superClass().onGuiSetupFinished(self)
+    self:initPeriodOption()   -- Hour / Month / Year selector; inherited by the Husbandry + Markets layouts
     if self.assetList ~= nil then
         self.assetList:setDataSource(self)
         self.assetList:setDelegate(self)
@@ -288,9 +332,9 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     if list == self.inputList then
         applyRowHighlight(cell, (self._focusRole or "output") == "input")
         setc("fillName", row.name)
-        local recv = (SmartDistribution.monthlyReceived ~= nil) and SmartDistribution.monthlyReceived(self.selectedAsset, row.ft) or 0
+        local e = self:windowStats(row.ft)
         local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(recv))
+        setc("recvText", fmt(e.received))
         setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
         setStatusCell(cell, self.selectedAsset, row.ft)
         return
@@ -300,18 +344,16 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     setc("fillName", row.name)
 
     local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-    local d, s, st, mo = 0, 0, 0, 0
-    if SmartDistribution.monthlyStats ~= nil then
-        d, s, st, mo = SmartDistribution.monthlyStats(self.selectedAsset, row.ft)
-    end
-    setc("heldText",  fmt(held))
-    setc("distText",  fmt(d))
-    setc("soldText",  soldWithMoney(s, mo))
-    setc("storedText", fmt(st))
+    setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
+    setc("distText", outTotalText(self:windowStats(row.ft)))
 
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then
-        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft))
+        -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
+        -- matching the Productions tab for the same pair of modes
+        local pal = (SmartDistribution.isPalletOutput ~= nil)
+            and SmartDistribution.isPalletOutput(self.selectedAsset, row.ft) or false
+        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
         local timing = (SmartDistribution.sellTimingLabel ~= nil)
             and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
         if timing ~= nil then text = text .. "  -  " .. timing end
@@ -615,30 +657,28 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         local row = self.inputRows[index]; if row == nil then return end
         applyRowHighlight(cell, (self._focusRole or "output") == "input")
         setIcon(row.ft); setc("fillName", row.name)
-        local recv = (SmartDistribution.monthlyReceived ~= nil) and SmartDistribution.monthlyReceived(self.selectedAsset, row.ft) or 0
-        local cons = (SmartDistribution.monthlyConsumed ~= nil) and SmartDistribution.monthlyConsumed(self.selectedAsset, row.ft) or 0
+        local e = self:windowStats(row.ft)
         local held = (SmartDistribution.husbandryInputHeld ~= nil) and SmartDistribution.husbandryInputHeld(self.selectedAsset, row.ft) or 0
-        local cap  = (SmartDistribution.husbandryInputCapacity ~= nil) and SmartDistribution.husbandryInputCapacity(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(recv))
-        setc("consumedText", fmt(cons))
+        setc("recvText", fmt(e.received))
+        setc("consumedText", fmt(e.consumed))
         setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
         setStatusCell(cell, self.selectedAsset, row.ft)
     elseif list == self.outputList then
         local row = self.outputRows[index]; if row == nil then return end
         applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
         setIcon(row.ft); setc("fillName", row.name)
-        local prod = (SmartDistribution.monthlyProduced ~= nil) and SmartDistribution.monthlyProduced(self.selectedAsset, row.ft) or 0
-        local d, s, st, mo = 0, 0, 0, 0
-        if SmartDistribution.monthlyStats ~= nil then d, s, st, mo = SmartDistribution.monthlyStats(self.selectedAsset, row.ft) end
+        local e = self:windowStats(row.ft)
         local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-        setc("prodText",   fmt(prod))
-        setc("distText",   fmt(d))
-        setc("storedText", fmt(st))
-        setc("soldText",   soldWithMoney(s, mo))
-        setc("heldText",   fmt(held))
+        setc("prodText", fmt(e.produced))
+        setc("distText", outTotalText(e))
+        setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
         local modeCell = cell:getAttribute("modeText")
         if modeCell ~= nil then
-            local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft))
+            -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
+        -- matching the Productions tab for the same pair of modes
+        local pal = (SmartDistribution.isPalletOutput ~= nil)
+            and SmartDistribution.isPalletOutput(self.selectedAsset, row.ft) or false
+        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
             local timing = (SmartDistribution.sellTimingLabel ~= nil)
                 and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
             if timing ~= nil then text = text .. "  -  " .. timing end
@@ -748,21 +788,17 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     -- INCOMING view: what the market is receiving, with the distribution link status
     if list == self.inputList then
         setc("fillName", row.name)
-        local recv   = (SmartDistribution.monthlyReceived ~= nil) and SmartDistribution.monthlyReceived(self.selectedAsset, row.ft) or 0
+        local e = self:windowStats(row.ft)
         local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(recv))
+        setc("recvText", fmt(e.received))
         setc("heldText", fmt(buffer))
         setStatusCell(cell, self.selectedAsset, row.ft)
         return
     end
     setc("fillName", row.name)
     local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-    local recv   = (SmartDistribution.monthlyReceived ~= nil) and SmartDistribution.monthlyReceived(self.selectedAsset, row.ft) or 0
-    local _, sold, _, mo = 0, 0, 0, 0
-    if SmartDistribution.monthlyStats ~= nil then _, sold, _, mo = SmartDistribution.monthlyStats(self.selectedAsset, row.ft) end
     setc("heldText", fmt(buffer) .. " / " .. fmt((SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset)) or SmartDistribution.MARKET_CAP or 200000))
-    setc("distText", fmt(recv))
-    setc("soldText", soldWithMoney(sold, mo))
+    setc("distText", outTotalText(self:windowStats(row.ft)))
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then
         modeCell:setText((SmartDistribution.marketProductLabel ~= nil)

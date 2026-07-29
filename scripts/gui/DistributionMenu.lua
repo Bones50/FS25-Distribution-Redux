@@ -74,16 +74,18 @@ function DistributionMenu:setupPages()
     -- Markets uses the same footer as the other tabs.
     local marketButtons = storageButtonsFor(function() return self.pageMarkets end)
 
-    -- left-tab order: Productions, Silos, Animal Husbandry, User Guide, Settings
+    -- left-tab order: Productions, Silos, Animal Husbandry, Markets, Overview, User Guide, Settings
     -- { pageElement, tabIconSliceId, footerButtons, enablePredicate }
     -- Tab icons mirror the building-placement (construction) menu's category iconSliceIds,
     -- read off g_storeManager via sdIconProbe. Silos has no top-level construction category
     -- (it's a store sub-category under Buildings), so it uses the Buildings icon.
+    -- Overview is read-only (a whole-network figures table), so it carries Back alone.
     local pages = {
         { self.pageProductions, "gui.icon_ingameMenu_productionChains", productionsButtons, always },
         { self.pageStorage,     "gui.icon_construction_buildings",      storageButtonsFor(function() return self.pageStorage end),   showSilos },
         { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          storageButtonsFor(function() return self.pageHusbandry end), showHusbandry },
         { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
+        { self.pageOverview,    "gui.icon_ingameMenu_statistics",       { back }, always },
         { self.pageHelp,        "gui.icon_options_help2",               { back }, always },
         { self.pageSettings,    "gui.icon_options_generalSettings2",    { back }, always },
     }

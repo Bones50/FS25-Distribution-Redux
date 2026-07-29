@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
-<!-- descVersion 92 loads on every FS25 patch; this mod uses only launch-era
-     schema. Bump to the current patch value (~106-107) to silence any notice. -->
+<!-- descVersion 110. This mod uses only launch-era schema, so a lower value also
+     loads; 110 matches the current patch and silences the version notice. -->
 <modDesc descVersion="110">
     <author>Bones</author>
     <version>1.1.0.0</version>
@@ -113,6 +113,10 @@ v1.0.0.1
         <!-- Seasonal price-curve reader for best-price selling (pure reader; loaded early). -->
         <sourceFile filename="scripts/DistributionPricing.lua"/>
         <sourceFile filename="scripts/SmartDistribution.lua"/>
+        <!-- Overview tab data: the rolling 12-month ring behind its Year timescale, plus the row builder.
+             MUST load after SmartDistribution.lua (it hangs its functions off that table), and lives in
+             its own file because SmartDistribution.lua's main chunk is at Lua's 200-local ceiling. -->
+        <sourceFile filename="scripts/DistributionStats.lua"/>
         <sourceFile filename="scripts/DistributionSettings.lua"/>
         <!-- 4th production output mode "Distribute + Sell".
              Remove this line + scripts/ProductionDistributeSell.lua to disable. -->
@@ -128,6 +132,7 @@ v1.0.0.1
         <sourceFile filename="scripts/gui/DistributionSettingsPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>
         <sourceFile filename="scripts/gui/DistributionProductionsPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionOverviewPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionHelpPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionSpawnDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionAdvancedDialog.lua"/>

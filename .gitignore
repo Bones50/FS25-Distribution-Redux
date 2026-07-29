@@ -4,7 +4,6 @@
 *.png
 
 # Local help/notes
-help.txt
-Help Files.txt
+helpGuide.txt
 CHANGELOG.md
 CLAUDE.md

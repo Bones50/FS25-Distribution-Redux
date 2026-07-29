@@ -53,18 +53,21 @@
         <textFocusedColor value="$preset_fs25_colorMainLight" />
     </Profile>
 
-    <!-- Right-aligned variants for numeric columns + the held/cap amount. -->
+    <!-- Numeric columns. These were RIGHT-aligned; every table in the mod is now LEFT-aligned so a column
+         reads down a single edge instead of some ragged-left and some ragged-right in adjacent lists.
+         The profile NAMES are kept so no page layout has to change: "R" now means "the numeric variant",
+         and the alignment lives in one place if it is ever revisited. -->
     <Profile name="SDHeaderRight" extends="SDHeaderLeft">
-        <textAlignment value="right" />
+        <textAlignment value="left" />
     </Profile>
 
     <Profile name="SDRowCellR" extends="SDRowCell">
-        <textAlignment value="right" />
+        <textAlignment value="left" />
     </Profile>
 
-    <!-- Fill percentage (right-aligned, green like the base production screen). -->
+    <!-- Fill percentage (green like the base production screen). -->
     <Profile name="SDRowCellPct" extends="SDRowCell">
-        <textAlignment value="right" />
+        <textAlignment value="left" />
         <textColor value="$preset_fs25_colorMainHighlight" />
         <textSelectedColor value="$preset_fs25_colorMainHighlight" />
     </Profile>
@@ -73,6 +76,11 @@
          comes from the profile <height>, NOT the ListItem instance size. -->
     <Profile name="SDListItemData" extends="SDListItem">
         <height value="38px"/>
+    </Profile>
+    <!-- Overview tab: nine columns per row, so the pitch is set by the building thumbnail (34px) rather
+         than the text. Row pitch comes from this <height>, NOT the ListItem instance size. -->
+    <Profile name="SDListItemStats" extends="SDListItem">
+        <height value="42px"/>
     </Profile>
     <!-- Info-only rows (top / Inputs section): compact + never show a selection/focus highlight. -->
     <Profile name="SDListItemInfo" extends="SDListItemData">

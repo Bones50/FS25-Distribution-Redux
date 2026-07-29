@@ -11,7 +11,7 @@
 --                             STORAGE | METHOD   (selectable; Cycle Output / Sell Timing act on it)
 -- Footer (real keys via setMenuButtonInfo): Toggle Line (acts on the LINE list),
 -- Cycle Output + Sell Timing (act on the OUTPUT list). All figures are MONTHLY
--- (rolling 24-cycle). Engine seams: productionLines, monthlyStats/Received,
+-- (scoped by the page's Hour / Month / Year selector). Engine seams: productionLines, assetWindowStats,
 -- cycleProductionOutput, setProductionLineEnabled, applyAssetSellTiming.
 -- ============================================================================
 
@@ -45,10 +45,23 @@ local function soldWithMoney(liters, money)
     return base
 end
 
--- "held L / cap L" (or just "held L" when capacity is unknown)
+-- "450 L (5,000 L)" (or just "450 L" when capacity is unknown). Bracket, not "/", so every held figure in
+-- the mod reads the same way: the amount, then what it can hold beside it, then any pallets.
 local function amountText(held, cap)
-    if cap ~= nil and cap > 0 then return fmt(held) .. " L / " .. fmt(cap) .. " L" end
+    if cap ~= nil and cap > 0 then return fmt(held) .. " L (" .. fmt(cap) .. " L)" end
     return fmt(held) .. " L"
+end
+
+-- " + 5,000 L (5p)" for whole pallets standing on this production's own pad, matching the Animal Husbandry
+-- and Overview tabs. productionLines() reports held from pp.storage ALONE, so without this a bakery holding
+-- five bread pallets read as its buffer only and understated by the entire pad. It is appended AFTER the
+-- capacity bracket rather than folded into the leading figure, because the capacity here is the BUFFER's --
+-- the pad has no capacity in that sense, so "450 L (5,000 L) + 5,000 L (5p)" keeps the bracket meaning what
+-- it says. Counted as OBJECTS, never litres/1000: a part-filled pallet is one pallet on the pad, not zero.
+-- Empty for bulk outputs, so rows that never palletize are unchanged.
+local function palletPart(litres, count)
+    if (litres or 0) <= 0 then return "" end
+    return " + " .. fmt(litres) .. " L (" .. tostring(count or 0) .. "p)"
 end
 
 local function percentText(held, cap)
@@ -165,6 +178,7 @@ end
 
 function DistributionProductionsPage:onGuiSetupFinished()
     DistributionProductionsPage:superClass().onGuiSetupFinished(self)
+    self:initPeriodOption()   -- Hour / Month / Year selector for every figure on this page
     if self.assetList ~= nil then
         self.assetList:setDataSource(self)
         self.assetList:setDelegate(self)
@@ -183,7 +197,8 @@ function DistributionProductionsPage:onGuiSetupFinished()
     if self.inputList ~= nil then
         self.inputList:setDataSource(self)
     end
-    self._scrollMap = { { "inputSlider", "inputList", 5 }, { "lineSlider", "lineList", 5 }, { "outputSlider", "outputList", 6 } }
+    -- rows that fit each frame at the 38px SDListItemData pitch (the timescale row took 46px off the top)
+    self._scrollMap = { { "inputSlider", "inputList", 4 }, { "lineSlider", "lineList", 4 }, { "outputSlider", "outputList", 7 } }
 end
 
 function DistributionProductionsPage:rebuildAssets()
@@ -229,8 +244,9 @@ function DistributionProductionsPage:buildSections()
         end
     end
     for _, i in ipairs(self.inputs) do
-        i.received = (SmartDistribution.monthlyReceived ~= nil) and SmartDistribution.monthlyReceived(p, i.ft) or 0
-        i.consumed = (SmartDistribution.monthlyConsumed ~= nil) and SmartDistribution.monthlyConsumed(p, i.ft) or 0
+        local e = self:windowStats(i.ft)          -- scoped by the page's Hour / Month / Year selector
+        i.received = e.received or 0
+        i.consumed = e.consumed or 0
     end
 
     -- 2) lines: one row per production line, labelled "<outputs> (<inputs>)"
@@ -259,14 +275,30 @@ function DistributionProductionsPage:buildSections()
     local ftSeen = {}
     for _, line in ipairs(lines) do
         for _, o in ipairs(line.outputs or {}) do
-            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0) then
+            -- Pallets standing on this building's own pad. o.held is the pp.storage buffer ALONE, so
+            -- without this a bakery holding five bread pallets understated by the whole pad -- and a row
+            -- whose line is off with an empty buffer was dropped entirely, hiding the pallets outright.
+            -- Ownership is resolved inside palletLitresOf, so a neighbour's pallets are never counted.
+            -- Only evaluated for a fill type not already placed, since it scans world vehicles.
+            local pallets, palletLitres = 0, 0
+            if not ftSeen[o.ft] and SmartDistribution.palletCountOf ~= nil then
+                local ok, v = pcall(SmartDistribution.palletCountOf, p, o.ft)
+                if ok and type(v) == "number" then pallets = v end
+            end
+            if not ftSeen[o.ft] and SmartDistribution.palletLitresOf ~= nil then
+                local ok, v = pcall(SmartDistribution.palletLitresOf, p, o.ft)
+                if ok and type(v) == "number" then palletLitres = v end
+            end
+            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0 or pallets > 0) then
                 ftSeen[o.ft] = true
-                local d, s, st, mo = 0, 0, 0, 0
-                if SmartDistribution.monthlyStats ~= nil then d, s, st, mo = SmartDistribution.monthlyStats(p, o.ft) end
+                local e = self:windowStats(o.ft)          -- scoped by the page's Hour / Month / Year selector
                 self.outputs[#self.outputs + 1] = {
                     ft = o.ft, name = o.name, held = o.held or 0, capacity = o.capacity,
-                    dist = d, sold = s, storedMo = st, money = mo,
-                    produced = (SmartDistribution.monthlyProduced ~= nil) and SmartDistribution.monthlyProduced(p, o.ft) or 0,
+                    heldPallets = pallets, heldPalletLitres = palletLitres,
+                    -- one DISTRIBUTED figure: distributed + stored/moved + sold. The split lives on Overview.
+                    outTotal = (e.dist or 0) + (e.stored or 0) + (e.sold or 0),
+                    sold = e.sold or 0, money = e.money or 0,
+                    produced = e.produced or 0,
                     modeName = o.modeName,
                     sellTiming = (SmartDistribution.sellTimingLabel ~= nil) and SmartDistribution.sellTimingLabel(p, o.ft) or nil,
                 }
@@ -360,7 +392,7 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
         setc("consumed", fmt(inp.consumed))
         -- capacity shown is the Advanced Inputs %-adjusted max; fall back to the raw buffer if unresolved
         local maxL = inputMaxLiters(self.selectedAsset, inp.ft)
-        setc("amount", maxL ~= nil and (fmt(inp.held) .. " L / " .. fmt(maxL) .. " L")
+        setc("amount", maxL ~= nil and (fmt(inp.held) .. " L (" .. fmt(maxL) .. " L)")
                                     or amountText(inp.held, inp.capacity))
         setStatusCell(cell, self.selectedAsset, inp.ft)
         setIcon(cell, inp.ft)
@@ -382,10 +414,9 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
     setc("name", o.name)
     setc("produced", fmt(o.produced))
-    setc("distr", fmt(o.dist))
-    setc("storedCyc", fmt(o.storedMo))
-    setc("sold", soldWithMoney(o.sold, o.money))
-    setc("amount", amountText(o.held, o.capacity))
+    -- one column now: everything that left, with the sale value in brackets when any of it sold
+    setc("distr", soldWithMoney(o.outTotal, o.sold > 0.5 and o.money or nil))
+    setc("amount", amountText(o.held, o.capacity) .. palletPart(o.heldPalletLitres, o.heldPallets))
     local method = o.modeName or "-"
     if o.sellTiming ~= nil then method = method .. " - " .. o.sellTiming end
     setc("method", method)

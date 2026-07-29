@@ -155,6 +155,7 @@ function DistributionAdvancedDialog:refresh()
     end
     if self.dialogTextElement ~= nil then
         local line = string.format("%s  (%s)", tostring(self.outName), tostring(self.modeName))
+        line = line .. "     Reserve: " .. self:reserveLabel()
         -- A transient notice (e.g. a refused loopback activation) is shown HERE, inside the dialog.
         -- g_currentMission:showBlinkingWarning draws behind an open menu, so it stays invisible until
         -- every window is closed -- useless for feedback on a button press.
@@ -168,6 +169,68 @@ function DistributionAdvancedDialog:refresh()
     self:updateToggleAllLabel()
     self._refreshing = false
 end
+
+-- ---- output RESERVE --------------------------------------------------------
+-- A floor in litres this building keeps back for the selected output: nothing is distributed, sold,
+-- stored, moved or sent to a market until it holds MORE than this, and every draw-off is capped so it
+-- can only come back down to the number, never below it. The mirror of the Advanced Inputs fill target.
+--
+-- Stepped as a wrapping ring in 5%-of-capacity increments (Off -> 5% -> ... -> 100% -> Off), so one
+-- button pair works for a 5,000 L production buffer and a 500,000 L silo alike, while the VALUE stored
+-- and shown is plain litres.
+DistributionAdvancedDialog.RESERVE_STEPS = 20     -- 20 presses from empty to full capacity
+
+function DistributionAdvancedDialog:reserveCapacity()
+    if self.asset == nil or self.ft == nil or SmartDistribution.outputCapacityTotal == nil then return 0 end
+    local ok, c = pcall(SmartDistribution.outputCapacityTotal, self.asset, self.ft)
+    return (ok and type(c) == "number" and c < math.huge) and c or 0
+end
+
+function DistributionAdvancedDialog:currentReserve()
+    if self.asset == nil or self.ft == nil or SmartDistribution.assetUid == nil then return nil end
+    local uid = SmartDistribution.assetUid(self.asset)
+    if uid == nil or SmartDistribution.getOutputReserve == nil then return nil end
+    return SmartDistribution.getOutputReserve(uid, self.ft)
+end
+
+local function litres(v)
+    local s = tostring(math.floor((v or 0) + 0.5))
+    local k
+    repeat s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2") until k == 0
+    return s .. " L"
+end
+
+function DistributionAdvancedDialog:reserveLabel()
+    local cur = self:currentReserve()
+    if cur ~= nil and cur > 0 then return litres(cur) end
+    return "Off"
+end
+
+function DistributionAdvancedDialog:onReserveDelta(dir)
+    if self.asset == nil or self.ft == nil or SmartDistribution.assetUid == nil then return end
+    local uid = SmartDistribution.assetUid(self.asset)
+    if uid == nil then return end
+    local cap = self:reserveCapacity()
+    if cap <= 0 then
+        self._notice = "No capacity to reserve against"
+        self:refresh()
+        return
+    end
+    local step = cap / DistributionAdvancedDialog.RESERVE_STEPS
+    local n    = DistributionAdvancedDialog.RESERVE_STEPS + 1        -- ring: Off(0), 1 step .. full(n-1)
+    local cur  = self:currentReserve() or 0
+    local idx  = (cur <= 0) and 0 or math.floor(cur / step + 0.5)
+    if idx > n - 1 then idx = n - 1 end
+    local newIdx = (idx + dir) % n
+    local amount = (newIdx == 0) and 0 or math.floor(newIdx * step + 0.5)   -- 0 clears back to the Settings default
+    if DistributionControlEvent ~= nil and DistributionControlEvent.send ~= nil then
+        DistributionControlEvent.send(DistributionControlEvent.ACT.OUTPUT_RESERVE, uid, self.ft, "", 0, false, amount)
+    end
+    self._notice = nil
+    self:refresh()
+end
+function DistributionAdvancedDialog:onReserveDown() self:onReserveDelta(-1) end
+function DistributionAdvancedDialog:onReserveUp()   self:onReserveDelta( 1) end
 
 -- ---- list data ------------------------------------------------------------
 function DistributionAdvancedDialog:getNumberOfItemsInSection(list, section)

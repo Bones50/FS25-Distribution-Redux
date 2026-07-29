@@ -24,45 +24,57 @@
             </ListItem>
         </SmoothList>
 
-        <!-- ===================== SECTION 1: INCOMING MATERIALS (inputs) =====================
-             Columns match the Animal Husbandry page (name / RECEIVED /mo / HELD (L) / DISTRIBUTION)
-             and the rows are selectable, ready for the input drill-down. -->
+        <!-- timescale for every figure on this page, plus a pointer to the Overview tab, which carries the
+             per-product breakdown these columns deliberately no longer repeat -->
         <Bitmap profile="SDList" position="390px -45px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="280px 40px" text="INCOMING MATERIALS" />
-            <Text profile="SDHeaderLeft" position="330px 0px" size="180px 40px" text="RECEIVED /mo" />
-            <Text profile="SDHeaderLeft" position="520px 0px" size="180px 40px" text="CONSUMED /mo" />
-            <Text profile="SDHeaderLeft" position="710px 0px" size="160px 40px" text="HELD (L)" />
-            <Text profile="SDHeaderLeft" position="880px 0px" size="200px 40px" text="DISTRIBUTION" />
+            <Text profile="SDRowCell" position="16px 0px" size="110px 40px" textSize="18px" text="Timescale"/>
+            <Bitmap profile="fs25_multiTextOptionContainer" position="130px 0px" size="380px 40px" imageColor="0 0 0 0">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
+                                 textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
+            </Bitmap>
+            <Text profile="SDHeaderLeft" position="530px 0px" size="550px 40px" textSize="14px"
+                  text="Full breakdown + supply chains: Overview tab" />
+        </Bitmap>
+
+        <!-- ===================== SECTION 1: INCOMING MATERIALS (inputs) =====================
+             Columns match the Animal Husbandry page (name / RECEIVED / CONSUMED / HELD (L) / DISTRIBUTION)
+             and the rows are selectable, ready for the input drill-down. -->
+        <Bitmap profile="SDList" position="390px -91px" size="1090px 40px">
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="240px 40px" text="INCOMING MATERIALS" />
+            <Text profile="SDHeaderLeft" position="292px 0px" size="280px 40px" text="HELD (CAP)" />
+            <Text profile="SDHeaderLeft" position="580px 0px" size="150px 40px" text="RECEIVED" />
+            <Text profile="SDHeaderLeft" position="738px 0px" size="150px 40px" text="CONSUMED" />
+            <Text profile="SDHeaderLeft" position="894px 0px" size="196px 40px" text="DISTRIBUTION" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -87px" size="1090px 190px">
-            <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 190px"
+        <GuiElement profile="SDList" position="390px -133px" size="1090px 152px">
+            <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 152px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItem" name="rowTemplate" size="1090px 38px" onClick="onClickInputRow">
                     <Bitmap position="12px 7px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="280px 38px" textSize="16px" name="name" />
-                    <Text profile="SDRowCell" position="330px 0px" size="180px 38px" textSize="16px" name="received" />
-                    <Text profile="SDRowCell" position="520px 0px" size="180px 38px" textSize="16px" name="consumed" />
-                    <Text profile="SDRowCell" position="710px 0px" size="160px 38px" textSize="16px" name="amount" />
-                    <Text profile="SDRowCell" position="880px 0px" size="200px 38px" textSize="16px" name="statusText" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="240px 38px" textSize="15px" name="name" />
+                    <Text profile="SDRowCell" position="292px 0px" size="280px 38px" textSize="14px" name="amount" />
+                    <Text profile="SDRowCell" position="580px 0px" size="150px 38px" textSize="15px" name="received" />
+                    <Text profile="SDRowCell" position="738px 0px" size="150px 38px" textSize="15px" name="consumed" />
+                    <Text profile="SDRowCell" position="894px 0px" size="196px 38px" textSize="14px" name="statusText" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 190px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 182px" dataElementId="inputList" id="inputSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 152px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 144px" dataElementId="inputList" id="inputSlider" />
             </ThreePartBitmap>
         </GuiElement>
 
         <!-- ===================== SECTION 2: PRODUCTION LINES (selectable, toggle on/off) ===================== -->
-        <Bitmap profile="SDList" position="390px -283px" size="1090px 40px">
+        <Bitmap profile="SDList" position="390px -291px" size="1090px 40px">
             <Text profile="SDHeaderLeft"  position="16px 0px"   size="760px 40px" text="PRODUCTION LINES" />
             <Text profile="SDHeaderLeft"  position="790px 0px"  size="110px 40px" text="STATUS" />
             <Text profile="SDHeaderRight" position="904px 0px"  size="186px 40px" text="TARGET /mo" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -325px" size="1090px 190px">
-            <SmoothList profile="SDList" id="lineList" position="0px 0px" size="1090px 190px"
+        <GuiElement profile="SDList" position="390px -333px" size="1090px 152px">
+            <SmoothList profile="SDList" id="lineList" position="0px 0px" size="1090px 152px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="outputList">
                 <ListItem profile="SDListItemData" name="rowTemplate" size="1090px 38px" onClick="onClickLineRow">
                     <Text profile="SDRowCell"  position="16px 0px"   size="760px 38px" textSize="16px" name="name" />
@@ -70,41 +82,40 @@
                     <Text profile="SDRowCellR" position="904px 0px"  size="186px 38px" textSize="16px" name="prodMo" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 190px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 182px" dataElementId="lineList" id="lineSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 152px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 144px" dataElementId="lineList" id="lineSlider" />
             </ThreePartBitmap>
         </GuiElement>
 
-        <!-- ===================== SECTION 3: OUTGOING PRODUCTS (selectable, cycle distribution) ===================== -->
-        <Bitmap profile="SDList" position="390px -521px" size="1090px 40px">
-            <Text profile="SDHeaderLeft"  position="44px 0px"   size="166px 40px" text="OUTGOING PRODUCTS" />
-            <Text profile="SDHeaderRight" position="214px 0px"  size="106px 40px" text="PRODUCED /mo" />
-            <Text profile="SDHeaderRight" position="324px 0px"  size="102px 40px" text="DISTR. /mo" />
-            <Text profile="SDHeaderRight" position="430px 0px"  size="102px 40px" text="STORED /mo" />
-            <Text profile="SDHeaderRight" position="536px 0px"  size="100px 40px" text="SOLD /mo" />
-            <Text profile="SDHeaderRight" position="640px 0px"  size="148px 40px" text="STORAGE (L)" />
-            <Text profile="SDHeaderLeft"  position="792px 0px"  size="148px 40px" text="OUTPUT METHOD" />
-            <Text profile="SDHeaderLeft"  position="940px 0px"  size="150px 40px" text="STATUS" />
+        <!-- ===================== SECTION 3: OUTGOING PRODUCTS (selectable, cycle distribution) =====================
+             DISTRIBUTED is everything that left: distributed + stored/moved + sold, with the sale value in
+             brackets. The separate DISTR / STORED / SOLD split now lives on the Overview tab. -->
+        <Bitmap profile="SDList" position="390px -491px" size="1090px 40px">
+            <Text profile="SDHeaderLeft"  position="44px 0px"   size="185px 40px" text="OUTGOING PRODUCTS" />
+            <Text profile="SDHeaderRight" position="239px 0px"  size="290px 40px" text="HELD (CAP)" />
+            <Text profile="SDHeaderRight" position="539px 0px"  size="110px 40px" text="PRODUCED" />
+            <Text profile="SDHeaderRight" position="659px 0px"  size="140px 40px" text="DISTRIBUTED" />
+            <Text profile="SDHeaderLeft"  position="809px 0px"  size="145px 40px" text="OUTPUT MODE" />
+            <Text profile="SDHeaderLeft"  position="964px 0px"  size="126px 40px" text="STATUS" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -563px" size="1090px 247px">
-            <SmoothList profile="SDList" id="outputList" position="0px 0px" size="1090px 247px"
+        <GuiElement profile="SDList" position="390px -533px" size="1090px 277px">
+            <SmoothList profile="SDList" id="outputList" position="0px 0px" size="1090px 277px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="lineList" focusChangeBottom="nil">
                 <ListItem profile="SDListItemData" name="rowTemplate" size="1090px 38px" onClick="onClickOutputRow">
                     <Bitmap position="12px 7px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text   profile="SDRowCell"  position="44px 0px"   size="166px 38px" textSize="16px" name="name" />
-                    <Text   profile="SDRowCellR" position="214px 0px"  size="106px 38px" textSize="16px" name="produced" />
-                    <Text   profile="SDRowCellR" position="324px 0px"  size="102px 38px" textSize="16px" name="distr" />
-                    <Text   profile="SDRowCellR" position="430px 0px"  size="102px 38px" textSize="16px" name="storedCyc" />
-                    <Text   profile="SDRowCellR" position="536px 0px"  size="100px 38px" textSize="16px" name="sold" />
-                    <Text   profile="SDRowCellR" position="640px 0px"  size="148px 38px" textSize="16px" name="amount" />
-                    <Text   profile="SDRowCell"  position="792px 0px"  size="148px 38px" textSize="16px" name="method" />
-                    <Text   profile="SDRowCell"  position="940px 0px"  size="150px 38px" textSize="15px" name="statusText" />
+                    <Text   profile="SDRowCell"  position="44px 0px"   size="185px 38px" textSize="15px" name="name" />
+                    <!-- widest cell on the row: "450 L (5,000 L) + 5,000 L (5p)" -->
+                    <Text   profile="SDRowCellR" position="239px 0px"  size="290px 38px" textSize="14px" name="amount" />
+                    <Text   profile="SDRowCellR" position="539px 0px"  size="110px 38px" textSize="15px" name="produced" />
+                    <Text   profile="SDRowCellR" position="659px 0px"  size="140px 38px" textSize="15px" name="distr" />
+                    <Text   profile="SDRowCell"  position="809px 0px"  size="145px 38px" textSize="14px" name="method" />
+                    <Text   profile="SDRowCell"  position="964px 0px"  size="126px 38px" textSize="14px" name="statusText" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 247px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 239px" dataElementId="outputList" id="outputSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 277px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 269px" dataElementId="outputList" id="outputSlider" />
             </ThreePartBitmap>
         </GuiElement>
     </GuiElement>

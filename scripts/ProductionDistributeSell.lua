@@ -594,10 +594,14 @@ local function sellRemainder(manager)
                             end
                             -- Grid products sell the WHOLE surplus immediately -- a flat price has no seasonal
                             -- peak to hold for. Priced goods keep the best-price holding gate (as silos do).
-                            local sell = level
                             local pl = placeableOf(pp)
+                            -- the output reserve is a floor: only what sits ABOVE it is ever sellable
+                            local sell = level
+                            if pl ~= nil and SD.drawableLevel ~= nil then
+                                sell = SD.drawableLevel(pl, ft, level)
+                            end
                             if not isGrid and pl ~= nil and SD.bestPriceSellAmount ~= nil then
-                                sell = SD.bestPriceSellAmount(pl, ft, sellMode, pp.storage, level, level)
+                                sell = SD.bestPriceSellAmount(pl, ft, sellMode, pp.storage, level, sell)
                             end
                             local price = sell > 0 and unit or 0
                             local ftName = (g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeNameByIndex ~= nil)

@@ -74,6 +74,13 @@
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <Button profile="buttonOK"   text="Block All"     onClick="onToggleAll" id="toggleAllButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <!-- Output reserve: how much of this product the building always keeps back. Deliberately no
+                 inputActionName (mouse-only), like the all-toggle buttons: a 7th/8th bound action
+                 scrambles the key glyphs on the others. -->
+            <Button profile="buttonOK"   text="- Reserve"     onClick="onReserveDown" id="reserveDownButton" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="+ Reserve"     onClick="onReserveUp"   id="reserveUpButton" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <Button profile="buttonBack" text="Close"         onClick="onClickBack" id="noButton" />
         </BoxLayout>
     </GuiElement>

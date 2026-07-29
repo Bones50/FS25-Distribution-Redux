@@ -50,6 +50,14 @@ end
 
 function DistributionHelpPage:onFrameOpen()
     DistributionHelpPage:superClass().onFrameOpen(self)
+    -- Re-read helpGuide.txt on every open, so editing the text file and reopening this tab is enough --
+    -- no restart. One small file read against a list rebuild that was happening anyway.
+    if DistributionHelpDialog ~= nil and DistributionHelpDialog.reload ~= nil then
+        pcall(DistributionHelpDialog.reload)
+    end
+    -- the file may now have fewer tabs than last time; keep the selection in range
+    local n = #topics()
+    if self.currentTopic == nil or self.currentTopic > n then self.currentTopic = 1 end
     if self.topicList ~= nil then self.topicList:reloadData() end
     self:selectTopic(self.currentTopic or 1)
 

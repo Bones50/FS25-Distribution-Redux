@@ -71,6 +71,51 @@ end
 -- figures themselves only change on the hourly pass; between hours this mainly keeps held-litres live.
 DistributionMenuPage.REALTIME_REFRESH_MS = 500
 
+-- ---- shared Hour / Month / Year selector ------------------------------------
+-- The building tabs (Silos, Animal Husbandry, Markets, Productions) each carry a `periodOption`
+-- MultiTextOption that rescopes their RECEIVED / CONSUMED / PRODUCED / DISTRIBUTED figures, exactly like
+-- the Overview tab's. The windows are DR's own: a cycle is an hour, a month is 24 of them.
+-- Lives on the base page so all four share one implementation; pages without the widget just no-op.
+DistributionMenuPage.PERIODS       = { "hour", "month", "year" }
+DistributionMenuPage.PERIOD_LABELS = { "Cycle (hour)", "Month", "Year" }
+
+function DistributionMenuPage:initPeriodOption()
+    self.periodIndex = self.periodIndex or 2          -- default Month: what these columns showed before
+    local opt = self.periodOption
+    if opt == nil or opt.setTexts == nil then return end
+    opt:setTexts(DistributionMenuPage.PERIOD_LABELS)
+    if opt.setState ~= nil then pcall(function() opt:setState(self.periodIndex) end) end
+end
+
+function DistributionMenuPage:currentWindow()
+    return DistributionMenuPage.PERIODS[self.periodIndex or 2] or "month"
+end
+
+-- Figures for one (product) of the selected building over the chosen window. Always returns a full
+-- table, so callers never have to nil-check a field.
+function DistributionMenuPage:windowStats(ft)
+    if SmartDistribution == nil or SmartDistribution.assetWindowStats == nil or self.selectedAsset == nil then
+        return {}
+    end
+    local ok, e = pcall(SmartDistribution.assetWindowStats, self.selectedAsset, ft, self:currentWindow())
+    return (ok and type(e) == "table") and e or {}
+end
+
+function DistributionMenuPage:onPeriodChanged(state)
+    local opt = self.periodOption
+    if type(state) ~= "number" and opt ~= nil and opt.getState ~= nil then state = opt:getState() end
+    if type(state) == "number" and state >= 1 and state <= #DistributionMenuPage.PERIODS then
+        self.periodIndex = state
+    end
+    -- pages cache their row figures in different places; rebuilding is what each already does on a
+    -- selection change, so reuse that path where it exists and always repaint the lists
+    if self.rebuildRealtimeData ~= nil then pcall(function() self:rebuildRealtimeData() end) end
+    for _, name in ipairs(self._realtimeLists or {}) do
+        local list = self[name]
+        if list ~= nil and list.reloadData ~= nil then pcall(function() list:reloadData() end) end
+    end
+end
+
 function DistributionMenuPage:refreshRealtimeLists()
     local names = self._realtimeLists
     if names == nil or self._focusing then return end   -- _focusing: a selection event is mid-flight; skip

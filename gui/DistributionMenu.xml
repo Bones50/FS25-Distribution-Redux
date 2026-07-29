@@ -7,6 +7,7 @@
         <FrameReference ref="distributionStoragePage"     name="distributionStoragePage"     id="pageStorage"/>
         <FrameReference ref="distributionHusbandryPage"   name="distributionHusbandryPage"   id="pageHusbandry"/>
         <FrameReference ref="distributionMarketsPage"     name="distributionMarketsPage"     id="pageMarkets"/>
+        <FrameReference ref="distributionOverviewPage"    name="distributionOverviewPage"    id="pageOverview"/>
         <FrameReference ref="distributionHelpPage"        name="distributionHelpPage"        id="pageHelp"/>
         <FrameReference ref="distributionSettingsPage"    name="distributionSettingsPage"    id="pageSettings"/>
     </Paging>
