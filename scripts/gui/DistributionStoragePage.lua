@@ -257,6 +257,23 @@ function DistributionStoragePage:selectAsset(index)
     if self.assetTitleElement ~= nil then
         self.assetTitleElement:setText(a ~= nil and (a.name or ""):upper() or "")
     end
+    -- A bunker silo has NO input side at all, so the whole INCOMING block is hidden for one rather than
+    -- shown empty. DR can never deposit into a terrain heap (no sanctioned fill-level API, see the bunker
+    -- section in SmartDistribution.lua), so an incoming table here would advertise something that cannot
+    -- happen. Header and list are hidden together; nil-guarded because the subclasses that inherit this
+    -- selectAsset (Markets) use their own layout and have neither element.
+    -- NOTE the block is absolutely positioned, so the outgoing table below does NOT move up into the gap.
+    local noInputs = self.selectedAsset ~= nil and SmartDistribution ~= nil
+        and SmartDistribution.isBunkerSiloPlaceable ~= nil
+        and SmartDistribution.isBunkerSiloPlaceable(self.selectedAsset)
+    if self.inputHeaderRow ~= nil and self.inputHeaderRow.setVisible ~= nil then
+        self.inputHeaderRow:setVisible(not noInputs)
+    end
+    if self.inputPanel ~= nil and self.inputPanel.setVisible ~= nil then
+        self.inputPanel:setVisible(not noInputs)
+    end
+    -- keep the contextual footer on the output side; the input list cannot be focused while hidden
+    if noInputs then self._focusRole = "output" end
     self:buildDetailRows()
     self.detailIndex = 1
     self.inputIndex = 1

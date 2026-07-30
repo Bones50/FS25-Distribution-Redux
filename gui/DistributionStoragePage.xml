@@ -38,14 +38,14 @@
 
         <!-- right: INCOMING PRODUCTS (inputs). Same products the building can hold, with the Animal
              Husbandry column set; rows are selectable, ready for the input drill-down. -->
-        <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
+        <Bitmap profile="SDList" id="inputHeaderRow" position="390px -92px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="240px 40px" text="INCOMING PRODUCTS" />
             <Text profile="SDHeaderLeft" position="292px 0px" size="300px 40px" text="HELD (CAP)" />
             <Text profile="SDHeaderLeft" position="600px 0px" size="180px 40px" text="RECEIVED" />
             <Text profile="SDHeaderLeft" position="788px 0px" size="302px 40px" text="DISTRIBUTION" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
-        <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
+        <GuiElement profile="SDList" id="inputPanel" position="390px -136px" size="1090px 280px">
             <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 280px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickInputRow">

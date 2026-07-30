@@ -7595,11 +7595,12 @@ local function assetConfigFillTypes(p)
     if p == nil then return {}, false end
     if getProductionPoint(p) ~= nil then return productionOutputFillTypes(p) end
     if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil then return siloFillTypes(p) end
-    -- bunker silo: a single SILAGE row, shown even while filling/fermenting (it reads 0 L then) so the
-    -- player can watch a batch mature rather than having the building appear only once it is ready
+    -- bunker silo: a single row for whatever it DECLARES it makes (silage on a vanilla bunker, COMPOST on the
+    -- orchards mod's compost silo -- see bunkerOutputFillType), shown even while filling/fermenting (it reads
+    -- 0 L then) so the player can watch a batch mature rather than having the building appear only once ready
     if SmartDistribution.isBunkerSiloPlaceable(p) then
-        local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
-        if silage ~= nil then return { [silage] = true }, true end
+        local out = SmartDistribution.bunkerOutputFillType(p)
+        if out ~= nil then return { [out] = true }, true end
         return {}, false
     end
     if isManurePit(p) then return heapFillTypes(p) end
@@ -7955,11 +7956,10 @@ end
 
 function SmartDistribution.assetHeld(p, ft)
     if p == nil or ft == nil then return 0 end
-    -- bunker silos own no Storage; their held silage comes from the terrain heap, and only counts once
+    -- bunker silos own no Storage; their held product comes from the terrain heap, and only counts once
     -- the silo is uncovered (bunkerSilageLiters enforces that)
     if SmartDistribution.isBunkerSiloPlaceable(p) then
-        local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
-        if ft == silage then return SmartDistribution.bunkerPlaceableSilage(p) end
+        if ft == SmartDistribution.bunkerOutputFillType(p) then return SmartDistribution.bunkerPlaceableSilage(p) end
         return 0
     end
     local total = 0
@@ -10312,6 +10312,12 @@ function proximityWatcher:update(dt)
         self.acc = 0
         local ok, t = pcall(SmartDistribution.findNearestConfigurableAsset)
         self.target = ok and t or nil
+        -- Keep each suppressed pen's own base-game figures live for its vanilla UI. Here rather than in the
+        -- updatePallets override because DR's override is what stops that function running (see
+        -- syncAllPenFillLevels); this tick is guaranteed, and 3 Hz is already the cadence for a costly scan.
+        if SmartDistribution.syncAllPenFillLevels ~= nil then
+            pcall(SmartDistribution.syncAllPenFillLevels)
+        end
     end
 
     local eid = SmartDistribution._dialogEventId
@@ -10494,7 +10500,9 @@ end
 
 -- ---- Hold Internal: suppress vanilla egg / wool / honey pallet spawning -----
 -- A pallet-spawner husbandry (chicken coop, sheep barn) set to Hold Internal should keep its product in
--- the building's internal buffer (spec_husbandryPallets.fillLevels), NOT spawn physical pallets. The base
+-- the building's internal buffer (spec_husbandryPallets.pendingLiters -- NOT `fillLevels`, which this comment
+-- used to name: that was vanilla's count of litres already on PALLETS, and DR now writes the full stock into
+-- it for the pen's own UI, see syncSpecFillLevels), NOT spawn physical pallets. The base
 -- game accumulates output in updateOutput / addPendingLiters and SPAWNS separately in
 -- PlaceableHusbandryPallets.updatePallets (confirmed via sdPalletProbe). Overriding updatePallets to
 -- no-op while EVERY spawner fill type is HOLD_INTERNAL stops the spawn but leaves accumulation intact --
@@ -10602,22 +10610,32 @@ function SmartDistribution.sweepEmptyPadPallets()
     if ps == nil then return end
     for _, p in ipairs(ps.placeables) do
         local hs = p.spec_husbandryPallets
-        if hs ~= nil and type(hs.pallets) == "table" then
+        if hs ~= nil then
             local held = SmartDistribution.suppressedPalletFillTypes(p)
-            if held ~= nil then
+            -- Ownership is the PAD, never spec.pallets. That set was the original guard here and it made this
+            -- whole function a permanent no-op: probed in game, a coop with a 1000 L pallet standing on its
+            -- pad reported "no spawned pallets of this ft yet", because the base game registers a pallet into
+            -- spec.pallets inside updatePallets -- the very function DR suppresses. So a DR-released pallet is
+            -- never in it. 5.17's rule applies instead: on my pad => mine, full stop.
+            -- Gated on geometry actually resolving (5.18), and on being ON the pad rather than merely nearby,
+            -- so an empty pallet a player parked near the pen is never touched.
+            if held ~= nil and #SmartDistribution.spawnPlacesOf(p) > 0 then
                 for _, ft in ipairs(held) do
                     for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
-                        if hs.pallets[pallet] ~= nil then
-                            local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
-                            local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
-                            if lvl <= 0 then
-                                if SmartDistribution.debug then
-                                    log("sweepEmptyPad %s [%s]: removing an empty pallet",
-                                        placeableName(p), tostring(fillTypeName(ft)))
-                                end
-                                if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
-                                hs.pallets[pallet] = nil
+                        local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
+                        local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
+                        local onPad = false
+                        if lvl <= 0 and pallet.rootNode ~= nil then
+                            local ok, vx, _, vz = pcall(getWorldTranslation, pallet.rootNode)
+                            onPad = ok and SmartDistribution.palletOnSpawner(p, vx, vz)
+                        end
+                        if onPad then
+                            if SmartDistribution.debug then
+                                log("sweepEmptyPad %s [%s]: removing an empty pallet",
+                                    placeableName(p), tostring(fillTypeName(ft)))
                             end
+                            if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+                            if type(hs.pallets) == "table" then hs.pallets[pallet] = nil end
                         end
                     end
                 end
@@ -10625,6 +10643,91 @@ function SmartDistribution.sweepEmptyPadPallets()
         end
     end
 end
+-- Keep the BASE GAME's own per-fill-type figure in step with reality for every fill type DR is suppressing.
+--
+-- Reported in game: a chicken coop holding one 1000 L pallet plus 430 L internally showed ZERO on the pen's
+-- own vanilla UI. Cause: `spec_husbandryPallets.fillLevels[ft]` is the base game's record of the product it
+-- holds, and vanilla maintains it inside `updatePallets` -- the very function DR overrides. On the
+-- all-suppressed path that function is never called at all, and DR's own release path fills the pallet
+-- directly (`_fillSpawnedPalletFromHusbandry` writes the pallet and debits `pendingLiters`) without ever
+-- writing this field back. So it sat at whatever it was when DR took over: 0.
+--
+-- Written as the FULL stock, `pad + pendingLiters`, which is what the request asked for and also exactly what
+-- `assetHeld` reports (5.21) -- so the pen's own UI and DR's tabs now state the same number instead of
+-- disagreeing. RECOMPUTED from live state on every tick rather than adjusted incrementally, so it is
+-- self-correcting: a pallet DR ships, one the player forklifts away, and one released from the queue all
+-- land correctly with no bookkeeping to drift.
+--
+-- Only ever written for SUPPRESSED fill types. Where vanilla still drives the spawn it also still owns this
+-- field, and DR must not fight it.
+--
+-- NOTE the base game's own denominator (`capacities[ft]`, probed at 6000 for WOOL) already accounts for the
+-- pallet limit, while a HOLD_INTERNAL queue is unbounded -- so a long-held pen can read above its stated
+-- capacity. Showing the true total is the point; clamping would hide product.
+-- The two terms have VERY different costs, so they are refreshed at different rates.
+--   * pendingLiters is a plain table read and changes continuously as the animals produce -> every call.
+--   * the PAD total goes through husbandryPalletObjects, which walks the whole vehicleSystem list to find
+--     loose pallets and then runs the spawn-place geometry on each candidate. updatePallets is a base-game
+--     tick, so calling that unthrottled would put a full vehicle scan per pen on a hot path -- the same
+--     mistake storageOwnerOf is cached to avoid. It also barely ever changes: only a spawn, a DR shipment
+--     or a player moving a pallet can move it.
+-- So the pad is cached per (pen, product) and re-read at most every SPEC_SYNC_SEC of REAL time (getTimeSec,
+-- the established wall clock here -- real, so fast-forward does not multiply the work). Half a second is
+-- imperceptible on a HUD, and a stale pad for that long cannot mislead anyone.
+-- With no getTimeSec available it simply reads every call: correctness over speed.
+SmartDistribution._specSyncPad  = {}   -- uid -> ft -> last pad litres read
+SmartDistribution._specSyncAt   = {}   -- uid -> ft -> wall-clock seconds of that read
+SmartDistribution.SPEC_SYNC_SEC = 0.5
+function SmartDistribution.syncSpecFillLevels(p, fts)
+    local hs = p ~= nil and p.spec_husbandryPallets or nil
+    if hs == nil or fts == nil then return end
+    local uid = getUid(p); if uid == nil then return end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    local padRec = SmartDistribution._specSyncPad[uid]
+    if padRec == nil then padRec = {}; SmartDistribution._specSyncPad[uid] = padRec end
+    local atRec = SmartDistribution._specSyncAt[uid]
+    if atRec == nil then atRec = {}; SmartDistribution._specSyncAt[uid] = atRec end
+    for _, ft in ipairs(fts) do
+        local at = atRec[ft]
+        if padRec[ft] == nil or now == nil or at == nil or (now - at) >= SmartDistribution.SPEC_SYNC_SEC then
+            local ok, total = pcall(SmartDistribution.husbandryPadState, p, ft)   -- returns (litres, byObject)
+            if ok and type(total) == "number" then padRec[ft] = total end
+            atRec[ft] = now
+        end
+        if type(hs.fillLevels) == "table" then
+            hs.fillLevels[ft] = (padRec[ft] or 0) + (SmartDistribution.palletPendingLiters(p, ft) or 0)
+        end
+        -- capacities[ft] comes from the same suppressed computation and reads 0 too, which leaves the pen's
+        -- UI with no denominator at all. husbandryPalletCapacity derives it when the field is empty.
+        if type(hs.capacities) == "table" and (hs.capacities[ft] or 0) <= 0 then
+            local cap = SmartDistribution.husbandryPalletCapacity(p, ft)
+            if cap > 0 then hs.capacities[ft] = cap end
+        end
+    end
+end
+
+-- Drive the above for every pen DR is suppressing.
+--
+-- This does NOT hang off `updatePallets` alone, and that was the first attempt's mistake: hooking the
+-- function whose bookkeeping went missing looks like the natural home, but DR's override is also what stops
+-- it being CALLED, and its base-game cadence is unknown and unreadable (dataS.gar). Measured result: with the
+-- sync only in that wrapper the coop still read 0 sixty seconds after load. So it is driven from DR's own
+-- updateable instead, which is guaranteed to run and already has a throttle idiom for exactly this reason.
+-- The wrapper still calls it too, harmlessly, so the figure is also refreshed at the moment vanilla would
+-- have done it.
+function SmartDistribution.syncAllPenFillLevels()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if p.spec_husbandryPallets ~= nil then
+            -- suppressedPalletFillTypes is the exact gate: a pen DR is not suppressing still has vanilla
+            -- maintaining these fields, and DR must not fight it.
+            local held = SmartDistribution.suppressedPalletFillTypes(p)
+            if held ~= nil then SmartDistribution.syncSpecFillLevels(p, held) end
+        end
+    end
+end
+
 function SmartDistribution.installHoldInternalPalletSuppression()
     if PlaceableHusbandryPallets == nil or PlaceableHusbandryPallets.updatePallets == nil then
         log("hold-internal pallet suppression: PlaceableHusbandryPallets.updatePallets not found [VERIFY]")
@@ -10635,6 +10738,10 @@ function SmartDistribution.installHoldInternalPalletSuppression()
         function(self, superFunc, ...)
             local held, rest = SmartDistribution.suppressedPalletFillTypes(self)
             if held == nil then return superFunc(self, ...) end          -- nothing suppressed -> vanilla
+            -- Vanilla maintains its own fillLevels inside the call we are about to skip or narrow, so take
+            -- that over for the suppressed types. Runs at the base game's own cadence, which is what keeps
+            -- the pen's UI live rather than updating once an hour.
+            SmartDistribution.syncSpecFillLevels(self, held)
             if #rest == 0 then return end                                -- all suppressed -> skip the whole pass
             -- partial: hide just the held fill types for this one call
             local spec = self.spec_husbandryPallets
@@ -11245,6 +11352,14 @@ function SmartDistribution.husbandryPalletCapacity(p, ft)
     local t  = hs ~= nil and hs.capacities or nil
     local v  = type(t) == "table" and t[ft] or nil
     if type(v) == "number" and v > 0 and v < math.huge then return v end
+    -- capacities[ft] is COMPUTED BY THE BASE GAME INSIDE updatePallets, which DR suppresses -- so on any pen
+    -- DR manages it now reads 0, and this returned 0 with it (probed on a chicken coop: capacity=0 where the
+    -- pre-5.20 sheep-barn probe read 6000). That silently removed the capacity bracket 5.21 added. Derive it
+    -- the way the base game does instead: the pallet limit times one pallet's capacity (probed: WOOL
+    -- maxNumPallets=6 x 1000 = the 6000 that field used to hold).
+    local mx  = (hs ~= nil and type(hs.maxNumPallets) == "table") and hs.maxNumPallets[ft] or nil
+    local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
+    if type(mx) == "number" and mx > 0 and cap > 0 then return mx * cap end
     return 0
 end
 
@@ -11516,8 +11631,9 @@ end
 
 -- Can placeable p provide ft into the network (mode/enrolment gate + physically holds/outputs it)?
 function SmartDistribution.canProvide(p, ft)
-    -- bunker silos supply SILAGE only, and only from uncovered bays (never a sink -- they own no Storage,
-    -- so the sink paths skip them naturally)
+    -- bunker silos supply their DECLARED output only (silage on a vanilla bunker, compost on a compost silo --
+    -- bunkerOutputFillType), and only from uncovered bays. Never a sink: they own no Storage, so the sink
+    -- paths skip them naturally, and DR must not write into a terrain heap.
     if SmartDistribution.isBunkerSiloPlaceable(p) then
         if not canSourceDistribute(p, ft) then return false end
         return SmartDistribution.bunkerPlaceableSilage(p) > 0
@@ -11976,6 +12092,36 @@ function SmartDistribution.isBunkerSiloPlaceable(p)
     return p.spec_bunkerSilo ~= nil or p.spec_multiBunkerSilo ~= nil
 end
 
+-- What this bunker silo PRODUCES. Every site below used to resolve SILAGE by name, which made DR assume
+-- every bunker in the world is a silage bunker.
+--
+-- It is declared, and the base game has always been generic about it -- the vanilla bunker says
+-- `inputFillType="chaff" outputFillType="silage"` and the orchards-and-greenhouses compost silo says
+-- `inputFillType="ORGANICWASTE" outputFillType="COMPOST"` with the identical attributes. Reported in game:
+-- that compost silo showed a SILAGE row and never distributed anything, because DR compared the real heap
+-- type (COMPOST) against SILAGE everywhere and got 0 L.
+--
+-- Reading the declaration is therefore the correct generic answer, and it fixes any future modded bunker for
+-- free rather than special-casing compost. SILAGE remains the fallback for a silo that declares nothing, so
+-- vanilla behaviour is bit-for-bit unchanged (its declared output IS silage).
+--
+-- Direct spec reads, never bunkerUnits(): this is called from assetHeld, which the seasonal crop reserve sums
+-- across every placeable on the map -- a scan in here would make that O(n^2).
+-- All bays of one placeable are the same silo type, so bay 1 is representative; bunkerSilageLiters resolves
+-- per-bay anyway, off the silo it was handed.
+function SmartDistribution.bunkerOutputFillType(p)
+    if p == nil then return nil end
+    local bs   = p.spec_bunkerSilo
+    local silo = bs ~= nil and bs.bunkerSilo or nil
+    if silo == nil then
+        local ms = p.spec_multiBunkerSilo
+        if ms ~= nil and type(ms.bunkerSilos) == "table" then silo = ms.bunkerSilos[1] end
+    end
+    local ft = silo ~= nil and silo.outputFillType or nil
+    if type(ft) == "number" and ft > 0 then return ft end
+    return g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+end
+
 -- Total network-available (uncovered) silage across every bay on this placeable.
 function SmartDistribution.bunkerPlaceableSilage(p)
     if not SmartDistribution.isBunkerSiloPlaceable(p) then return 0 end
@@ -12008,7 +12154,7 @@ function SmartDistribution.bunkerTakeSilage(p, ft, wanted)
     -- guard it here too rather than rely on every future caller knowing that.
     if g_currentMission == nil or not g_currentMission:getIsServer() then return 0 end
     if not SmartDistribution.isBunkerSiloPlaceable(p) then return 0 end
-    local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+    local silage = SmartDistribution.bunkerOutputFillType(p)   -- what this silo declares it makes
     if silage == nil or ft ~= silage then return 0 end
     local ok, util = pcall(function() return DensityMapHeightUtil end)
     if not ok or type(util) ~= "table" or type(util.removeFromGroundByArea) ~= "function" then return 0 end
@@ -12049,8 +12195,7 @@ end
 function SmartDistribution.makeBunkerSourceProxy(p)
     return {
         getFillLevel = function(_, ft)
-            local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
-            if ft ~= silage then return 0 end
+            if ft ~= SmartDistribution.bunkerOutputFillType(p) then return 0 end
             return SmartDistribution.bunkerPlaceableSilage(p)
         end,
         addFillLevel = function(_, farmId, ft, delta)
@@ -12086,8 +12231,13 @@ function SmartDistribution.bunkerSilageLiters(silo)
     if silo == nil then return 0 end
     if silo.state ~= SmartDistribution.BUNKER_STATE_DRAIN then return 0 end
     local heapFt = SmartDistribution.bunkerHeapFillType(silo)
-    local silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
-    if silage == nil then silage = silo.outputFillType end
+    -- What this BAY declares it makes, resolved per-silo. This used to read SILAGE by name and fall back to
+    -- outputFillType only when SILAGE did not exist as a fill type at all -- i.e. never, so the fallback was
+    -- dead code and a compost bay's heap never matched. The declaration comes first now.
+    local silage = silo.outputFillType
+    if type(silage) ~= "number" or silage <= 0 then
+        silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
+    end
     if heapFt == nil or silage == nil or heapFt ~= silage then return 0 end
     local a = silo.bunkerSiloArea
     local ok, util = pcall(function() return DensityMapHeightUtil end)

@@ -31,6 +31,7 @@ Fixed
 11) Water extensions for greenhouses can now be placed again and add water storage to the greenhouse corrcetly.
 12) In-Game Help has been completely rewritten to match the new version.
 13) (NEW) Animal Husbandries should no longer spawn partial or empty pallets. (30/7)
+14) (NEW) Fixed Bunkers to not show inputs (you manually load it, cover it, let it ferment and then uncover it... So there are no DR Inputs), and read filltypes properly so that modded ones work correctly for outputs. (30/7)
 
 Added
 1) Support added for the Grazing Pastures Mod
