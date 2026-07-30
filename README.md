@@ -15,7 +15,7 @@ v1.0.0.2 - Released
 - Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
 
 V1.1.0.0 Release candidate Changelog (To Date)
-Changelog Last updated: 29/07/2026
+Changelog Last updated: 30/07/2026
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -30,6 +30,7 @@ Fixed
 10) Fixed issues caused by overlaping husbandy and/or production pallet control areas. Pallets are now limited to the spawn box of the production and properly owned by the producing buidling.
 11) Water extensions for greenhouses can now be placed again and add water storage to the greenhouse corrcetly.
 12) In-Game Help has been completely rewritten to match the new version.
+13) (NEW) Animal Husbandries should no longer spawn partial or empty pallets. (30/7)
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -42,7 +43,8 @@ Added
 8) Made UI numbers update realtime rather than only on UI close and reopen.
 9) Adjusted how inputs and outputs are shown on the production UI. Inputs and outputs will now only show for production lines that are turned on.
 10) Added an option in settings to make animal pens spawn pallets the same as production (i.e. wait until 1000l produced then spawn pallet). This ensures only full pallets are spawned and makes reporting of volumes more accurate, but can be turned off to revert to the original.
-11) Added ability to track manual adding or removal of material in the Overview (e.g. removig a plalet from a pallet spawner or removing/adding grain to silo with a trailer). 
+11) Added ability to track manual adding or removal of material in the Overview (e.g. removig a plalet from a pallet spawner or removing/adding grain to silo with a trailer).
+12) (NEW) Added the ability to manually tip product to markets/kiosks and have it obey the output mode (previously would just immediately sell regardless of the setting). (30/7) 
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:

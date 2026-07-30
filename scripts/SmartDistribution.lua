@@ -1083,7 +1083,7 @@ function SmartDistribution.marketAccepts(p, ft)
 end
 -- mod-side virtual buffer + per-market sell timing (persisted + synced).
 SmartDistribution._marketBuffer = {}   -- uid -> ft -> litres (<= MARKET_CAP)
-SmartDistribution._marketTiming = {}   -- uid -> ft -> sell mode: 1 = best price, 2 = hold (0/immediate omitted)
+SmartDistribution._marketTiming = {}   -- uid -> ft -> sell mode; the DEFAULT (hold) is omitted, 0/1 stored
 SmartDistribution._marketPriceHigh = {}   -- uid -> ft -> highest effective price seen (session; best-price target)
 function SmartDistribution.marketBufferLevel(uid, ft)
     local b = uid ~= nil and SmartDistribution._marketBuffer[uid] or nil
@@ -1099,14 +1099,26 @@ end
 SmartDistribution.MARKET_IMMEDIATE = 0
 SmartDistribution.MARKET_BEST      = 1
 SmartDistribution.MARKET_HOLD      = 2
+-- A market's DEFAULT is HOLD: with nothing configured it behaves as a store, accumulating whatever arrives
+-- -- routed by DR or tipped in by hand -- and sells nothing until the player says so. Product is never
+-- disposed of behind your back, and a market you have not set up cannot quietly sell a harvest at a bad
+-- price. The buffer filling to marketCap is a self-limiting stop: marketTransferPhase then computes zero
+-- room and the network simply stops pushing, leaving product at the source.
+--
+-- The sparse-storage convention is "omit the DEFAULT", so this constant has to be used by every site that
+-- decides whether an entry is worth keeping -- the setter, the save, the load and the MP join replay. It
+-- used to be a bare `0` in all four, which would have made an explicitly chosen "Immediate" store nothing,
+-- read back as the new default HOLD, and vanish on save/load and on join.
+SmartDistribution.MARKET_DEFAULT   = SmartDistribution.MARKET_HOLD
 function SmartDistribution.marketSellMode(uid, ft)
     local b = uid ~= nil and SmartDistribution._marketTiming[uid] or nil
-    return (b ~= nil and b[ft]) or 0
+    -- a stored 0 (Immediate) survives this: 0 is truthy in Lua, so only a genuinely absent entry defaults
+    return (b ~= nil and b[ft]) or SmartDistribution.MARKET_DEFAULT
 end
 function SmartDistribution.setMarketSellMode(uid, ft, mode)
     if uid == nil or ft == nil then return end
     local b = SmartDistribution._marketTiming[uid]
-    if mode ~= nil and mode ~= 0 then
+    if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
         if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
         b[ft] = mode
     elseif b ~= nil then
@@ -2171,13 +2183,31 @@ local function slotMove(slot, c, give, bill)
     -- the reserve caps what may LEAVE; the storage write below still works off the real stock
     local amount = math.min(give, slot.need, SmartDistribution.drawableLevel(c.placeable, c.ft, stock))
     if amount <= ALLOC_EPS then return 0 end
+    -- A source that cannot honour the level it advertised would otherwise INVENT product: deposit credits
+    -- the consumer first and the debit below was simply assumed to succeed. transfer() has carried a
+    -- verifyDrain guard for this since 5.25; this path had none, and a pen's asynchronous pallet release
+    -- tripped it every second hour -- measured in savegame1 as 16.3 L of eggs conjured per 2 cycles, on 24
+    -- cycles out of 24, with the coop's queue never touched.
+    -- So for a source that can fall short: take the litres FIRST, offer only what genuinely came out, and
+    -- hand back anything the consumer then refuses. Both sides always agree on what moved.
+    local prepaid = 0
+    if c.storage.verifyDrain and not SmartDistribution.dryRun then
+        setLevel(c.storage, c.ft, stock - amount, slot.farmId, -amount)
+        prepaid = stock - getLevel(c.storage, c.ft)
+        if prepaid <= ALLOC_EPS then return 0 end
+        amount = prepaid
+    end
     local accepted = slot.deposit(c.ft, amount, SmartDistribution.dryRun) or 0
+    if prepaid > ALLOC_EPS and accepted < prepaid then
+        local back = prepaid - accepted
+        setLevel(c.storage, c.ft, getLevel(c.storage, c.ft) + back, slot.farmId, back)
+    end
     if accepted <= ALLOC_EPS then return 0 end
     if SmartDistribution.dryRun then
         log("[dry-run] would move %.0f %s : %s -> %s", accepted, fillTypeName(c.ft),
             placeableName(c.placeable), placeableName(slot.placeable))
     else
-        setLevel(c.storage, c.ft, stock - accepted, slot.farmId, -accepted)
+        if prepaid <= ALLOC_EPS then setLevel(c.storage, c.ft, stock - accepted, slot.farmId, -accepted) end
         ledgerAdd(c.placeable, c.ft, "dist", accepted)            -- distributed-out, source side
         ledgerAdd(slot.placeable, c.ft, "received", accepted)     -- received-in, recipient side (productions inputs, troughs, ...)
         log("move %.0f %s : %s -> %s", accepted, fillTypeName(c.ft), placeableName(c.placeable), placeableName(slot.placeable))
@@ -3563,10 +3593,14 @@ function SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz,
     return moved
 end
 
--- same, but the source is a pallet spawner (coop eggs / sheep wool / beehive honey): drain pallets.
+-- same, but the source is a pallet spawner (coop eggs / sheep wool / beehive honey): drain pallets, then the
+-- internal queue -- the same "a pen's stock is pad + queue" rule the distribute proxy follows (5.25).
+-- Market Supply already reached the queue before this, just indirectly and badly: the distribute path used to
+-- dump the whole queue onto the pad as a part-filled pallet and the market took it from there. Reading the
+-- queue directly keeps the throughput identical while nothing has to be materialised to move it.
 function SmartDistribution.transferPalletsToMarkets(spawner, ft, farmId, sx, sz, reach, maxAmount)
-    local level = palletFillLevel(spawner, ft)
-    if level == nil or level <= 0 then return 0 end
+    local level = (palletFillLevel(spawner, ft) or 0) + SmartDistribution.releasableLiters(spawner, ft)
+    if level <= 0 then return 0 end
     local budget = (maxAmount ~= nil) and math.min(level, maxAmount) or level
     local moved = 0
     for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(spawner, farmId, ft, sx, sz, reach)) do
@@ -3575,6 +3609,7 @@ function SmartDistribution.transferPalletsToMarkets(spawner, ft, farmId, sx, sz,
         local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
         if want > 0 then
             local drained = drainPallets(spawner, ft, want, farmId)
+            if drained < want then drained = drained + SmartDistribution.drawFromQueue(spawner, ft, want - drained) end
             if drained <= 0 then break end
             SmartDistribution.marketBufferAdd(muid, ft, drained)
             ledgerAdd(mm.p, ft, "received", drained)
@@ -3632,7 +3667,9 @@ function SmartDistribution.marketTransferPhase(manager)
                 for _, ft in ipairs(pfts) do
                     local m = resolveMode(p, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
-                        local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, palletFillLevel(p, ft)))
+                        -- pad + queue, matching what transferPalletsToMarkets can actually move
+                        local padQ = (palletFillLevel(p, ft) or 0) + SmartDistribution.releasableLiters(p, ft)
+                        local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, padQ))
                         if amt > 0 then local moved = SmartDistribution.transferPalletsToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
                     end
                 end
@@ -3716,6 +3753,12 @@ function SmartDistribution.marketSell(station, farmId, ft, liters)
     local mission = g_currentMission
     if before ~= nil and mission ~= nil and mission.addMoney ~= nil and type(station.addFillLevelFromTool) == "function" then
         local tt = (ToolType ~= nil) and (ToolType.UNDEFINED or ToolType.UNKNOWN) or nil
+        -- Mark this as DR's OWN sale. installMarketManualFill wraps this very method to divert hand-tipped
+        -- product into the market buffer, so without the flag DR's sale would be diverted straight back into
+        -- the buffer it is trying to empty and nothing could ever leave. Depth restored, not decremented, so
+        -- a throw below cannot leave it stuck on.
+        local selfDepth = SmartDistribution._marketSelfSell or 0
+        SmartDistribution._marketSelfSell = selfDepth + 1
         -- Suppress the station's OWN per-sale notification (the base-game "sold products" money-change).
         -- forceShowChange=false on addMoney isn't enough by itself -- a normal-sized sale still pushes a
         -- money-change straight to the HUD -- so we also no-op the money-change / notification calls for the
@@ -3736,6 +3779,7 @@ function SmartDistribution.marketSell(station, farmId, ft, liters)
         if rAddMC  ~= nil then mission.addMoneyChange        = noop end
         if rIngame ~= nil then mission.addIngameNotification = noop end
         pcall(function() station:addFillLevelFromTool(farmId, liters, ft, nil, tt, nil) end)
+        SmartDistribution._marketSelfSell = selfDepth
         mission.addMoney = realAddMoney
         if rHudMC  ~= nil then hud.addMoneyChange           = rHudMC  end
         if rShowMC ~= nil then mission.showMoneyChange       = rShowMC end
@@ -3753,6 +3797,98 @@ function SmartDistribution.marketSell(station, farmId, ft, liters)
     applyMoney(liters * price * 1.20, farmId, mt)          -- native path unavailable / paid nothing: abstract sale, silent + tallied
     log("market sold %d %s: abstract %d (native price %.4f x1.2)", liters, fillTypeName(ft), math.floor(liters * price * 1.20), price)
     return liters * price * 1.20
+end
+
+-- ---- manual tipping into an owned market -----------------------------------
+-- A player hauling a trailer to their own market's fill trigger was paid on the spot: the trigger goes
+-- straight to the station's addFillLevelFromTool, which IS the base game's instant sale. So the per-product
+-- sell timing on the Markets tab -- Immediate / Best price / Hold -- governed only what DR itself routed
+-- there, and hand-delivered product ignored it completely.
+--
+-- These divert that call into the SAME virtual buffer marketTransferPhase fills, so a manual tip obeys the
+-- timing already set for that product and is sold by marketSellPhase at the price prevailing then, with the
+-- usual +20% bonus. Nothing is paid at tipping time.
+--
+-- Deliberately SELF-LIMITING: it diverts only when the player has actively set Best price or Hold on that
+-- product. Left at the default (Immediate) the base call runs untouched -- so no existing save changes
+-- behaviour, "sell it now" still means now, and every selling station that is not one of this farm's own
+-- markets is never affected at all.
+--
+-- Station -> market placeable. A station carries no back-reference to its placeable, so the map is built
+-- from the placeable system and rebuilt only when the placeable count changes (the _soMap /
+-- spawnerAssetList pattern). This sits on the trigger's call path, so it has to be a table lookup.
+SmartDistribution._marketByStation    = nil
+SmartDistribution._marketStationCount = -1
+function SmartDistribution.marketOfStation(station)
+    if station == nil then return nil end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return nil end
+    local n = #ps.placeables
+    if SmartDistribution._marketByStation == nil or SmartDistribution._marketStationCount ~= n then
+        local map = {}
+        for _, p in ipairs(ps.placeables) do
+            if SmartDistribution.isMarket(p) then
+                local st = SmartDistribution.marketStationOf(p)
+                if st ~= nil then map[st] = p end
+            end
+        end
+        SmartDistribution._marketByStation    = map
+        SmartDistribution._marketStationCount = n
+    end
+    return SmartDistribution._marketByStation[station]
+end
+
+-- How many of `liters` should be banked rather than sold on the spot. 0 means "do exactly what the base
+-- game always did", which is the answer for an Immediate product, an unenrolled market, or a full buffer.
+function SmartDistribution.marketDivertLiters(p, ft, liters)
+    if p == nil or ft == nil or (liters or 0) <= 0 then return 0 end
+    if not isEnrolled(p) then return 0 end
+    if S.global.excludedFillTypes[ft] then return 0 end
+    local uid = getUid(p); if uid == nil then return 0 end
+    if SmartDistribution.marketSellMode(uid, ft) == SmartDistribution.MARKET_IMMEDIATE then return 0 end
+    local room = SmartDistribution.marketCap(p) - SmartDistribution.marketBufferLevel(uid, ft)
+    if room <= 0 then return 0 end
+    return math.min(liters, room)
+end
+
+function SmartDistribution.installMarketManualFill()
+    if SmartDistribution._marketFillInstalled then return end   -- installing twice would make the hook call itself
+    SmartDistribution._marketFillInstalled = true
+    if SellingStation == nil or type(SellingStation.addFillLevelFromTool) ~= "function" then
+        log("market manual fill: SellingStation.addFillLevelFromTool not found; hand-tipped product will keep selling on the spot [VERIFY]")
+        return
+    end
+    -- Read resolves through the class chain, so this captures UnloadingStation's implementation when
+    -- SellingStation does not override it; the assignment only ever writes to SellingStation itself.
+    -- The original goes on SmartDistribution, never into a local (200-local ceiling).
+    SmartDistribution._origStationFill = SellingStation.addFillLevelFromTool
+    SellingStation.addFillLevelFromTool = function(self, farmId, delta, ft, ...)
+        local orig = SmartDistribution._origStationFill
+        -- DR's own sale (marketSell calls this method), a multiplayer CLIENT (the server owns the buffer,
+        -- and diverting locally too would double-count), or anything that is not a positive number of
+        -- litres: hands off entirely.
+        if (SmartDistribution._marketSelfSell or 0) > 0 or not S.master
+           or type(delta) ~= "number" or delta <= 0 or ft == nil then
+            return orig(self, farmId, delta, ft, ...)
+        end
+        local p = SmartDistribution.marketOfStation(self)
+        if p == nil then return orig(self, farmId, delta, ft, ...) end
+        local take = SmartDistribution.marketDivertLiters(p, ft, delta)
+        if take <= 0 then return orig(self, farmId, delta, ft, ...) end
+        SmartDistribution.marketBufferAdd(getUid(p), ft, take)
+        -- LOADED, not received: 5.8 reserves `received` for litres DR itself delivered, and this arrived by
+        -- hand. Ledgered only on the DIVERTED litres -- the overflow goes through the base call, and
+        -- anything that writes to a Storage is already the manual tracker's business.
+        ledgerAdd(p, ft, "loaded", take)
+        log("market manual fill %s [%s]: %d L banked, %d L overflow",
+            placeableName(p), tostring(fillTypeName(ft)), math.floor(take), math.floor(delta - take))
+        if delta - take <= 0 then return delta end          -- banked the lot; report it all accepted
+        -- Buffer full for the remainder: let the base game sell that, so a trailer never refuses to empty
+        -- at what is, after all, a selling station.
+        local rest = orig(self, farmId, delta - take, ft, ...)
+        return take + ((type(rest) == "number") and rest or (delta - take))
+    end
+    log("market manual fill interception installed (SellingStation.addFillLevelFromTool)")
 end
 
 -- Best-price gate for a market product. Sells when this market's current effective price is within ~5%
@@ -4157,37 +4293,68 @@ function SmartDistribution.releasableLiters(p, ft)
     return SmartDistribution.palletPendingLiters(p, ft) or 0
 end
 
--- Materialise enough of the internal queue to serve `need` litres. Full pallets while the buffer holds
--- one; a PART-filled pallet when it does not and a consumer is genuinely waiting -- serving a real demand
--- beats hoarding, and vanilla part-fills pallets constantly so the primitive is well-trodden.
--- The leftover simply stays on the pad as ordinary stock and serves the following cycles, so one 1000 L
--- release answers a 32 L/h consumer for the next thirty hours.
-function SmartDistribution.releaseForDemand(p, ft, need)
-    if p == nil or ft == nil or (need or 0) <= 0 then return end
-    if SmartDistribution.releasableLiters(p, ft) <= 0 then return end
-    local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
-    local pend = SmartDistribution.palletPendingLiters(p, ft) or 0
-    if cap > 0 and pend >= cap then
-        SmartDistribution.spawnPalletsFromHusbandry(p, ft, math.max(1, math.ceil(need / cap)))
-    else
-        SmartDistribution.spawnPalletsFromHusbandry(p, ft, 1, true)   -- partial: less than a pallet on hand
-    end
+-- Serve a draw straight out of the internal queue -- NO pallet involved.
+--
+-- This replaces an earlier "materialise the queue into a pallet, then drain the pallet" release, which was
+-- the cause of three distinct in-game faults on a chicken coop (savegame1, mode Distribute + Market Supply):
+--   * PART-FILLED PALLETS. It dumped the WHOLE queue onto the pad to serve any demand at all, however
+--     small -- a 16 L/h bakery order materialised a 130-150 L pallet -- so "Whole pallets from pens" (5.20)
+--     was defeated outright whenever a consumer existed. The pad never got to accumulate to a full pallet.
+--   * EMPTY PALLETS. PalletSpawner:spawnPallet is ASYNCHRONOUS (proven below), and nothing debited
+--     pendingLiters until its callback ran, so a second draw -- another consumer, or simply the next hourly
+--     pass, which during sleep / fast-forward runs in the SAME frame -- saw the queue still full and queued
+--     ANOTHER spawn. The first pallet took all the litres and the rest filled 0 L. A 0 L pallet was then
+--     immortal: drainPallets only deletes what it drains to zero.
+--   * PHANTOM DELIVERIES. With the release in flight the pen handed over nothing, but the consumer had
+--     already been credited (see slotMove). Ledgered in savegame1 as 16.3 L of eggs conjured every second
+--     hour, 24 cycles out of 24.
+--
+-- The async proof is in that save's monthly ring: a dead-regular two-cycle alternation, `stored`=0 on odd
+-- cycles and ~133.7 on even ones, with produced=75 L/h throughout. 133.7 = 150 - 16.3, i.e. exactly two
+-- hours of production minus one distribute -- so the pallet a cycle released only became drainable in the
+-- NEXT cycle. A synchronous release cannot produce that pattern.
+--
+-- A pallet DR drains and deletes in the same breath was never anything but ceremony. 5.25 only spawned one
+-- because "pendingLiters is a bare number with no transfer API"; the right move is to give it one. Being
+-- synchronous, it also lands the delivery in the SAME cycle instead of an hour later.
+function SmartDistribution.drawFromQueue(p, ft, want)
+    if p == nil or ft == nil or (want or 0) <= 0 then return 0 end
+    local avail = SmartDistribution.releasableLiters(p, ft)   -- 0 for a beehive and under HOLD_INTERNAL
+    if avail <= 0 then return 0 end
+    local hs = p.spec_husbandryPallets
+    if hs == nil or type(hs.pendingLiters) ~= "table" then return 0 end
+    local took = math.min(want, avail)
+    hs.pendingLiters[ft] = math.max(0, (hs.pendingLiters[ft] or 0) - took)
+    return took
+end
+
+-- Hand litres back. Only ever used to undo an over-draw (a consumer accepting less than was taken out), so
+-- these are always litres that just came from this pen. Note they return to the QUEUE even if they came off
+-- the pad: same building, same stock, and with whole-pallet spawning the queue is where product waits.
+function SmartDistribution.returnToQueue(p, ft, litres)
+    if p == nil or ft == nil or (litres or 0) <= 0 then return 0 end
+    local hs = p.spec_husbandryPallets
+    if hs == nil or type(hs.pendingLiters) ~= "table" then return 0 end
+    hs.pendingLiters[ft] = (hs.pendingLiters[ft] or 0) + litres
+    return litres
 end
 
 function makePalletSourceProxy(p)
     return {
-        -- verifyDrain: a release can fail (spawn refused, pad full, or not resolved this frame), so the
-        -- level reported here is a best case. transfer re-reads and credits only what actually left.
+        -- verifyDrain: kept even though both halves are now synchronous and honour their advertised level.
+        -- It costs one re-read and it is the guard that stops a short delivery inventing product.
         verifyDrain  = true,
         getFillLevel = function(_, ft)
             return (palletFillLevel(p, ft) or 0) + SmartDistribution.releasableLiters(p, ft)
         end,
         addFillLevel = function(_, farmId, ft, delta)
-            if delta == nil or delta >= 0 then return end
+            if delta == nil or delta == 0 then return end
+            if delta > 0 then SmartDistribution.returnToQueue(p, ft, delta); return end
+            -- PAD first, queue second: spend the pallets physically standing there before touching the
+            -- buffer, so the buffer stays free to accumulate toward the next whole pallet.
             local want = -delta
-            local pad  = palletFillLevel(p, ft) or 0
-            if want > pad then SmartDistribution.releaseForDemand(p, ft, want - pad) end
-            drainPallets(p, ft, want, farmId)
+            local got  = drainPallets(p, ft, want, farmId)
+            if got < want then SmartDistribution.drawFromQueue(p, ft, want - got) end
         end,
     }
 end
@@ -5058,7 +5225,8 @@ function SmartDistribution.runHourly(manager)
     cycleAcc = {}                                              -- begin per-cycle accounting
     SmartDistribution._palletOut = {}                         -- per-pass tally of litres shipped OFF PALLETS (vs straight from a buffer)
     SmartDistribution.observeHusbandryProduction()            -- record husbandry output produced since last cycle (pre-drain)
-    SmartDistribution.spawnWholePallets()                     -- phase 0b: release FULL pallets from pen buffers (setting); before slots so they are sources this pass
+    SmartDistribution.sweepEmptyPadPallets()                   -- phase 0b: clear empty pallets an older build left standing on a pen's pad
+    SmartDistribution.spawnWholePallets()                     -- phase 0c: release FULL pallets from pen buffers (setting); before slots so they are sources this pass
     local bill = {}
     local slots = {}
     SmartDistribution.collectVirtualProduction(manager)        -- materialise sellDirectly outputs set to Distribute (electricity/methane) as sources BEFORE allocation
@@ -5280,7 +5448,8 @@ local function saveOverrides(missionInfo)
     local mtc = 0
     for uid, byFt in pairs(SmartDistribution._marketTiming) do
         for ft, mode in pairs(byFt) do
-            if mode ~= nil and mode ~= 0 then
+            -- MARKET_DEFAULT, not 0: the omitted value is the default, and 0 (Immediate) is a real choice
+            if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
                 local k = string.format("smartDistribution.marketTiming(%d)", mtc)
                 setXMLString(xml, k .. "#uniqueId", tostring(uid))
                 setXMLString(xml, k .. "#fillType", fillTypeName(ft))
@@ -5588,7 +5757,10 @@ local function loadOverrides()
         local ftName = getXMLString(xml, k .. "#fillType")
         local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
         local mode = getXMLInt(xml, k .. "#sellMode")
-        if ft ~= nil and mode ~= nil and mode ~= 0 then
+        -- A save written before markets defaulted to Hold carries entries only for 1 and 2, with absent
+        -- meaning Immediate. Absent now means Hold, so those products migrate to Hold on load -- that is the
+        -- intended behaviour change (a market holds until told to sell), not a loss of configuration.
+        if ft ~= nil and mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
             local b = SmartDistribution._marketTiming[uid]; if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
             b[ft] = mode
         end
@@ -5854,20 +6026,38 @@ function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
     local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
     local avail  = hs.pendingLiters[ft] or 0
     local amount = math.min(cap > 0 and cap or avail, avail)
-    if amount <= 0 then return 0 end
-    local added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
-    if added > 0 then hs.pendingLiters[ft] = math.max(0, avail - added) end
-    if added > 0 and SmartDistribution._spawnCompleteCb ~= nil then pcall(SmartDistribution._spawnCompleteCb) end
+    local added  = 0
+    if amount > 0 then
+        added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
+    end
+    if added <= 0 then
+        -- Nothing went in, so this pallet is EMPTY -- and an empty pallet left on the pad is immortal
+        -- (drainPallets only ever deletes one it drains to zero) and worthless: with vanilla auto-spawn
+        -- suppressed, nothing will ever fill it. It is brand new and ours, so take it straight back out.
+        --
+        -- This is the backstop that makes every remaining async-spawn race harmless rather than needing a
+        -- reservation scheme. spawnPallet's callback is asynchronous, so during sleep / fast-forward -- where
+        -- many hourly passes run inside ONE frame -- several passes can each request a spawn against the same
+        -- buffered litres before any callback debits it. The first pallet to resolve takes the litres and the
+        -- rest arrive empty; those are deleted here. Wasted churn, but the litres are never lost (an unfilled
+        -- pallet leaves pendingLiters untouched) and no junk pallet survives.
+        if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+        if type(hs.pallets) == "table" then hs.pallets[pallet] = nil end
+        return 0
+    end
+    hs.pendingLiters[ft] = math.max(0, avail - added)
+    if SmartDistribution._spawnCompleteCb ~= nil then pcall(SmartDistribution._spawnCompleteCb) end
     return added
 end
 
 -- Spawn up to `count` filled pallets of `ft` from a husbandry's internal buffer, SERIALLY (each fills +
 -- debits pendingLiters in its load callback before the next spawns). Stops early when the buffer drops
 -- below one pallet. Uses the coop's own base-game PalletSpawner. Returns pallets requested (best effort).
--- allowPartial: release even when the buffer holds less than a full pallet. Used only by
--- releaseForDemand, where a consumer is actually waiting on the product; every other caller (the UI
--- button, whole-pallet spawning) still requires a full pallet's worth.
-function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count, allowPartial)
+-- A full pallet's worth is required, with NO exception. The old `allowPartial` escape hatch existed for
+-- releaseForDemand, which is gone: demand is now served straight from the queue (drawFromQueue) and never
+-- by materialising a part-filled pallet. So every caller -- the UI button, whole-pallet spawning -- holds to
+-- the same rule, and a pallet DR releases is always a full one.
+function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count)
     local hs = p ~= nil and p.spec_husbandryPallets or nil
     if hs == nil or ft == nil or type(hs.pendingLiters) ~= "table" then return 0 end
     local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
@@ -5875,7 +6065,7 @@ function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count, allowPartial)
     count = math.max(1, math.min(math.floor(count or 1), 50))
     local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
     local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
-    local floorL = allowPartial and 1 or (cap > 0 and cap or 1)
+    local floorL = (cap > 0 and cap or 1)
     local function spawnNext(remaining)
         if remaining <= 0 then return end
         if (hs.pendingLiters[ft] or 0) < floorL then return end
@@ -8751,7 +8941,7 @@ function SmartDistribution.marketBufferOf(market, ft)
 end
 -- per-(market, ft) sell-mode label for the MODE column.
 function SmartDistribution.marketProductLabel(market, ft)
-    if market == nil then return "Sell  -  Immediate" end
+    if market == nil then return "Hold" end                    -- no market resolved: report the default
     local m = SmartDistribution.marketSellMode(getUid(market), ft)
     if m == SmartDistribution.MARKET_HOLD then return "Hold" end
     if m == SmartDistribution.MARKET_BEST then return "Sell  -  Best price" end
@@ -8759,7 +8949,7 @@ function SmartDistribution.marketProductLabel(market, ft)
 end
 -- current per-(market, ft) sell mode (0/1/2), taking the market placeable.
 function SmartDistribution.marketModeOf(market, ft)
-    if market == nil or ft == nil then return 0 end
+    if market == nil or ft == nil then return SmartDistribution.MARKET_DEFAULT end
     return SmartDistribution.marketSellMode(getUid(market), ft)
 end
 -- short sell-type label (Immediate / Best price) for the footer button; nil while Held.
@@ -8813,7 +9003,7 @@ function SmartDistribution.forEachMarketTiming(fn)
             local byFt = SmartDistribution._marketTiming[getUid(p)]
             if byFt ~= nil then
                 for ft, mode in pairs(byFt) do
-                    if mode ~= nil and mode ~= 0 then fn(p, ft, mode) end
+                    if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then fn(p, ft, mode) end
                 end
             end
         end
@@ -10398,6 +10588,43 @@ function SmartDistribution.spawnWholePallets()
         end
     end
 end
+
+-- Clear EMPTY pallets off a pen's pad. Nothing else can: drainPallets only deletes a pallet it drains to
+-- zero, so a pallet that reached 0 L by any other route stayed there forever.
+--
+-- Only reachable state now is a save that already had them -- an earlier build spawned pallets it could not
+-- fill (see _fillSpawnedPalletFromHusbandry) and left them standing. Guarded two ways so a player's own
+-- property is never touched: the pallet must be one the PEN spawned (still in the spec's own tracked set),
+-- and vanilla auto-spawn must be suppressed for that fill type -- otherwise the base game's trickle-fill
+-- owns the pad and an empty pallet there is simply one it is about to fill.
+function SmartDistribution.sweepEmptyPadPallets()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        local hs = p.spec_husbandryPallets
+        if hs ~= nil and type(hs.pallets) == "table" then
+            local held = SmartDistribution.suppressedPalletFillTypes(p)
+            if held ~= nil then
+                for _, ft in ipairs(held) do
+                    for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
+                        if hs.pallets[pallet] ~= nil then
+                            local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
+                            local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
+                            if lvl <= 0 then
+                                if SmartDistribution.debug then
+                                    log("sweepEmptyPad %s [%s]: removing an empty pallet",
+                                        placeableName(p), tostring(fillTypeName(ft)))
+                                end
+                                if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+                                hs.pallets[pallet] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
 function SmartDistribution.installHoldInternalPalletSuppression()
     if PlaceableHusbandryPallets == nil or PlaceableHusbandryPallets.updatePallets == nil then
         log("hold-internal pallet suppression: PlaceableHusbandryPallets.updatePallets not found [VERIFY]")
@@ -10443,6 +10670,7 @@ installInteraction()
 installHusbandryPatch()
 SmartDistribution.installHoldInternalPalletSuppression()
 SmartDistribution.installManualTransferTracking()
+SmartDistribution.installMarketManualFill()
 installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
