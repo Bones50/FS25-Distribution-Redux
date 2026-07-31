@@ -171,6 +171,10 @@ function DistributionOverviewPage:onGuiSetupFinished()
         self.statsList:setDataSource(self)
         self.statsList:setDelegate(self)
     end
+    if self.settingsList ~= nil then
+        self.settingsList:setDataSource(self)
+        self.settingsList:setDelegate(self)
+    end
     local function initOption(opt, texts, state)
         if opt == nil or opt.setTexts == nil then return end
         opt:setTexts(texts)
@@ -258,7 +262,8 @@ function DistributionOverviewPage:rebuildRows()
 
     local all = nil
     if SmartDistribution ~= nil and SmartDistribution.overviewRows ~= nil then
-        local ok, r = pcall(SmartDistribution.overviewRows, self:currentWindow(), self.grouped, chainFt)
+        local ok, r = pcall(SmartDistribution.overviewRows, self:currentWindow(), self.grouped, chainFt,
+                            self:settingsViewOn())
         if ok and type(r) == "table" then all = r end
     end
     all = all or {}
@@ -296,19 +301,28 @@ end
 
 function DistributionOverviewPage:onFrameOpen()
     DistributionOverviewPage:superClass().onFrameOpen(self)
-    self._realtimeLists = { "statsList" }
+    -- the view survives leaving and re-entering the tab, so everything here follows it rather than statsList
+    local on = self:settingsViewOn()
+    self._realtimeLists = { on and "settingsList" or "statsList" }
     local function syncState(opt, state)
         if opt ~= nil and opt.setState ~= nil then pcall(function() opt:setState(state) end) end
     end
     syncState(self.periodOption,     self.periodIndex)
     syncState(self.filterModeOption, self.filterMode)
     syncState(self.groupOption,      self.grouped and 2 or 1)
+    local function vis(el, show) if el ~= nil and el.setVisible ~= nil then el:setVisible(show) end end
+    vis(self.flowHeaderRow,     not on)
+    vis(self.flowListBox,       not on)
+    vis(self.settingsHeaderRow, on)
+    vis(self.settingsListBox,   on)
+    self:updateViewButton()
     self:rebuildRows()
-    if self.statsList ~= nil then self.statsList:reloadData() end
+    local list = self:activeList()
+    if list ~= nil then list:reloadData() end
 
     self:setSoundSuppressed(true)
-    if self.statsList ~= nil then
-        FocusManager:setFocus(self.statsList)
+    if list ~= nil then
+        FocusManager:setFocus(list)
     end
     self:setSoundSuppressed(false)
 end
@@ -321,9 +335,16 @@ local function stateOf(opt, state, count)
     return nil
 end
 
+-- the list currently on screen; every reload goes through this so the two views cannot drift apart
+function DistributionOverviewPage:activeList()
+    if self:settingsViewOn() then return self.settingsList end
+    return self.statsList
+end
+
 function DistributionOverviewPage:applySelectorChange()
     self:rebuildRows()
-    if self.statsList ~= nil then self.statsList:reloadData() end
+    local l = self:activeList()
+    if l ~= nil then l:reloadData() end
 end
 
 function DistributionOverviewPage:onPeriodChanged(state)
@@ -348,6 +369,14 @@ function DistributionOverviewPage:onFilterValueChanged(state)
 end
 
 function DistributionOverviewPage:onGroupChanged(state)
+    -- Grouping is forced off in the settings view: settings are per building, and a summed "Bakery x2" row
+    -- has no single cap, reserve or destination count to show. Snap the widget back rather than accept it.
+    if self:settingsViewOn() then
+        if self.groupOption ~= nil and self.groupOption.setState ~= nil then
+            pcall(function() self.groupOption:setState(1) end)
+        end
+        return
+    end
     local s = stateOf(self.groupOption, state, #GROUP_LABELS)
     if s ~= nil then
         local on = (s == 2)
@@ -363,11 +392,12 @@ end
 
 -- ---- SmoothList data source / delegate -------------------------------------
 function DistributionOverviewPage:getNumberOfItemsInSection(list, section)
-    if list == self.statsList then return #self.rows end
+    if list == self.statsList or list == self.settingsList then return #self.rows end
     return 0
 end
 
 function DistributionOverviewPage:populateCellForItemInSection(list, section, index, cell)
+    if list == self.settingsList then return self:populateSettingsCell(index, cell) end
     if list ~= self.statsList then return end
     local r = self.rows[index]
     if r == nil then return end
@@ -394,5 +424,197 @@ function DistributionOverviewPage:populateCellForItemInSection(list, section, in
     setIcon(cell, "productIcon", r.productIcon)
 end
 
-function DistributionOverviewPage:onListSelectionChanged(list, section, index) end
-function DistributionOverviewPage:onClickStatsRow(element) end
+-- ---- row double-click: jump to that building's own tab ---------------------
+-- SmoothList has no double-click event, so it is assembled from the two callbacks it does give: selection
+-- tracks WHICH row, and a second click on that same row inside DOUBLE_CLICK_SEC is the gesture. Clicking a
+-- row that is already selected does not re-fire onSelectionChanged, which is exactly why the index is
+-- remembered from the selection callback rather than read back off the widget at click time.
+local DOUBLE_CLICK_SEC = 0.4
+
+function DistributionOverviewPage:onListSelectionChanged(list, section, index)
+    self._selIndex = index
+end
+
+-- Identity, not list position: the table re-enumerates every 2 s and rows can reorder or drop between the
+-- two clicks, which would otherwise land the gesture on whatever building slid into that index.
+local function rowKey(r)
+    if r == nil then return nil end
+    return tostring(r.uid) .. "|" .. tostring(r.ft)
+end
+
+function DistributionOverviewPage:onClickStatsRow(element)
+    local idx = self._selIndex
+    if idx == nil then return end
+    local key = rowKey(self.rows[idx])
+    if key == nil then return end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    if now ~= nil and self._lastClickKey == key and self._lastClickTime ~= nil
+       and (now - self._lastClickTime) <= DOUBLE_CLICK_SEC then
+        self._lastClickKey, self._lastClickTime = nil, nil      -- consume it, so a third click is a fresh first
+        self:openRowBuilding(idx)
+        return
+    end
+    self._lastClickKey, self._lastClickTime = key, now
+end
+
+-- Reuses the same path [ + gaze uses to open the menu on a building, so tab choice per asset class
+-- (production / silo / husbandry / heap / market) and the green tab highlight are handled in one place.
+function DistributionOverviewPage:openRowBuilding(index)
+    local r = self.rows[index]
+    local p = r ~= nil and r.placeable or nil
+    if p == nil or SmartDistribution == nil or SmartDistribution.jumpMenuToAsset == nil then return end
+    pcall(SmartDistribution.jumpMenuToAsset, p)
+end
+
+-- ---- settings view ---------------------------------------------------------
+-- The same rows with the flow figures swapped for the Advanced Inputs / Outputs configuration behind them.
+-- Row parity is deliberate (asked for): toggling must not change WHICH rows are listed, so every filter
+-- carries across untouched and the inclusion rule is shared. Grouping is the one exception -- settings are
+-- per building and "Bakery x2" has no single answer -- so it is forced off here and RESTORED on the way back.
+
+-- Held vs the effective Max in. Orange from CAP_NEAR, red at or over the cap: "nearing the set cap".
+local CAP_NEAR = 0.90
+local CAP_FULL = 1.00
+
+-- Short status words. The building tabs have room for "Active (Receiving)"; a 140px column does not, and
+-- the header already says IN / OUT, so the qualifier carries no information here.
+local IN_WORD  = { ACTIVE = "Receiving", IDLE = "Idle", BLOCKED = "Blocked" }
+local OUT_WORD = { ACTIVE = "Sending",   IDLE = "Idle", BLOCKED = "Blocked" }
+
+local function setCellColor(cell, name, rgba)
+    local c = cell:getAttribute(name)
+    if c == nil or c.setTextColor == nil then return end
+    -- SmoothList RECYCLES cells, so the uncoloured case must actively reset to white or a row inherits the
+    -- colour of whatever row last used that cell (the bug 5.7 already had to fix once on this page).
+    if rgba == nil then c:setTextColor(1, 1, 1, 1) else c:setTextColor(rgba[1], rgba[2], rgba[3], rgba[4]) end
+end
+
+local function pctText(pct, liters, explicit)
+    if type(pct) ~= "number" then return "-" end
+    local t = string.format("%d%%", math.floor(pct + 0.5))
+    if type(liters) == "number" and liters > 0 and liters < math.huge then t = t .. "  " .. fmt(liters) .. " L" end
+    if not explicit then t = t .. " *" end          -- * = auto (DR's default share), not a value you set
+    return t
+end
+
+function DistributionOverviewPage:settingsViewOn()
+    return self._settingsView == true
+end
+
+function DistributionOverviewPage:onToggleSettingsView()
+    local on = not self:settingsViewOn()
+    self._settingsView = on
+    if on then
+        self._groupedBeforeSettings = self.grouped
+        if self.grouped then
+            self.grouped = false
+            if self.filterMode == 2 then self.filterValue = nil end   -- grouping renamed buildings; undo that
+            self._filterValuesJoined = nil
+        end
+    elseif self._groupedBeforeSettings then
+        self.grouped = true
+        if self.filterMode == 2 then self.filterValue = nil end
+        self._filterValuesJoined = nil
+    end
+    local function vis(el, show) if el ~= nil and el.setVisible ~= nil then el:setVisible(show) end end
+    vis(self.flowHeaderRow,     not on)
+    vis(self.flowListBox,       not on)
+    vis(self.settingsHeaderRow, on)
+    vis(self.settingsListBox,   on)
+    if self.groupOption ~= nil then
+        if self.groupOption.setDisabled ~= nil then pcall(function() self.groupOption:setDisabled(on) end) end
+        if self.groupOption.setState ~= nil then pcall(function() self.groupOption:setState(self.grouped and 2 or 1) end) end
+    end
+    self._realtimeLists = { on and "settingsList" or "statsList" }
+    self._scrollMap = { { on and "settingsSlider" or "statsSlider", on and "settingsList" or "statsList", 14 } }
+    self:updateViewButton()
+    self:applySelectorChange()
+end
+
+-- Flip the footer label if the base page exposes the storage-page button plumbing; harmless no-op if not.
+function DistributionOverviewPage:updateViewButton()
+    local all = self._allButtons
+    if all == nil or self.applyFooterButtons == nil then return end
+    local vis = {}
+    for _, b in ipairs(all) do
+        if b._role == "viewToggle" then
+            b.text = self:settingsViewOn() and "Show Flows" or "Show Settings"
+        end
+        vis[#vis + 1] = b
+    end
+    self:applyFooterButtons(vis)
+end
+
+function DistributionOverviewPage:populateSettingsCell(index, cell)
+    local r = self.rows[index]
+    if r == nil then return end
+    local s = r.settings or {}
+    local col = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    local function setc(name, text)
+        local c = cell:getAttribute(name)
+        if c ~= nil and c.setText ~= nil then c:setText(text or "") end
+    end
+    setc("assetName",   r.assetName or "?")
+    setc("productName", (r.product or "?") .. (r.role ~= nil and (" (" .. r.role .. ")") or ""))
+
+    -- ---- input side
+    if s.isIn then
+        -- same wording as the Advanced Inputs dialog's own TYPE cell (Pooled / Individual), so the two
+        -- screens describe a building's storage identically
+        setc("typeText", s.blocked and "BLOCKED" or (s.pooled and "Pooled" or "Individual"))
+        setCellColor(cell, "typeText", s.blocked and col.BLOCKED or nil)
+        setc("maxInText", s.blocked and "0 L" or pctText(s.pct, s.maxL, s.explicit))
+        -- held of the effective ceiling, with the fill % that drives the highlight
+        local held = (type(s.inHeld) == "number") and (fmt(s.inHeld) .. " L") or "-"
+        if type(s.fillRatio) == "number" then
+            held = held .. string.format("  (%d%%)", math.floor(s.fillRatio * 100 + 0.5))
+        end
+        setc("heldOfMaxText", held)
+        local capCol = nil
+        if s.blocked then capCol = col.BLOCKED
+        elseif type(s.fillRatio) == "number" then
+            if s.fillRatio >= CAP_FULL then capCol = col.BLOCKED         -- at or over the cap: nothing more gets in
+            elseif s.fillRatio >= CAP_NEAR then capCol = col.IDLE end    -- nearing it
+        end
+        setCellColor(cell, "heldOfMaxText", capCol)
+        setc("fillTargetText", (s.targetPct ~= nil) and pctText(s.targetPct, s.targetL, true) or "-")
+        local st = s.inStatus
+        setc("inStatusText", (st ~= nil and IN_WORD[st]) or "-")
+        setCellColor(cell, "inStatusText", st ~= nil and col[st] or nil)
+    else
+        setc("typeText", "-"); setc("maxInText", "-"); setc("heldOfMaxText", "-")
+        setc("fillTargetText", "-"); setc("inStatusText", "-")
+        setCellColor(cell, "typeText", nil); setCellColor(cell, "heldOfMaxText", nil)
+        setCellColor(cell, "inStatusText", nil)
+    end
+
+    -- ---- output side
+    if s.isOut then
+        setc("outModeText", s.mode or "-")
+        setc("reserveText", (type(s.reserve) == "number" and s.reserve > 0) and (fmt(s.reserve) .. " L") or "-")
+        setCellColor(cell, "reserveText", (type(s.reserve) == "number" and s.reserve > 0) and col.IDLE or nil)
+        setc("priorityText", ((s.ranked or 0) > 0) and string.format("Ranked (%d)", s.ranked) or "Distance")
+        -- "3/5" active destinations. Red at 0 of some -- configured to send, nowhere left to send it, which
+        -- is exactly the silent stall that is otherwise invisible on this page.
+        local dt, da = s.destTotal, s.destActive
+        if type(dt) == "number" and dt > 0 then
+            setc("destText", string.format("%d/%d", da or 0, dt))
+            setCellColor(cell, "destText", ((da or 0) == 0) and col.BLOCKED or ((da or 0) < dt and col.IDLE or nil))
+        else
+            -- no routable destination at all for the current mode (Hold, or nothing in reach accepts it)
+            setc("destText", (s.outStatus ~= nil) and "none" or "-")
+            setCellColor(cell, "destText", (s.outStatus ~= nil) and col.BLOCKED or nil)
+        end
+        local st = s.outStatus
+        setc("outStatusText", (st ~= nil and OUT_WORD[st]) or "-")
+        setCellColor(cell, "outStatusText", st ~= nil and col[st] or nil)
+    else
+        setc("outModeText", "-")
+        setc("reserveText", "-"); setc("priorityText", "-"); setc("destText", "-"); setc("outStatusText", "-")
+        setCellColor(cell, "reserveText", nil); setCellColor(cell, "destText", nil)
+        setCellColor(cell, "outStatusText", nil)
+    end
+
+    setIcon(cell, "assetIcon",   r.assetIcon)
+    setIcon(cell, "productIcon", r.productIcon)
+end

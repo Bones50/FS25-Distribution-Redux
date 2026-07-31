@@ -3581,7 +3581,12 @@ function SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz,
     for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(srcPlaceable, farmId, ft, sx, sz, reach)) do
         if budget <= 0 or level <= 0 then break end
         local muid = getUid(mm.p)
-        local push = math.min(budget, level, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        -- inputAcceptableLiters is the receiver-side Advanced Inputs gate (block -> 0, Max in % -> a share of
+        -- marketCap). Every OTHER fill path in DR has always clamped to it; the three market transfers never
+        -- did, so a market could not refuse anything. With nothing configured it returns exactly the
+        -- marketCap - buffer room term beside it, so the default push is unchanged.
+        local push = math.min(budget, level, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft),
+                              SmartDistribution.inputAcceptableLiters(mm.p, ft))
         if push > 0 then
             setLevel(storage, ft, level - push, farmId, -push)
             level = level - push; budget = budget - push; moved = moved + push
@@ -3606,7 +3611,10 @@ function SmartDistribution.transferPalletsToMarkets(spawner, ft, farmId, sx, sz,
     for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(spawner, farmId, ft, sx, sz, reach)) do
         if budget <= 0 then break end
         local muid = getUid(mm.p)
-        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        -- ...and the market's own Advanced Inputs gate; a refusing market yields want <= 0 and the loop
+        -- simply moves on to the next one rather than breaking out.
+        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft),
+                              SmartDistribution.inputAcceptableLiters(mm.p, ft))
         if want > 0 then
             local drained = drainPallets(spawner, ft, want, farmId)
             if drained < want then drained = drained + SmartDistribution.drawFromQueue(spawner, ft, want - drained) end
@@ -3629,7 +3637,8 @@ function SmartDistribution.transferShedToMarkets(shed, ft, farmId, sx, sz, reach
     for _, mm in ipairs(SmartDistribution.effectiveMarketsFor(shed, farmId, ft, sx, sz, reach)) do
         if budget <= 0 then break end
         local muid = getUid(mm.p)
-        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft))
+        local want = math.min(budget, SmartDistribution.marketCap(mm.p) - SmartDistribution.marketBufferLevel(muid, ft),
+                              SmartDistribution.inputAcceptableLiters(mm.p, ft))   -- receiver-side block / max %
         if want > 0 then
             local drained = drainShedStored(shed, ft, want, farmId)
             if drained <= 0 then break end
@@ -3693,6 +3702,33 @@ function SmartDistribution.marketTransferPhase(manager)
                 local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or placeable.ownerFarmId
                 local reach = resolveReach(placeable)
                 local sx, _, sz = getWorldTranslation(placeable.rootNode)
+                -- The PAD first, then the buffer. A palletized output's litres leave pp.storage for the
+                -- pallet spawner, so the pp.storage drain below can never reach them -- the same hole 5.23
+                -- fixed on the SELL branch, still open here. The first loop's pallet branch is gated on
+                -- `getProductionPoint(p) == nil`, so it never ran for a production either: between them a
+                -- production's pad pallets had NO path to a market at all. Observed in game (2026-07-31):
+                -- a sugar mill on Distribute + Market Supply, market buffer full, quietly accumulated 17
+                -- pallets (17,000 L) that no phase could move, while its buffer sat at 320 L.
+                -- transferPalletsToMarkets is already generic -- palletFillLevel / drainPallets have handled
+                -- productions since 5.14, and drawFromQueue / releasableLiters return 0 for anything that is
+                -- not a pen. PAD FIRST matters: with the buffer drained first, a market freeing up only a
+                -- little room each cycle would be filled by fresh output forever and a pad backlog could
+                -- never clear. With an empty pad this costs one table lookup and changes nothing.
+                local padFts = palletSpawnerFillTypes(placeable)
+                if padFts ~= nil then
+                    for _, ft in ipairs(padFts) do
+                        local m = resolveMode(placeable, ft)
+                        if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
+                            local pad = palletFillLevel(placeable, ft) or 0
+                            local amt = SmartDistribution.marketTransferAmount(placeable, ft, m,
+                                SmartDistribution.drawableLevel(placeable, ft, pad))
+                            if amt > 0 then
+                                local moved = SmartDistribution.transferPalletsToMarkets(placeable, ft, farmId, sx, sz, reach, amt)
+                                if moved > 0 then ledgerAdd(placeable, ft, "stored", moved) end
+                            end
+                        end
+                    end
+                end
                 local outFts = {}
                 for _, def in ipairs(getActiveProductionDefs(pp)) do
                     for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then outFts[o.type] = true end end
@@ -3846,7 +3882,13 @@ function SmartDistribution.marketDivertLiters(p, ft, liters)
     if S.global.excludedFillTypes[ft] then return 0 end
     local uid = getUid(p); if uid == nil then return 0 end
     if SmartDistribution.marketSellMode(uid, ft) == SmartDistribution.MARKET_IMMEDIATE then return 0 end
-    local room = SmartDistribution.marketCap(p) - SmartDistribution.marketBufferLevel(uid, ft)
+    -- Advanced Inputs block: the player has said this market does not stock this product, so a hand-tipped
+    -- load is NOT banked -- it falls through to the vanilla instant sale, exactly like the over-cap overflow
+    -- below. The trailer can still always empty (it is a selling station after all); it just gets paid on
+    -- the spot instead of being held. Deliberate reading of "blocked": it governs what the market STOCKS,
+    -- not what it may buy.
+    local room = math.min(SmartDistribution.marketCap(p) - SmartDistribution.marketBufferLevel(uid, ft),
+                          SmartDistribution.inputAcceptableLiters(p, ft))
     if room <= 0 then return 0 end
     return math.min(liters, room)
 end
@@ -7330,6 +7372,147 @@ function SmartDistribution.cmdIconProbe(self)
     return "icon probe done -- see log"
 end
 
+-- TEMPORARY (2026-07-31): why did Distribute + Market Supply stop while the markets were on Hold?
+-- Nothing in the PUSH path reads the sell timing -- marketTransferPhase / marketsFor / effectiveMarketsFor
+-- never call marketSellMode -- so the only way Hold can stall a push is indirectly: the buffer fills,
+-- nothing sells it back down, and `marketCap - marketBufferLevel` reaches 0. Setting the market to Sell
+-- restarted the flow, which fits that and nothing else in the code. But the author read the buffers as
+-- "nowhere near cap", so one of the two figures is not what it appears. This prints BOTH, per market per
+-- fill type, exactly as marketTransferPhase computes them.
+-- Remove once that is settled.
+function SmartDistribution.cmdMarketBuffer(self)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem" end
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local names = { [0] = "Sell now (Immediate)", [1] = "Best price", [2] = "HOLD" }
+    dump("=== sdMarketBuffer ===")
+    local n = 0
+    for _, p in ipairs(ps.placeables) do
+        if SmartDistribution.isMarket(p) then
+            n = n + 1
+            local uid = getUid(p)
+            local cap = SmartDistribution.marketCap(p)
+            -- marketCap is storeItem.price * 2 LITRES, falling back to the flat MARKET_CAP. If storeItem
+            -- is nil here, every market on the map shares the 200,000 fallback and cap is not per-market.
+            local si  = p.storeItem
+            dump(string.format("[market %d] %s  uid=%s", n, tostring(placeableName(p)), tostring(uid)))
+            dump(string.format("   cap=%s per fill type  (storeItem=%s price=%s -> %s)",
+                tostring(cap), tostring(si ~= nil), tostring(si ~= nil and si.price or nil),
+                (si ~= nil and type(si.price) == "number" and si.price > 0) and "price*2" or "MARKET_CAP fallback"))
+            local buf = SmartDistribution._marketBuffer[uid]
+            local tim = SmartDistribution._marketTiming[uid]
+            local fts, seen = {}, {}
+            for ft in pairs(buf or {}) do if not seen[ft] then seen[ft] = true; fts[#fts + 1] = ft end end
+            for ft in pairs(tim or {}) do if not seen[ft] then seen[ft] = true; fts[#fts + 1] = ft end end
+            table.sort(fts)
+            if #fts == 0 then dump("   (buffer empty, no timing overrides -- every product on the HOLD default)") end
+            for _, ft in ipairs(fts) do
+                local lvl  = SmartDistribution.marketBufferLevel(uid, ft)
+                local room = cap - lvl
+                local mode = SmartDistribution.marketSellMode(uid, ft)
+                dump(string.format("   %-16s buffer=%-12s room=%-12s timing=%s%s",
+                    fillTypeName(ft), string.format("%.0f", lvl), string.format("%.0f", room),
+                    names[mode] or tostring(mode),
+                    (room <= 0) and "   <<< FULL: marketTransferPhase pushes NOTHING here" or ""))
+            end
+        end
+    end
+    if n == 0 then dump("no owned markets matched isMarket() -- check MARKET_NAME_HINTS") end
+    return "sdMarketBuffer: " .. tostring(n) .. " market(s)"
+end
+
+-- TEMPORARY (2026-07-31): "Distribute moves nothing either, and the market settings have no play in it."
+-- Distribute AND Market Supply both dead is ONE cause upstream of both, not two coincidences -- and every
+-- switch that can do that is a per-(source, fill type) advanced override, invisible on the building tabs:
+--   * a BLOCKED destination set (Advanced Outputs "Block All") -- blocks consumers, stores AND markets alike
+--   * an OUTPUT RESERVE (5.10) -- a floor that stops distribute / sell / store / Move To / market together
+--   * the fill type in the GLOBAL excluded list -- every phase skips it outright
+-- All three are silent: the source just reads Active (Idle) and product piles up. This dumps every one of
+-- them that is actually set, farm-wide, with names resolved. Remove once the cause is known.
+function SmartDistribution.cmdControlDump(self)
+    local function dump(s) print("[SmartDistribution] " .. s) end
+    local C = SmartDistribution.control or {}
+    local g = (SmartDistribution.settings ~= nil) and SmartDistribution.settings.global or {}
+    local nameOf = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps ~= nil then
+        for _, p in ipairs(ps.placeables) do
+            local u = getUid(p)
+            if u ~= nil then nameOf[u] = tostring(placeableName(p)) end
+        end
+    end
+    local function nm(u) return (nameOf[u] or "<not on map>") .. " [" .. tostring(u) .. "]" end
+    local function count(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
+
+    dump("=== sdControlDump ===")
+    dump("advancedRoutingEnabled=" .. tostring(SmartDistribution.advancedEnabled())
+        .. "   (false => blocks / reserves / input caps are ALL ignored)")
+    local ex = {}
+    for ft, v in pairs(g.excludedFillTypes or {}) do if v then ex[#ex + 1] = fillTypeName(ft) end end
+    table.sort(ex)
+    dump("globally EXCLUDED fill types (DR skips these in every phase): " .. (#ex > 0 and table.concat(ex, ", ") or "none"))
+    dump("sellEnabled=" .. tostring(g.sellEnabled) .. "  radius=" .. tostring(g.radius)
+        .. "  sellReserve=" .. tostring(g.sellReserve))
+
+    local any = false
+    dump("-- OUTPUT RESERVES (litres the source must always keep back; nothing may leave below this) --")
+    for uid, byFt in pairs(C.outputReserve or {}) do
+        for ft, v in pairs(byFt or {}) do
+            any = true
+            dump(string.format("   %s  %s  reserve=%s", nm(uid), fillTypeName(ft), tostring(v)))
+        end
+    end
+    if not any then dump("   none") end
+
+    any = false
+    dump("-- BLOCKED DESTINATIONS (source may NOT send ft to these; covers consumers, stores AND markets) --")
+    for uid, byFt in pairs(C.blocked or {}) do
+        for ft, dests in pairs(byFt or {}) do
+            local n = count(dests)
+            if n > 0 then
+                any = true
+                dump(string.format("   %s  %s  -> %d destination(s) blocked:", nm(uid), fillTypeName(ft), n))
+                for d, on in pairs(dests) do if on then dump("        x " .. nm(d)) end end
+            end
+        end
+    end
+    if not any then dump("   none") end
+
+    any = false
+    dump("-- INPUT BLOCKS (receiver refuses ft on the way IN -- starves the SOURCE just as effectively) --")
+    for uid, byFt in pairs(C.inputBlock or {}) do
+        for ft, on in pairs(byFt or {}) do
+            if on then any = true; dump(string.format("   %s  %s  BLOCKED IN", nm(uid), fillTypeName(ft))) end
+        end
+    end
+    if not any then dump("   none") end
+
+    any = false
+    dump("-- INPUT CAPS / FILL TARGETS (a 0% cap accepts nothing; a met target stops asking) --")
+    for uid, byFt in pairs(C.inputCapPct or {}) do
+        for ft, v in pairs(byFt or {}) do any = true; dump(string.format("   %s  %s  max in=%s%%", nm(uid), fillTypeName(ft), tostring(v))) end
+    end
+    for uid, byFt in pairs(C.inputTarget or {}) do
+        for ft, v in pairs(byFt or {}) do any = true; dump(string.format("   %s  %s  fill target=%s%%", nm(uid), fillTypeName(ft), tostring(v))) end
+    end
+    if not any then dump("   none") end
+
+    any = false
+    dump("-- PRIORITY ORDERS --")
+    for uid, byFt in pairs(C.priority or {}) do
+        for ft, list in pairs(byFt or {}) do
+            if type(list) == "table" and #list > 0 then
+                any = true
+                local parts = {}
+                for i, d in ipairs(list) do parts[#parts + 1] = tostring(i) .. "." .. nm(d) end
+                dump(string.format("   %s  %s  %s", nm(uid), fillTypeName(ft), table.concat(parts, "  ")))
+            end
+        end
+    end
+    if not any then dump("   none") end
+    return "sdControlDump: see log"
+end
+
 function SmartDistribution.cmdMarketProbe(self)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return "no placeableSystem" end
@@ -8909,6 +9092,21 @@ end
 -- [ + gaze: open the consolidated menu jumped straight to the gazed asset's tab
 -- (productions / silos / silo extensions / animal husbandry) with that asset
 -- preselected. Falls back to the old list dialog only if the new menu is absent.
+-- Jump the ALREADY-OPEN menu to an asset's tab and select it (Overview row double-click).
+-- Deliberately NOT routed through openMenuForAsset below: that one has to cope with the menu being shut,
+-- so it branches on `menu.isOpen` -- a field the base ScreenElement maintains and DR never sets itself. From
+-- inside the menu the answer is known, so this calls focusAsset directly and cannot silently do nothing.
+-- Lives here rather than in the page because getAssetClass is a local of this file.
+function SmartDistribution.jumpMenuToAsset(asset)
+    if asset == nil then return false end
+    local menu = SmartDistribution._menu
+    if menu == nil or menu.focusAsset == nil then return false end
+    menu._focusAsset = asset
+    menu._focusClass = getAssetClass(asset)
+    menu:focusAsset()
+    return true
+end
+
 function SmartDistribution.openMenuForAsset(asset)
     if asset == nil then return end
     local menu = SmartDistribution._menu
@@ -10041,6 +10239,14 @@ function SmartDistribution.receiverInputFillTypes(p)
         for ft in pairs(SmartDistribution.husbandryInputFillTypes(p)) do out[ft] = true end
         return out
     end
+    -- MARKET. It owns no Storage at all -- its stock is DR's virtual _marketBuffer (5.31) -- so the
+    -- getAllStorages sweep below returned {}, the Advanced Inputs button self-hid, and there was no way to
+    -- say which products a market may accept. A market is a PURE receiver (it never feeds the network back,
+    -- 5.7), so this is the one advanced dialog it genuinely needs.
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
+        for ft in pairs(SmartDistribution.marketMenuFillTypes(p)) do out[ft] = true end
+        return out
+    end
     -- storage / sheds: everything the building can hold is an "input" for cap purposes
     if p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
         for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do out[ft] = true end
@@ -10773,6 +10979,11 @@ installPersistence()
 -- if addConsoleCommand ~= nil then
 --     addConsoleCommand("sdMarketProbe", "Dump owned selling-station/market spec + sell API [dev]", "cmdMarketProbe", SmartDistribution)
 -- end
+-- TEMPORARY (2026-07-31): buffer vs cap per market per fill type -- see cmdMarketBuffer. Remove with it.
+if addConsoleCommand ~= nil then
+    addConsoleCommand("sdMarketBuffer", "Dump each market's per-product buffer vs cap + sell timing [dev]", "cmdMarketBuffer", SmartDistribution)
+    addConsoleCommand("sdControlDump", "Dump every advanced override set: blocks, reserves, input caps [dev]", "cmdControlDump", SmartDistribution)
+end
 installInteraction()
 installHusbandryPatch()
 SmartDistribution.installHoldInternalPalletSuppression()
@@ -11118,6 +11329,13 @@ end
 -- the litre capacity + current level for a specific input product at a building. For pooled storage the
 -- capacity is the shared pool; for individual storage it's that product's own tank.
 function SmartDistribution.inputProductCapacity(p, ft)
+    -- MARKET: no Storage anywhere, so a product's "capacity" is its slice of the virtual buffer -- the same
+    -- marketCap the transfer phase already clamps against. Giving it a real number here is what makes a
+    -- Max-in % mean the same thing on a market as on a silo instead of being a dead control (with cap 0,
+    -- inputAcceptableLiters short-circuits to INF and the percentage would do nothing at all).
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
+        return SmartDistribution.marketCap(p) or 0, nil
+    end
     local pool = SmartDistribution.pooledInputCapacity(p)
     if pool ~= nil then
         for _, pf in ipairs(pool.fts) do if pf == ft then return pool.liters, pool end end
@@ -11162,6 +11380,11 @@ end
 
 function SmartDistribution.inputHeldLevel(p, ft)
     if p == nil or ft == nil then return 0 end
+    -- MARKET: partner to inputProductCapacity above -- held has to be read on the SAME basis as capacity or
+    -- the fill percentage and the room left come off two different totals.
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
+        return SmartDistribution.marketBufferLevel(getUid(p), ft) or 0
+    end
     if p.spec_objectStorage ~= nil then return shedStoredLiters(p, ft) or 0 end
     -- production input buffer + any extension folded onto its stations (partner to inputProductCapacity:
     -- held must move on the same basis as capacity, or the fill percentage and the room left are computed
@@ -11337,6 +11560,27 @@ function SmartDistribution.assetHeldTotal(p, ft)
     local total = SmartDistribution.assetHeld(p, ft) or 0
     local pp = getProductionPoint(p)
     if pp ~= nil and pp.storage ~= nil then total = total + (getLevel(pp.storage, ft) or 0) end
+    -- ...and the pallets standing on a PRODUCTION's pad. assetHeld folds the pad in for a HUSBANDRY spec
+    -- only (spec_husbandryPallets / spec_beehivePalletSpawner, line ~8141), so a production's counted
+    -- nowhere at all and an output reserve on a palletized output was measured against the internal buffer
+    -- ALONE. Reported in game 2026-07-31: an 18,000 L reserve on a Sugar Mill emitting 1,000 L sugar
+    -- pallets. Its pad filled while DR still read the building as holding only its few hundred litres of
+    -- buffer, so `free` stayed negative, nothing could ever leave, and the reserve never released -- the
+    -- pad had to fill before the buffer even began to grow toward a number it could not reach.
+    -- This also makes the reserve agree with the HELD figure every tab already shows
+    -- ("450 L (5,000 L) + 5,000 L (5p)", 5.16 / 5.21) rather than with a hidden subset of it.
+    -- Gated on isPalletSpawnerAsset, DR's own definition of "emits pallets" (pens via spec_husbandryPallets,
+    -- beehives via spec_beehivePalletSpawner, productions via pp.palletSpawner) MINUS the two specs assetHeld
+    -- already folds in. Written that way rather than testing pp.palletSpawner directly so the two stay in
+    -- step: widen what counts as a pallet spawner and this follows automatically instead of silently
+    -- reopening the same hole for the new kind. Covers every production that pallets -- mill, bakery, dairy,
+    -- sugar mill, GREENHOUSES -- since they all reach it through the same production-point branch.
+    -- The husbandry exclusion is what prevents a double count; palletFillLevel is on-pad only (5.14).
+    if palletFillLevel ~= nil and isPalletSpawnerAsset(p)
+       and p.spec_husbandryPallets == nil and p.spec_beehivePalletSpawner == nil then
+        local ok, v = pcall(palletFillLevel, p, ft)
+        if ok and type(v) == "number" then total = total + v end
+    end
     return total
 end
 

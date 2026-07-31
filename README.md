@@ -30,8 +30,12 @@ Fixed
 10) Fixed issues caused by overlaping husbandy and/or production pallet control areas. Pallets are now limited to the spawn box of the production and properly owned by the producing buidling.
 11) Water extensions for greenhouses can now be placed again and add water storage to the greenhouse corrcetly.
 12) In-Game Help has been completely rewritten to match the new version.
-13) (NEW) Animal Husbandries should no longer spawn partial or empty pallets. (30/7)
-14) (NEW) Fixed Bunkers to not show inputs (you manually load it, cover it, let it ferment and then uncover it... So there are no DR Inputs), and read filltypes properly so that modded ones work correctly for outputs. (30/7)
+13) Animal Husbandries should no longer spawn partial or empty pallets. (30/7)
+14) Fixed Bunkers to not show inputs (you manually load it, cover it, let it ferment and then uncover it... So there are no DR Inputs), and read filltypes properly so that modded ones work correctly for outputs. (30/7)
+15) Standard Game UI now shows animal pen storage correctly rather than just being zero.
+16) (NEW) Fixed an issue with setting a reserve on a building that spawns pallets, pallets where not being taken into account when the reserve test was being performed resulting in the building waiting until it had maxed out the pallets AND hit the reserve target with the internal storage. Now takes into account pallets on the pallet spawner. (31/7)
+17) (NEW) Fixed an issue where productions that "could" supply a demand but weren't (ie the line was inactive) where showing the inputs for that building in the end product filter. (30/7)
+18) (NEW) Fixed the advanced inputs not showing for the markets/kiosks, removed the advanced outputs as they don't apply to markets. (30/7) 
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -45,7 +49,8 @@ Added
 9) Adjusted how inputs and outputs are shown on the production UI. Inputs and outputs will now only show for production lines that are turned on.
 10) Added an option in settings to make animal pens spawn pallets the same as production (i.e. wait until 1000l produced then spawn pallet). This ensures only full pallets are spawned and makes reporting of volumes more accurate, but can be turned off to revert to the original.
 11) Added ability to track manual adding or removal of material in the Overview (e.g. removig a plalet from a pallet spawner or removing/adding grain to silo with a trailer).
-12) (NEW) Added the ability to manually tip product to markets/kiosks and have it obey the output mode (previously would just immediately sell regardless of the setting). (30/7) 
+12) Added the ability to manually tip product to markets/kiosks and have it obey the output mode (previously would just immediately sell regardless of the setting). (30/7)
+13) (NEW) Added a new mode to the overview that allows you to see all the advanced settings of each building/product (e.g. reserved amounts, output mode, etc etc) (31/7) 
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:

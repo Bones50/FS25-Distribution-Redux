@@ -480,15 +480,17 @@ end
 -- Who PRODUCES what, and from which ingredients: [ft] = { { uid, ins = {ft=true} }, ... }.
 -- Productions are indexed PER LINE, so a mill that also runs a sunflower->oil line does not drag
 -- sunflower into the flour chain -- only lines whose OUTPUTS include the product being expanded
--- contribute their inputs. Whether a line is switched on is deliberately ignored: a chain should not
--- disappear because the player paused the bakery.
+-- contribute their inputs. Each entry carries whether its line is switched ON; buildChainKeys is what
+-- acts on that (it also needs the row list to decide), so nothing is filtered out here.
 -- A husbandry has no per-line recipe, so all of its inputs feed all of its outputs (grass -> cow -> milk).
+-- Returns producers plus anyEnabled[uid] -- whether that building has ANY line switched on. The pair is
+-- what lets buildChainKeys tell "this building chose other lines" from "this building is paused".
 local function buildProducerIndex(assets)
-    local producers = {}
-    local function add(ft, uid, ins)
+    local producers, anyEnabled = {}, {}
+    local function add(ft, uid, ins, enabled)
         if ft == nil or uid == nil then return end
         local l = producers[ft]; if l == nil then l = {}; producers[ft] = l end
-        l[#l + 1] = { uid = uid, ins = ins }
+        l[#l + 1] = { uid = uid, ins = ins, enabled = enabled }
     end
     for _, a in ipairs(assets) do
         local p, uid = a.placeable, a.uid
@@ -500,17 +502,18 @@ local function buildProducerIndex(assets)
                 for _, line in ipairs(lines) do
                     local ins = {}
                     for _, i in ipairs(line.inputs or {}) do if i.ft ~= nil then ins[i.ft] = true end end
-                    for _, o in ipairs(line.outputs or {}) do add(o.ft, uid, ins) end
+                    if line.enabled then anyEnabled[uid] = true end
+                    for _, o in ipairs(line.outputs or {}) do add(o.ft, uid, ins, line.enabled == true) end
                 end
             end
         elseif p ~= nil then
             local ok, outs, ins = pcall(SmartDistribution.internalProcessFillTypes, p)
             if ok and type(outs) == "table" and type(ins) == "table" and next(outs) ~= nil then
-                for ft in pairs(outs) do add(ft, uid, ins) end
+                for ft in pairs(outs) do add(ft, uid, ins, true) end   -- husbandry: no line to switch off
             end
         end
     end
-    return producers
+    return producers, anyEnabled
 end
 
 local CHAIN_MAX_DEPTH = 12   -- insurance only; the visited set already guarantees termination
@@ -522,8 +525,14 @@ local CHAIN_MAX_DEPTH = 12   -- insurance only; the visited set already guarante
 -- That second rule is what keeps a chicken coop's wheat input out of the bread chain while keeping the
 -- grain mill's in: the mill qualifies because it produces something already in the chain.
 -- With two bakeries, expanding BREAD walks both, so every flour source feeding either is pulled in.
-local function buildChainKeys(target, rowsByFt, producers)
+--
+-- A line that is switched OFF is not a way the farm makes anything, so it contributes nothing -- see
+-- `contributes` below for the two escapes. Without that, a mod greenhouse carrying one line per vegetable
+-- was a "producer" of every vegetable on the map, and its water / fertiliser / compost rows were dragged
+-- into every chain that touched any of them, with no output row beside them to explain why.
+local function buildChainKeys(target, rowsByFt, producers, anyEnabled)
     local chain = {}                                    -- [uid][ft] = depth
+    anyEnabled = anyEnabled or {}
     local function mark(uid, ft, d)
         if uid == nil or ft == nil then return end
         local byFt = chain[uid]; if byFt == nil then byFt = {}; chain[uid] = byFt end
@@ -531,20 +540,38 @@ local function buildChainKeys(target, rowsByFt, producers)
     end
     for _, r in ipairs(rowsByFt[target] or {}) do mark(r.uid, r.ft, 0) end   -- the selected product, everywhere
 
+    local function hasRow(uid, ft)
+        for _, r in ipairs(rowsByFt[ft] or {}) do if r.uid == uid then return true end end
+        return false
+    end
+    -- Does this producer earn its place in the chain? Enabled lines always do. Two escapes keep the
+    -- disabled ones that still matter:
+    --   * a building with NO line enabled is simply PAUSED, not choosing between lines, so all of its
+    --     lines still count -- a chain must not vanish because the player stopped the bakery
+    --   * a disabled line still counts if the building actually HAS that product (held, or moved in this
+    --     window). That stock is real and belongs in the chain whatever the line is doing.
+    -- Row existence alone is deliberately NOT the whole test: a line that is running but starved produces
+    -- nothing and holds nothing, and cutting its inputs would hide exactly the building worth looking at.
+    local function contributes(e, ft)
+        return e.enabled or not anyEnabled[e.uid] or hasRow(e.uid, ft)
+    end
+
     local visited = {}
     local function expand(ft, d)
         if visited[ft] or d >= CHAIN_MAX_DEPTH then return end   -- visited: survives recipe loops (A->B->A)
         visited[ft] = true
         for _, prod in ipairs(producers[ft] or {}) do
-            for ingredient in pairs(prod.ins) do
-                mark(prod.uid, ingredient, d + 1)                              -- the producer's own input row
-                for _, up in ipairs(producers[ingredient] or {}) do            -- who makes that ingredient
-                    mark(up.uid, ingredient, d + 1)
+            if contributes(prod, ft) then
+                for ingredient in pairs(prod.ins) do
+                    mark(prod.uid, ingredient, d + 1)                          -- the producer's own input row
+                    for _, up in ipairs(producers[ingredient] or {}) do        -- who makes that ingredient
+                        if contributes(up, ingredient) then mark(up.uid, ingredient, d + 1) end
+                    end
+                    for _, r in ipairs(rowsByFt[ingredient] or {}) do          -- and who stores it
+                        if r.assetKind == "storage" then mark(r.uid, ingredient, d + 1) end
+                    end
+                    expand(ingredient, d + 1)
                 end
-                for _, r in ipairs(rowsByFt[ingredient] or {}) do              -- and who stores it
-                    if r.assetKind == "storage" then mark(r.uid, ingredient, d + 1) end
-                end
-                expand(ingredient, d + 1)
             end
         end
     end
@@ -665,6 +692,70 @@ local function capacityOf(p, ft, role, held)
     return raw
 end
 
+-- ---- advanced-settings view -------------------------------------------------
+-- The Overview's second face: the SAME rows, with the flow figures swapped for the Advanced Inputs /
+-- Advanced Outputs configuration sitting behind them. Row parity is the point -- toggling the view must
+-- never change which rows are listed, only what is written in them -- so this is a pure per-row enrichment
+-- and the inclusion rule above is untouched.
+--
+-- Computed only when the view is on (`withSettings`), and only for the SIDE a row actually plays: an
+-- input-only row never resolves output destinations, which is the expensive half.
+local function settingsFor(p, ft, role)
+    if p == nil or ft == nil then return nil end
+    local SD = SmartDistribution
+    local uid = (SD.assetUid ~= nil) and SD.assetUid(p) or nil
+    local s = {}
+    if role == "In" or role == "In/Out" then
+        local pool = (SD.pooledInputCapacity ~= nil) and SD.pooledInputCapacity(p) or nil
+        if pool ~= nil and type(pool.fts) == "table" then
+            for _, f in ipairs(pool.fts) do if f == ft then s.pooled = true; break end end
+        end
+        s.blocked   = uid ~= nil and SD.isInputBlocked ~= nil and SD.isInputBlocked(uid, ft) or false
+        s.pct       = (SD.inputCapPct ~= nil) and SD.inputCapPct(p, ft) or nil
+        s.maxL      = (SD.inputEffectiveMaxLiters ~= nil) and SD.inputEffectiveMaxLiters(p, ft) or nil
+        s.inHeld    = (SD.inputHeldLevel ~= nil) and SD.inputHeldLevel(p, ft) or nil
+        s.explicit  = uid ~= nil and SD.hasExplicitInputCapPct ~= nil and SD.hasExplicitInputCapPct(uid, ft) or false
+        s.targetPct = uid ~= nil and SD.getInputTargetPct ~= nil and SD.getInputTargetPct(uid, ft) or nil
+        s.targetL   = (SD.inputTargetLiters ~= nil) and SD.inputTargetLiters(p, ft) or nil
+        s.inStatus  = uid ~= nil and SD.inputLinkStatus ~= nil and SD.inputLinkStatus(uid, ft) or nil
+        -- drives the "nearing the cap" highlight. Measured against maxL (the EFFECTIVE ceiling the
+        -- allocator enforces), not the raw tank, so it means the same thing the Advanced Inputs dialog does.
+        if type(s.maxL) == "number" and s.maxL > 0 and type(s.inHeld) == "number" then
+            s.fillRatio = s.inHeld / s.maxL
+        end
+        s.isIn = true
+    end
+    if role == "Out" or role == "In/Out" then
+        s.reserve = (SD.outputReserveLiters ~= nil) and SD.outputReserveLiters(p, ft) or nil
+        local pr   = (SD.control ~= nil) and SD.control.priority or nil
+        local list = (pr ~= nil and uid ~= nil and pr[uid] ~= nil) and pr[uid][ft] or nil
+        s.ranked = (type(list) == "table") and #list or 0
+        -- outputDestinationsForMode returns the destinations relevant to this product's CURRENT mode, each
+        -- carrying .blocked, and deliberately mirrors DistributionAdvancedDialog -- so "3/5" here is the
+        -- same set of destinations the Advanced Outputs dialog lists, not a second opinion.
+        local dests = (SD.outputDestinationsForMode ~= nil) and SD.outputDestinationsForMode(p, ft) or nil
+        if type(dests) == "table" then
+            local n = 0
+            for _, d in ipairs(dests) do if not d.blocked then n = n + 1 end end
+            s.destTotal, s.destActive = #dests, n
+        end
+        s.outStatus = (SD.outputLinkStatus ~= nil) and SD.outputLinkStatus(p, ft) or nil
+        -- Routing mode, resolved the way DistributionAdvancedDialog does it: a PRODUCTION's output runs on
+        -- the v-mode enum (Keep / Distribute / ...), everything else on the asset MODE enum. Pallet-aware,
+        -- so a coop's EGG row reads "Hold Pallets" where its MANURE row reads "Hold" (5.22).
+        local pp = (SD.productionPointOf ~= nil) and SD.productionPointOf(p) or nil
+        if pp ~= nil and SD.productionOutputVMode ~= nil and SD.productionOutputVModeName ~= nil then
+            local v = SD.productionOutputVMode(pp, ft)
+            s.mode = (v ~= nil) and SD.productionOutputVModeName(v) or nil
+        elseif SD.modeName ~= nil and SD.resolvedAssetMode ~= nil then
+            local pal = (SD.isPalletOutput ~= nil) and SD.isPalletOutput(p, ft) or nil
+            s.mode = SD.modeName(SD.resolvedAssetMode(p, ft), pal)
+        end
+        s.isOut = true
+    end
+    return s
+end
+
 -- One row per (enrolled building, product) with any figure to show, for the Overview tab.
 -- window = "hour" | "month" | "year". HELD is deliberately a live stock reading, not a windowed flow:
 -- it is what the building is holding right now, whichever timescale the other columns are showing.
@@ -673,7 +764,10 @@ end
 -- grouped = true collapses same-type buildings (see groupRows).
 -- chainFt = a fill type: tag each row with inChain / chainDepth for the "End product" filter. Tagging
 -- happens BEFORE grouping, because grouping rewrites uid to the base name and the keys stop matching.
-function SmartDistribution.overviewRows(window, grouped, chainFt)
+-- withSettings = also resolve each row's Advanced Inputs / Outputs configuration into row.settings, for the
+-- Overview's settings view. NOT compatible with `grouped` -- settings are per building and a "Bakery x2" row
+-- has no single answer -- so the page forces grouping off while that view is on.
+function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
     local rows, rowsByFt = {}, {}
     if SmartDistribution.enumerateConfigurableAssets == nil or SmartDistribution.windowAggregate == nil then
         return rows
@@ -692,6 +786,10 @@ function SmartDistribution.overviewRows(window, grouped, chainFt)
             local held, heldInternal, heldPallets, heldPalletCount = heldOf(p, ft)
             local roleTag = roleLabel(ft, ins, outs, kind)
             local row = {
+                -- carried for the row double-click (jump to this building's tab). groupRows copies every
+                -- field from the FIRST row of a group, so a grouped row lands on one of its buildings
+                -- rather than nowhere -- which is the useful answer for "Bakery x2".
+                placeable = p,
                 uid = uid, ft = ft,
                 assetName = a.name or "?", baseName = a.baseName or a.name or "?",
                 assetOrigName = a.origName, assetIcon = icon,
@@ -708,8 +806,18 @@ function SmartDistribution.overviewRows(window, grouped, chainFt)
                 -- nil (not 0) when there is no recipe expectation, so the page knows to leave the cell
                 -- plain rather than painting a row red for a building that simply has no target
                 consumedExpected = expCons[ft], producedExpected = expProd[ft],
+                settings = withSettings and settingsFor(p, ft, roleTag) or nil,
             }
-            if held > 0 or row.received > 0 or row.loaded > 0 or row.consumed > 0 or row.unloaded > 0
+            -- SETTINGS VIEW: keep EVERY input and output the building has, whether or not anything moved.
+            -- A cap, reserve or block set on a product that has not arrived yet is exactly what that view
+            -- is opened to check, and the activity test would hide precisely those rows. Only "Filter by"
+            -- narrows it from there.
+            -- roleTag is nil for a fill type that is neither an input nor an output of THIS building, so
+            -- this stays a genuine in/out list rather than everything the building could conceivably hold.
+            -- The flow view keeps the original test: without it a multifruit silo alone contributes ~30
+            -- all-dashes rows, which is the whole reason that rule exists.
+            if (withSettings and roleTag ~= nil)
+               or held > 0 or row.received > 0 or row.loaded > 0 or row.consumed > 0 or row.unloaded > 0
                or row.produced > 0 or row.distributed > 0 or row.stored > 0 or row.sold > 0
                or row.money > 0 or row.cost > 0 then
                 rows[#rows + 1] = row
@@ -721,8 +829,8 @@ function SmartDistribution.overviewRows(window, grouped, chainFt)
 
     -- end-product chain: tag before grouping, while rows still carry real unique ids
     if chainFt ~= nil then
-        local producers = buildProducerIndex(assets)
-        local chain = buildChainKeys(chainFt, rowsByFt, producers)
+        local producers, anyEnabled = buildProducerIndex(assets)
+        local chain = buildChainKeys(chainFt, rowsByFt, producers, anyEnabled)
         local order = chainBuildingOrder(chain, producers)
         for _, r in ipairs(rows) do
             local byFt = chain[r.uid]

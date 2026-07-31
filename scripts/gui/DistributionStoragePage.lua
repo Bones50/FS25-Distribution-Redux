@@ -445,6 +445,8 @@ function DistributionStoragePage:updateSellTimingButton()
     local row = self:selectedDetailRow()
     -- Advanced routing master switch (Settings): off hides both Advanced buttons entirely.
     local adv = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
+    -- NOTE markets never reach this function: DistributionMarketsPage overrides updateSellTimingButton and
+    -- decides its own footer (Advanced Inputs only). Do not add a market case here -- it would be dead code.
     local showAdvancedOut = adv and row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
         and SmartDistribution.modeConfigurable ~= nil
         and SmartDistribution.modeConfigurable(self.selectedAsset, row.ft)
@@ -853,10 +855,17 @@ function DistributionMarketsPage:updateTimingButton()
         if b._role == "sellTiming" then
             if label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end   -- hidden while the product is Held
         elseif b._role == "advanced" then
-            -- markets are sell endpoints (no inputs): the Advanced button always means Advanced Outputs.
-            -- Hidden when the Advanced routing master switch (Settings) is off.
-            if SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled() then
-                b.text = "Advanced Outputs"; vis[#vis + 1] = b
+            -- A market is the exact OPPOSITE of what this used to say ("sell endpoints (no inputs)"): its
+            -- buffer never feeds the network back (5.7), so there is no outgoing routing to arrange, while
+            -- every source on the farm delivers INTO it. So the Advanced button always means Advanced
+            -- Inputs here -- unconditionally, not contextually, since there is no output side to switch to.
+            -- Hidden when the Advanced routing master switch (Settings) is off, or when the market resolves
+            -- no input fill types at all.
+            local advOK = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
+            local hasIn = self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
+                and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
+            if advOK and hasIn then
+                b.text = "Advanced Inputs"; vis[#vis + 1] = b
             end
         else
             vis[#vis + 1] = b
@@ -867,4 +876,11 @@ end
 -- selectAsset() (inherited) calls updateSellTimingButton; route it to our button refresh
 function DistributionMarketsPage:updateSellTimingButton()
     self:updateTimingButton()
+end
+
+-- The inherited handler dispatches on _focusRole (input list vs output list). A market has only one
+-- meaningful destination for that button, so send it straight there rather than depending on which list
+-- the player happened to touch last.
+function DistributionMarketsPage:onAdvancedContextual()
+    if self.onAdvancedInputs ~= nil then self:onAdvancedInputs() end
 end

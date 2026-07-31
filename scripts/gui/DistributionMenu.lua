@@ -85,7 +85,12 @@ function DistributionMenu:setupPages()
         { self.pageStorage,     "gui.icon_construction_buildings",      storageButtonsFor(function() return self.pageStorage end),   showSilos },
         { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          storageButtonsFor(function() return self.pageHusbandry end), showHusbandry },
         { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
-        { self.pageOverview,    "gui.icon_ingameMenu_statistics",       { back }, always },
+        -- Overview carries one action beside Back: swap the flow figures for the Advanced Inputs / Outputs
+        -- settings behind the same rows. The label flips with the view (updateViewButton).
+        { self.pageOverview,    "gui.icon_ingameMenu_statistics",
+            { back, btn(InputAction.MENU_EXTRA_1, "Show Settings",
+                function() local p = self.pageOverview; if p ~= nil and p.onToggleSettingsView ~= nil then p:onToggleSettingsView() end end,
+                "viewToggle") }, always },
         { self.pageHelp,        "gui.icon_options_help2",               { back }, always },
         { self.pageSettings,    "gui.icon_options_generalSettings2",    { back }, always },
     }

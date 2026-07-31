@@ -46,7 +46,7 @@
              figure, not the raw tank); every other column is a flow totalled over the selected timescale.
              RECEIVED / DISTRIBUTED are what Distribution Redux moved; LOADED / UNLOADED are what was put
              in or taken out by hand (player, helper, other mod). -->
-        <Bitmap profile="SDList" position="0px -140px" size="1480px 40px">
+        <Bitmap profile="SDList" id="flowHeaderRow" position="0px -140px" size="1480px 40px">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
             <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="RECEIVED" />
@@ -62,8 +62,34 @@
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
+        <!-- SETTINGS VIEW header. Same first two columns as the flow header above (deliberately identical
+             positions and widths, so toggling the view does not move the building or product column), then
+             the Advanced Inputs configuration, then the Advanced Outputs configuration. A row fills only the
+             side it plays: an (In) row leaves the output group blank, an (Out) row the input group, and an
+             (In/Out) silo fills both. Kept as a SECOND header + list rather than retitling the flow one,
+             because the two views need genuinely different column widths and repositioning cells at runtime
+             would mean px-to-normalised arithmetic on the live layout (declined for the same reason in 5.33).
+             DEST is "active/total" routable destinations for the product's CURRENT mode. -->
+        <Bitmap profile="SDList" id="settingsHeaderRow" position="0px -140px" size="1480px 40px" visible="false">
+            <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
+            <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="82px 40px"  textSize="11px" text="STORAGE TYPE" />
+            <Text profile="SDHeaderRight" position="492px 0px"  size="130px 40px" textSize="11px" text="MAX IN (% - L)" />
+            <Text profile="SDHeaderRight" position="626px 0px"  size="140px 40px" textSize="11px" text="HELD OF MAX" />
+            <Text profile="SDHeaderRight" position="770px 0px"  size="120px 40px" textSize="11px" text="FILL TARGET" />
+            <Text profile="SDHeaderRight" position="894px 0px"  size="86px 40px"  textSize="11px" text="IN STATUS" />
+            <!-- OUT MODE carries the longest string on this header ("Distribute + Market Supply"), so it
+                 takes 180px and the whole numeric band was re-pitched around it to still end at 1480. -->
+            <Text profile="SDHeaderRight" position="984px 0px"  size="180px 40px" textSize="11px" text="OUT MODE" />
+            <Text profile="SDHeaderRight" position="1168px 0px" size="84px 40px"  textSize="11px" text="RESERVE" />
+            <Text profile="SDHeaderRight" position="1256px 0px" size="84px 40px"  textSize="11px" text="PRIORITY" />
+            <Text profile="SDHeaderRight" position="1344px 0px" size="46px 40px"  textSize="11px" text="DEST" />
+            <Text profile="SDHeaderRight" position="1394px 0px" size="86px 40px"  textSize="11px" text="OUT STATUS" />
+            <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+        </Bitmap>
+
         <!-- table body: one row per (building, product) -->
-        <GuiElement profile="SDList" position="0px -184px" size="1480px 626px">
+        <GuiElement profile="SDList" id="flowListBox" position="0px -184px" size="1480px 626px">
             <SmoothList profile="SDList" id="statsList" position="0px 0px" size="1480px 626px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1480px 42px" onClick="onClickStatsRow">
@@ -88,6 +114,32 @@
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 626px" with="anchorTopRight">
                 <Slider profile="fs25_listSlider" size="6px 618px" dataElementId="statsList" id="statsSlider" />
+            </ThreePartBitmap>
+        </GuiElement>
+
+        <!-- settings-view body. Same row pitch (42px) and the same first two cells as the flow list. -->
+        <GuiElement profile="SDList" id="settingsListBox" position="0px -184px" size="1480px 626px" visible="false">
+            <SmoothList profile="SDList" id="settingsList" position="0px 0px" size="1480px 626px"
+                        onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
+                <ListItem profile="SDListItemStats" name="rowTemplate" size="1480px 42px" onClick="onClickStatsRow">
+                    <Bitmap position="8px 5px" size="44px 32px" name="assetIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell"  position="56px 0px"   size="160px 42px" textSize="12px" name="assetName" />
+                    <Bitmap position="220px 12px" size="18px 18px" name="productIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell"  position="244px 0px"  size="156px 42px" textSize="12px" name="productName" />
+                    <Text profile="SDRowCellR" position="406px 0px"  size="82px 42px"  textSize="12px" name="typeText" />
+                    <Text profile="SDRowCellR" position="492px 0px"  size="130px 42px" textSize="12px" name="maxInText" />
+                    <Text profile="SDRowCellR" position="626px 0px"  size="140px 42px" textSize="12px" name="heldOfMaxText" />
+                    <Text profile="SDRowCellR" position="770px 0px"  size="120px 42px" textSize="12px" name="fillTargetText" />
+                    <Text profile="SDRowCellR" position="894px 0px"  size="86px 42px"  textSize="12px" name="inStatusText" />
+                    <Text profile="SDRowCellR" position="984px 0px"  size="180px 42px" textSize="11px" name="outModeText" />
+                    <Text profile="SDRowCellR" position="1168px 0px" size="84px 42px"  textSize="12px" name="reserveText" />
+                    <Text profile="SDRowCellR" position="1256px 0px" size="84px 42px"  textSize="12px" name="priorityText" />
+                    <Text profile="SDRowCellR" position="1344px 0px" size="46px 42px"  textSize="12px" name="destText" />
+                    <Text profile="SDRowCellR" position="1394px 0px" size="86px 42px"  textSize="12px" name="outStatusText" />
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 626px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 618px" dataElementId="settingsList" id="settingsSlider" />
             </ThreePartBitmap>
         </GuiElement>
     </GuiElement>
