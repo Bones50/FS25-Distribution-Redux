@@ -740,6 +740,9 @@ local function settingsFor(p, ft, role)
             s.destTotal, s.destActive = #dests, n
         end
         s.outStatus = (SD.outputLinkStatus ~= nil) and SD.outputLinkStatus(p, ft) or nil
+        -- "1/4" -- lines SWITCHED ON that make this product, of all lines that could. Nil for anything
+        -- with no production lines (silo, pen, market), which the page renders as a dash.
+        if SD.outputLineCounts ~= nil then s.lineOn, s.lineTotal = SD.outputLineCounts(p, ft) end
         -- Routing mode, resolved the way DistributionAdvancedDialog does it: a PRODUCTION's output runs on
         -- the v-mode enum (Keep / Distribute / ...), everything else on the asset MODE enum. Pallet-aware,
         -- so a coop's EGG row reads "Hold Pallets" where its MANURE row reads "Hold" (5.22).
@@ -748,7 +751,7 @@ local function settingsFor(p, ft, role)
             local v = SD.productionOutputVMode(pp, ft)
             s.mode = (v ~= nil) and SD.productionOutputVModeName(v) or nil
         elseif SD.modeName ~= nil and SD.resolvedAssetMode ~= nil then
-            local pal = (SD.isPalletOutput ~= nil) and SD.isPalletOutput(p, ft) or nil
+            local pal = (SD.holdLabelFlag ~= nil) and SD.holdLabelFlag(p, ft) or nil
             s.mode = SD.modeName(SD.resolvedAssetMode(p, ft), pal)
         end
         s.isOut = true

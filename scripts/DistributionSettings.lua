@@ -146,13 +146,16 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "Sell at best price", "Sell immediately" },
     },
-    fullPalletSpawn = {
+    -- Replaces the old fullPalletSpawn on/off (migrated on load, see loadSettings). One axis with three
+    -- states rather than two switches: productions already behave the "whole pallet" way natively, so
+    -- the middle state is really "make pens behave like productions", and Never turns both off.
+    palletSpawnMode = {
         order   = 9.8,
-        label   = "Whole pallets from pens",
-        tooltip = "Animal pens hold their product internally and release a FULL pallet, the way productions do. Off: vanilla, a pallet appears immediately and fills up gradually.",
-        default = 1,                                            -- Enabled
-        values  = { true, false },
-        strings = { "Enabled", "Disabled" },
+        label   = "Pallet spawning",
+        tooltip = "Whole pallets: pens hold product internally and release a FULL pallet, like productions. Vanilla: a pallet appears at once and fills gradually. Never: nothing spawns pallets on its own - product stays internal and still distributes, stores and sells from there. You can always release one by hand with Spawn Pallets.",
+        default = 2,                                            -- Whole pallets
+        values  = { 0, 1, 2 },
+        strings = { "Vanilla (fill gradually)", "Whole pallets only", "Never spawn pallets" },
     },
     debugEnabled = {
         order   = 10,
@@ -230,7 +233,12 @@ function DistributionSettings.apply()
     g.seasonalFallbackMonths = DistributionSettings.seasonalFallbackMonths
     g.bestPriceEnabled = DistributionSettings.bestPriceEnabled
     g.bestPriceDefault = DistributionSettings.bestPriceDefault
-    g.fullPalletSpawn  = DistributionSettings.fullPalletSpawn
+    -- One setting, two engine flags. fullPalletSpawn means "the pen's vanilla auto-spawn is suppressed",
+    -- which is true for BOTH "whole pallets" and "never" -- only Vanilla lets the base game trickle-fill.
+    -- Every existing 5.20 code path reads fullPalletSpawn and keeps working untouched; palletSpawnMode is
+    -- what the new NEVER behaviour tests (SmartDistribution.palletSpawnAllowed).
+    g.palletSpawnMode  = DistributionSettings.palletSpawnMode
+    g.fullPalletSpawn  = (DistributionSettings.palletSpawnMode ~= 0)
     SD.debug = DistributionSettings.debugEnabled
     if SD.debug then
         print(string.format("[DistributionSettings] applied scope=%s husbandry=%s silos/sheds=%s markets=%s radius=%d buffer=%dh selling=%s cost=%s($%d/%dm)",
@@ -267,7 +275,7 @@ function DistributionSettings.save()
     setXMLInt(xml,    "distributionRedux.settings#seasonalFallbackMonths", DistributionSettings.seasonalFallbackMonths)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceEnabled", DistributionSettings.bestPriceEnabled)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceDefault", DistributionSettings.bestPriceDefault)
-    setXMLBool(xml,   "distributionRedux.settings#fullPalletSpawn", DistributionSettings.fullPalletSpawn)
+    setXMLInt(xml,    "distributionRedux.settings#palletSpawnMode", DistributionSettings.palletSpawnMode)
     setXMLBool(xml,   "distributionRedux.settings#debugEnabled", DistributionSettings.debugEnabled)
     saveXMLFile(xml)
     delete(xml)
@@ -331,8 +339,17 @@ function DistributionSettings.load()
     local bpDefault = getXMLBool(xml, "distributionRedux.settings#bestPriceDefault")
     if bpDefault ~= nil then DistributionSettings.bestPriceDefault = bpDefault end
 
-    local fullPal = getXMLBool(xml, "distributionRedux.settings#fullPalletSpawn")
-    if fullPal ~= nil then DistributionSettings.fullPalletSpawn = fullPal end
+    -- palletSpawnMode replaced the fullPalletSpawn on/off. Read the new key first; fall back to
+    -- MIGRATING the old boolean so an existing settings file keeps the behaviour it had (true was
+    -- "whole pallets", false was vanilla trickle-fill). Nobody lands on Never by migration -- that is
+    -- new behaviour and has to be chosen.
+    local palMode = getXMLInt(xml, "distributionRedux.settings#palletSpawnMode")
+    if palMode ~= nil then
+        DistributionSettings.palletSpawnMode = palMode
+    else
+        local fullPal = getXMLBool(xml, "distributionRedux.settings#fullPalletSpawn")
+        if fullPal ~= nil then DistributionSettings.palletSpawnMode = fullPal and 1 or 0 end
+    end
 
     local dbg = getXMLBool(xml, "distributionRedux.settings#debugEnabled")
     if dbg ~= nil then DistributionSettings.debugEnabled = dbg end

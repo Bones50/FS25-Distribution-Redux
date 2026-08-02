@@ -49,15 +49,15 @@
         <Bitmap profile="SDList" id="flowHeaderRow" position="0px -140px" size="1480px 40px">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
-            <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="RECEIVED" />
-            <Text profile="SDHeaderRight" position="488px 0px"  size="70px 40px"  textSize="11px" text="LOADED" />
-            <Text profile="SDHeaderRight" position="562px 0px"  size="130px 40px" textSize="11px" text="CONSUMED (EXP.)" />
-            <Text profile="SDHeaderRight" position="696px 0px"  size="78px 40px"  textSize="11px" text="UNLOADED" />
-            <Text profile="SDHeaderRight" position="778px 0px"  size="250px 40px" textSize="11px" text="HELD (CAP)" />
-            <Text profile="SDHeaderRight" position="1032px 0px" size="130px 40px" textSize="11px" text="PRODUCED (EXP.)" />
-            <Text profile="SDHeaderRight" position="1166px 0px" size="78px 40px"  textSize="11px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderRight" position="1248px 0px" size="78px 40px"  textSize="11px" text="STORED/MOVED" />
-            <Text profile="SDHeaderRight" position="1330px 0px" size="78px 40px"  textSize="11px" text="SOLD" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="70px 40px"  textSize="11px" text="RECEIVED" />
+            <Text profile="SDHeaderRight" position="480px 0px"  size="58px 40px"  textSize="11px" text="LOADED" />
+            <Text profile="SDHeaderRight" position="542px 0px"  size="118px 40px" textSize="11px" text="CONSUMED (EXP.)" />
+            <Text profile="SDHeaderRight" position="664px 0px"  size="70px 40px"  textSize="11px" text="UNLOADED" />
+            <Text profile="SDHeaderRight" position="738px 0px"  size="240px 40px" textSize="11px" text="HELD (CAP)" />
+            <Text profile="SDHeaderRight" position="982px 0px"  size="118px 40px" textSize="11px" text="PRODUCED (EXP.)" />
+            <Text profile="SDHeaderRight" position="1104px 0px" size="76px 40px"  textSize="11px" text="DISTRIBUTED" />
+            <Text profile="SDHeaderRight" position="1184px 0px" size="90px 40px"  textSize="11px" text="STORED/MOVED" />
+            <Text profile="SDHeaderRight" position="1278px 0px" size="130px 40px" textSize="11px" text="SOLD" />
             <Text profile="SDHeaderRight" position="1412px 0px" size="68px 40px"  textSize="11px" text="DISTR. COST" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
@@ -73,18 +73,19 @@
         <Bitmap profile="SDList" id="settingsHeaderRow" position="0px -140px" size="1480px 40px" visible="false">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
-            <Text profile="SDHeaderRight" position="406px 0px"  size="82px 40px"  textSize="11px" text="STORAGE TYPE" />
-            <Text profile="SDHeaderRight" position="492px 0px"  size="130px 40px" textSize="11px" text="MAX IN (% - L)" />
-            <Text profile="SDHeaderRight" position="626px 0px"  size="140px 40px" textSize="11px" text="HELD OF MAX" />
-            <Text profile="SDHeaderRight" position="770px 0px"  size="120px 40px" textSize="11px" text="FILL TARGET" />
-            <Text profile="SDHeaderRight" position="894px 0px"  size="86px 40px"  textSize="11px" text="IN STATUS" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="STORAGE TYPE" />
+            <Text profile="SDHeaderRight" position="488px 0px"  size="124px 40px" textSize="11px" text="MAX IN (% - L)" />
+            <Text profile="SDHeaderRight" position="616px 0px"  size="132px 40px" textSize="11px" text="HELD OF MAX" />
+            <Text profile="SDHeaderRight" position="752px 0px"  size="112px 40px" textSize="11px" text="FILL TARGET" />
+            <Text profile="SDHeaderRight" position="868px 0px"  size="80px 40px"  textSize="11px" text="IN STATUS" />
+            <Text profile="SDHeaderRight" position="952px 0px"  size="56px 40px"  textSize="11px" text="LINES" />
             <!-- OUT MODE carries the longest string on this header ("Distribute + Market Supply"), so it
                  takes 180px and the whole numeric band was re-pitched around it to still end at 1480. -->
-            <Text profile="SDHeaderRight" position="984px 0px"  size="180px 40px" textSize="11px" text="OUT MODE" />
-            <Text profile="SDHeaderRight" position="1168px 0px" size="84px 40px"  textSize="11px" text="RESERVE" />
-            <Text profile="SDHeaderRight" position="1256px 0px" size="84px 40px"  textSize="11px" text="PRIORITY" />
-            <Text profile="SDHeaderRight" position="1344px 0px" size="46px 40px"  textSize="11px" text="DEST" />
-            <Text profile="SDHeaderRight" position="1394px 0px" size="86px 40px"  textSize="11px" text="OUT STATUS" />
+            <Text profile="SDHeaderRight" position="1012px 0px" size="172px 40px" textSize="11px" text="OUT MODE" />
+            <Text profile="SDHeaderRight" position="1188px 0px" size="80px 40px"  textSize="11px" text="RESERVE" />
+            <Text profile="SDHeaderRight" position="1272px 0px" size="80px 40px"  textSize="11px" text="PRIORITY" />
+            <Text profile="SDHeaderRight" position="1356px 0px" size="44px 40px"  textSize="11px" text="DEST" />
+            <Text profile="SDHeaderRight" position="1404px 0px" size="76px 40px"  textSize="11px" text="OUT STATUS" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
@@ -97,18 +98,22 @@
                     <Text profile="SDRowCell"  position="56px 0px"   size="160px 42px" textSize="12px" name="assetName" />
                     <Bitmap position="220px 12px" size="18px 18px" name="productIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell"  position="244px 0px"  size="156px 42px" textSize="12px" name="productName" />
-                    <Text profile="SDRowCellR" position="406px 0px"  size="78px 42px"  textSize="12px" name="receivedText" />
-                    <Text profile="SDRowCellR" position="488px 0px"  size="70px 42px"  textSize="12px" name="loadedText" />
-                    <Text profile="SDRowCellR" position="562px 0px"  size="130px 42px" textSize="12px" name="consumedText" />
-                    <Text profile="SDRowCellR" position="696px 0px"  size="78px 42px"  textSize="12px" name="unloadedText" />
+                    <Text profile="SDRowCellR" position="406px 0px"  size="70px 42px"  textSize="12px" name="receivedText" />
+                    <Text profile="SDRowCellR" position="480px 0px"  size="58px 42px"  textSize="12px" name="loadedText" />
+                    <Text profile="SDRowCellR" position="542px 0px"  size="118px 42px" textSize="12px" name="consumedText" />
+                    <Text profile="SDRowCellR" position="664px 0px"  size="70px 42px"  textSize="12px" name="unloadedText" />
                     <!-- HELD carries the longest string on the page: "473 L (150,000 L) + 3,000 L (3p)".
-                         At 118px it truncated to "360 L (150,000 L) + ...", so it gets 250px, taken from
-                         the flow columns either side that only ever hold a short figure or a dash. -->
-                    <Text profile="SDRowCellR" position="778px 0px"  size="250px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCellR" position="1032px 0px" size="130px 42px" textSize="12px" name="producedText" />
-                    <Text profile="SDRowCellR" position="1166px 0px" size="78px 42px"  textSize="12px" name="distributedText" />
-                    <Text profile="SDRowCellR" position="1248px 0px" size="78px 42px"  textSize="12px" name="storedText" />
-                    <Text profile="SDRowCellR" position="1330px 0px" size="78px 42px"  textSize="12px" name="soldText" />
+                         At 118px it truncated to "360 L (150,000 L) + ...", so it keeps a wide slot. It
+                         gave up 10px when SOLD needed room; the rest came from the narrow columns, which
+                         only ever hold a short figure or a dash. -->
+                    <Text profile="SDRowCellR" position="738px 0px"  size="240px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCellR" position="982px 0px"  size="118px 42px" textSize="12px" name="producedText" />
+                    <Text profile="SDRowCellR" position="1104px 0px" size="76px 42px"  textSize="12px" name="distributedText" />
+                    <!-- SOLD carries a figure AND its money in brackets, "78,000 (E40,950)", so it needs
+                         far more than the plain-number columns beside it. STORED/MOVED gained a little
+                         with it, its header having been clipped to "STORED/MOV...". -->
+                    <Text profile="SDRowCellR" position="1184px 0px" size="90px 42px"  textSize="12px" name="storedText" />
+                    <Text profile="SDRowCellR" position="1278px 0px" size="130px 42px" textSize="12px" name="soldText" />
                     <Text profile="SDRowCellR" position="1412px 0px" size="68px 42px"  textSize="12px" name="costText" />
                 </ListItem>
             </SmoothList>
@@ -126,16 +131,17 @@
                     <Text profile="SDRowCell"  position="56px 0px"   size="160px 42px" textSize="12px" name="assetName" />
                     <Bitmap position="220px 12px" size="18px 18px" name="productIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell"  position="244px 0px"  size="156px 42px" textSize="12px" name="productName" />
-                    <Text profile="SDRowCellR" position="406px 0px"  size="82px 42px"  textSize="12px" name="typeText" />
-                    <Text profile="SDRowCellR" position="492px 0px"  size="130px 42px" textSize="12px" name="maxInText" />
-                    <Text profile="SDRowCellR" position="626px 0px"  size="140px 42px" textSize="12px" name="heldOfMaxText" />
-                    <Text profile="SDRowCellR" position="770px 0px"  size="120px 42px" textSize="12px" name="fillTargetText" />
-                    <Text profile="SDRowCellR" position="894px 0px"  size="86px 42px"  textSize="12px" name="inStatusText" />
-                    <Text profile="SDRowCellR" position="984px 0px"  size="180px 42px" textSize="11px" name="outModeText" />
-                    <Text profile="SDRowCellR" position="1168px 0px" size="84px 42px"  textSize="12px" name="reserveText" />
-                    <Text profile="SDRowCellR" position="1256px 0px" size="84px 42px"  textSize="12px" name="priorityText" />
-                    <Text profile="SDRowCellR" position="1344px 0px" size="46px 42px"  textSize="12px" name="destText" />
-                    <Text profile="SDRowCellR" position="1394px 0px" size="86px 42px"  textSize="12px" name="outStatusText" />
+                    <Text profile="SDRowCellR" position="406px 0px"  size="78px 42px"  textSize="12px" name="typeText" />
+                    <Text profile="SDRowCellR" position="488px 0px"  size="124px 42px" textSize="12px" name="maxInText" />
+                    <Text profile="SDRowCellR" position="616px 0px"  size="132px 42px" textSize="12px" name="heldOfMaxText" />
+                    <Text profile="SDRowCellR" position="752px 0px"  size="112px 42px" textSize="12px" name="fillTargetText" />
+                    <Text profile="SDRowCellR" position="868px 0px"  size="80px 42px"  textSize="12px" name="inStatusText" />
+                    <Text profile="SDRowCellR" position="952px 0px"  size="56px 42px"  textSize="12px" name="prodLinesText" />
+                    <Text profile="SDRowCellR" position="1012px 0px" size="172px 42px" textSize="11px" name="outModeText" />
+                    <Text profile="SDRowCellR" position="1188px 0px" size="80px 42px"  textSize="12px" name="reserveText" />
+                    <Text profile="SDRowCellR" position="1272px 0px" size="80px 42px"  textSize="12px" name="priorityText" />
+                    <Text profile="SDRowCellR" position="1356px 0px" size="44px 42px"  textSize="12px" name="destText" />
+                    <Text profile="SDRowCellR" position="1404px 0px" size="76px 42px"  textSize="12px" name="outStatusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 626px" with="anchorTopRight">

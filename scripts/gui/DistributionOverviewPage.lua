@@ -608,11 +608,23 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
         local st = s.outStatus
         setc("outStatusText", (st ~= nil and OUT_WORD[st]) or "-")
         setCellColor(cell, "outStatusText", st ~= nil and col[st] or nil)
+        -- "1/4" production lines ON of the lines that make this product. Same colour language as DEST:
+        -- red when NONE are on (the building cannot make it at all, however healthy it looks), orange
+        -- when only some are. A building with no production lines shows a dash.
+        local lt, lo = s.lineTotal, s.lineOn
+        if type(lt) == "number" and lt > 0 then
+            setc("prodLinesText", string.format("%d/%d", lo or 0, lt))
+            setCellColor(cell, "prodLinesText", ((lo or 0) == 0) and col.BLOCKED or ((lo or 0) < lt and col.IDLE or nil))
+        else
+            setc("prodLinesText", "-")
+            setCellColor(cell, "prodLinesText", nil)
+        end
     else
         setc("outModeText", "-")
         setc("reserveText", "-"); setc("priorityText", "-"); setc("destText", "-"); setc("outStatusText", "-")
+        setc("prodLinesText", "-")
         setCellColor(cell, "reserveText", nil); setCellColor(cell, "destText", nil)
-        setCellColor(cell, "outStatusText", nil)
+        setCellColor(cell, "outStatusText", nil); setCellColor(cell, "prodLinesText", nil)
     end
 
     setIcon(cell, "assetIcon",   r.assetIcon)

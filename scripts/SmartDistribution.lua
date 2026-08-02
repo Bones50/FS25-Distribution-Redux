@@ -56,7 +56,20 @@ local S = {
         sellReserve       = 0,                 -- litres kept in a source before selling surplus
         bestPriceEnabled  = true,              -- master: hold Sell/Distribute+Sell surplus for its seasonal price peak
         bestPriceDefault  = true,              -- default per-output timing when unset (true = best price, false = immediate)
-        fullPalletSpawn   = true,              -- animal pens buffer internally and release a FULL pallet, like productions (off = vanilla trickle-fill)
+        -- How eagerly buildings turn product into physical pallets. ONE axis, three states:
+        --   0 VANILLA -- pens trickle-fill a pallet from the moment they have any product (base game)
+        --   1 WHOLE   -- pens accumulate internally and release a FULL pallet, the way productions
+        --                already behave natively. The default.
+        --   2 NEVER   -- nothing spawns a pallet on its own, anywhere. Product stays in the internal
+        --                buffer and distributes / stores / sells straight out of it. For pallet
+        --                DEGRADATION mods (nothing left standing outside to rot), and it sidesteps a
+        --                blocked or full spawn pad stalling a building entirely.
+        -- The player can always still release one by hand (Spawn Pallets), in every state.
+        palletSpawnMode   = 1,
+        -- DERIVED from the above, not set independently: "suppress the pen's vanilla auto-spawn", which
+        -- is true for BOTH whole-pallet and never. Kept as its own field because suppressedPalletFillTypes
+        -- and the rest of the 5.20 machinery already read it and mean exactly this.
+        fullPalletSpawn   = true,
         seasonalReserveEnabled = false,        -- hold ~a crop-year of feedstock back from Distribute+Sell (crops only)
         seasonalFallbackMonths = 13,           -- months to cover before a crop's harvest window is learned (worst case: player skips to 2nd harvest month)
         seasonalHarvestMinInflow = 5000,       -- litres: an unexplained crop inflow >= this between cycles is treated as a harvest
@@ -1801,10 +1814,19 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
                     -- the global default usable as a source, and also lets Distribute+Store outputs feed
                     -- consumers -- both previously excluded because their engine auto-deliver flag is off.
                     local pp2 = getProductionPoint(p)
+                    -- ONE candidate per production, not two. When the output also has pallets standing
+                    -- on the pad, hand over a combined proxy that drains PAD FIRST and falls through to
+                    -- the buffer -- see makeProductionSourceProxy for why the order matters and why
+                    -- offering both separately left it arbitrary. With an empty pad this is the plain
+                    -- storage exactly as before.
+                    local prodPad = pp2 ~= nil and isPalletSpawnerAsset(p)
+                                    and (palletFillLevel(p, ft) or 0) > 0
                     if pp2 ~= nil and pp2 ~= consumerPP and pp2.storage ~= nil and
                        pp2.outputFillTypeIds ~= nil and pp2.outputFillTypeIds[ft] and
-                       getLevel(pp2.storage, ft) > 0 then
-                        sources[#sources+1] = { storage = pp2.storage, d2 = d2, placeable = p }
+                       (getLevel(pp2.storage, ft) > 0 or prodPad) then
+                        local st = prodPad and SmartDistribution.makeProductionSourceProxy(pp2, p)
+                                            or pp2.storage
+                        sources[#sources+1] = { storage = st, d2 = d2, placeable = p }
                     end
                     -- (a2) virtual sellDirectly output (electricity / methane / modded intangibles) set to a
                     -- Distribute mode. These are never in pp.storage, so branch (a) can't see them; they are
@@ -1827,7 +1849,12 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
                     -- physical egg/wool/honey pallets via a thin proxy so transfer + billing are unchanged
                     -- ...or holding it in the internal queue, which the proxy materialises on demand. Without
                     -- the releasable term a pen with a full buffer and an empty pad reads as no source at all.
-                    if isPalletSpawnerAsset(p)
+                    -- ...but NOT when branch (a) above already emitted the combined production proxy for
+                    -- this fill type: that proxy covers the very same pad, so adding this would offer
+                    -- the same pallets twice and let one consumer's draw be double-counted against them.
+                    local prodCovered = pp2 ~= nil and pp2.storage ~= nil
+                                        and pp2.outputFillTypeIds ~= nil and pp2.outputFillTypeIds[ft]
+                    if not prodCovered and isPalletSpawnerAsset(p)
                        and (palletFillLevel(p, ft) + SmartDistribution.releasableLiters(p, ft)) > 0 then
                         sources[#sources+1] = { storage = makePalletSourceProxy(p), d2 = d2, placeable = p }
                     end
@@ -2821,14 +2848,10 @@ local function storeAmount(p, storage, ft, farmId, bill)
     if p.rootNode == nil then return end
     -- Palletized outputs are delivered as whole pallets by palletPhase, NOT drained in bulk from the
     -- production buffer here -- otherwise the product is stored twice (bulk drain + pallet deposit),
-    -- which splits it across targets instead of filling the ranked one. (palletSpawnerFillTypes is an
-    -- ARRAY -- search by value.)
-    local pfts = palletSpawnerFillTypes(p)
-    if pfts ~= nil then
-        for _, pf in ipairs(pfts) do
-            if pf == ft then return end
-        end
-    end
+    -- which splits it across targets instead of filling the ranked one.
+    -- isPalletOutput, NOT the raw palletSpawnerFillTypes list: with pallet spawning set to NEVER no
+    -- pallet will ever come to collect it, so this refusal would strand the product in the buffer.
+    if SmartDistribution.isPalletOutput(p, ft) then return end
     local level = SmartDistribution.drawableLevel(p, ft, getLevel(storage, ft))   -- output reserve stays put
     if level <= 0 then return end
     local x, _, z = getWorldTranslation(p.rootNode)
@@ -2878,13 +2901,9 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
 
     -- Palletized outputs (production pallet outputs, coop eggs/wool, beehive honey) are delivered as
     -- whole pallets by palletPhase -> _storeToPalletAmount, not by this bulk/shed transfer. Skip them here
-    -- so they aren't processed twice. (palletSpawnerFillTypes is an ARRAY -- search by value.)
-    local pfts = palletSpawnerFillTypes(p)
-    if pfts ~= nil then
-        for _, pf in ipairs(pfts) do
-            if pf == ft then return end
-        end
-    end
+    -- so they aren't processed twice. isPalletOutput, not the raw list: with spawning set to NEVER the
+    -- pallet path can never run, so Move To has to move the buffer in bulk instead.
+    if SmartDistribution.isPalletOutput(p, ft) then return end
 
     -- how the source holds this product right now decides both the amount and which targets are valid
     local form = SmartDistribution.sourceHoldForm(p, ft)
@@ -4285,24 +4304,63 @@ function SmartDistribution.palletOutOf(uid, ft)
     return (a ~= nil and a[ft]) or 0
 end
 
+-- Litres pulled back OFF a pad and into the building's own buffer this pass (reclaimPartialPallets).
+-- Not an outflow and not production -- the same litres in a different place -- so recordProductionThroughput
+-- has to subtract it from BOTH of its equations or a reclaim reads as product appearing out of nowhere.
+SmartDistribution._palletReclaim = {}
+function SmartDistribution.noteReclaim(p, ft, litres)
+    if p == nil or ft == nil or litres == nil or litres <= 0 then return end
+    local t = SmartDistribution._palletReclaim
+    if t == nil then t = {}; SmartDistribution._palletReclaim = t end
+    local uid = getUid(p)
+    local a = t[uid]; if a == nil then a = {}; t[uid] = a end
+    a[ft] = (a[ft] or 0) + litres
+end
+function SmartDistribution.palletReclaimOf(uid, ft)
+    local t = SmartDistribution._palletReclaim
+    local a = t ~= nil and t[uid] or nil
+    return (a ~= nil and a[ft]) or 0
+end
+
 -- drain up to `amount` liters of `ft` from the asset's pallets; returns liters drained.
 -- pallets that hit empty are deleted and dropped from the spawner's set (server-side;
 -- the base game replicates pallet deletion to clients).
 function drainPallets(p, ft, amount, farmId)
     if not isPalletSpawnerAsset(p) then return 0 end
     local spec = p.spec_husbandryPallets   -- nil for a beehive spawner (no tracked set to prune)
-    local drained, toDelete = 0, {}
+    -- EMPTIEST FIRST, and that is deliberate consolidation: finishing a part-filled pallet off before
+    -- opening a full one keeps at most ONE partial on the pad. A partial is the awkward state -- it can
+    -- never be deposited into a pallet shed (depositPalletsToShed requires palletIsFull), so two of them
+    -- means two slots of product that cannot be stored.
+    --
+    -- This used to be EMERGENT rather than guaranteed: husbandryPalletObjects walks the vehicle list,
+    -- which is roughly spawn order, so the oldest pallet came first -- and the oldest surviving one is
+    -- usually the one previous draws have been nibbling at. That coincidence stops holding as soon as
+    -- the ordering stops tracking age: after a save/load rebuilds the vehicle list, or when a pallet
+    -- arrives on the pad from somewhere else (the player sets one down). Then a FULL pallet gets opened
+    -- while a partial still stands there, and now there are two. Sorting makes it certain.
+    -- Empty pallets are dropped here rather than skipped in the loop -- they can contribute nothing, and
+    -- excluding them keeps them out of the delete list (drainPallets only ever removes what it empties).
+    local work = {}
     for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
-        if amount - drained <= 0 then break end
         if pallet.addFillUnitFillLevel ~= nil then
             local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
             local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
-            local d = math.min(amount - drained, lvl)
-            if d > 0 then
-                pallet:addFillUnitFillLevel(farmId, idx, -d, ft, ToolType ~= nil and ToolType.UNDEFINED or nil)
-                drained = drained + d
-                if lvl - d <= 0 then toDelete[#toDelete + 1] = pallet end
-            end
+            if lvl > 0 then work[#work + 1] = { pallet = pallet, idx = idx, lvl = lvl } end
+        end
+    end
+    table.sort(work, function(a, b)
+        if a.lvl ~= b.lvl then return a.lvl < b.lvl end
+        return tostring(a.pallet) < tostring(b.pallet)      -- stable tie-break, so equal pallets keep an order
+    end)
+    local drained, toDelete = 0, {}
+    for _, e in ipairs(work) do
+        if amount - drained <= 0 then break end
+        local d = math.min(amount - drained, e.lvl)
+        if d > 0 then
+            e.pallet:addFillUnitFillLevel(farmId, e.idx, -d, ft, ToolType ~= nil and ToolType.UNDEFINED or nil)
+            drained = drained + d
+            if e.lvl - d <= 0 then toDelete[#toDelete + 1] = e.pallet end
         end
     end
     for _, pallet in ipairs(toDelete) do
@@ -4397,6 +4455,53 @@ function makePalletSourceProxy(p)
             local want = -delta
             local got  = drainPallets(p, ft, want, farmId)
             if got < want then SmartDistribution.drawFromQueue(p, ft, want - got) end
+        end,
+    }
+end
+
+-- A PRODUCTION as ONE source: its pad AND its output buffer, drained PAD FIRST.
+--
+-- gatherSources used to offer these as two INDEPENDENT candidates -- branch (a) for pp.storage and
+-- branch (c) for the pallets. Both carry the same d2 (both measured from the building's rootNode), so
+-- buildSlotCandidates' sort fell through to its `key` tie-break, which is `tostring(storage)` -- an
+-- address. Which pool a consumer drew from was therefore arbitrary and could differ between sessions.
+--
+-- Pad first matters for the same reason drainPallets drains the emptiest pallet first: pallets are the
+-- awkward form. Product left in the BUFFER can still become a pallet later, or ship as bulk; product
+-- already on the pad can only leave as a pallet, and a partial one cannot enter a pallet shed at all.
+-- So spend the pad down and let the buffer accumulate toward whole pallets.
+--
+-- This mirrors makePalletSourceProxy's pad-then-queue rule for a PEN. The two are deliberately separate
+-- functions rather than one generic: a pen's second pool is `pendingLiters` (a bare number reached via
+-- drawFromQueue) while a production's is a real Storage, and merging them would mean branching inside
+-- every accessor for no gain.
+--
+-- Accounting is unaffected: drainPallets still calls notePalletOut for the pad portion, so 5.24's
+-- `bulkOut = shipped - palletOut` split stays exact across the merge.
+function SmartDistribution.makeProductionSourceProxy(pp, p)
+    return {
+        -- verifyDrain: drainPallets can come up short (a pallet despawned between the read and the
+        -- draw), and slotMove credits the consumer from what actually left rather than what we claimed.
+        verifyDrain  = true,
+        getFillLevel = function(_, ft)
+            return (palletFillLevel(p, ft) or 0) + (getLevel(pp.storage, ft) or 0)
+        end,
+        addFillLevel = function(_, farmId, ft, delta)
+            if delta == nil or delta == 0 then return end
+            if delta > 0 then
+                -- handed back by a consumer that took less than was offered: return it to the BUFFER,
+                -- which is where the production puts its own output. Re-filling a pallet would need a
+                -- pallet to still exist, and the one we drained may have been emptied and deleted.
+                setLevel(pp.storage, ft, (getLevel(pp.storage, ft) or 0) + delta, farmId, delta)
+                return
+            end
+            local want = -delta
+            local got  = drainPallets(p, ft, want, farmId)
+            if got < want then
+                local lvl  = getLevel(pp.storage, ft) or 0
+                local take = math.min(want - got, lvl)
+                if take > 0 then setLevel(pp.storage, ft, lvl - take, farmId, -take) end
+            end
         end,
     }
 end
@@ -4748,14 +4853,12 @@ end
 --     bulk silo. Detect that from the production's pallet-spawner output set.
 --   * anything held in a real bulk tank -> BULK
 function SmartDistribution.sourceHoldForm(p, ft)
+    -- pallets it is ACTUALLY holding come first, so product already standing on a pad still targets a
+    -- pallet store even when spawning is off -- switching the setting strands nothing already out there.
     if SmartDistribution._holdsAsPallets(p, ft) then return "PALLET" end
-    -- palletSpawnerFillTypes returns an ARRAY of fill-type indices, not a set -- search it by value.
-    local pfts = palletSpawnerFillTypes(p)
-    if pfts ~= nil then
-        for _, pf in ipairs(pfts) do
-            if pf == ft then return "PALLET" end
-        end
-    end
+    -- isPalletOutput, not the raw list: with spawning set to NEVER the product will never take pallet
+    -- form, so it is BULK and must target bulk tanks rather than pallet sheds.
+    if SmartDistribution.isPalletOutput(p, ft) then return "PALLET" end
     if SmartDistribution._bulkStorageFor(p, ft) ~= nil then return "BULK" end
     return nil
 end
@@ -5266,9 +5369,11 @@ function SmartDistribution.runHourly(manager)
     detectHarvests()                                          -- learn crop harvest months (pre-phase levels)
     cycleAcc = {}                                              -- begin per-cycle accounting
     SmartDistribution._palletOut = {}                         -- per-pass tally of litres shipped OFF PALLETS (vs straight from a buffer)
+    SmartDistribution._palletReclaim = {}                     -- per-pass tally of litres pulled BACK off a pad into the buffer
     SmartDistribution.observeHusbandryProduction()            -- record husbandry output produced since last cycle (pre-drain)
-    SmartDistribution.sweepEmptyPadPallets()                   -- phase 0b: clear empty pallets an older build left standing on a pen's pad
+    SmartDistribution.sweepEmptyPadPallets()                   -- phase 0b: clear empty pallets left on a pen's OR production's pad
     SmartDistribution.spawnWholePallets()                     -- phase 0c: release FULL pallets from pen buffers (setting); before slots so they are sources this pass
+    SmartDistribution.flushPendingLedger()                     -- fold in deposits whose callbacks landed after last pass
     local bill = {}
     local slots = {}
     SmartDistribution.collectVirtualProduction(manager)        -- materialise sellDirectly outputs set to Distribute (electricity/methane) as sources BEFORE allocation
@@ -5281,6 +5386,7 @@ function SmartDistribution.runHourly(manager)
     collectHusbandryWaterSlots(slots)
     allocate(slots, bill)
     storePhase(manager, bill)                                  -- phase 1d: push Distribute+Store remainders to storage
+    SmartDistribution.stagePalletsForShed(bill)                -- phase 1d2: spawning OFF -- internal stock -> pallet shed as whole pallets (all of it, one pad slot at a time)
     palletPhase(manager, bill)                                 -- phase 1e: pallet-spawner outputs (eggs/wool/honey)
     shedPhase(manager)                                         -- phase 1f: shed (object storage) SELL / DISTRIBUTE_SELL remainders
     chargeDistribution(bill)                                   -- phase 1.5: distance-based billing
@@ -5927,7 +6033,9 @@ end
 -- Fill a freshly spawned pallet from the production's held stock and debit the storage by what went in.
 -- Called (async) once the pallet has loaded. Returns the litres actually added. (Verified in-game: the
 -- spawn callback passes (target, pallet, fillUnitIndex, fillTypeIndex); we locate the unit + fill it.)
-function SmartDistribution._fillSpawnedPallet(pp, ft, pallet)
+-- `isNew` says the spawner CREATED this pallet rather than handing back one already on the pad
+-- (PALLET_ALREADY_PRESENT, which the 5.39 redirect makes possible here). It gates the delete below.
+function SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew)
     if pp == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
     local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or 1
     local unit
@@ -5941,8 +6049,25 @@ function SmartDistribution._fillSpawnedPallet(pp, ft, pallet)
     local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
     local avail  = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
     local amount = math.min(cap > 0 and cap or avail, avail)
-    if amount <= 0 then return 0 end
-    local added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
+    local added  = 0
+    if amount > 0 then
+        added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
+    end
+    if added <= 0 then
+        -- Nothing went in, so a NEWLY SPAWNED pallet is empty -- and an empty pallet is immortal
+        -- (drainPallets only deletes one it drains to zero) and worthless once spawning is off, since
+        -- nothing will ever fill it. Reported in game: three bakeries each left holding two empty
+        -- pallets. The husbandry twin has always cleaned these up; the production side never did, and it
+        -- shows whenever a spawn chain asks for more pallets than the buffer can fill -- the last request
+        -- always finds an empty buffer, so EVERY chain used to leave one behind.
+        --
+        -- Gated on isNew exactly as the husbandry twin is: the 5.39 redirect means the spawner can hand
+        -- back an EXISTING pallet off the pad, and one already full accepts nothing -- `added` is 0 for
+        -- that too. Deleting on it would destroy real product. `isNew ~= false` so an older caller that
+        -- passes nothing keeps the previous behaviour.
+        if isNew ~= false and pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+        return 0
+    end
     if added > 0 and pp.storage ~= nil and pp.storage.setFillLevel ~= nil and pp.storage.getFillLevel ~= nil then
         -- DR's own debit, and it happens OUTSIDE the hourly pass (player-triggered), so it needs the
         -- self-write guard explicitly or the manual tracker would read it as product unloaded by hand.
@@ -5966,12 +6091,19 @@ function SmartDistribution.spawnPalletsFromProduction(pp, ft, count)
     local function spawnNext(remaining)
         if remaining <= 0 then return end
         if pp.getFillLevel ~= nil and (pp:getFillLevel(ft) or 0) <= 0 then return end
+        -- player-driven (Spawn Pallets), so it bypasses the "never spawn" refusal -- see the husbandry twin
+        local bypass = SmartDistribution._palletHookBypass
+        SmartDistribution._palletHookBypass = true
         pcall(function()
-            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet)
-                SmartDistribution._fillSpawnedPallet(pp, ft, pallet)
+            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet, statusCode)
+                -- status matters since 5.39: the redirect can hand back an EXISTING pallet, which must
+                -- never be deleted as "unfillable" when it is simply already full
+                local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
+                SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew)
                 spawnNext(remaining - 1)
             end, pp)
         end)
+        SmartDistribution._palletHookBypass = bypass
     end
     spawnNext(count)
     return count
@@ -6052,7 +6184,10 @@ end
 -- Parallel to the production path, but the source is the coop's internal buffer (spec_husbandryPallets
 -- .pendingLiters[ft]) rather than a production storage, and the spawner is the coop's per-fill-type one.
 -- Fill a freshly spawned pallet from that buffer and debit it. Serial, one pallet at a time.
-function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
+-- `isNew` says the spawner CREATED this pallet (RESULT_SUCCESS) rather than handing back an
+-- existing one it found on the pad (PALLET_ALREADY_PRESENT). It gates the delete below and
+-- nothing else -- see there for why that distinction is load-bearing.
+function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew)
     local hs = p ~= nil and p.spec_husbandryPallets or nil
     if hs == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
     if type(hs.pendingLiters) ~= "table" then return 0 end
@@ -6072,10 +6207,15 @@ function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
     if amount > 0 then
         added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
     end
-    if added <= 0 then
+    if added <= 0 and isNew ~= false then
         -- Nothing went in, so this pallet is EMPTY -- and an empty pallet left on the pad is immortal
         -- (drainPallets only ever deletes one it drains to zero) and worthless: with vanilla auto-spawn
         -- suppressed, nothing will ever fill it. It is brand new and ours, so take it straight back out.
+        --
+        -- GATED ON isNew since the caller moved to getOrSpawnPallet: that can hand back an EXISTING
+        -- pallet off the pad, and one already full accepts nothing -- `added` is 0 for a pallet holding
+        -- 1,000 L exactly as it is for a failed spawn. Deleting on that would destroy real product.
+        -- `isNew ~= false` (not `== true`) so a caller that passes nothing keeps the old behaviour.
         --
         -- This is the backstop that makes every remaining async-spawn race harmless rather than needing a
         -- reservation scheme. spawnPallet's callback is asynchronous, so during sleep / fast-forward -- where
@@ -6108,15 +6248,28 @@ function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count)
     local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
     local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
     local floorL = (cap > 0 and cap or 1)
+    -- getOrSpawnPallet, NOT spawnPallet: it hands back a partly-filled pallet already standing on the
+    -- pad rather than adding a second one beside it. A pen's VANILLA path always used it; DR's own
+    -- release did not, so with "Whole pallets from pens" on -- where DR is the only thing spawning --
+    -- a partial left by a distribute draw could never be topped up (seen in the 2026-08-02 log as
+    -- `palletHook spawnPallet PEN [EGG] Chicken Coop`). Same base-game call the pen makes itself.
+    -- The status is now passed through: `isNew` gates the delete-on-unfillable inside the fill helper.
     local function spawnNext(remaining)
         if remaining <= 0 then return end
         if (hs.pendingLiters[ft] or 0) < floorL then return end
+        -- Bypass the "never spawn" refusal: every caller of this is either the player's own Spawn
+        -- Pallets button or spawnWholePallets, which is itself gated on the setting. Set across the
+        -- CALL only -- the refusal decision is taken inside it, while the callback runs later (async).
+        local bypass = SmartDistribution._palletHookBypass
+        SmartDistribution._palletHookBypass = true
         pcall(function()
-            spawner:spawnPallet(farmId, ft, function(_, pallet)
-                SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet)
+            spawner:getOrSpawnPallet(farmId, ft, function(_, pallet, statusCode)
+                local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
+                SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew)
                 spawnNext(remaining - 1)
             end, p)
         end)
+        SmartDistribution._palletHookBypass = bypass
     end
     spawnNext(count)
     return count
@@ -6319,10 +6472,14 @@ end
 -- FULL pallet's worth held internally. Handles productions (storage) and pallet-spawner husbandries
 -- (pending buffer). Single gate for the footer button on every page + the vanilla-menu hooks, so the
 -- button is hidden below one pallet's worth everywhere.
+-- Offered whenever the building is holding a full pallet's worth internally, in ANY mode.
+--
+-- It used to require HOLD_INTERNAL, which made sense while that was the only mode that accumulated a
+-- buffer -- 5.20 already logged the gap as a "convenience gap rather than stuck product". With pallet
+-- spawning set to NEVER it stops being a convenience: nothing releases a pallet automatically, so this
+-- button is the ONLY way to get one, and gating it on one mode would make the setting a trap.
 function SmartDistribution.palletSpawnReady(asset, ft)
     if asset == nil or ft == nil or MODE == nil then return false end
-    if SmartDistribution.resolvedAssetMode == nil
-       or SmartDistribution.resolvedAssetMode(asset, ft) ~= MODE.HOLD_INTERNAL then return false end
     local pp = getProductionPoint(asset)
     if pp ~= nil then
         local cap  = SmartDistribution.palletCapacityFor(pp, ft)
@@ -7372,146 +7529,7 @@ function SmartDistribution.cmdIconProbe(self)
     return "icon probe done -- see log"
 end
 
--- TEMPORARY (2026-07-31): why did Distribute + Market Supply stop while the markets were on Hold?
--- Nothing in the PUSH path reads the sell timing -- marketTransferPhase / marketsFor / effectiveMarketsFor
--- never call marketSellMode -- so the only way Hold can stall a push is indirectly: the buffer fills,
--- nothing sells it back down, and `marketCap - marketBufferLevel` reaches 0. Setting the market to Sell
--- restarted the flow, which fits that and nothing else in the code. But the author read the buffers as
--- "nowhere near cap", so one of the two figures is not what it appears. This prints BOTH, per market per
--- fill type, exactly as marketTransferPhase computes them.
--- Remove once that is settled.
-function SmartDistribution.cmdMarketBuffer(self)
-    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
-    if ps == nil then return "no placeableSystem" end
-    local function dump(s) print("[SmartDistribution] " .. s) end
-    local names = { [0] = "Sell now (Immediate)", [1] = "Best price", [2] = "HOLD" }
-    dump("=== sdMarketBuffer ===")
-    local n = 0
-    for _, p in ipairs(ps.placeables) do
-        if SmartDistribution.isMarket(p) then
-            n = n + 1
-            local uid = getUid(p)
-            local cap = SmartDistribution.marketCap(p)
-            -- marketCap is storeItem.price * 2 LITRES, falling back to the flat MARKET_CAP. If storeItem
-            -- is nil here, every market on the map shares the 200,000 fallback and cap is not per-market.
-            local si  = p.storeItem
-            dump(string.format("[market %d] %s  uid=%s", n, tostring(placeableName(p)), tostring(uid)))
-            dump(string.format("   cap=%s per fill type  (storeItem=%s price=%s -> %s)",
-                tostring(cap), tostring(si ~= nil), tostring(si ~= nil and si.price or nil),
-                (si ~= nil and type(si.price) == "number" and si.price > 0) and "price*2" or "MARKET_CAP fallback"))
-            local buf = SmartDistribution._marketBuffer[uid]
-            local tim = SmartDistribution._marketTiming[uid]
-            local fts, seen = {}, {}
-            for ft in pairs(buf or {}) do if not seen[ft] then seen[ft] = true; fts[#fts + 1] = ft end end
-            for ft in pairs(tim or {}) do if not seen[ft] then seen[ft] = true; fts[#fts + 1] = ft end end
-            table.sort(fts)
-            if #fts == 0 then dump("   (buffer empty, no timing overrides -- every product on the HOLD default)") end
-            for _, ft in ipairs(fts) do
-                local lvl  = SmartDistribution.marketBufferLevel(uid, ft)
-                local room = cap - lvl
-                local mode = SmartDistribution.marketSellMode(uid, ft)
-                dump(string.format("   %-16s buffer=%-12s room=%-12s timing=%s%s",
-                    fillTypeName(ft), string.format("%.0f", lvl), string.format("%.0f", room),
-                    names[mode] or tostring(mode),
-                    (room <= 0) and "   <<< FULL: marketTransferPhase pushes NOTHING here" or ""))
-            end
-        end
-    end
-    if n == 0 then dump("no owned markets matched isMarket() -- check MARKET_NAME_HINTS") end
-    return "sdMarketBuffer: " .. tostring(n) .. " market(s)"
-end
 
--- TEMPORARY (2026-07-31): "Distribute moves nothing either, and the market settings have no play in it."
--- Distribute AND Market Supply both dead is ONE cause upstream of both, not two coincidences -- and every
--- switch that can do that is a per-(source, fill type) advanced override, invisible on the building tabs:
---   * a BLOCKED destination set (Advanced Outputs "Block All") -- blocks consumers, stores AND markets alike
---   * an OUTPUT RESERVE (5.10) -- a floor that stops distribute / sell / store / Move To / market together
---   * the fill type in the GLOBAL excluded list -- every phase skips it outright
--- All three are silent: the source just reads Active (Idle) and product piles up. This dumps every one of
--- them that is actually set, farm-wide, with names resolved. Remove once the cause is known.
-function SmartDistribution.cmdControlDump(self)
-    local function dump(s) print("[SmartDistribution] " .. s) end
-    local C = SmartDistribution.control or {}
-    local g = (SmartDistribution.settings ~= nil) and SmartDistribution.settings.global or {}
-    local nameOf = {}
-    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
-    if ps ~= nil then
-        for _, p in ipairs(ps.placeables) do
-            local u = getUid(p)
-            if u ~= nil then nameOf[u] = tostring(placeableName(p)) end
-        end
-    end
-    local function nm(u) return (nameOf[u] or "<not on map>") .. " [" .. tostring(u) .. "]" end
-    local function count(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
-
-    dump("=== sdControlDump ===")
-    dump("advancedRoutingEnabled=" .. tostring(SmartDistribution.advancedEnabled())
-        .. "   (false => blocks / reserves / input caps are ALL ignored)")
-    local ex = {}
-    for ft, v in pairs(g.excludedFillTypes or {}) do if v then ex[#ex + 1] = fillTypeName(ft) end end
-    table.sort(ex)
-    dump("globally EXCLUDED fill types (DR skips these in every phase): " .. (#ex > 0 and table.concat(ex, ", ") or "none"))
-    dump("sellEnabled=" .. tostring(g.sellEnabled) .. "  radius=" .. tostring(g.radius)
-        .. "  sellReserve=" .. tostring(g.sellReserve))
-
-    local any = false
-    dump("-- OUTPUT RESERVES (litres the source must always keep back; nothing may leave below this) --")
-    for uid, byFt in pairs(C.outputReserve or {}) do
-        for ft, v in pairs(byFt or {}) do
-            any = true
-            dump(string.format("   %s  %s  reserve=%s", nm(uid), fillTypeName(ft), tostring(v)))
-        end
-    end
-    if not any then dump("   none") end
-
-    any = false
-    dump("-- BLOCKED DESTINATIONS (source may NOT send ft to these; covers consumers, stores AND markets) --")
-    for uid, byFt in pairs(C.blocked or {}) do
-        for ft, dests in pairs(byFt or {}) do
-            local n = count(dests)
-            if n > 0 then
-                any = true
-                dump(string.format("   %s  %s  -> %d destination(s) blocked:", nm(uid), fillTypeName(ft), n))
-                for d, on in pairs(dests) do if on then dump("        x " .. nm(d)) end end
-            end
-        end
-    end
-    if not any then dump("   none") end
-
-    any = false
-    dump("-- INPUT BLOCKS (receiver refuses ft on the way IN -- starves the SOURCE just as effectively) --")
-    for uid, byFt in pairs(C.inputBlock or {}) do
-        for ft, on in pairs(byFt or {}) do
-            if on then any = true; dump(string.format("   %s  %s  BLOCKED IN", nm(uid), fillTypeName(ft))) end
-        end
-    end
-    if not any then dump("   none") end
-
-    any = false
-    dump("-- INPUT CAPS / FILL TARGETS (a 0% cap accepts nothing; a met target stops asking) --")
-    for uid, byFt in pairs(C.inputCapPct or {}) do
-        for ft, v in pairs(byFt or {}) do any = true; dump(string.format("   %s  %s  max in=%s%%", nm(uid), fillTypeName(ft), tostring(v))) end
-    end
-    for uid, byFt in pairs(C.inputTarget or {}) do
-        for ft, v in pairs(byFt or {}) do any = true; dump(string.format("   %s  %s  fill target=%s%%", nm(uid), fillTypeName(ft), tostring(v))) end
-    end
-    if not any then dump("   none") end
-
-    any = false
-    dump("-- PRIORITY ORDERS --")
-    for uid, byFt in pairs(C.priority or {}) do
-        for ft, list in pairs(byFt or {}) do
-            if type(list) == "table" and #list > 0 then
-                any = true
-                local parts = {}
-                for i, d in ipairs(list) do parts[#parts + 1] = tostring(i) .. "." .. nm(d) end
-                dump(string.format("   %s  %s  %s", nm(uid), fillTypeName(ft), table.concat(parts, "  ")))
-            end
-        end
-    end
-    if not any then dump("   none") end
-    return "sdControlDump: see log"
-end
 
 function SmartDistribution.cmdMarketProbe(self)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
@@ -7621,8 +7639,15 @@ local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribut
 -- For a palletisable production output, plain Hold lets the engine auto-spawn pallets, so we surface it as
 -- "Hold Pallets" to distinguish it from Hold Internal (keep as bulk, no spawn). Non-palletisable outputs
 -- (silos, bulk goods) keep the plain "Hold" label since there are no pallets to differentiate.
+-- `palletizable` is TRI-STATE, from holdLabelFlag: true -> "Hold Pallets", "internal" -> "Hold Internal",
+-- anything false/nil -> the plain name. The middle case is a building that emits pallets but has pallet
+-- spawning switched off, where holding is necessarily internal and "Hold Pallets" would name the one
+-- thing it cannot do. Callers passing a bare boolean keep the old two-state behaviour.
 function SmartDistribution.modeName(m, palletizable)
-    if m == MODE.HOLD and palletizable then return "Hold Pallets" end
+    if m == MODE.HOLD then
+        if palletizable == "internal" then return "Hold Internal" end
+        if palletizable then return "Hold Pallets" end
+    end
     return MODE_NAMES[m] or ("mode" .. tostring(m))
 end
 
@@ -7631,12 +7656,61 @@ end
 -- "Hold Pallets". The Animal Husbandry tab showed a bare "Hold" for eggs because it called modeName with
 -- no palletizable flag at all, so a pen offered "Hold" / "Hold Internal" where a production offers
 -- "Hold Pallets" / "Hold Internal" for the very same pair of modes.
-function SmartDistribution.isPalletOutput(p, ft)
+-- "How eagerly does this farm turn product into pallets" -- see S.global.palletSpawnMode.
+SmartDistribution.PALLET_SPAWN_VANILLA = 0
+SmartDistribution.PALLET_SPAWN_WHOLE   = 1
+SmartDistribution.PALLET_SPAWN_NEVER   = 2
+-- May anything on this farm still CREATE a pallet by itself? False only in NEVER. The player's own
+-- Spawn Pallets button deliberately bypasses this (see _palletHookBypass) -- the setting governs
+-- automatic spawning, not what the player may do by hand.
+function SmartDistribution.palletSpawnAllowed()
+    return (S.global.palletSpawnMode or SmartDistribution.PALLET_SPAWN_WHOLE)
+           ~= SmartDistribution.PALLET_SPAWN_NEVER
+end
+
+-- Will PALLETS carry this product out of this building?
+--
+-- Structurally (palletSpawnerFillTypes) a bakery's BREAD is a pallet output whatever the settings say.
+-- But this answers the OPERATIONAL question the rest of the engine actually needs -- "will the product
+-- leave on a pallet, so the bulk paths should keep their hands off it?" -- and in NEVER mode the answer
+-- is no: nothing will ever spawn, so the bulk paths are the ONLY way out and refusing them would strand
+-- the product in the buffer for good. That is the single gate that makes the whole setting work; the
+-- three bulk-movement refusals (storeAmount, storeToAmount, sourceHoldForm) all route through here.
+--
+-- Also drives the mode LABELS (5.22), so a coop reads "Hold" rather than "Hold Pallets" when nothing
+-- can spawn -- the two would otherwise be indistinguishable in play but named differently.
+--
+-- NOTE this deliberately does NOT consider pallets that already EXIST. Those are still owned, drained,
+-- sold and stored exactly as before: palletPhase iterates palletSpawnerFillTypes (structural, unchanged),
+-- gatherSources gates on isPalletSpawnerAsset, and sourceHoldForm asks _holdsAsPallets FIRST. So
+-- switching to NEVER strands nothing already standing on a pad -- it drains away normally.
+-- STRUCTURAL: does this building emit this fill type on pallets at all, settings aside? The raw test the
+-- two functions below are built on, so the loop lives in exactly one place.
+function SmartDistribution.isStructuralPalletOutput(p, ft)
     if p == nil or ft == nil then return false end
     local fts = palletSpawnerFillTypes(p)
     if fts == nil then return false end
     for _, f in ipairs(fts) do if f == ft then return true end end
     return false
+end
+
+function SmartDistribution.isPalletOutput(p, ft)
+    if not SmartDistribution.palletSpawnAllowed() then return false end
+    return SmartDistribution.isStructuralPalletOutput(p, ft)
+end
+
+-- Which HOLD label this (building, product) should carry -- the tri-state `palletizable` argument
+-- modeName takes:
+--   true         -> "Hold Pallets"   (it really will hold them as pallets)
+--   "internal"   -> "Hold Internal"  (a pallet building, but spawning is off, so it holds in its buffer)
+--   false        -> "Hold"           (never palletized)
+-- The middle case exists because with spawning off, Hold and Hold Internal became the same behaviour, so
+-- the ring drops Hold Internal (see cycleNext's includePallets) and the ONE remaining hold option would
+-- otherwise still read "Hold Pallets" -- naming it after the one thing it now cannot do.
+function SmartDistribution.holdLabelFlag(p, ft)
+    if not SmartDistribution.isStructuralPalletOutput(p, ft) then return false end
+    if SmartDistribution.palletSpawnAllowed() then return true end
+    return "internal"
 end
 
 -- store-capable = a valid storePhase SOURCE (production output or husbandry output)
@@ -7858,12 +7932,14 @@ function SmartDistribution.hasSellEndpoint(asset, ft)
 end
 
 -- some other building in the network would take this fill type as an input
+-- Goes through hasAnySink, NOT sinksFor: this only ever asked "is the list non-empty", while sinksFor
+-- scans every placeable to the end and builds a NAMED, ICONED record for each accepting one (two pcalls
+-- and a g_storeManager lookup apiece) before sorting the lot -- all of it discarded here. See hasAnySink.
 function SmartDistribution.hasDistributeEndpoint(asset, ft)
     if asset == nil or ft == nil then return false end
     local uid = getUid(asset)
     if uid == nil then return false end
-    local sinks = SmartDistribution.sinksFor(uid, ft)
-    return sinks ~= nil and #sinks > 0
+    return SmartDistribution.hasAnySink(uid, ft)
 end
 
 -- Store To is meaningful when this asset is itself a store (silo / shed) AND some OTHER store on the
@@ -7903,29 +7979,225 @@ end
 -- state); every other mode needs a live endpoint for EACH thing it does. A combined mode requires BOTH
 -- halves: Distribute+Market with no market that takes the product is just Distribute, so we only offer
 -- the single mode and never the misleading pair.
+--
+-- EVALUATED LAZILY, and that is a performance fix, not a style choice. Every one of the five endpoint
+-- tests is a full placeable scan (hasStoreEndpoint is two: gatherSinks + gatherShedSinks), while each
+-- branch below reads at most TWO of them -- so computing all five up front meant a building on plain Sell
+-- still paid for the distribute, store, market and Move To scans it never looked at. enforceValidModes
+-- calls this for every enrolled asset x fill type at the top of every in-game hour, which made it the
+-- single largest cost in the hourly pass and the main cause of the on-the-hour / sleeping stutter.
+--
+-- Result-identical: the dispatch below covers all 12 modes explicitly (INHERIT / HOLD / HOLD_INTERNAL
+-- return above; the trailing `return true` is unreachable for a valid mode), and `and` short-circuits, so
+-- a compound mode whose first half already failed simply never evaluates the second.
+--
+-- Safe because none of the five mutates state anything else reads -- audited, since short-circuiting means
+-- some of them stop running: hasSellEndpoint / hasMarketEndpoint / hasStoreEndpoint / hasStoreToEndpoint
+-- are pure reads (the last logs only under _storeToDebug, which nothing sets), and the only write on the
+-- distribute path is sharesThroughput's memo plus its one-time [VERIFY] probe line, which is re-derived on
+-- demand wherever it is used. So the memo may simply warm later than it used to.
+--
+-- Move To (Store To) is an Advanced-routing feature -- configured in the Advanced Outputs dialog and
+-- driven by the block/priority model -- so it is only offered when the Advanced routing master switch is
+-- on. With it off, STORE_TO / DISTRIBUTE_STORE_TO report no endpoint, so the mode cycle skips them and
+-- enforceValidModes reverts any existing Move To output back to Hold. That gate already short-circuited
+-- before this change; it is the precedent the rest of the function now follows.
 function SmartDistribution.modeHasEndpoint(asset, ft, m)
     local M = MODE
     if m == M.HOLD or m == M.INHERIT or m == M.HOLD_INTERNAL then return true end
-    local dist   = SmartDistribution.hasDistributeEndpoint(asset, ft)
-    local sell   = SmartDistribution.hasSellEndpoint(asset, ft)
-    local store  = SmartDistribution.hasStoreEndpoint(asset, ft)
-    local market = SmartDistribution.hasMarketEndpoint(asset, ft)
-    -- Move To (Store To) is an Advanced-routing feature -- configured in the Advanced Outputs dialog and
-    -- driven by the block/priority model -- so it is only offered when the Advanced routing master switch is
-    -- on. With it off, STORE_TO / DISTRIBUTE_STORE_TO report no endpoint, so the mode cycle skips them and
-    -- enforceValidModes reverts any existing Move To output back to Hold.
-    local storeTo = SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
-    if m == M.DISTRIBUTE         then return dist end
-    if m == M.SELL               then return sell end
-    if m == M.STORE              then return store end
-    if m == M.TRANSFER_MARKET    then return market end
-    if m == M.STORE_TO           then return storeTo end
-    if m == M.DISTRIBUTE_SELL    then return dist and sell end
-    if m == M.DISTRIBUTE_STORE   then return dist and store end
-    if m == M.DISTRIBUTE_MARKET  then return dist and market end
-    if m == M.DISTRIBUTE_STORE_TO then return dist and storeTo end
+    if m == M.DISTRIBUTE      then return SmartDistribution.hasDistributeEndpoint(asset, ft) end
+    if m == M.SELL            then return SmartDistribution.hasSellEndpoint(asset, ft) end
+    if m == M.STORE           then return SmartDistribution.hasStoreEndpoint(asset, ft) end
+    if m == M.TRANSFER_MARKET then return SmartDistribution.hasMarketEndpoint(asset, ft) end
+    if m == M.STORE_TO        then
+        return SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
+    end
+    if m == M.DISTRIBUTE_SELL then
+        return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasSellEndpoint(asset, ft)
+    end
+    if m == M.DISTRIBUTE_STORE then
+        return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasStoreEndpoint(asset, ft)
+    end
+    if m == M.DISTRIBUTE_MARKET then
+        return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasMarketEndpoint(asset, ft)
+    end
+    if m == M.DISTRIBUTE_STORE_TO then
+        return SmartDistribution.hasDistributeEndpoint(asset, ft)
+           and SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
+    end
     return true
 end
+
+-- ============================================================================
+-- A PRODUCTION'S PARTLY-DRAINED PALLET IS TOPPED BACK UP, INSTEAD OF BEING STRANDED
+--
+-- `PalletSpawner:getOrSpawnPallet` overlap-tests the spawn places and returns an EXISTING
+-- pallet that still has free capacity, only spawning a new one when it finds none -- i.e. it
+-- refills a partial pallet. Pens and beehives call it; PRODUCTIONS call the dumber
+-- `spawnPallet` and never top up, so once DR distributes 300 L out of a 1,000 L flour pallet
+-- that 700 L pallet sits on the pad for good while new full ones pile up beside it. Nothing
+-- in the base game or DR ever refills it (verified: DR's only positive `addFillUnitFillLevel`
+-- calls are in the two spawn callbacks, both on a pallet just created).
+--
+-- So DR redirects a production's `spawnPallet` to `getOrSpawnPallet`. The fix is entirely in
+-- the base game's own code path -- DR just picks the better of the two entry points.
+--
+-- The production's spawn call site is STRIPPED from the shipped source (8.1), so this could
+-- not be settled by reading. CONFIRMED IN GAME 2026-08-02 on savegame1's Grain Mill:
+--     palletHook spawnPallet PRODUCTION [FLOUR] Grain Mill -> REDIRECT to getOrSpawnPallet
+--     palletHook redirect <- PALLET_ALREADY_PRESENT  pallet=true level=344
+-- and that 344 L pallet then filled to 1,000 rather than a second pallet appearing.
+--
+-- **The risk this was tested for, and cleared:** the caller's callback must cope with the
+-- PALLET_ALREADY_PRESENT status. The pen's callback demonstrably does -- it calls
+-- `emptyAllFillUnits` only on RESULT_SUCCESS, precisely so an existing pallet is not wiped --
+-- but the production's is unreadable, and had it emptied unconditionally the redirect would
+-- have DESTROYED the partial pallet's contents. It does not: the 344 L survived. Keep
+-- `sdPalletHook redirect` as the off switch if a modded production point ever behaves
+-- differently.
+--
+-- Fires at most ONCE per partial pallet: after the top-up nothing on the pad has free
+-- capacity, so later calls find nothing and fall through to a normal spawn.
+--
+-- RECURSION: getOrSpawnPallet falls through to spawnPallet when it finds nothing, so this
+-- would loop forever without the depth guard. _palletHookDepth is raised across the redirect
+-- and the inner spawnPallet then passes straight through to the original.
+--
+-- The hook also exposes the spawn RESULT CODE, which DR discarded before this: RESULT_NO_SPACE
+-- (pad full) and PALLET_LIMITED_REACHED (the game's GLOBAL pallet cap) were both invisible.
+-- Logging is off by default -- `sdPalletHook log` turns it on without a restart.
+SmartDistribution._palletHookLog      = false   -- sdPalletHook log -- off in release
+SmartDistribution._palletHookRedirect = true    -- the feature above; sdPalletHook redirect to disable
+SmartDistribution._palletHookDepth    = 0
+
+-- Result codes are assigned in a part of PalletSpawner.lua that the shipped source strips, so
+-- the names are recovered from the live class at runtime rather than hardcoded.
+function SmartDistribution.palletResultName(code)
+    if code == nil then return "nil" end
+    if PalletSpawner ~= nil then
+        for k, v in pairs(PalletSpawner) do
+            if v == code and type(k) == "string" and k == k:upper() then return k end
+        end
+    end
+    return tostring(code)
+end
+
+-- The callbackTarget identifies the caller: a pen/beehive passes its PLACEABLE, a production
+-- passes its ProductionPoint. Cheaper and more reliable than mapping a spawner back to its
+-- owner (a PalletSpawner carries no back-reference).
+function SmartDistribution.palletHookKind(target)
+    if type(target) ~= "table" then return "?", nil end
+    if target.spec_husbandryPallets ~= nil then return "PEN", target end
+    if target.spec_beehivePalletSpawner ~= nil then return "BEEHIVE", target end
+    if target.owningPlaceable ~= nil then return "PRODUCTION", target.owningPlaceable end     -- ProductionPoint
+    if target.spec_productionPoint ~= nil then return "PRODUCTION", target end                -- the placeable itself
+    return "?", nil
+end
+
+function SmartDistribution.installPalletSpawnerHook()
+    if PalletSpawner == nil then
+        print("[SmartDistribution] pallet-spawner hook: PalletSpawner class not found [VERIFY]")
+        return
+    end
+    if SmartDistribution._origSpawnPallet ~= nil then return end        -- installing twice would self-call
+    SmartDistribution._origSpawnPallet      = PalletSpawner.spawnPallet
+    SmartDistribution._origGetOrSpawnPallet = PalletSpawner.getOrSpawnPallet
+
+    -- wrap the caller's callback so the RESULT CODE is visible; the base game reports pad-full
+    -- and pallet-cap only through this argument, which DR has never read.
+    local function traced(cb, tag)
+        if not SmartDistribution._palletHookLog or type(cb) ~= "function" then return cb end
+        return function(tgt, pallet, statusCode, ftId)
+            local lvl = "-"
+            if type(pallet) == "table" and pallet.getFillUnitFillLevel ~= nil then
+                local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
+                lvl = string.format("%.0f", pallet:getFillUnitFillLevel(idx) or 0)
+            end
+            print(string.format("[SmartDistribution] palletHook %s <- %s  pallet=%s level=%s",
+                tag, SmartDistribution.palletResultName(statusCode),
+                tostring(pallet ~= nil), lvl))
+            return cb(tgt, pallet, statusCode, ftId)
+        end
+    end
+
+    -- "Never spawn pallets": refuse the request outright and report it the way the base game reports a
+    -- full pad, so the caller's own bookkeeping unwinds normally (PlaceableHusbandryPallets decrements
+    -- numSpawnsPending in this callback -- skipping it would wedge vanilla's in-flight guard at 1
+    -- forever). The base game already handles this status: the product simply stays where it is.
+    -- Bypassed for DR's OWN spawns so the player's Spawn Pallets button still works in every mode.
+    local function refuse(farmId, ft, callback, target)
+        if SmartDistribution.palletSpawnAllowed() or SmartDistribution._palletHookBypass then return false end
+        if SmartDistribution._palletHookLog then
+            local kind, placeable = SmartDistribution.palletHookKind(target)
+            print(string.format("[SmartDistribution] palletHook REFUSED (spawning off)  %s [%s] %s",
+                kind, tostring(fillTypeName(ft)), placeableName(placeable)))
+        end
+        if type(callback) == "function" then
+            callback(target, nil, PalletSpawner ~= nil and PalletSpawner.RESULT_NO_SPACE or 0, ft)
+        end
+        return true
+    end
+
+    PalletSpawner.spawnPallet = function(self, farmId, ft, callback, target)
+        -- inside a getOrSpawnPallet fall-through: never re-enter, or the redirect loops
+        if SmartDistribution._palletHookDepth > 0 then
+            return SmartDistribution._origSpawnPallet(self, farmId, ft, callback, target)
+        end
+        if refuse(farmId, ft, callback, target) then return end
+        local kind, placeable = SmartDistribution.palletHookKind(target)
+        if SmartDistribution._palletHookLog then
+            print(string.format("[SmartDistribution] palletHook spawnPallet   %s [%s] %s%s",
+                kind, tostring(fillTypeName(ft)), placeableName(placeable),
+                (SmartDistribution._palletHookRedirect and kind == "PRODUCTION") and "  -> REDIRECT to getOrSpawnPallet" or ""))
+        end
+        if SmartDistribution._palletHookRedirect and kind == "PRODUCTION" then
+            SmartDistribution._palletHookDepth = SmartDistribution._palletHookDepth + 1
+            local ok, err = pcall(SmartDistribution._origGetOrSpawnPallet, self, farmId, ft,
+                                  traced(callback, "redirect"), target)
+            SmartDistribution._palletHookDepth = SmartDistribution._palletHookDepth - 1
+            if not ok then error(err, 0) end
+            return
+        end
+        return SmartDistribution._origSpawnPallet(self, farmId, ft, traced(callback, "spawnPallet"), target)
+    end
+
+    PalletSpawner.getOrSpawnPallet = function(self, farmId, ft, callback, target)
+        -- Also gated: this is the entry point pens and beehives use, and it can spawn as well as top up.
+        -- Topping an EXISTING pallet up would arguably be harmless, but the two are indistinguishable
+        -- until the overlap test has run, and "never spawn" should not quietly grow the pad either.
+        if SmartDistribution._palletHookDepth == 0 and refuse(farmId, ft, callback, target) then return end
+        if SmartDistribution._palletHookLog and SmartDistribution._palletHookDepth == 0 then
+            local kind, placeable = SmartDistribution.palletHookKind(target)
+            print(string.format("[SmartDistribution] palletHook getOrSpawn   %s [%s] %s",
+                kind, tostring(fillTypeName(ft)), placeableName(placeable)))
+        end
+        return SmartDistribution._origGetOrSpawnPallet(self, farmId, ft,
+                                                       traced(callback, "getOrSpawn"), target)
+    end
+    print("[SmartDistribution] pallet-spawner hook installed (sdPalletHook to toggle)")
+end
+
+-- sdPalletHook            -- show state
+-- sdPalletHook redirect   -- toggle the production redirect (the actual test)
+-- sdPalletHook log        -- toggle logging
+function SmartDistribution.cmdPalletHook(self, what)
+    what = what ~= nil and tostring(what):lower() or nil
+    if what == "redirect" then
+        SmartDistribution._palletHookRedirect = not SmartDistribution._palletHookRedirect
+    elseif what == "log" then
+        SmartDistribution._palletHookLog = not SmartDistribution._palletHookLog
+    elseif what == "insert" then
+        SmartDistribution._shedDirectInsert = not SmartDistribution._shedDirectInsert
+    elseif what ~= nil then
+        return "usage: sdPalletHook [redirect|log|insert]"
+    end
+    return string.format("palletHook: installed=%s  log=%s  redirect=%s  shedDirectInsert=%s",
+        tostring(SmartDistribution._origSpawnPallet ~= nil),
+        tostring(SmartDistribution._palletHookLog),
+        tostring(SmartDistribution._palletHookRedirect),
+        tostring(SmartDistribution._shedDirectInsert))
+end
+-- ============================================================================
 
 -- exposed for the per-asset dialog (DistributionSiloDialog.lua)
 SmartDistribution.log            = log
@@ -7934,7 +8206,8 @@ SmartDistribution.cycleNext      = cycleNext
 -- market mode when no market takes slurry). ft is optional: without it the old, ungated ring is used.
 function SmartDistribution.cycleNextForAsset(asset, m, ft)   -- store-aware + pallet-aware (Hold Internal only where the asset spawns pallets)
     local step = function(cur)
-        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset), palletSpawnerFillTypes(asset) ~= nil)
+        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
+                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed())
     end
     local nxt = step(m)
     if ft == nil then return nxt end
@@ -8006,6 +8279,42 @@ local function ftTitle(ft)
     return tostring(ft)
 end
 
+-- How many of this building's production LINES make `ft`, and how many of those are switched ON.
+-- Returns (on, total), or nil when the building makes ft on no line at all (silo, pen, market).
+--
+-- ON means the player's enable toggle -- membership of `pp.activeProductions`, the same signal the
+-- Productions tab's Toggle Line drives -- NOT whether the line is currently running. A line starved of
+-- input is ON and idle; a line switched off is neither. That distinction is the point of the column: a
+-- grain mill reading 1/4 for flour has three lines the player has turned off, which nothing else on the
+-- Overview would show.
+--
+-- Deliberately NOT built on productionLines(), which computes held + capacity for every input and output
+-- of every line. This runs per settings ROW, and 5.37 already flags that view's per-row cost as the thing
+-- to watch on a large farm.
+function SmartDistribution.outputLineCounts(p, ft)
+    local pp = getProductionPoint(p)
+    if pp == nil or ft == nil or type(pp.productions) ~= "table" then return nil end
+    local activeSet = {}
+    if type(pp.activeProductions) == "table" then
+        for _, ap in ipairs(pp.activeProductions) do
+            if ap.id ~= nil then activeSet[ap.id] = true end
+        end
+    end
+    local total, on = 0, 0
+    for _, prod in ipairs(pp.productions) do
+        local makes = false
+        for _, o in ipairs(prod.outputs or {}) do
+            if o.type == ft then makes = true; break end
+        end
+        if makes then
+            total = total + 1
+            if prod.id ~= nil and activeSet[prod.id] == true then on = on + 1 end
+        end
+    end
+    if total == 0 then return nil end
+    return on, total
+end
+
 function SmartDistribution.productionLines(p)
     local pp = getProductionPoint(p)
     if pp == nil or type(pp.productions) ~= "table" then return {} end
@@ -8067,8 +8376,15 @@ function SmartDistribution.productionLines(p)
                 vname = SmartDistribution.productionOutputVModeName(vmode)
                 -- Hold and Hold Internal both collapse to vanilla KEEP above, so name them from the DR mode.
                 local drMode = SmartDistribution.resolvedAssetMode ~= nil and SmartDistribution.resolvedAssetMode(p, o.type) or nil
+                -- holdLabelFlag, not the raw spawner list: with pallet spawning off this must read
+                -- "Hold Internal", since the ring has dropped the separate Hold Internal option and this
+                -- is the only hold left. Productions come through here rather than modeName.
                 if drMode == MODE.HOLD_INTERNAL then vname = "Hold Internal"
-                elseif drMode == MODE.HOLD and palletSpawnerFillTypes(p) ~= nil then vname = "Hold Pallets" end
+                elseif drMode == MODE.HOLD then
+                    local hf = SmartDistribution.holdLabelFlag(p, o.type)
+                    if hf == "internal" then vname = "Hold Internal"
+                    elseif hf then vname = "Hold Pallets" end
+                end
             end
             outputs[#outputs + 1] = { ft = o.type, name = ftTitle(o.type), held = held(o.type), capacity = cap(o.type), amount = o.amount or 0,
                                       perMonth = (o.amount or 0) * cpm, perHour = (o.amount or 0) * cph, mode = vmode, modeName = vname, sellDirectly = o.sellDirectly }
@@ -8855,7 +9171,8 @@ function SmartDistribution.cycleAssetMode(asset)
     local market = SmartDistribution.assetHasMarket(asset)
     local modes = {}
     for i, ft in ipairs(order) do modes[i] = SmartDistribution.resolvedAssetMode(asset, ft) end
-    local target = bulkCycleTarget(modes, modes[1], function(m) return cycleNext(m, store, market, palletSpawnerFillTypes(asset) ~= nil) end)
+    local target = bulkCycleTarget(modes, modes[1], function(m)
+        return cycleNext(m, store, market, palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed()) end)
     local names, skipped = {}, {}
     for _, ft in ipairs(order) do
         -- don't park a product on a mode it has no endpoint for (e.g. Market Supply for a product no
@@ -9675,7 +9992,10 @@ function SmartDistribution.recordProductionThroughput(flows)
                     -- the pad balance must use ONLY what left the pad. Using every flow made a bulk
                     -- shipment look like a missing pallet, so byHand went negative every cycle and the
                     -- carried debt ran away (seen on the greenhouse: debt=8276 on STRAWBERRY).
-                    local byHand  = ((padPrev + spawnDrain) - padCur) - palOut
+                    -- litres RECLAIMED off the pad into the buffer left the pad without being shipped and
+                    -- without a player touching them, so they must come out of this balance too
+                    local reclaim = SmartDistribution.palletReclaimOf(uid, ft)
+                    local byHand  = ((padPrev + spawnDrain) - padCur) - palOut - reclaim
                     -- A NEGATIVE remainder is not a player loading the pad. It is measurement skew: a
                     -- pallet DR has ledgered but not yet despawned, or a spawn landing between the drain
                     -- observation and this read. Carrying it as a debt keeps the window sum honest without
@@ -9699,7 +10019,9 @@ function SmartDistribution.recordProductionThroughput(flows)
                 else
                     out = flow(uid, ft, "dist") + flow(uid, ft, "sold") + flow(uid, ft, "stored")
                 end
-                local raw  = (cur - prev) + out
+                -- ...and out of `produced` for the same reason: the buffer rose, but the building did not
+                -- make it -- it came back off its own pad.
+                local raw  = (cur - prev) + out - SmartDistribution.palletReclaimOf(uid, ft)
                 local debt = (debtLast ~= nil and debtLast[ft]) or 0
                 local net  = raw - debt
                 local produced, carry = 0, 0
@@ -10775,8 +11097,523 @@ end
 -- HOLD_INTERNAL still means hold: DR must not release that buffer either, or the mode would do nothing.
 -- The pen's own maxNumPallets limit still applies -- the base spawner refuses beyond it and the buffer
 -- simply keeps growing, which is what vanilla does when a pad is full.
+-- ---- internal buffer -> pallet shed, as whole pallets ----------------------
+-- "Store" on a palletized output whose only destination is a pallet SHED could not move internal stock:
+-- a shed holds pallet OBJECTS (depositPalletsToShed requires palletIsFull), so litres sitting in a
+-- production's buffer or a pen's queue had no path in. Harmless while pallets spawned by themselves --
+-- they became objects and went in -- but with pallet spawning set to NEVER (5.41) nothing ever does, so
+-- the product simply accumulated.
+--
+-- **ALL of it in one cycle: 10,001 L internal with a 1,000 L pallet moves 10 pallets and leaves 1 L.**
+-- The count is `floor(stock / capacity)`, bounded only by the shed's free slots -- not by the pad, and
+-- not one per pass.
+--
+-- **A pallet is deposited inside its OWN spawn callback, then the next is requested.** That is what makes
+-- the count independent of pad size: only ONE pad slot is ever occupied, for the moment between the
+-- pallet loading and it being despawned into the shed. Spawning ten at once would need ten free slots,
+-- and a bakery pad holds about five (5.14).
+--   * The chain is serial for the same reason spawnPalletsFromProduction already chains serially: each
+--     pallet must debit the buffer before the next reads it, or two pallets draw the same litres.
+--   * The whole chain therefore completes over a handful of FRAMES (spawnPallet is async in three hops,
+--     5.30), not instantly -- but well inside a second of real time, and the litres leave the source as
+--     each pallet fills. From the player's side it is "the cycle moved it".
+--
+-- **Not built by synthesising an abstract stored object**, which would have avoided pallets entirely:
+-- `addAbstactObjectToObjectStorage` exists and needs no pallet, and a savegame even names the class
+-- ("Vehicle") and its persisted fields -- but every method of that class is stripped from the shipped
+-- source (8.1), so the construction contract cannot be read, and a wrong guess would fail at RETRIEVAL,
+-- when the player tries to take the pallets back out. See 6.11. Every step here is a path already proven
+-- in game: the same spawn helpers the Spawn Pallets button uses, and depositPalletsToShed itself.
+--
+-- Only runs when pallet spawning is OFF: with it on, product reaches the pad by itself and this would be
+-- a second, competing spawn request.
+-- A pallet a STORE output cannot store is stranded forever once spawning is off: a pallet shed only takes
+-- FULL pallets (depositPalletsToShed -> palletIsFull), and nothing will ever top a partial one up again.
+-- So pull what is on it back into the building's own buffer and remove it -- the litres go straight back
+-- into the pool the next insert draws from, and the pad clears. An EMPTY pallet is the same case with
+-- nothing to reclaim: `drainPallets` only ever deletes what it drains to zero, so one that is already at
+-- zero is immortal.
+--
+-- **STORE only, deliberately.** Distribute and Sell both work off a partial pallet perfectly well
+-- (drainPallets takes any level), so reclaiming there would be churn -- and worse, it would fight the
+-- 5.40 rule that a partial is drained FIRST.
+--
+-- Returns litres reclaimed. Nothing is reclaimed into a buffer that has no room for it; the pallet simply
+-- stays until there is.
+function SmartDistribution.reclaimPartialPallets(p, pp, ft, farmId)
+    local reclaimed, toDelete = 0, {}
+    for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
+        local idx  = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
+        local lvl  = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
+        if not palletIsFull(pallet, idx, ft) then
+            local take = lvl
+            if take > 0 then
+                if pp ~= nil then take = math.min(take, getFree(pp.storage, ft) or 0) end
+                if take > 0 and pallet.addFillUnitFillLevel ~= nil then
+                    pallet:addFillUnitFillLevel(farmId, idx, -take, ft, ToolType ~= nil and ToolType.UNDEFINED or nil)
+                    SmartDistribution.returnInternal(p, pp, ft, take, farmId)
+                    SmartDistribution.noteReclaim(p, ft, take)
+                    reclaimed = reclaimed + take
+                else
+                    take = 0
+                end
+            end
+            if lvl - take <= 0 then toDelete[#toDelete + 1] = pallet end
+        end
+    end
+    for _, pallet in ipairs(toDelete) do
+        if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+        local spec = p.spec_husbandryPallets
+        if spec ~= nil and type(spec.pallets) == "table" then spec.pallets[pallet] = nil end
+    end
+    if reclaimed > 0 or #toDelete > 0 then
+        if SmartDistribution.debug then
+            log("reclaimPartial %s [%s]: %d L back to internal, %d pallet(s) removed",
+                placeableName(p), tostring(fillTypeName(ft)), reclaimed, #toDelete)
+        end
+    end
+    return reclaimed
+end
+
+function SmartDistribution.stagePalletsForShed(bill)
+    if SmartDistribution.palletSpawnAllowed() then return end        -- normal spawning already does this
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        local fts = palletSpawnerFillTypes(p)
+        if fts ~= nil and isEnrolled(p) and p.rootNode ~= nil then
+            local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId
+            for _, ft in ipairs(fts) do
+                local m = resolveMode(p, ft)
+                if (m == MODE.STORE or m == MODE.DISTRIBUTE_STORE) and not S.global.excludedFillTypes[ft] then
+                    local pp = getProductionPoint(p)
+                    -- FIRST: pull back any pallet this Store output can never store (partial, or an empty
+                    -- one left by an older build). Before the stock read, so the reclaimed litres count
+                    -- toward this cycle's pallets rather than waiting for the next.
+                    SmartDistribution.reclaimPartialPallets(p, pp, ft, farmId)
+                    -- internal stock + one pallet's capacity, per building kind
+                    local cap, stock
+                    if pp ~= nil then
+                        cap   = SmartDistribution.palletCapacityFor(pp, ft) or 0
+                        stock = getLevel(pp.storage, ft) or 0
+                    elseif p.spec_husbandryPallets ~= nil then
+                        cap   = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
+                        stock = SmartDistribution.palletPendingLiters(p, ft) or 0
+                    end
+                    -- the output reserve is a floor on what may LEAVE, so it gates this too (5.10)
+                    if cap ~= nil and cap > 0 and stock ~= nil then
+                        stock = SmartDistribution.drawableLevel(p, ft, stock)
+                        local want = math.floor(stock / cap)
+                        if want > 0 then
+                            local shed, d2 = SmartDistribution.shedSinkFor(p, ft, farmId)
+                            if shed ~= nil then
+                                local room = SmartDistribution.shedFreeSlots(shed)
+                                if room > 0 then
+                                    local n = math.min(want, room)
+                                    if SmartDistribution.debug then
+                                        log("stageForShed %s [%s] internal=%.0f cap=%.0f -> %d pallet(s) to %s (room %d)",
+                                            placeableName(p), tostring(fillTypeName(ft)), stock, cap, n,
+                                            placeableName(shed), room)
+                                    end
+                                    -- one billable haul for the link, exactly like any other store move
+                                    recordBill(bill, farmId, p, shed, d2, ft, n * cap)
+                                    -- DIRECT INSERT when enabled: writes the stored objects straight into
+                                    -- the shed, so a BLOCKED or full spawn pad is irrelevant and the whole
+                                    -- move lands inside this pass (ledger included, no deferral). Falls
+                                    -- through to the spawn chain when it is off, or when it inserted
+                                    -- nothing -- an empty farm has no stored object to clone from, and
+                                    -- spawning one real pallet is the only way to seed the first.
+                                    local done = 0
+                                    if SmartDistribution._shedDirectInsert then
+                                        local want = SmartDistribution.drawInternal(p, pp, ft, n * cap, farmId)
+                                        if want > 0 then
+                                            done = SmartDistribution.insertPalletsIntoShed(shed, ft,
+                                                       math.floor(want / cap), cap, farmId, p)
+                                            -- anything the shed would not take goes straight back; the
+                                            -- draw happens first so two consumers cannot claim it twice
+                                            if want > done then
+                                                SmartDistribution.returnInternal(p, pp, ft, want - done, farmId)
+                                            end
+                                            if done > 0 then
+                                                ledgerAdd(p, ft, "stored", done)
+                                                ledgerAdd(shed, ft, "received", done)
+                                                SmartDistribution.recordFeed(shed, ft, p, done)
+                                            end
+                                        end
+                                    end
+                                    if done <= 0 then
+                                        SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, n)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- DIRECT SHED INSERT -- put internal litres into a pallet shed with NO pallet, NO pad
+--
+-- The spawn-chain below works, but it needs one free pad slot at a time, so it CANNOT serve the case
+-- this feature was most wanted for: a building whose spawn pad is BLOCKED or full. Observed in game
+-- 2026-08-02 -- a greenhouse correctly decided "3 pallets to Bale & Pallet Storage" every cycle and moved
+-- nothing, because `spawnPallet` returned RESULT_NO_SPACE. A Bakery and Spinnery beside it worked fine.
+--
+-- A shed's contents are ABSTRACT objects in `spec.storedObjects`, not live pallets, and DR has been
+-- moving them between sheds for months in `transferShedPallets` -- `table.remove` from one, append to
+-- the other, fix `numStoredObjects`, raise the dirty flag. So the object is an OPAQUE HANDLE DR can
+-- already manipulate without understanding it. The only thing missing was one to insert.
+--
+-- CLONE FIRST, construct second, and that order is deliberate. `storedObjectAttrs` shows the fill data
+-- lives in a NESTED table (`palletAttributes` / `baleAttributes`), while the savegame writes it FLAT
+-- (`<object className="Vehicle" filename=... fillType="BREAD" fillLevel="1000"/>`) -- so the in-memory
+-- shape is NOT the persisted shape, and building one from the XML field names would be guesswork.
+-- Copying an object that already works and rewriting only the leaves DR demonstrably understands
+-- (fillType, fillLevel, filename, farmId) assumes nothing about the rest of the structure.
+--
+-- ON by default since 2026-08-02, when insert AND retrieval were both confirmed in game (see 6.12 for
+-- the probe that made it correct). `sdPalletHook insert` still toggles it, which is the one-key fallback
+-- to the spawn chain if a modded shed ever misbehaves. Every insert is verified and rolled back on
+-- failure regardless, because the failure that matters is at RETRIEVAL -- when the player tries to take
+-- the pallets back OUT -- which is far too late to notice.
+SmartDistribution._shedDirectInsert = true
+
+-- the pallet i3d this fill type spawns as, so a cross-product clone points at the right model
+function SmartDistribution.palletFilenameFor(p, ft)
+    local sp
+    local pp = getProductionPoint(p)
+    if pp ~= nil then sp = pp.palletSpawner
+    else sp = SmartDistribution.husbandryPalletSpawner(p, ft) end
+    local map = sp ~= nil and sp.fillTypeIdToPallet or nil
+    local entry = map ~= nil and map[ft] or nil
+    local fn = entry ~= nil and entry.filename or nil
+    if fn == nil or fn == "nope" then return nil end
+    return fn
+end
+
+-- Plain deep copy for the DATA half (the attributes table). Deliberately does NOT try to carry a
+-- metatable: see storedObjectIsUsable / insertPalletsIntoShed for why copying a stored object's class is
+-- impossible, and why the object shell must come from class.new() instead.
+function SmartDistribution._deepCopyStored(v, seen)
+    if type(v) ~= "table" then return v end
+    seen = seen or {}
+    if seen[v] ~= nil then return seen[v] end
+    local out = {}
+    seen[v] = out
+    for k, val in pairs(v) do out[k] = SmartDistribution._deepCopyStored(val, seen) end
+    return out
+end
+
+-- The field holding a stored object's attributes, and the attributes themselves. The KEY varies by class
+-- (palletAttributes for a Vehicle, baleAttributes for a Bale), so a new object has to be populated under
+-- whichever key its own class uses rather than a hardcoded one.
+function SmartDistribution.storedAttrsKey(obj)
+    if type(obj) ~= "table" then return nil end
+    for k, v in pairs(obj) do
+        if type(v) == "table" and type(v.fillType) == "number" and type(v.fillLevel) == "number" then
+            return k, v
+        end
+    end
+    for _, k in ipairs({ "palletAttributes", "baleAttributes" }) do
+        if type(obj[k]) == "table" then return k, obj[k] end
+    end
+    return nil
+end
+
+-- any stored object anywhere on the farm we can copy: same fill type first (nothing to rewrite but the
+-- level), otherwise any pallet object at all
+function SmartDistribution._findStoredTemplate(ft)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return nil end
+    local fallback = nil
+    for _, p in ipairs(ps.placeables) do
+        local oss = p.spec_objectStorage
+        if oss ~= nil and type(oss.storedObjects) == "table" then
+            for _, obj in ipairs(oss.storedObjects) do
+                local a = storedObjectAttrs(obj)
+                if a ~= nil then
+                    if a.fillType == ft then return obj, true end
+                    if fallback == nil then fallback = obj end
+                end
+            end
+        end
+    end
+    return fallback, false
+end
+
+-- Every method the base game calls on a stored object. A clone that answers all of these behaves like the
+-- real thing everywhere PlaceableObjectStorage touches it: updateObjectStorageObjectInfos groups by
+-- getIsIdentical and sorts by getSpawnInfo, spawnNextObjectStorageObject asks getLimitedObjectId and then
+-- removeFromStorage, and saveToXMLFile needs REFERENCE_CLASS_NAME + saveToXMLFile.
+SmartDistribution.STORED_OBJECT_METHODS = {
+    "getIsIdentical", "getSpawnInfo", "getLimitedObjectId", "removeFromStorage", "saveToXMLFile",
+}
+function SmartDistribution.storedObjectIsUsable(obj)
+    if type(obj) ~= "table" then return false end
+    for _, name in ipairs(SmartDistribution.STORED_OBJECT_METHODS) do
+        if type(obj[name]) ~= "function" then return false end
+    end
+    return obj.REFERENCE_CLASS_NAME ~= nil
+end
+
+-- Remove any stored object a shed cannot actually use, farm-wide. Recovery for objects an earlier build
+-- inserted that fail storedObjectIsUsable -- they make updateObjectStorageObjectInfos throw on EVERY
+-- frame, so the shed is unusable until they are gone. Returns how many were removed.
+function SmartDistribution.repairSheds()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return 0 end
+    local removed = 0
+    for _, p in ipairs(ps.placeables) do
+        local oss = p.spec_objectStorage
+        if oss ~= nil and type(oss.storedObjects) == "table" then
+            local n = 0
+            for i = #oss.storedObjects, 1, -1 do
+                if not SmartDistribution.storedObjectIsUsable(oss.storedObjects[i]) then
+                    table.remove(oss.storedObjects, i); n = n + 1
+                end
+            end
+            if n > 0 then
+                oss.numStoredObjects = #oss.storedObjects
+                removed = removed + n
+                print(string.format("[SmartDistribution] shedRepair %s: removed %d unusable object(s), %d left",
+                    placeableName(p), n, oss.numStoredObjects))
+                if p.setObjectStorageObjectInfosDirty ~= nil then
+                    pcall(function() p:setObjectStorageObjectInfosDirty() end)
+                end
+            end
+        end
+    end
+    return removed
+end
+function SmartDistribution.cmdShedRepair(self)
+    local n = SmartDistribution.repairSheds()
+    return string.format("shedRepair: removed %d unusable stored object(s)", n)
+end
+
+
+-- Insert `count` pallets of `ft` x `litresEach` straight into `shed`. Returns litres actually inserted.
+--
+-- The SHELL comes from the class's own constructor and the DATA is copied from a working object.
+-- Nothing here is guessed -- every field name below was read off a live object by sdStoredProbe:
+--     own fields: palletAttributes(table)
+--     attrs:      configFileName=.../bakeryBoxPallet.xml, configurations=table,
+--                 fillLevel=1000, fillType=61, isBigBag=false, ownerFarmId=1
+-- Note how little those match the savegame's attribute names (`filename`, `farmId`) -- writing this from
+-- the XML, which was the plan before the probe, would have produced an object that verified and then
+-- failed somewhere unhelpful.
+--
+-- **The object's class CANNOT be copied, and that is why the first attempt crashed.** sdStoredProbe:
+--     getmetatable -> table   __index -> nil
+--     candidate shallow+getmetatable -> usable=false  (all five methods missing)
+--     candidate _deepCopyStored      -> usable=false  (all five methods missing)
+--     candidate class.new()          -> usable=true
+-- `getmetatable` hands back a table with no `__index` while the real object's methods resolve fine, which
+-- is a PROTECTED metatable (Lua returns the `__metatable` field instead of the real one). So no copy
+-- depth could ever have carried the methods; the shell has to be built by the class itself.
+function SmartDistribution.insertPalletsIntoShed(shed, ft, count, litresEach, farmId, srcP)
+    local oss = shed ~= nil and shed.spec_objectStorage or nil
+    if oss == nil or ft == nil or (count or 0) <= 0 or (litresEach or 0) <= 0 then return 0 end
+    if type(oss.storedObjects) ~= "table" then return 0 end
+    local template, exact = SmartDistribution._findStoredTemplate(ft)
+    if template == nil then return 0 end                    -- nothing to model on: caller falls back to spawning
+    local reg = PlaceableObjectStorage ~= nil and PlaceableObjectStorage.ABSTRACT_OBJECTS_BY_CLASS_NAME or nil
+    local cls = type(reg) == "table" and reg[template.REFERENCE_CLASS_NAME] or nil
+    if cls == nil or type(cls.new) ~= "function" then return 0 end
+    local attrsKey, srcAttrs = SmartDistribution.storedAttrsKey(template)
+    if attrsKey == nil or srcAttrs == nil then return 0 end
+    -- a cross-product build has to point at the RIGHT pallet model, or retrieval spawns the wrong one
+    local cfg = (not exact) and SmartDistribution.palletFilenameFor(srcP, ft) or nil
+    if not exact and cfg == nil then return 0 end
+    local before = #oss.storedObjects
+    local added  = 0
+    for _ = 1, count do
+        if SmartDistribution.shedFreeSlots(shed) <= 0 then break end
+        local ok = pcall(function()
+            local obj = cls.new()
+            if obj == nil then error("class.new() returned nil", 0) end
+            local a = SmartDistribution._deepCopyStored(srcAttrs)   -- plain data; configurations copied intact
+            a.fillType, a.fillLevel = ft, litresEach
+            if farmId ~= nil and a.ownerFarmId ~= nil then a.ownerFarmId = farmId end
+            if cfg ~= nil then
+                a.configFileName = cfg
+                a.configurations = {}          -- a different pallet's configs would not apply to this model
+            end
+            obj[attrsKey] = a
+            if shed.addAbstactObjectToObjectStorage ~= nil then
+                shed:addAbstactObjectToObjectStorage(obj)     -- base-game entry point (note GIANTS' typo)
+            else
+                oss.storedObjects[#oss.storedObjects + 1] = obj
+                oss.numStoredObjects = #oss.storedObjects
+            end
+            added = added + 1
+        end)
+        if not ok then break end
+    end
+    -- VERIFY, and roll back anything that did not read back correctly. The shed must never be left
+    -- holding an object the player cannot retrieve.
+    --
+    -- CHECKING THE DATA WAS NOT ENOUGH, and this cost a crash. The first version verified only fillType
+    -- and fillLevel; the clones passed, and a second later the shed's own update loop died on
+    -- `PlaceableObjectStorage.lua:764: attempt to call missing method 'getIsIdentical'`. A stored object
+    -- is not a data record -- the base game CALLS it (getIsIdentical to group identical objects,
+    -- getSpawnInfo to size them, getLimitedObjectId and removeFromStorage to hand them back). So the
+    -- object must be verified as an OBJECT, not just as the right numbers.
+    local good = 0
+    for i = #oss.storedObjects, before + 1, -1 do
+        local obj = oss.storedObjects[i]
+        local a   = storedObjectAttrs(obj)
+        local ok  = a ~= nil and a.fillType == ft and (a.fillLevel or 0) > 0
+                    and SmartDistribution.storedObjectIsUsable(obj)
+        if ok then good = good + 1 else table.remove(oss.storedObjects, i) end
+    end
+    oss.numStoredObjects = #oss.storedObjects
+    if good > 0 and shed.setObjectStorageObjectInfosDirty ~= nil then
+        pcall(function() shed:setObjectStorageObjectInfosDirty() end)
+    end
+    if SmartDistribution.debug then
+        log("shedInsert %s [%s]: template=%s x%d -> %d accepted (%d rejected)",
+            placeableName(shed), tostring(fillTypeName(ft)),
+            exact and "exact" or "cross-product", added, good, added - good)
+    end
+    return good * litresEach
+end
+
+-- Take `litres` out of the building's own internal store (production buffer or pen queue). Returns what
+-- actually came out, so the caller only ever credits product that genuinely left.
+--
+-- Drawn BEFORE the shed insert, not after: the insert can be refused part-way (shed fills, a clone fails
+-- verification), and taking first means the litres are never in two places at once. returnInternal puts
+-- back whatever the shed would not take -- the same take-then-refund shape slotMove uses for a source
+-- that may fall short (5.30's verifyDrain).
+function SmartDistribution.drawInternal(p, pp, ft, litres, farmId)
+    if litres <= 0 then return 0 end
+    if pp ~= nil then
+        local lvl  = getLevel(pp.storage, ft) or 0
+        local take = math.min(litres, lvl)
+        if take <= 0 then return 0 end
+        setLevel(pp.storage, ft, lvl - take, farmId, -take)
+        return take
+    end
+    return SmartDistribution.drawFromQueue(p, ft, litres) or 0
+end
+function SmartDistribution.returnInternal(p, pp, ft, litres, farmId)
+    if litres <= 0 then return end
+    if pp ~= nil then
+        setLevel(pp.storage, ft, (getLevel(pp.storage, ft) or 0) + litres, farmId, litres)
+    else
+        SmartDistribution.returnToQueue(p, ft, litres)
+    end
+end
+
+-- Spawn ONE pallet, fill it, put it straight into the shed, then do the next. Serial via the spawn
+-- callback, so only one pad slot is needed however many pallets are moving.
+--
+-- The ledger cannot be written here: these callbacks land AFTER the pass, when cycleAcc is nil
+-- (ledgerAdd would silently drop them). So each deposit is queued to _pendingLedger and folded into the
+-- next cycle by flushPendingLedger -- one hour late in the STATS, while the product itself moved now.
+function SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, remaining)
+    if remaining <= 0 or shed == nil then return end
+    if SmartDistribution.shedFreeSlots(shed) <= 0 then return end     -- filled up mid-chain
+    local function afterSpawn(pallet, statusCode)
+        if pallet == nil then return end                              -- refused (no space / pallet cap): stop
+        -- fill from the building's own internal stock, debiting it (both helpers do the debit)
+        local added
+        local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
+        if pp ~= nil then
+            added = SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew) or 0
+        else
+            added = SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew) or 0
+        end
+        if added <= 0 then return end
+        -- depositPalletsToShed rather than a bespoke despawn: it already handles the shed's capacity, the
+        -- spec.pallets bookkeeping and the object-info dirty flag. maxSlots 1 so it takes only ours.
+        local moved = depositPalletsToShed(p, ft, shed, 1) or 0
+        if moved > 0 then
+            SmartDistribution.queueLedger(p, ft, "stored", moved)
+            SmartDistribution.queueLedger(shed, ft, "received", moved)
+            SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, remaining - 1)
+        end
+    end
+    local bypass = SmartDistribution._palletHookBypass                -- DR's own spawn: never refused
+    SmartDistribution._palletHookBypass = true
+    pcall(function()
+        if pp ~= nil then
+            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet, statusCode)
+                afterSpawn(pallet, statusCode)
+            end, pp)
+        else
+            local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
+            if spawner ~= nil then
+                spawner:getOrSpawnPallet(farmId, ft, function(_, pallet, statusCode)
+                    afterSpawn(pallet, statusCode)
+                end, p)
+            end
+        end
+    end)
+    SmartDistribution._palletHookBypass = bypass
+end
+
+-- Deferred ledger: entries raised outside the hourly pass, folded in at the start of the next one.
+SmartDistribution._pendingLedger = {}
+function SmartDistribution.queueLedger(placeable, ft, field, amount)
+    if placeable == nil or ft == nil or amount == nil or amount <= 0 then return end
+    local t = SmartDistribution._pendingLedger
+    t[#t + 1] = { p = placeable, ft = ft, field = field, amount = amount }
+end
+function SmartDistribution.flushPendingLedger()
+    local t = SmartDistribution._pendingLedger
+    if t == nil or #t == 0 then return end
+    SmartDistribution._pendingLedger = {}
+    for _, e in ipairs(t) do ledgerAdd(e.p, e.ft, e.field, e.amount) end
+end
+
+-- free object slots left in a pallet shed
+function SmartDistribution.shedFreeSlots(shed)
+    local oss = shed ~= nil and shed.spec_objectStorage or nil
+    if oss == nil then return 0 end
+    local cap = oss.capacity or 0
+    if cap <= 0 then return math.huge end
+    local stored = (oss.storedObjects ~= nil and #oss.storedObjects) or (oss.numStoredObjects or 0)
+    return math.max(0, cap - stored)
+end
+
+-- The pallet shed this source should push `ft` into: nearest / highest-ranked valid one. Mirrors the shed
+-- half of _storeToPalletAmount's candidate filter (in range, same farm, not blocked) so the two cannot
+-- disagree -- there is no point materialising a pallet for a shed that would refuse it. Returns
+-- (shed placeable, d2) or nil.
+function SmartDistribution.shedSinkFor(p, ft, farmId)
+    if p == nil or p.rootNode == nil then return nil end
+    local srcUid = getUid(p); if srcUid == nil then return nil end
+    local x, _, z = getWorldTranslation(p.rootNode)
+    local myFarm  = SmartDistribution._ownerFarmId(p)
+    local cands = {}
+    for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, resolveReach(p))) do
+        local du = sh.placeable ~= nil and getUid(sh.placeable) or nil
+        if du ~= nil and SmartDistribution._ownerFarmId(sh.placeable) == myFarm
+           and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            sh.rank = SmartDistribution.destRank(srcUid, ft, du)
+            cands[#cands + 1] = sh
+        end
+    end
+    table.sort(cands, function(a, b)
+        if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+        if a.rank ~= nil and b.rank ~= nil and a.rank ~= b.rank then return a.rank < b.rank end
+        return (a.d2 or 0) < (b.d2 or 0)
+    end)
+    local best = cands[1]
+    if best == nil then return nil end
+    return best.shed or best.placeable, best.d2
+end
+
 function SmartDistribution.spawnWholePallets()
+    -- fullPalletSpawn is true for BOTH whole-pallet and never (it means "vanilla auto-spawn is
+    -- suppressed"), so NEVER has to be excluded explicitly here or DR would go on releasing the very
+    -- pallets the setting exists to prevent.
     if not S.global.fullPalletSpawn then return end
+    if not SmartDistribution.palletSpawnAllowed() then return end
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return end
     for _, p in ipairs(ps.placeables) do
@@ -10811,40 +11648,77 @@ end
 -- property is never touched: the pallet must be one the PEN spawned (still in the spec's own tracked set),
 -- and vanilla auto-spawn must be suppressed for that fill type -- otherwise the base game's trickle-fill
 -- owns the pad and an empty pallet there is simply one it is about to fill.
+-- Pallets standing on this building's pad with NOTHING in them, found by geometry alone.
+--
+-- **It cannot go through husbandryPalletObjects, and that is the whole reason empty pallets survived.**
+-- That function filters on `getFillUnitFillType(idx) == ft`, and an EMPTY pallet has no fill type -- it
+-- reports UNKNOWN, never BREAD -- so a per-fill-type lookup can never return one. Every previous attempt
+-- to clear empties looped it looking for `lvl <= 0` and was therefore searching a list that by
+-- construction could not contain what it was looking for. Reported in game 2026-08-02: two empty pallets
+-- per bakery survived a reclaim pass that correctly recovered the partial one beside them.
+--
+-- So: scan the vehicles directly, test the PAD geometry (5.17 -- on my pad => mine), and sum EVERY fill
+-- unit rather than the one a fill type would have picked. Returns {} when the building has no resolvable
+-- spawn places, so a modded spawner is never guessed at and a pallet merely parked nearby is never taken.
+function SmartDistribution.emptyPadPallets(p)
+    local out = {}
+    local vs = g_currentMission ~= nil and g_currentMission.vehicleSystem or nil
+    if p == nil or p.rootNode == nil or vs == nil or type(vs.vehicles) ~= "table" then return out end
+    if #SmartDistribution.spawnPlacesOf(p) == 0 then return out end
+    local hx, _, hz = getWorldTranslation(p.rootNode)
+    local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId
+    local radius = (getProductionPoint(p) ~= nil) and PALLET_ASSOC_RADIUS_PROD or PALLET_ASSOC_RADIUS
+    local r2 = radius * radius
+    for _, v in ipairs(vs.vehicles) do
+        if v ~= nil and v.isPallet and v.rootNode ~= nil then
+            local vfarm = (v.getOwnerFarmId ~= nil and v:getOwnerFarmId()) or v.ownerFarmId
+            if vfarm == nil or farmId == nil or vfarm == farmId then
+                local vx, _, vz = getWorldTranslation(v.rootNode)
+                local dx, dz = vx - hx, vz - hz
+                if dx * dx + dz * dz <= r2 and SmartDistribution.palletOnSpawner(p, vx, vz) then
+                    local total = 0
+                    if v.getFillUnits ~= nil and v.getFillUnitFillLevel ~= nil then
+                        local units = v:getFillUnits() or {}
+                        for i = 1, #units do total = total + (v:getFillUnitFillLevel(i) or 0) end
+                    elseif v.getFillUnitFillLevel ~= nil then
+                        local idx = (v.spec_pallet ~= nil and v.spec_pallet.fillUnitIndex) or 1
+                        total = v:getFillUnitFillLevel(idx) or 0
+                    end
+                    if total <= 0 then out[#out + 1] = v end
+                end
+            end
+        end
+    end
+    return out
+end
+
 function SmartDistribution.sweepEmptyPadPallets()
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return end
     for _, p in ipairs(ps.placeables) do
-        local hs = p.spec_husbandryPallets
+        -- Only sweep a pad DR is responsible for, or a pallet the base game is merely about to fill would
+        -- be taken out from under it.
+        --   * PEN -- DR is suppressing its vanilla auto-spawn, so nothing else will ever fill this.
+        --   * PRODUCTION -- pallet spawning is switched off entirely (5.41), same reasoning.
+        -- Ownership within that is the PAD, never spec.pallets: probed in game, a DR-released pallet is
+        -- never in that set, because the base game registers pallets inside the very function DR
+        -- overrides. 5.17's rule applies -- on my pad => mine -- and emptyPadPallets tests exactly that,
+        -- returning nothing when the building has no resolvable spawn geometry (5.18).
+        local hs  = p.spec_husbandryPallets
+        local pp  = getProductionPoint(p)
+        local own = false
         if hs ~= nil then
-            local held = SmartDistribution.suppressedPalletFillTypes(p)
-            -- Ownership is the PAD, never spec.pallets. That set was the original guard here and it made this
-            -- whole function a permanent no-op: probed in game, a coop with a 1000 L pallet standing on its
-            -- pad reported "no spawned pallets of this ft yet", because the base game registers a pallet into
-            -- spec.pallets inside updatePallets -- the very function DR suppresses. So a DR-released pallet is
-            -- never in it. 5.17's rule applies instead: on my pad => mine, full stop.
-            -- Gated on geometry actually resolving (5.18), and on being ON the pad rather than merely nearby,
-            -- so an empty pallet a player parked near the pen is never touched.
-            if held ~= nil and #SmartDistribution.spawnPlacesOf(p) > 0 then
-                for _, ft in ipairs(held) do
-                    for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
-                        local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
-                        local lvl = (pallet.getFillUnitFillLevel ~= nil and pallet:getFillUnitFillLevel(idx)) or 0
-                        local onPad = false
-                        if lvl <= 0 and pallet.rootNode ~= nil then
-                            local ok, vx, _, vz = pcall(getWorldTranslation, pallet.rootNode)
-                            onPad = ok and SmartDistribution.palletOnSpawner(p, vx, vz)
-                        end
-                        if onPad then
-                            if SmartDistribution.debug then
-                                log("sweepEmptyPad %s [%s]: removing an empty pallet",
-                                    placeableName(p), tostring(fillTypeName(ft)))
-                            end
-                            if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
-                            if type(hs.pallets) == "table" then hs.pallets[pallet] = nil end
-                        end
-                    end
+            own = SmartDistribution.suppressedPalletFillTypes(p) ~= nil
+        elseif pp ~= nil and pp.palletSpawner ~= nil then
+            own = not SmartDistribution.palletSpawnAllowed()
+        end
+        if own then
+            for _, pallet in ipairs(SmartDistribution.emptyPadPallets(p)) do
+                if SmartDistribution.debug then
+                    log("sweepEmptyPad %s: removing an empty pallet", placeableName(p))
                 end
+                if pallet.delete ~= nil then pcall(function() pallet:delete() end) end
+                if hs ~= nil and type(hs.pallets) == "table" then hs.pallets[pallet] = nil end
             end
         end
     end
@@ -10979,16 +11853,24 @@ installPersistence()
 -- if addConsoleCommand ~= nil then
 --     addConsoleCommand("sdMarketProbe", "Dump owned selling-station/market spec + sell API [dev]", "cmdMarketProbe", SmartDistribution)
 -- end
--- TEMPORARY (2026-07-31): buffer vs cap per market per fill type -- see cmdMarketBuffer. Remove with it.
+-- Pre-release strip (2026-08-02): sdMarketBuffer, sdControlDump and sdStoredProbe removed with their
+-- function bodies. The first two were the 6.9 market investigation, the third answered 6.12's
+-- construction question -- all served their purpose. The two below are NOT probes and stay:
+--   * sdPalletHook -- the off switch for a SHIPPING feature (5.39's production top-up redirect), and the
+--     one-key A/B if a modded production point ever mishandles PALLET_ALREADY_PRESENT.
+--   * sdShedRepair -- recovery: strips stored objects a shed cannot use. Cheap insurance while direct
+--     insert (6.12) beds in.
+-- Both need game.xml <development><controls>true, so neither is reachable in a normal install.
 if addConsoleCommand ~= nil then
-    addConsoleCommand("sdMarketBuffer", "Dump each market's per-product buffer vs cap + sell timing [dev]", "cmdMarketBuffer", SmartDistribution)
-    addConsoleCommand("sdControlDump", "Dump every advanced override set: blocks, reserves, input caps [dev]", "cmdControlDump", SmartDistribution)
+    addConsoleCommand("sdPalletHook", "Pallet spawner: toggle spawn logging / the production top-up redirect [dev]", "cmdPalletHook", SmartDistribution)
+    addConsoleCommand("sdShedRepair", "Remove unusable stored objects from every pallet shed [dev]", "cmdShedRepair", SmartDistribution)
 end
 installInteraction()
 installHusbandryPatch()
 SmartDistribution.installHoldInternalPalletSuppression()
 SmartDistribution.installManualTransferTracking()
 SmartDistribution.installMarketManualFill()
+SmartDistribution.installPalletSpawnerHook()   -- production partial-pallet top-up (+ spawn result codes)
 installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
@@ -11259,7 +12141,11 @@ function SmartDistribution.pooledInputCapacity(p)
         end
         if #fts >= 2 then
             local cap = fs.capacity or 0
-            if cap > 0 then return { liters = cap, fts = fts, kind = "FOOD" } end
+            -- sharedLevel: every food type reports the SAME pool total through husbandryInputHeld -- the
+            -- barn holds "33,750 L of food", not 33,750 L of each. Unique among the pool kinds (a hall's
+            -- bays, a shed's slots, a production buffer and a market buffer all report per-product), so
+            -- anything that sums held ACROSS a pool has to know the difference. See inputEffectiveMaxLiters.
+            if cap > 0 then return { liters = cap, fts = fts, kind = "FOOD", sharedLevel = true } end
         end
         return nil   -- a husbandry's non-food inputs (straw, water) are individual, never pooled
     end
@@ -11689,14 +12575,31 @@ function SmartDistribution.inputEffectiveMaxLiters(p, ft)
     local nominal = cap * pct / 100
     if pool == nil or type(pool.fts) ~= "table" or #pool.fts < 2 then return nominal end
     local rcvUid = getUid(p)
+    -- On a SHARED-LEVEL pool (a husbandry food store) every fill type reports the SAME pool total, so
+    -- "what the others hold" cannot be summed -- doing so multiplies one quantity by the number of food
+    -- types. Reported in game 2026-08-02: a cow barn with five food types, four blocked, showed the
+    -- survivor as "100% (0 L)" because othersHeld came out at 4 x 33,750 and freeForFt clamped to zero.
+    -- 95% masked it -- at 95% the product reads as over its own share and returns through the branch
+    -- below, never reaching the clamp, which is exactly why only the round number looked broken.
+    -- Nothing is attributable to a single product in such a pool, so there is no "others" figure to
+    -- subtract; contention is already handled by usedOver / denom above.
+    local shared = pool.sharedLevel == true
     local usedOver, denom, othersHeld, ftIsOver = 0, 0, 0, false
     for _, f in ipairs(pool.fts) do
         local held  = SmartDistribution.inputHeldLevel(p, f) or 0
         local fPct  = SmartDistribution.inputCapPct(p, f) or 100
         local over  = held > (cap * fPct / 100) + 0.5           -- tolerance: litres are fractional
-        if f ~= ft then othersHeld = othersHeld + held else ftIsOver = over end
+        if f ~= ft then
+            if not shared then othersHeld = othersHeld + held end
+        else ftIsOver = over end
         if over then
-            usedOver = usedOver + held                          -- occupied beyond its share: really spoken for
+            -- ...and the SAME multiplication would happen here. On a shared-level pool two products
+            -- reading "over" would each contribute the whole pool total, so `remaining` collapses to 0
+            -- and every share reads as no space -- the reported bug again, just reached by a different
+            -- configuration (blocked products still carrying an explicit low percentage). There is no
+            -- per-product occupancy to attribute in such a pool, so nothing is reserved here; the real
+            -- limit still lands, because inputAcceptableLiters subtracts the pool's own held total.
+            if not shared then usedOver = usedOver + held end   -- occupied beyond its share: really spoken for
         elseif rcvUid == nil or not SmartDistribution.isInputBlocked(rcvUid, f) then
             denom = denom + fPct                                -- a blocked product reserves nothing
         end
@@ -12227,11 +13130,17 @@ end
 
 -- Can placeable p accept ft as a sink (production input / storage sink / pallet shed)?
 -- Returns supports(bool), active(bool) -- active means a running production consumes ft.
-function SmartDistribution.canAccept(p, ft)
+-- `supportsOnly` answers the first question and reports active=false without computing it: see the
+-- production branch below for why that half is the expensive one, and hasAnySink for who needs it.
+function SmartDistribution.canAccept(p, ft, supportsOnly)
     local pp = getProductionPoint(p)
     if pp ~= nil then
         local supports = type(pp.inputFillTypeIds) == "table" and pp.inputFillTypeIds[ft] == true
         if supports then
+            -- `supports` is one table lookup; `active` walks every production line, resolving each
+            -- definition and applying the serial/parallel throughput divisor. An existence test never
+            -- reads the second value, so it must not pay for it.
+            if supportsOnly then return true, false end
             return true, (getActiveHourlyConsumption(pp, ft) > 0)
         end
     end
@@ -12256,8 +13165,40 @@ function SmartDistribution.canAccept(p, ft)
     return false, false
 end
 
+-- Existence-only twin of sinksFor: "does ANY sink for ft exist?", answered on the FIRST match.
+--
+-- sinksFor is a LIST builder for the UI -- it scans every placeable to the end, and for each accepting one
+-- resolves placeableName() (a pcall into getName) and assetIconFile() (another pcall plus a
+-- g_storeManager:getItemByXMLFilename lookup), then sorts the result. hasDistributeEndpoint threw all of
+-- that away to read `#sinks > 0`, and enforceValidModes calls it for every enrolled asset x fill type at
+-- the top of every in-game hour.
+--
+-- The FILTER below is a deliberate mirror of sinksFor's, line for line -- same rootNode / isEnrolled /
+-- owner-farm / self-exclusion gates -- so the two can never disagree about whether a sink exists. Only the
+-- record building and the sort are dropped. If sinksFor's filter is ever changed, change this one with it.
+-- canAccept is called with supportsOnly, since the `active` flag is a list-display concern.
+--
+-- NOTE the answer is capability-based, not room-based: canAccept asks whether the building supports the
+-- fill type, not whether it currently has space. That is the correct question for an endpoint test.
+function SmartDistribution.hasAnySink(sourceUid, ft)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return false end
+    local myFarm = SmartDistribution._playerFarmId()
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil and isEnrolled(p) then
+            local of = SmartDistribution._ownerFarmId(p)
+            local u = getUid(p)
+            if u ~= sourceUid and (myFarm == nil or of == nil or of == myFarm) then
+                if (SmartDistribution.canAccept(p, ft, true)) then return true end
+            end
+        end
+    end
+    return false
+end
+
 -- All network sinks that can accept ft from the source (uid), with the source's current
 -- priority rank for each (0 = unranked). Ordered ranked-first (by rank), then by name.
+-- For a mere "is there one?" use hasAnySink above -- this builds display records and sorts them.
 function SmartDistribution.sinksFor(sourceUid, ft)
     local out = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil

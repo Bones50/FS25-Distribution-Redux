@@ -404,7 +404,11 @@ local function cycleVirtual(pp, ft)
     -- market modes only when a market can actually take THIS product (a market that doesn't accept, say,
     -- slurry is not an endpoint for it), not merely when some market is in range.
     local hasMarket  = pl ~= nil and SD.hasMarketEndpoint ~= nil and SD.hasMarketEndpoint(pl, ft)
-    local hasPallets = pp.palletSpawner ~= nil                                            -- Hold Internal only where pallets auto-spawn
+    -- Hold Internal only where pallets auto-spawn -- so ALSO not when pallet spawning is switched off,
+    -- or the ring carries two hold options that now do exactly the same thing (Hold and Hold Internal
+    -- both simply keep the product internally once nothing can spawn).
+    local hasPallets = pp.palletSpawner ~= nil
+                       and (SD.palletSpawnAllowed == nil or SD.palletSpawnAllowed())
     local nv = nextVirtual(getV(pp, ft), hasMarket, hasPallets)
     applyVLocal(pp, ft, nv)                              -- apply on this machine immediately
     if isMP() then                                      -- and sync the rest of the session

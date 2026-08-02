@@ -368,8 +368,8 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     if modeCell ~= nil then
         -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
         -- matching the Productions tab for the same pair of modes
-        local pal = (SmartDistribution.isPalletOutput ~= nil)
-            and SmartDistribution.isPalletOutput(self.selectedAsset, row.ft) or false
+        local pal = (SmartDistribution.holdLabelFlag ~= nil)
+            and SmartDistribution.holdLabelFlag(self.selectedAsset, row.ft) or false
         local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
         local timing = (SmartDistribution.sellTimingLabel ~= nil)
             and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
@@ -695,8 +695,8 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         if modeCell ~= nil then
             -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
         -- matching the Productions tab for the same pair of modes
-        local pal = (SmartDistribution.isPalletOutput ~= nil)
-            and SmartDistribution.isPalletOutput(self.selectedAsset, row.ft) or false
+        local pal = (SmartDistribution.holdLabelFlag ~= nil)
+            and SmartDistribution.holdLabelFlag(self.selectedAsset, row.ft) or false
         local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
             local timing = (SmartDistribution.sellTimingLabel ~= nil)
                 and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
