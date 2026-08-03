@@ -1112,30 +1112,52 @@ end
 SmartDistribution.MARKET_IMMEDIATE = 0
 SmartDistribution.MARKET_BEST      = 1
 SmartDistribution.MARKET_HOLD      = 2
--- A market's DEFAULT is HOLD: with nothing configured it behaves as a store, accumulating whatever arrives
--- -- routed by DR or tipped in by hand -- and sells nothing until the player says so. Product is never
--- disposed of behind your back, and a market you have not set up cannot quietly sell a harvest at a bad
--- price. The buffer filling to marketCap is a self-limiting stop: marketTransferPhase then computes zero
--- room and the network simply stops pushing, leaving product at the source.
+-- A market's default sell timing now FOLLOWS THE GLOBAL "Default sell timing" setting -- the same one
+-- that governs silos, pens and productions through resolveBestPrice. Markets used to carry their own
+-- hardcoded HOLD default that nothing could reach, so changing that setting had no effect on them at
+-- all; reported in game as "the sell immediate / sell at best price default is not taking effect".
 --
--- The sparse-storage convention is "omit the DEFAULT", so this constant has to be used by every site that
--- decides whether an entry is worth keeping -- the setter, the save, the load and the MP join replay. It
--- used to be a bare `0` in all four, which would have made an explicitly chosen "Immediate" store nothing,
--- read back as the new default HOLD, and vanish on save/load and on join.
-SmartDistribution.MARKET_DEFAULT   = SmartDistribution.MARKET_HOLD
+-- This REPLACES the "a market holds until told to sell" default. The buffer filling to marketCap is
+-- still a self-limiting stop (marketTransferPhase then computes zero room and the network stops
+-- pushing), and a player who wants the old behaviour sets the products to Hold explicitly -- which now
+-- persists as a real choice rather than as the absence of one.
+SmartDistribution.MARKET_DEFAULT   = SmartDistribution.MARKET_HOLD   -- LEGACY: the value a v1 save omitted
+
+-- The mode a product the player has never configured runs on.
+-- Mirrors resolveBestPrice: the master "Sell at best price" switch being off means "everything sells
+-- immediately", and it wins over the per-default choice here exactly as it does for every other class.
+function SmartDistribution.marketDefaultMode()
+    local g = S ~= nil and S.global or nil
+    if g == nil then return SmartDistribution.MARKET_BEST end
+    if not g.bestPriceEnabled then return SmartDistribution.MARKET_IMMEDIATE end
+    return g.bestPriceDefault and SmartDistribution.MARKET_BEST or SmartDistribution.MARKET_IMMEDIATE
+end
+
+-- THE SPARSE-STORAGE CONVENTION CHANGED WITH THE DEFAULT, and this is the load-bearing part.
+-- It used to be "omit anything equal to the default", which only works while the default is a CONSTANT.
+-- With it derived from a player setting, a market explicitly set to Best price would store NOTHING, and
+-- flipping the global default to Immediate would then silently rewrite that market -- and the reverse
+-- across a save/load or an MP join. So the rule is now the one the per-asset sell timing has always
+-- used (S.sellTiming): store EVERY explicit choice, and absent means "follow the default".
 function SmartDistribution.marketSellMode(uid, ft)
     local b = uid ~= nil and SmartDistribution._marketTiming[uid] or nil
-    -- a stored 0 (Immediate) survives this: 0 is truthy in Lua, so only a genuinely absent entry defaults
-    return (b ~= nil and b[ft]) or SmartDistribution.MARKET_DEFAULT
+    local v = (b ~= nil) and b[ft] or nil
+    if v ~= nil then return v end       -- explicit choice, including 0 (Immediate) -- never collapse with or
+    return SmartDistribution.marketDefaultMode()
 end
+-- NOTE FOR ANYTHING ADDED IN THIS BLOCK: `getUid` is a local declared BELOW here, so the name resolves to
+-- a nil global at this point and calling it throws at runtime. `luac -p` does NOT catch that -- it is
+-- valid syntax. This is why every accessor in this block takes a `uid`, never a placeable; the
+-- placeable-side wrappers (marketModeOf, marketProductLabel, marketToggleOutput, marketSetAllOutputs)
+-- all live further down the file, after getUid, for exactly this reason.
 function SmartDistribution.setMarketSellMode(uid, ft, mode)
     if uid == nil or ft == nil then return end
     local b = SmartDistribution._marketTiming[uid]
-    if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
+    if mode ~= nil then
         if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
         b[ft] = mode
     elseif b ~= nil then
-        b[ft] = nil
+        b[ft] = nil                     -- nil clears the override and returns the product to the default
         if next(b) == nil then SmartDistribution._marketTiming[uid] = nil end
     end
 end
@@ -5521,7 +5543,9 @@ end
 -- Mechanics (XML calls, save hook) mirror proven reference mods; identity and
 -- scoping are fixed (uniqueId, not node; savegame folder, not global modSettings).
 -- ============================================================================
-local PERSIST_VERSION = 1
+-- 2: market sell timing stores every explicit choice instead of omitting the default, because that
+--    default now follows the global "Default sell timing" setting. loadOverrides migrates v1 files.
+local PERSIST_VERSION = 2
 
 local function getSaveDir()
     local mi = g_currentMission ~= nil and g_currentMission.missionInfo or nil
@@ -5596,8 +5620,10 @@ local function saveOverrides(missionInfo)
     local mtc = 0
     for uid, byFt in pairs(SmartDistribution._marketTiming) do
         for ft, mode in pairs(byFt) do
-            -- MARKET_DEFAULT, not 0: the omitted value is the default, and 0 (Immediate) is a real choice
-            if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
+            -- EVERY explicit choice is written, including one that happens to match the current default:
+            -- the default is a player setting now, so "equal to the default today" is not a reason to
+            -- drop a value that must survive them changing it (see marketSellMode).
+            if mode ~= nil then
                 local k = string.format("smartDistribution.marketTiming(%d)", mtc)
                 setXMLString(xml, k .. "#uniqueId", tostring(uid))
                 setXMLString(xml, k .. "#fillType", fillTypeName(ft))
@@ -5905,14 +5931,34 @@ local function loadOverrides()
         local ftName = getXMLString(xml, k .. "#fillType")
         local ft = (ftName ~= nil and g_fillTypeManager ~= nil) and g_fillTypeManager:getFillTypeIndexByName(ftName) or nil
         local mode = getXMLInt(xml, k .. "#sellMode")
-        -- A save written before markets defaulted to Hold carries entries only for 1 and 2, with absent
-        -- meaning Immediate. Absent now means Hold, so those products migrate to Hold on load -- that is the
-        -- intended behaviour change (a market holds until told to sell), not a loss of configuration.
-        if ft ~= nil and mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then
+        -- Absent now means "follow the global default"; every stored value is an explicit choice and is
+        -- taken as written, Immediate included.
+        if ft ~= nil and mode ~= nil then
             local b = SmartDistribution._marketTiming[uid]; if b == nil then b = {}; SmartDistribution._marketTiming[uid] = b end
             b[ft] = mode
         end
         mtc = mtc + 1
+    end
+    -- MIGRATION, save version 1 -> 2. A v1 save omitted every product sitting on the then-hardcoded HOLD
+    -- default, so those entries do not exist to be read above. The default now follows the global "Default
+    -- sell timing" setting, which ships as Best price -- so without this, loading a v1 save would put every
+    -- unconfigured market on sale and quietly dispose of stock the player had deliberately parked.
+    -- Anything the save shows HOLDING product is pinned to Hold explicitly; from there it is an ordinary
+    -- choice they can change. Products with no stock carry no risk and simply adopt the new default.
+    if (getXMLInt(xml, "smartDistribution#version") or 1) < 2 then
+        local mig = 0
+        for muid, byFt in pairs(SmartDistribution._marketBuffer) do
+            for mft, litres in pairs(byFt) do
+                local b = SmartDistribution._marketTiming[muid]
+                if (litres or 0) > 0 and (b == nil or b[mft] == nil) then
+                    SmartDistribution.setMarketSellMode(muid, mft, SmartDistribution.MARKET_DEFAULT)
+                    mig = mig + 1
+                end
+            end
+        end
+        if mig > 0 then
+            log("market timing migrated (save v1 -> v2): %d held product(s) pinned to Hold; empty products now follow the global default", mig)
+        end
     end
     -- rolling 24-cycle "monthly" transaction window
     monthlyRing = {}
@@ -8094,6 +8140,59 @@ function SmartDistribution.palletHookKind(target)
     return "?", nil
 end
 
+-- ---- bunker silo: opening uncovers the WHOLE heap, not one band --------------
+-- VANILLA BEHAVIOUR, not a bug, and DR cannot live with it. `BunkerSilo:openSilo` converts fermenting ->
+-- output over a single band `openingLength` deep at the end the player is standing at; everything behind
+-- that stays fermentingFillType. The conversion front is then dragged forward ONLY by
+-- `BunkerSilo.onChangedFillLevelCallback`, which fires when a VEHICLE removes fill. So the silo opens a
+-- little at a time as you scoop it -- reported in game as "I have to use a front end loader to get the
+-- full silo to open".
+--
+-- That mechanic assumes a vehicle does the work. DR moves product with no vehicle and no engine fill
+-- event (bunkerTakeSilage writes the density map directly), so nothing advances the front for it: DR
+-- could drain the one opened band and then read the silo as empty while it visibly still held thousands
+-- of litres. Rather than synthesising fake vehicle fill events per withdrawal, convert the lot ONCE at
+-- the moment of opening -- which is also what the player wanted.
+--
+-- `switchFillTypeAtOffset(true, 0, hl)` spans offset 0 to the full silo length, i.e. the entire area.
+-- changeFillTypeAtArea only rewrites cells that ARE the fermenting type, so it is idempotent and the
+-- band vanilla already converted is untouched.
+--
+-- SERVER-ONLY by construction: BunkerSiloOpenEvent:run guards on `not connection:getIsServer()`, so
+-- openSilo executes on the server and the terrain change replicates through the engine's own density map
+-- sync -- the same reason vanilla's call here carries no isServer guard of its own.
+function SmartDistribution.installBunkerFullOpen()
+    if BunkerSilo == nil or type(BunkerSilo.openSilo) ~= "function" then
+        print("[SmartDistribution] bunker full-open: BunkerSilo.openSilo not found [VERIFY]")
+        return
+    end
+    if SmartDistribution._origOpenSilo ~= nil then return end       -- installing twice would self-call
+    SmartDistribution._origOpenSilo = BunkerSilo.openSilo
+    BunkerSilo.openSilo = function(self, px, py, pz)
+        SmartDistribution._origOpenSilo(self, px, py, pz)
+        local area = self ~= nil and self.bunkerSiloArea or nil
+        if area == nil or area.dhx == nil then return end
+        local ok = pcall(function()
+            local hl = MathUtil.vector3Length(area.dhx, area.dhy, area.dhz)
+            if hl == nil or hl <= 0 then return end
+            self:switchFillTypeAtOffset(true, 0, hl)
+            -- Both ends are now genuinely open. getCanOpenSilo() gates the "open" prompt on these flags,
+            -- so setting them removes an action that would otherwise still be offered at the far end and
+            -- do nothing visible. onChangedFillLevelCallback becomes a harmless no-op either way -- it
+            -- scans for fermenting material and there is none left to find.
+            self.isOpenedAtFront = true
+            self.isOpenedAtBack  = true
+            if self.isServer and self.raiseDirtyFlags ~= nil and self.bunkerSiloDirtyFlag ~= nil then
+                self:raiseDirtyFlags(self.bunkerSiloDirtyFlag)
+            end
+        end)
+        if not ok then
+            print("[SmartDistribution] bunker full-open: conversion failed; vanilla banded opening stands [VERIFY]")
+        end
+    end
+    log("bunker full-open installed (opening a silo uncovers the whole heap)")
+end
+
 function SmartDistribution.installPalletSpawnerHook()
     if PalletSpawner == nil then
         print("[SmartDistribution] pallet-spawner hook: PalletSpawner class not found [VERIFY]")
@@ -9456,15 +9555,17 @@ function SmartDistribution.marketBufferOf(market, ft)
 end
 -- per-(market, ft) sell-mode label for the MODE column.
 function SmartDistribution.marketProductLabel(market, ft)
-    if market == nil then return "Hold" end                    -- no market resolved: report the default
-    local m = SmartDistribution.marketSellMode(getUid(market), ft)
+    -- no market resolved: report the RESOLVED default, not a hardcoded word, or the column contradicts
+    -- what an unconfigured product actually does
+    local m = (market == nil) and SmartDistribution.marketDefaultMode()
+              or SmartDistribution.marketSellMode(getUid(market), ft)
     if m == SmartDistribution.MARKET_HOLD then return "Hold" end
     if m == SmartDistribution.MARKET_BEST then return "Sell  -  Best price" end
     return "Sell  -  Immediate"
 end
 -- current per-(market, ft) sell mode (0/1/2), taking the market placeable.
 function SmartDistribution.marketModeOf(market, ft)
-    if market == nil or ft == nil then return SmartDistribution.MARKET_DEFAULT end
+    if market == nil or ft == nil then return SmartDistribution.marketDefaultMode() end
     return SmartDistribution.marketSellMode(getUid(market), ft)
 end
 -- short sell-type label (Immediate / Best price) for the footer button; nil while Held.
@@ -9474,11 +9575,25 @@ function SmartDistribution.marketSellTypeLabel(market, ft)
     if m == SmartDistribution.MARKET_HOLD then return nil end
     return (m == SmartDistribution.MARKET_BEST) and "Best price" or "Immediate"
 end
--- "Change output": toggle the selected product between Sell (immediate) and Hold.
+-- "Change output": toggle the selected product between Sell and Hold.
+-- Coming OFF Hold lands on the player's chosen DEFAULT, not a hardcoded Immediate. The old form could
+-- never produce Best price and wrote an explicit 0, which then overrode the "Default sell timing" setting
+-- for that product permanently -- reported in game as markets "always defaulting to immediate regardless
+-- of the setting", and the reason wiring the default in (5.44) appeared to change nothing: one press of
+-- this button pinned the product to Immediate for good.
+-- Written as if/else rather than `a and b or c`: marketDefaultMode() can return 0, and this file has been
+-- bitten by that collapse before (see marketSellMode).
 function SmartDistribution.marketToggleOutput(market, ft)
-    if market == nil or ft == nil then return 0 end
+    if market == nil or ft == nil then return SmartDistribution.MARKET_IMMEDIATE end
     local cur = SmartDistribution.marketSellMode(getUid(market), ft)
-    local nextMode = (cur == SmartDistribution.MARKET_HOLD) and SmartDistribution.MARKET_IMMEDIATE or SmartDistribution.MARKET_HOLD
+    local nextMode
+    if cur == SmartDistribution.MARKET_HOLD then
+        -- only ever Immediate or Best price, so this can never resolve back to Hold and leave the
+        -- button visibly doing nothing
+        nextMode = SmartDistribution.marketDefaultMode()
+    else
+        nextMode = SmartDistribution.MARKET_HOLD
+    end
     SmartDistribution.applyMarketTiming(market, ft, nextMode)
     return nextMode
 end
@@ -9491,10 +9606,15 @@ function SmartDistribution.marketToggleSellType(market, ft)
     SmartDistribution.applyMarketTiming(market, ft, nextMode)
     return nextMode
 end
--- "Change all outputs": set every accepted product of the market to Sell (immediate) or Hold.
+-- "Change all outputs": set every accepted product of the market to Sell or Hold.
+-- Same rule as marketToggleOutput: "Sell" means the player's chosen default, not a hardcoded Immediate.
+-- The values ARE written explicitly -- a deliberate bulk action should produce a state that sticks if the
+-- global default is changed later, unlike a product the player has simply never touched.
 function SmartDistribution.marketSetAllOutputs(market, hold)
     if market == nil then return end
-    local mode = hold and SmartDistribution.MARKET_HOLD or SmartDistribution.MARKET_IMMEDIATE
+    local mode
+    if hold then mode = SmartDistribution.MARKET_HOLD
+    else         mode = SmartDistribution.marketDefaultMode() end
     for ft in pairs(SmartDistribution.marketMenuFillTypes(market)) do
         SmartDistribution.applyMarketTiming(market, ft, mode)
     end
@@ -9518,7 +9638,10 @@ function SmartDistribution.forEachMarketTiming(fn)
             local byFt = SmartDistribution._marketTiming[getUid(p)]
             if byFt ~= nil then
                 for ft, mode in pairs(byFt) do
-                    if mode ~= nil and mode ~= SmartDistribution.MARKET_DEFAULT then fn(p, ft, mode) end
+                    -- every explicit choice replays, Immediate included: a joining client resolves an
+                    -- absent entry through its own marketDefaultMode(), so anything omitted here would
+                    -- silently become whatever that client's default happens to be
+                    if mode ~= nil then fn(p, ft, mode) end
                 end
             end
         end
@@ -11871,6 +11994,7 @@ SmartDistribution.installHoldInternalPalletSuppression()
 SmartDistribution.installManualTransferTracking()
 SmartDistribution.installMarketManualFill()
 SmartDistribution.installPalletSpawnerHook()   -- production partial-pallet top-up (+ spawn result codes)
+SmartDistribution.installBunkerFullOpen()      -- opening a bunker uncovers the whole heap, not one band
 installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
@@ -13353,15 +13477,30 @@ function SmartDistribution.bunkerTakeSilage(p, ft, wanted)
                 if planned > 0 then
                     local before = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
                     local sx, sz, wx, wz, hx, hz = SmartDistribution.bunkerBand(silo, from, to)
-                    pcall(util.removeFromGroundByArea, sx, sz, wx, wz, hx, hz, ft)
+                    -- Real volume removal first (clearArea -- lowers the mound). Measured, not trusted:
+                    -- if it moved nothing, fall back to the old area call so a withdrawal never silently
+                    -- stops working. `planned` is what this band holds, which is what we mean to take.
+                    local tried = SmartDistribution.heapRemoveLiters(ft, sx, sz, wx, wz, hx, hz, planned)
                     local after = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
                     local got = math.max(0, before - after)
+                    if got <= 0 then
+                        if tried and SmartDistribution.debug then
+                            log("[DR bunker] clearArea moved nothing; falling back to removeFromGroundByArea")
+                        end
+                        pcall(util.removeFromGroundByArea, sx, sz, wx, wz, hx, hz, ft)
+                        after = SmartDistribution.bunkerBandLiters(silo, ft, 0, 1)
+                        got = math.max(0, before - after)
+                    end
                     -- resync the silo's cached level so the game's own HUD agrees with the terrain, then
                     -- flag it dirty so that corrected level replicates to clients (BunkerSilo carries
                     -- writeUpdateStream + bunkerSiloDirtyFlag; without this a client's HUD keeps the old
                     -- number even though its terrain read is right)
                     pcall(function() return silo:updateFillLevel() end)
                     pcall(function() return silo:raiseDirtyFlags(silo.bunkerSiloDirtyFlag) end)
+                    -- and refresh what is DRAWN, or the mound keeps its old shape until the player
+                    -- scoops it. Only when something actually left -- a no-op removal has nothing to
+                    -- redraw. Runs after the measurement, so it can never affect the litres credited.
+                    if got > 0 then SmartDistribution.refreshHeapVisuals(sx, sz, wx, wz, hx, hz) end
                     taken, remaining = taken + got, remaining - got
                 end
             end
@@ -13372,6 +13511,97 @@ function SmartDistribution.bunkerTakeSilage(p, ft, wanted)
             tostring(placeableName(p)), taken, wanted)
     end
     return taken
+end
+
+-- ---- taking VOLUME out of a terrain heap -------------------------------------
+-- `removeFromGroundByArea` IS NOT A BULK REMOVAL FUNCTION. Believing it was is what produced the
+-- "material changes colour but the level never drops" symptom: DR measured the litres as gone (a
+-- getFillLevelAtArea read of that fill type does fall) and credited them, while the mound physically
+-- stayed put. The base game calls it in exactly TWO places, both in BunkerSilo, and both are dreg
+-- cleanup below `emptyThreshold` immediately followed by `setState(STATE_FILL)` -- "wipe the remnants",
+-- never "take N litres out".
+--
+-- The REAL removal is `tipToGroundAroundLine` WITH A NEGATIVE LITRE AMOUNT -- what a shovel does
+-- (Shovel.lua:245):
+--     local fillDelta, lineOffset = DensityMapHeightUtil.tipToGroundAroundLine(
+--         self, -freeCapacity - minValidLiter, pickupFillType,
+--         sx,sy,sz, ex,ey,ez, innerRadius, radius, shovelNode.lineOffset, true, nil)
+-- returning a NEGATIVE fillDelta for what came out. It works on a LINE, so the band is converted with
+-- `getLineByAreaDimensions` -- the same helper Cutter / Tedder / Windrower use to turn a work area into
+-- a line plus radius. Y comes from the terrain, which is what the heap sits on.
+--
+-- UNVERIFIED: DensityMapHeightUtil is engine-side C++, so the trailing arguments' exact meaning cannot be
+-- read. This is therefore ATTEMPTED and MEASURED by the caller; if nothing moved, the old
+-- removeFromGroundByArea call still runs as a fallback, so this can only improve on what shipped.
+-- TRIED AND REJECTED: `tipToGroundAroundLine` with a negative amount, built from
+-- `getLineByAreaDimensions` with terrain-height Y. It ran without error and removed **238 L on the first
+-- call and nothing on every call after** (log 2026-08-03 14:04). The trailing arguments are not readable,
+-- and the shovel carries a persistent `lineOffset` between calls that DR has no equivalent of, so tuning
+-- it would be guesswork. Recorded so it is not re-attempted blind; the shovel's exact call is quoted in
+-- CLAUDE.md 5.45b if it is ever worth revisiting.
+--
+-- USED INSTEAD: `DensityMapHeightUtil.clearArea(sx,sz, wx,wz, hx,hz)` -- the SAME six-coordinate form DR
+-- already computes for the band, no fill type, no line, no offset state. `BunkerSilo:clearSiloArea` uses
+-- it for a whole silo, and `PlaceableClearAreas:onPostFinalizePlacement` uses it to strip tipped material
+-- from a building footprint -- which it could not do without physically removing the volume.
+--
+-- The band is already sized to the demand: `bunkerBandForLiters` binary-searches the largest band whose
+-- content does NOT exceed what was asked for, so clearing that band removes exactly the litres intended.
+-- No partial-volume arithmetic is needed, which is precisely what made the line-based API awkward.
+--
+-- NOTE it clears EVERY fill type in the band, not just `ft`. Harmless here: after 5.45 an opened bunker is
+-- entirely its output type. Kept in mind because the caller only credits the measured `ft` delta, so any
+-- second type present would be destroyed uncredited.
+SmartDistribution._heapRealRemoval = true
+function SmartDistribution.heapRemoveLiters(ft, sx, sz, wx, wz, hx, hz, liters)
+    if not SmartDistribution._heapRealRemoval then return false end
+    if ft == nil or liters == nil or liters <= 0 then return false end
+    local util = DensityMapHeightUtil
+    if type(util) ~= "table" or type(util.clearArea) ~= "function" then return false end
+    return (pcall(util.clearArea, sx, sz, wx, wz, hx, hz))
+end
+
+-- ---- refresh the RENDERED heap after a direct density-map write ---------------
+-- The long-standing cosmetic issue: after removeFromGroundByArea the litres are genuinely gone (the fill
+-- level, the silo's own HUD figure and the savegame all agree) but the MOUND KEEPS ITS SHAPE, merely
+-- recoloured to the ground beneath, until the player scoops it or the save reloads.
+--
+-- The old note here concluded "the geometry invalidation fires from vehicle-side code we cannot reach".
+-- That is WRONG on both counts, and the base source says so:
+--   * `BunkerSilo:setState` does exactly this refresh itself when a silo is COVERED --
+--     `FSDensityMapUtil.resetDisplacementArea(x0,z0, x1,z1, x2,z2)` -- so the call is a plain area write,
+--     not something only a vehicle can do.
+--   * `setCollisionMapAreaDirty` lives on `g_densityMapHeightManager`, reachable from anywhere. It is
+--     what fences, stump cutting and tree planting call after changing terrain height.
+-- DR did reference it once, in a dev probe, but passed the SIX-COORDINATE PARALLELOGRAM
+-- (sx,sz, wx,wz, hx,hz). The engine wants an AXIS-ALIGNED BOX PLUS A BOOLEAN
+-- (minX, minZ, maxX, maxZ, true) -- confirmed against PlaceableFence:updateDirtyAreas and
+-- StumpCutter:crushSplitShape. Fed the wrong shape it would do nothing, which is almost certainly why
+-- this was written off as unreachable.
+--
+-- UNVERIFIED IN GAME: these are engine calls whose implementation is not readable (DensityMapHeightUtil
+-- is C++; FSDensityMapUtil.lua is a 4,695-line signature-only stub). Both are pcall'd and the whole thing
+-- is behind `_heapVisualRefresh`, so a wrong guess degrades to exactly today's cosmetic issue and cannot
+-- break a withdrawal -- the litres have already been taken and measured before this runs.
+SmartDistribution._heapVisualRefresh = true
+function SmartDistribution.refreshHeapVisuals(sx, sz, wx, wz, hx, hz)
+    if not SmartDistribution._heapVisualRefresh then return end
+    if sx == nil or sz == nil or wx == nil or wz == nil or hx == nil or hz == nil then return end
+    -- the parallelogram's own coordinate form: start, start+width, start+height
+    if FSDensityMapUtil ~= nil and type(FSDensityMapUtil.resetDisplacementArea) == "function" then
+        pcall(FSDensityMapUtil.resetDisplacementArea, sx, sz, wx, wz, hx, hz)
+    end
+    -- ...and the AABB form, which needs the FOURTH corner (width + height - start) or the box misses the
+    -- far corner of a band that is not axis-aligned. Margin covers the smoothing radius at the edges.
+    local fx, fz = wx + hx - sx, wz + hz - sz
+    local minX = math.min(sx, wx, hx, fx) - 1
+    local maxX = math.max(sx, wx, hx, fx) + 1
+    local minZ = math.min(sz, wz, hz, fz) - 1
+    local maxZ = math.max(sz, wz, hz, fz) + 1
+    local m = g_densityMapHeightManager
+    if m ~= nil and type(m.setCollisionMapAreaDirty) == "function" then
+        pcall(function() return m:setCollisionMapAreaDirty(minX, minZ, maxX, maxZ, true) end)
+    end
 end
 
 -- Duck-typed Storage the distribute phase can drive, mirroring makePalletSourceProxy: DR's transfer and

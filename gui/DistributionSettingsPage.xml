@@ -117,7 +117,7 @@
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="bestPriceDefault">
-                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Default for a newly-set Sell / Distribute+Sell output, until you change that building's own toggle."/>
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Default for any Sell / Distribute+Sell output and for every market product, until you set that building's own toggle. Markets you have already configured keep their setting."/>
                 </MultiTextOption>
                 <Text profile="fs25_settingsMultiTextOptionTitle" text="Default sell timing"/>
             </Bitmap>

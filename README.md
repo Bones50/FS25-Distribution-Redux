@@ -36,8 +36,11 @@ Fixed
 16) Fixed an issue with setting a reserve on a building that spawns pallets, pallets where not being taken into account when the reserve test was being performed resulting in the building waiting until it had maxed out the pallets AND hit the reserve target with the internal storage. Now takes into account pallets on the pallet spawner. (31/7)
 17) Fixed an issue where productions that "could" supply a demand but weren't (ie the line was inactive) where showing the inputs for that building in the end product filter. (30/7)
 18) Fixed the advanced inputs not showing for the markets/kiosks, removed the advanced outputs as they don't apply to markets. (30/7)
-19) (NEW) Streamlined many of the hourly calculations to address stuttering when sleeping or passing through the hourly cycle reported by some users (more options here to streamline so will continue to monitor). (2/8)
-20) (NEW) Fixed an issue where if a productions pallet spawner was blocked the product would just store internally and never be able to be distributed (now distributes from internal storage if no pallets). (2/8)
+19) Streamlined many of the hourly calculations to address stuttering when sleeping or passing through the hourly cycle reported by some users (more options here to streamline so will continue to monitor). (2/8)
+20) Fixed an issue where if a productions pallet spawner was blocked the product would just store internally and never be able to be distributed (now distributes from internal storage if no pallets). (2/8)
+21) (NEW) MArkets now properly take the default sell type (immediate or Best price) as set in the settings page. (3/8)
+22) (NEW) Bunker Silo's now show correct amount once opened in DR. (3/8)
+23) (NEW) Bunker Silo Level now correctly render when DR takes out material. Previously the colour would change but the heap level would stay until you interacted with the remaining material with a vehicle. (3/8) 
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -53,7 +56,8 @@ Added
 11) Added ability to track manual adding or removal of material in the Overview (e.g. removig a plalet from a pallet spawner or removing/adding grain to silo with a trailer).
 12) Added the ability to manually tip product to markets/kiosks and have it obey the output mode (previously would just immediately sell regardless of the setting). (30/7)
 13) Added a new mode to the overview that allows you to see all the advanced settings of each building/product (e.g. reserved amounts, output mode, etc etc) (31/7)
-14) (NEW) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
+14) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
+15) (NEW) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
