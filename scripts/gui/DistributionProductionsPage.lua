@@ -281,13 +281,22 @@ function DistributionProductionsPage:buildSections()
             -- Ownership is resolved inside palletLitresOf, so a neighbour's pallets are never counted.
             -- Only evaluated for a fill type not already placed, since it scans world vehicles.
             local pallets, palletLitres = 0, 0
-            if not ftSeen[o.ft] and SmartDistribution.palletCountOf ~= nil then
-                local ok, v = pcall(SmartDistribution.palletCountOf, p, o.ft)
-                if ok and type(v) == "number" then pallets = v end
-            end
-            if not ftSeen[o.ft] and SmartDistribution.palletLitresOf ~= nil then
-                local ok, v = pcall(SmartDistribution.palletLitresOf, p, o.ft)
-                if ok and type(v) == "number" then palletLitres = v end
+            if not ftSeen[o.ft] then
+                -- one memoised scan for both figures; the pair used to be two full vehicle-list walks
+                if SmartDistribution.padSnapshot ~= nil then
+                    local ok, litres, count = pcall(SmartDistribution.padSnapshot, p, o.ft)
+                    if ok and type(litres) == "number" then palletLitres = litres end
+                    if ok and type(count)  == "number" then pallets = count end
+                else
+                    if SmartDistribution.palletCountOf ~= nil then
+                        local ok, v = pcall(SmartDistribution.palletCountOf, p, o.ft)
+                        if ok and type(v) == "number" then pallets = v end
+                    end
+                    if SmartDistribution.palletLitresOf ~= nil then
+                        local ok, v = pcall(SmartDistribution.palletLitresOf, p, o.ft)
+                        if ok and type(v) == "number" then palletLitres = v end
+                    end
+                end
             end
             if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0 or pallets > 0) then
                 ftSeen[o.ft] = true

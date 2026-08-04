@@ -166,6 +166,9 @@ end
 -- emits a network event. Callers fire ProductionOutputModeEvent to sync peers.
 local function applyVLocal(pp, ft, v)
     setV(pp, ft, v)
+    -- A production's v-mode decides which destination kinds outputDestinationsForMode resolves, so the
+    -- Overview's cached DEST / OUT STATUS columns are stale the moment it changes.
+    if SD.invalidateMenuMemos ~= nil then SD.invalidateMenuMemos() end
     local pl = placeableOf(pp)
     local M  = SD.MODE
     -- sellDirectly outputs (biogas electricity / methane, modded intangibles) reject the vanilla engine

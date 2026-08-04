@@ -28,6 +28,17 @@ function DistributionModeEvent.new(placeable, fillTypeIndex, mode)
     self.placeable = placeable
     self.fillTypeIndex = fillTypeIndex
     self.mode = mode
+    -- The SENDER's uid for this placeable, carried BESIDE the node object. Two independent reasons:
+    --  * a joining client loads player-built placeables ASYNCHRONOUSLY, so readNodeObject can hand
+    --    back nil during the join replay and run() then dropped the override in silence -- this is
+    --    why output modes came back as defaults after a rejoin;
+    --  * a client's own uid for a building is a locally minted MD5 that the server has never seen
+    --    (see the _serverUidById note above getUid in SmartDistribution.lua), so the authoritative
+    --    string has to travel with the event rather than be re-derived by the receiver.
+    self.uid = ""
+    if placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.assetUid ~= nil then
+        self.uid = SmartDistribution.assetUid(placeable) or ""
+    end
     return self
 end
 
@@ -35,12 +46,14 @@ function DistributionModeEvent:writeStream(streamId, connection)
     NetworkUtil.writeNodeObject(streamId, self.placeable)
     streamWriteUIntN(streamId, self.fillTypeIndex, FillTypeManager.SEND_NUM_BITS)
     streamWriteUIntN(streamId, self.mode, DistributionModeEvent.MODE_NUM_BITS)
+    streamWriteString(streamId, self.uid or "")
 end
 
 function DistributionModeEvent:readStream(streamId, connection)
     self.placeable = NetworkUtil.readNodeObject(streamId)
     self.fillTypeIndex = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
     self.mode = streamReadUIntN(streamId, DistributionModeEvent.MODE_NUM_BITS)
+    self.uid = streamReadString(streamId)
     self:run(connection)
 end
 
@@ -49,7 +62,14 @@ function DistributionModeEvent:run(connection)
     if not connection:getIsServer() then
         g_server:broadcastEvent(self, false, connection)
     end
-    if self.placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.applyAssetMode ~= nil then
+    if SmartDistribution == nil then return end
+    -- A CLIENT prefers the uid STRING: it is the server's own key, it needs no node resolution, and
+    -- the placeable may not have finished loading yet. The SERVER prefers the placeable and derives
+    -- its own uid from it, so a client can never write state under a key the server does not own.
+    if connection ~= nil and connection:getIsServer()
+       and self.uid ~= nil and self.uid ~= "" and SmartDistribution.setAssetMode ~= nil then
+        SmartDistribution.setAssetMode(self.uid, self.fillTypeIndex, self.mode)
+    elseif self.placeable ~= nil and SmartDistribution.applyAssetMode ~= nil then
         SmartDistribution.applyAssetMode(self.placeable, self.fillTypeIndex, self.mode, true) -- noEventSend
     end
 end

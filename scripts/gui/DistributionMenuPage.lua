@@ -71,6 +71,61 @@ end
 -- figures themselves only change on the hourly pass; between hours this mainly keeps held-litres live.
 DistributionMenuPage.REALTIME_REFRESH_MS = 500
 
+-- ---- adaptive backoff -------------------------------------------------------
+-- The "Menu refresh rate" setting cannot be the whole answer to a farm too big to refresh, because it sits
+-- BEHIND the menu: a player whose menu is unusable cannot reach the control that would make it usable.
+-- Defaulting the setting to Manual would dodge that, but at the cost of every NORMAL farm silently showing
+-- stale figures, which most players would read as the mod being broken.
+--
+-- So the menu measures itself instead and paces its own refreshes to what the farm can actually afford. A
+-- normal farm never leaves the rate the player chose; a pathological one settles within a few refreshes at
+-- a pace it can sustain, with no setting to find. The chosen rate is a FLOOR -- this only ever stretches
+-- the interval, never tightens it past what was asked for.
+--
+-- Class-level, not per-page, because it is a property of the FARM: what the Overview learns the building
+-- tabs should not have to re-learn by hitching again.
+-- The rule is a DUTY CYCLE, not a threshold: never spend more than 1/REFRESH_DUTY of wall-clock time
+-- refreshing. So the interval is proportional to what a refresh actually costs, which is what makes the
+-- response proportionate -- a 140 ms refresh stretches to ~2.8 s and stays usefully live, where a
+-- doubling-on-threshold scheme jumped it straight to the cap and made the figures needlessly stale. A
+-- genuinely pathological 4 s refresh lands on the MAX_INTERVAL cap, i.e. effectively manual.
+--
+-- The cost is SMOOTHED, so one unlucky frame (a GC pause, a stutter from elsewhere) cannot pin the
+-- interval; it decays back within a few refreshes.
+DistributionMenuPage.REFRESH_DUTY  = 20      -- at most 1/20th (5%) of the time spent refreshing
+DistributionMenuPage.MAX_INTERVAL  = 60      -- never stretch beyond a minute
+DistributionMenuPage.COST_SMOOTH   = 0.5     -- weight of the newest sample
+DistributionMenuPage._refreshCost  = 0
+
+function DistributionMenuPage.resetRefreshPacing()
+    DistributionMenuPage._refreshCost = 0
+end
+
+function DistributionMenuPage.noteRefreshCost(sec)
+    if type(sec) ~= "number" or sec < 0 then return end
+    local s = DistributionMenuPage.COST_SMOOTH
+    DistributionMenuPage._refreshCost = (DistributionMenuPage._refreshCost or 0) * (1 - s) + sec * s
+end
+
+-- Seconds between background refreshes, from the "Menu refresh rate" setting; nil means "do not refresh on
+-- a timer at all" (Manual only). The setting exists because this cost scales with the farm: re-populating
+-- the number cells re-reads live held / capacity / link status for every visible row, and on the Overview it
+-- re-enumerates the whole network. Falls back to the old hardcoded rate when the setting is unavailable, so
+-- nothing depends on load order.
+function DistributionMenuPage.refreshSeconds()
+    local g = (SmartDistribution ~= nil and SmartDistribution.settings ~= nil)
+        and SmartDistribution.settings.global or nil
+    local v = g ~= nil and g.menuRefresh or nil
+    if type(v) ~= "number" then v = DistributionMenuPage.REALTIME_REFRESH_MS / 1000 end
+    if v < 0 then return nil end                       -- manual only: there is nothing to pace
+    -- the player's rate is a FLOOR, never a ceiling: this only ever stretches the interval, so choosing
+    -- Live on a farm that can afford it still gets Live
+    local want = (DistributionMenuPage._refreshCost or 0) * DistributionMenuPage.REFRESH_DUTY
+    if want < v then want = v end
+    if want > DistributionMenuPage.MAX_INTERVAL then want = DistributionMenuPage.MAX_INTERVAL end
+    return want
+end
+
 -- ---- shared Hour / Month / Year selector ------------------------------------
 -- The building tabs (Silos, Animal Husbandry, Markets, Productions) each carry a `periodOption`
 -- MultiTextOption that rescopes their RECEIVED / CONSUMED / PRODUCED / DISTRIBUTED figures, exactly like
@@ -119,6 +174,9 @@ end
 function DistributionMenuPage:refreshRealtimeLists()
     local names = self._realtimeLists
     if names == nil or self._focusing then return end   -- _focusing: a selection event is mid-flight; skip
+    -- Timed as ONE unit: the row rebuild and the cell repopulate are both part of what a refresh costs the
+    -- frame, and it is the total the player feels. Two getTimeSec reads, so the measurement is free.
+    local _t0 = (getTimeSec ~= nil) and getTimeSec() or nil
     -- Pages that CACHE their row figures (e.g. Productions stores received/produced/sold in row objects it
     -- builds on selection) recompute them here; pages whose populate reads live (e.g. Storage) need nothing.
     if self.rebuildRealtimeData ~= nil then pcall(function() self:rebuildRealtimeData() end) end
@@ -138,6 +196,7 @@ function DistributionMenuPage:refreshRealtimeLists()
         end
     end
     self._focusing = false
+    if _t0 ~= nil then DistributionMenuPage.noteRefreshCost(getTimeSec() - _t0) end
 end
 
 function DistributionMenuPage:update(dt)
@@ -146,17 +205,18 @@ function DistributionMenuPage:update(dt)
 
     -- throttled real-time refresh of the open page's number lists. Wall-clock (getTimeSec, real seconds) so
     -- it is immune to whatever units dt is in.
-    if self._realtimeLists ~= nil then
+    local every = DistributionMenuPage.refreshSeconds()      -- nil = Manual only: no background refresh
+    if self._realtimeLists ~= nil and every ~= nil then
         local now = (getTimeSec ~= nil) and getTimeSec() or nil
         if now ~= nil then
-            if self._rtLast == nil or (now - self._rtLast) >= (DistributionMenuPage.REALTIME_REFRESH_MS / 1000) then
+            if self._rtLast == nil or (now - self._rtLast) >= every then
                 self._rtLast = now
                 pcall(function() self:refreshRealtimeLists() end)
             end
         else
             -- no clock: fall back to accumulating dt (assumes dt in ms)
             self._rtAccum = (self._rtAccum or 0) + (dt or 0)
-            if self._rtAccum >= DistributionMenuPage.REALTIME_REFRESH_MS then
+            if self._rtAccum >= every * 1000 then
                 self._rtAccum = 0
                 pcall(function() self:refreshRealtimeLists() end)
             end

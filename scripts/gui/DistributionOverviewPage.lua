@@ -291,12 +291,25 @@ function DistributionOverviewPage:rebuildRows()
     self._lastRebuild = (getTimeSec ~= nil) and getTimeSec() or nil
 end
 
--- Called by the base page's 2 Hz refresh; the enumeration itself is throttled to REBUILD_SEC, and the
--- list reload that follows re-renders from the cached rows.
+-- Called by the base page's refresh; the enumeration itself is throttled and the list reload that follows
+-- re-renders from the cached rows.
+--
+-- This is the single most expensive thing DR does with the menu open -- it walks every enrolled building x
+-- every product it can hold -- so it follows the "Menu refresh rate" setting rather than a fixed interval,
+-- and Manual only stops it entirely (onRefresh, and every selector change, still rebuild on demand).
+-- REBUILD_SEC remains the floor: the base page can tick faster than the enumeration is worth repeating.
 function DistributionOverviewPage:rebuildRealtimeData()
+    local every = DistributionMenuPage.refreshSeconds()
+    if every == nil then return end                       -- Manual only
+    if every < REBUILD_SEC then every = REBUILD_SEC end
     local now = (getTimeSec ~= nil) and getTimeSec() or nil
-    if now ~= nil and self._lastRebuild ~= nil and (now - self._lastRebuild) < REBUILD_SEC then return end
+    if now ~= nil and self._lastRebuild ~= nil and (now - self._lastRebuild) < every then return end
     self:rebuildRows()
+end
+
+-- Footer "Refresh": re-enumerate now. The point of Manual only, and harmless at any other rate.
+function DistributionOverviewPage:onRefresh()
+    self:applySelectorChange()
 end
 
 function DistributionOverviewPage:onFrameOpen()
@@ -316,7 +329,13 @@ function DistributionOverviewPage:onFrameOpen()
     vis(self.settingsHeaderRow, on)
     vis(self.settingsListBox,   on)
     self:updateViewButton()
+    -- The COLD first enumeration, timed as its own sample: memos are empty and this is the most expensive
+    -- refresh the tab will ever do, so it is what should decide the backoff -- otherwise a farm big enough
+    -- to hitch would hitch at least twice before the menu noticed. Not overlapped with the periodic timing
+    -- in refreshRealtimeLists, which measures a different call.
+    local t0 = (getTimeSec ~= nil) and getTimeSec() or nil
     self:rebuildRows()
+    if t0 ~= nil then DistributionMenuPage.noteRefreshCost(getTimeSec() - t0) end
     local list = self:activeList()
     if list ~= nil then list:reloadData() end
 

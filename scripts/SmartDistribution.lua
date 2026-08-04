@@ -1185,8 +1185,55 @@ end
 -- which classes vanilla itself would distribute from (for VANILLA_ONLY)
 local VANILLA_ELIGIBLE = { PRODUCTION = true, SILO = true, HUSBANDRY = false, OTHER = false }
 
+-- ---- MULTIPLAYER CLIENT IDENTITY -------------------------------------------
+-- A placeable's uniqueId is NEVER sent over the network. Confirmed in the base source:
+-- Placeable:writeStream sends isPreplaced + preplacedIndex, or filename + position -- and nothing
+-- else. Placeable:readStream recovers the id for a PREPLACED placeable only, from
+-- placeableSystem:getPreplacedUniqueIdByIndex. For a PLAYER-BUILT one nothing calls setUniqueId, and
+-- PlaceableSystem:addPlaceable -- which carries NO isServer guard, so it runs on the client too --
+-- then MINTS one: Utils.getUniqueId = getMD5(tostring(table) .. getTime() .. i), i.e. a table address
+-- and a clock. Machine-local and different every session.
+--
+-- DR keys S.assets, control.*, _marketBuffer and every ledger by uid, so on a client that means every
+-- building the player built has an id the server has never heard of. Reads miss; and the uid STRINGS
+-- a client sends in DistributionControlEvent (advanced inputs/outputs) land on the server under a key
+-- that owns nothing, so those edits were silently lost and then persisted to XML as junk.
+--
+-- Fix: the server ships its own uid per placeable at join (DistributionUidMapEvent), addressed by
+-- NETWORK OBJECT ID rather than a node object -- ids are a shared, server-assigned space that both
+-- ends can name without either having resolved the object yet, so the map is immune to the async
+-- placeable loading that makes readNodeObject return nil during a join burst.
+SmartDistribution._serverUidById  = nil    -- CLIENT ONLY: networkObjectId -> the server's uniqueId
+-- Cache HITS ONLY. Never cache the fallback: a placeable read before its map entry arrived would
+-- otherwise be pinned to its locally minted id for the session.
+SmartDistribution._serverUidCache = setmetatable({}, { __mode = "k" })
+
+-- Record one server-side identity (client side; called from DistributionUidMapEvent).
+function SmartDistribution.setServerUid(objectId, uid)
+    if objectId == nil or uid == nil or uid == "" then return end
+    if SmartDistribution._serverUidById == nil then SmartDistribution._serverUidById = {} end
+    SmartDistribution._serverUidById[objectId] = uid
+end
+
 local function getUid(p)
     if p == nil then return nil end
+    -- On a client, the server's id for this placeable OUTRANKS the local one (see the note above).
+    -- _serverUidById stays nil on the server and on a single-player save, so this costs one nil test.
+    local byId = SmartDistribution._serverUidById
+    if byId ~= nil then
+        local hit = SmartDistribution._serverUidCache[p]
+        if hit ~= nil then return hit end
+        if NetworkUtil ~= nil and NetworkUtil.getObjectId ~= nil then
+            local id = NetworkUtil.getObjectId(p)
+            if id ~= nil then
+                local u = byId[id]
+                if u ~= nil then
+                    SmartDistribution._serverUidCache[p] = u
+                    return u
+                end
+            end
+        end
+    end
     if p.uniqueId ~= nil then return p.uniqueId end          -- stable across save/load (verified in placeables.xml)
     if p.getUniqueId ~= nil then
         local ok, u = pcall(p.getUniqueId, p)
@@ -1274,6 +1321,11 @@ end
 -- public per-asset override API (for the future config dialog) ----------------
 function SmartDistribution.setAssetMode(uid, ft, mode)
     if uid == nil or ft == nil then return end
+    -- the mode decides WHICH destination kinds are relevant (demands / stores / markets), so a cached
+    -- outputDestinationsForMode answer is stale the moment it changes. Guarded because this function is
+    -- defined well ABOVE invalidateMenuMemos in the file -- a table-field lookup resolves at call time so
+    -- it is fine in practice, but the guard costs nothing and makes the ordering explicit.
+    if SmartDistribution.invalidateMenuMemos ~= nil then SmartDistribution.invalidateMenuMemos() end
     S.assets[uid] = S.assets[uid] or {}
     S.assets[uid][ft] = mode
 end
@@ -1322,6 +1374,25 @@ function SmartDistribution._seedMoveToBlocks(placeable, ft, mode)
            and SmartDistribution.storeToTargetValid(form, tp, ft) then
             local du = getUid(tp)
             if du ~= nil then SmartDistribution.setDestBlocked(srcUid, ft, du, true) end
+        end
+    end
+end
+
+-- SERVER SIDE: hand a joining client (network object id -> our uniqueId) for every placeable it
+-- cannot work the id out for itself. See the _serverUidById note above getUid for why it cannot.
+-- PREPLACED placeables are deliberately skipped: Placeable:readStream rebuilds their id from the
+-- preplaced index, so those already agree on both machines and sending them is pure payload.
+function SmartDistribution.forEachServerUid(cb)
+    if cb == nil or g_currentMission == nil then return end
+    local ps = g_currentMission.placeableSystem
+    if ps == nil then return end
+    if NetworkUtil == nil or NetworkUtil.getObjectId == nil then return end
+    for _, p in ipairs(ps.placeables or {}) do
+        if p.rootNode ~= nil and p.isPreplaced ~= true then
+            local id  = NetworkUtil.getObjectId(p)
+            local uid = getUid(p)
+            -- id 0 means "not registered with the network", which a client could never resolve
+            if id ~= nil and id ~= 0 and uid ~= nil and uid ~= "" then cb(id, uid) end
         end
     end
 end
@@ -4304,6 +4375,108 @@ function palletFillLevel(p, ft)
     return total
 end
 
+-- ---- DISPLAY-SIDE MEMOS ------------------------------------------------------
+-- Three read paths in this file are quadratic or worse in the number of products a building supports, and
+-- on a large save (reported in game: ~103 productions, ~270 active products) they freeze the game outright
+-- when the Overview or a building tab is opened -- a blocked frame, so no error and no log line.
+--
+-- All state here is SmartDistribution.* fields, never top-level locals (CLAUDE.md 1.1).
+--
+-- ONE TTL governs the lot. It is REAL time (getTimeSec), not game time, so fast-forward does not multiply
+-- the work -- the same reason 5.32's SPEC_SYNC_SEC is real-time. With no clock available every memo below
+-- degrades to computing fresh, i.e. exactly the previous behaviour.
+SmartDistribution.MEMO_TTL   = 0.5
+-- Destination lists get a LONGER window than the level-based memos, because everything that changes the
+-- ANSWER already bumps the epoch explicitly -- the mode setters, DistributionControlEvent.applyLocal (so
+-- block / priority / reserve, local or from another player), and the hourly pass. The TTL is therefore only
+-- a backstop for structural drift nothing signals, i.e. a building being placed or demolished, where being
+-- up to a couple of seconds behind in a DEST count is of no consequence. Comfortably longer than the
+-- default 2 s menu refresh so consecutive refreshes reuse the answer instead of racing the window.
+SmartDistribution.DEST_MEMO_TTL = 3.0
+-- Bumped whenever something a memo depends on changes out from under it (the hourly pass, an input block,
+-- an input percentage). Belt and braces beside the TTL: it makes those changes visible IMMEDIATELY rather
+-- than up to MEMO_TTL later, which matters for a control the player just pressed.
+SmartDistribution._memoEpoch = 0
+SmartDistribution._padMemo   = setmetatable({}, { __mode = "k" })
+SmartDistribution._poolMemo  = setmetatable({}, { __mode = "k" })
+SmartDistribution._shareMemo = setmetatable({}, { __mode = "k" })
+SmartDistribution._destMemo  = setmetatable({}, { __mode = "k" })
+
+-- Bump the epoch: every memo above is stamped with it, so this makes a change visible on the NEXT read
+-- rather than up to MEMO_TTL later. Called at the top of the hourly pass, from the input-control setters,
+-- and from DistributionControlEvent.applyLocal -- the single funnel every advanced-routing mutation goes
+-- through, including one arriving from another player in multiplayer.
+function SmartDistribution.invalidateMenuMemos()
+    SmartDistribution._memoEpoch = (SmartDistribution._memoEpoch or 0) + 1
+end
+
+-- May a memo be READ right now? No, while the hourly pass is running.
+--
+-- Not a purity concern -- a stale figure inside the pass could change what DR MOVES. The decisive case is
+-- fast-forward: many hourly passes run inside ONE frame (4.3), so getTimeSec need not advance at all
+-- between them, and a level cached at the top of an 8-hour sleep would still be "fresh" at the bottom of
+-- it. The allocator would then compute room against a level from eight hours ago.
+-- _selfWrite is already set around the WHOLE of runHourly (5.8), so it is exactly the flag for "the engine
+-- is mid-pass"; reusing it means there is no second piece of state to keep in step.
+-- Note the POOL memo below deliberately does NOT take this guard: what it caches is a CAPACITY, which does
+-- not move as a tank fills, so it is safe (and valuable) inside the pass too.
+-- _legacyInputMath is the sdStress A/B switch (dev console only, default false): it turns EVERY memo here
+-- off and routes inputEffectiveMaxLiters through the pre-fix algorithm, so the old cubic cost can be
+-- reproduced and measured on a machine rather than argued about. It is also the one-key fallback if the
+-- rewritten pooled maths ever misbehaves on a modded building -- the same role sdPalletHook plays for 5.39.
+SmartDistribution._legacyInputMath = false
+
+-- **_selfWrite IS A DEPTH COUNTER, NOT A BOOLEAN**, and 0 IS TRUTHY IN LUA. It is entered as
+-- `depth + 1` and restored to `depth`, so its resting value is 0 rather than nil -- which means a
+-- `not SmartDistribution._selfWrite` test reads FALSE for ever after the first pass or the first setLevel,
+-- silently switching every memo here off. Measured exactly that way in game 2026-08-04: 1.34 ms at F=270
+-- on a freshly loaded save (nothing had written yet, so it was still nil) against 91.34 ms once an hourly
+-- pass had run, with the scaling reverting from linear to quadratic -- and the settings view sitting at an
+-- identical 52.5 ms because the destination memo was disabled by the same test.
+-- Compare the correct idiom already used elsewhere in this file: `(SmartDistribution._selfWrite or 0) > 0`.
+function SmartDistribution.memoReadable()
+    return (SmartDistribution._selfWrite or 0) == 0 and not SmartDistribution._legacyInputMath
+end
+
+-- Litres AND pallet count on this building's pad, from ONE vehicle scan.
+--
+-- husbandryPalletObjects walks the entire vehicleSystem list with a getWorldTranslation per pallet, and the
+-- Overview asked for it TWICE per (building, product) -- palletLitresOf then palletCountOf -- on top of the
+-- scan assetHeld already does for a pen. Across ~100 pallet-spawner buildings x their products that is
+-- hundreds of thousands of world-transform reads per refresh.
+--
+-- Caches NUMBERS, never the pallet list. A stale object reference could be dereferenced after the engine
+-- deleted the pallet; a stale litre count is merely a figure up to MEMO_TTL old. The hourly pass never
+-- calls this at all -- drainPallets and the accounting in recordProductionThroughput keep calling
+-- husbandryPalletObjects directly -- so nothing that MOVES product can act on a cached reading.
+function SmartDistribution.padSnapshot(p, ft)
+    if p == nil or ft == nil then return 0, 0 end
+    if not isPalletSpawnerAsset(p) then return 0, 0 end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    local live = SmartDistribution.memoReadable()
+    local byFt = SmartDistribution._padMemo[p]
+    if now ~= nil and live and byFt ~= nil then
+        local m = byFt[ft]
+        if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
+            return m.litres, m.count
+        end
+    end
+    local litres, count = 0, 0
+    for _, pallet in ipairs(husbandryPalletObjects(p, ft)) do
+        if pallet.getFillUnitFillLevel ~= nil then
+            local idx = (pallet.spec_pallet ~= nil and pallet.spec_pallet.fillUnitIndex) or 1
+            local lvl = pallet:getFillUnitFillLevel(idx) or 0
+            litres = litres + lvl
+            if lvl > 0 then count = count + 1 end       -- an emptied pallet still on the pad is not stock
+        end
+    end
+    if now ~= nil and live then
+        if byFt == nil then byFt = {}; SmartDistribution._padMemo[p] = byFt end
+        byFt[ft] = { litres = litres, count = count, at = now, epoch = SmartDistribution._memoEpoch }
+    end
+    return litres, count
+end
+
 -- Litres that left a building ON PALLETS this pass, uid -> ft -> litres. Cleared at the top of every pass.
 --
 -- A "palletizable" fill type does NOT mean every litre leaves on a pallet. DR ships whatever is in the
@@ -5385,6 +5558,7 @@ function SmartDistribution.runHourly(manager)
     if not SmartDistribution._persistLoaded and SmartDistribution.loadOverrides ~= nil then
         pcall(SmartDistribution.loadOverrides)
     end
+    SmartDistribution.invalidateMenuMemos()                    -- the display memos must not carry across a pass
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
     SmartDistribution.enforceValidModes()                      -- drop any mode whose endpoint has gone away
     SmartDistribution.beginFeedPass()                          -- start a fresh feed log; the UI reads the previous (complete) one
@@ -5547,16 +5721,27 @@ end
 --    default now follows the global "Default sell timing" setting. loadOverrides migrates v1 files.
 local PERSIST_VERSION = 2
 
-local function getSaveDir()
-    local mi = g_currentMission ~= nil and g_currentMission.missionInfo or nil
-    if mi == nil then return nil end
+-- Resolve the savegame folder. Called by BOTH saveOverrides and loadOverrides so the two can never look
+-- in different places -- which they previously did, and it is the DEDICATED SERVER bug: saveOverrides
+-- preferred the missionInfo it is handed while loadOverrides only ever called this, and on a dedi
+-- missionInfo.savegameDirectory is NIL at loadMission00Finished but POPULATED by the time a save runs
+-- (confirmed in a dedicated-server log 2026-08-04: "LOAD fired: dir=<profile>/savegame1/
+-- mi.savegameDirectory=nil"). So the writer used the engine's own path and the reader used a guess.
+--
+-- The SECOND return value says whether the answer is AUTHORITATIVE (the engine's own field) or a GUESS
+-- reconstructed from savegameIndex. A guess must never be taken as proof that a file is absent -- see
+-- the "no file" branch in loadOverrides, which used to mark the load done on exactly that evidence and
+-- so switched off the retry built to recover from it.
+local function getSaveDir(missionInfo)
+    local mi = missionInfo or (g_currentMission ~= nil and g_currentMission.missionInfo) or nil
+    if mi == nil then return nil, false end
     if mi.savegameDirectory ~= nil and mi.savegameDirectory ~= "" then  -- [VERIFY] field
-        return mi.savegameDirectory .. "/"
+        return mi.savegameDirectory .. "/", true
     end
-    if mi.savegameIndex ~= nil and getUserProfileAppPath ~= nil then     -- fallback
-        return getUserProfileAppPath() .. "savegame" .. tostring(mi.savegameIndex) .. "/"
+    if mi.savegameIndex ~= nil and getUserProfileAppPath ~= nil then     -- fallback: a GUESS, not proof
+        return getUserProfileAppPath() .. "savegame" .. tostring(mi.savegameIndex) .. "/", false
     end
-    return nil
+    return nil, false
 end
 
 local function saveOverrides(missionInfo)
@@ -5568,10 +5753,13 @@ local function saveOverrides(missionInfo)
         print("[SmartDistribution persist] SAVE skipped: missionInfo.isValid == false")
         return
     end
-    local dir = (mi ~= nil and mi.savegameDirectory ~= nil and mi.savegameDirectory ~= "")
-        and (mi.savegameDirectory .. "/") or getSaveDir()
-    print(string.format("[SmartDistribution persist] SAVE fired: dir=%s  mi.savegameDirectory=%s",
-        tostring(dir), tostring(mi ~= nil and mi.savegameDirectory or "nil")))
+    -- ONE resolver, shared with loadOverrides. This used to prefer mi.savegameDirectory itself while the
+    -- loader only ever called getSaveDir() -- on a dedicated server those two answer differently, which
+    -- is how a save could land somewhere the load never looked.
+    local dir, authoritative = getSaveDir(mi)
+    print(string.format("[SmartDistribution persist] SAVE fired: dir=%s (%s)  mi.savegameDirectory=%s",
+        tostring(dir), authoritative and "authoritative" or "GUESSED from savegameIndex",
+        tostring(mi ~= nil and mi.savegameDirectory or "nil")))
     if dir == nil then print("[SmartDistribution persist] SAVE skipped: savegame directory unresolved") return end
     local path = dir .. "smartDistribution.xml"
     local xml = createXMLFile("SmartDistributionXML", path, "smartDistribution")
@@ -5758,17 +5946,28 @@ end
 local function loadOverrides()
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end
     if SmartDistribution._persistLoaded then return end          -- already loaded; never load twice
-    local dir = getSaveDir()
+    local dir, authoritative = getSaveDir()
     local sgd = (g_currentMission.missionInfo ~= nil) and g_currentMission.missionInfo.savegameDirectory or nil
-    print(string.format("[SmartDistribution persist] LOAD fired: dir=%s  mi.savegameDirectory=%s", tostring(dir), tostring(sgd)))
+    print(string.format("[SmartDistribution persist] LOAD fired: dir=%s (%s)  mi.savegameDirectory=%s",
+        tostring(dir), authoritative and "authoritative" or "GUESSED from savegameIndex", tostring(sgd)))
     -- DEDICATED SERVER: loadMission00Finished can fire before missionInfo.savegameDirectory is populated.
     -- Previously that skipped the load permanently and every setting silently reverted to defaults. Leave
     -- _persistLoaded false so the retry below (first hourly tick) picks it up once the path is known.
     if dir == nil then print("[SmartDistribution persist] LOAD deferred: savegame directory unresolved -- will retry") return end
     local path = dir .. "smartDistribution.xml"
     if not fileExists(path) then
-        print(string.format("[SmartDistribution persist] LOAD: no file at %s (fresh save, or save wrote a different path)", tostring(path)))
-        SmartDistribution._persistLoaded = true                  -- genuinely absent: a fresh save, stop retrying
+        -- **A GUESSED PATH IS NOT EVIDENCE OF ABSENCE.** This branch used to mark the load done regardless,
+        -- which on a dedicated server switched off the very retry that exists to recover from it: dir came
+        -- from savegameIndex because savegameDirectory was still nil, the file was looked for in the wrong
+        -- place, "fresh save" was concluded, and nothing ever loaded again for the whole session -- while
+        -- saveOverrides went on writing to the authoritative path once the engine populated it. Only an
+        -- AUTHORITATIVE miss means the file is genuinely absent (a real fresh save); a guessed miss must
+        -- keep retrying until savegameDirectory resolves.
+        print(string.format("[SmartDistribution persist] LOAD: no file at %s (%s)", tostring(path),
+            authoritative and "fresh save -- nothing to load" or "path was GUESSED -- will retry once savegameDirectory resolves"))
+        if authoritative then
+            SmartDistribution._persistLoaded = true              -- genuinely absent: a fresh save, stop retrying
+        end
         return
     end
     local xml = loadXMLFile("SmartDistributionXML", path)
@@ -8279,6 +8478,161 @@ end
 -- sdPalletHook            -- show state
 -- sdPalletHook redirect   -- toggle the production redirect (the actual test)
 -- sdPalletHook log        -- toggle logging
+-- ============================================================================
+-- sdStress -- measure the menu's cost at a farm size you do not have
+--
+-- The reported freeze needs ~103 productions and ~270 products to reproduce, which is days to build by
+-- hand. It does not need to be built, because the expensive term is F -- how many products ONE building
+-- supports -- and F can be synthesised exactly.
+--
+-- _stressMock returns a SYNTHETIC pooled silo supporting F products. It is duck-typed only: every
+-- classification helper short-circuits on a missing spec, pooledInputCapacity reaches its storage through
+-- getAllStorages -> spec_silo.storages, and getLevel / getFree read plain fillLevels / capacities tables.
+-- So the REAL inputEffectiveMaxLiters, poolShares, inputProductCapacity, inputHeldLevel and assetHeld all
+-- run against it with NO engine call and NO game state touched -- it is never added to placeableSystem,
+-- and the only trace it leaves is a weak-keyed _ppCache miss that the GC reclaims.
+function SmartDistribution._stressMock(F)
+    local fills, caps, fts = {}, {}, {}
+    for i = 1, F do
+        fts[i]    = i
+        fills[i]  = (i % 7) * 1000        -- a mix of empty, part-full and heavier products
+        caps[i]   = 250000
+    end
+    return { uniqueId = "sdStressMock", spec_silo = { storages = { { fillLevels = fills, capacities = caps } } } }, fts
+end
+
+-- One building's worth of Overview work: capacityOf asks inputEffectiveMaxLiters once per product.
+-- Repeated until the total is long enough to measure, since getTimeSec's resolution is unknown.
+function SmartDistribution._stressOne(F, budgetSec)
+    local p, fts = SmartDistribution._stressMock(F)
+    local reps, t0 = 0, getTimeSec()
+    repeat
+        SmartDistribution.invalidateMenuMemos()      -- each rep is a COLD rebuild, as a real refresh is
+        for i = 1, F do SmartDistribution.inputEffectiveMaxLiters(p, fts[i]) end
+        reps = reps + 1
+    until (getTimeSec() - t0) >= (budgetSec or 0.05) or reps >= 200
+    return ((getTimeSec() - t0) * 1000) / reps, reps
+end
+
+-- usage: sdStress [maxF] [buildings]   |   sdStress legacy   (toggle the A/B switch and stay there)
+--
+-- The `legacy` form is what makes "the numbers must not have changed" directly checkable rather than a
+-- matter of remembering what a screen said last week: flip it, read a pooled silo's Max in % / Held of max
+-- off the tab, flip it back, and the two must be identical. It persists until toggled again or the game is
+-- restarted, and it affects the ENGINE too, so do not leave it on for normal play.
+function SmartDistribution.cmdStress(self, argF, argBuildings)
+    if argF ~= nil and tostring(argF):lower() == "legacy" then
+        SmartDistribution._legacyInputMath = not SmartDistribution._legacyInputMath
+        SmartDistribution.invalidateMenuMemos()     -- so the change shows on the very next menu refresh
+        return string.format("input maths: %s  (sdStress legacy toggles; memos %s)",
+            SmartDistribution._legacyInputMath and "LEGACY (pre-fix, slow)" or "FIXED",
+            SmartDistribution._legacyInputMath and "OFF" or "ON")
+    end
+    local maxF      = tonumber(argF) or 270
+    local buildings = tonumber(argBuildings) or 103
+    local wasLegacy = SmartDistribution._legacyInputMath
+    local out = {}
+    local function say(fmt, ...) out[#out + 1] = string.format(fmt, ...) end
+
+    say("sdStress -- synthetic pooled silo, real input-cap maths. maxF=%d projected buildings=%d", maxF, buildings)
+    say("F = products ONE building supports. This is the term that was cubic.")
+    say("%-7s | %12s | %12s | %8s", "F", "fixed (ms)", "legacy (ms)", "speedup")
+    say("%s", string.rep("-", 52))
+
+    local Fs, seen = {}, {}
+    for _, f in ipairs({ 10, 30, 60, 120, maxF }) do
+        if f >= 2 and f <= 4000 and not seen[f] then seen[f] = true; Fs[#Fs + 1] = f end
+    end
+    table.sort(Fs)
+
+    local newAt, legacyAt = {}, {}
+    for _, F in ipairs(Fs) do
+        SmartDistribution._legacyInputMath = false
+        local tNew = SmartDistribution._stressOne(F, 0.05)
+        newAt[F] = tNew
+        -- Legacy is skipped once it is projected past ~1.5 s for a SINGLE building: this runs on the main
+        -- thread, so measuring the pathological case literally freezes the game for as long as it takes.
+        -- The cubic is already unmistakable from the smaller points.
+        local est = nil
+        local prev = nil
+        for _, g in ipairs(Fs) do if g < F and legacyAt[g] ~= nil then prev = g end end
+        if prev ~= nil then est = legacyAt[prev] * ((F / prev) ^ 3) end
+        if est ~= nil and est > 1500 then
+            say("%-7d | %12.2f | %12s | %8s", F, tNew, "skipped", "-")
+            say("          (legacy projected ~%.0f ms for ONE building -- not run, it would hang the game)", est)
+        else
+            SmartDistribution._legacyInputMath = true
+            local okL, tOld = pcall(SmartDistribution._stressOne, F, 0.05)
+            SmartDistribution._legacyInputMath = false
+            if okL and type(tOld) == "number" then
+                legacyAt[F] = tOld
+                say("%-7d | %12.2f | %12.2f | %7.0fx", F, tNew, tOld, (tNew > 0) and (tOld / tNew) or 0)
+            else
+                say("%-7d | %12.2f | %12s | %8s", F, tNew, "error", "-")
+            end
+        end
+    end
+
+    -- projection to the reported farm, using the largest F actually measured
+    local top = Fs[#Fs]
+    local estOld = legacyAt[top]
+    if estOld == nil then
+        local prev = nil
+        for _, g in ipairs(Fs) do if legacyAt[g] ~= nil then prev = g end end
+        if prev ~= nil then estOld = legacyAt[prev] * ((top / prev) ^ 3) end
+    end
+    say("")
+    say("Projection at %d buildings x F=%d, per menu refresh:", buildings, top)
+    say("  fixed : %.0f ms", (newAt[top] or 0) * buildings)
+    if estOld ~= nil then
+        say("  legacy: %.0f ms  (%.1f s)", estOld * buildings, estOld * buildings / 1000)
+    end
+    say("  (buildings scale LINEARLY -- only F was cubic -- so this multiply is the honest part)")
+
+    -- what the CURRENT save actually looks like, so the numbers above can be placed
+    local hi, hiName, nAssets = 0, "-", 0
+    if SmartDistribution.enumerateConfigurableAssets ~= nil then
+        for _, a in ipairs(SmartDistribution.enumerateConfigurableAssets()) do
+            nAssets = nAssets + 1
+            local okF, fts = pcall(SmartDistribution.assetMenuFillTypes, a.placeable)
+            local n = 0
+            if okF and type(fts) == "table" then for _ in pairs(fts) do n = n + 1 end end
+            if n > hi then hi, hiName = n, a.name or "?" end
+        end
+    end
+    say("")
+    say("THIS save: %d enrolled buildings, biggest F = %d (%s)", nAssets, hi, hiName)
+
+    -- ...and the real thing, end to end, on the real save, measured BOTH ways.
+    --
+    -- COLD (memos dropped first) is the first open of a tab. WARM is every refresh after it, and is what
+    -- the player actually sits looking at -- the menu re-reads on a timer, so all but the first refresh
+    -- finds the memos populated.
+    -- The distinction is not cosmetic: several memos here are asked for ONCE per row per enumeration
+    -- (sourcesFor is, outputDestinationsForMode is not -- it is asked twice), so a cold measurement cannot
+    -- show what they are worth by construction, and reading only that number would say a working memo did
+    -- nothing.
+    if SmartDistribution.overviewRows ~= nil then
+        local function timeRows(withSettings, cold)
+            if cold then SmartDistribution.invalidateMenuMemos() end
+            local t0 = getTimeSec()
+            local ok, rows = pcall(SmartDistribution.overviewRows, "month", false, nil, withSettings)
+            return (getTimeSec() - t0) * 1000, (ok and type(rows) == "table") and #rows or -1
+        end
+        local tFlowCold, nFlow = timeRows(false, true)
+        local tFlowWarm        = timeRows(false, false)
+        local tSetCold,  nSet  = timeRows(true,  true)
+        local tSetWarm         = timeRows(true,  false)
+        say("Real overviewRows, cold (first open) vs warm (every refresh after):")
+        say("  flow view     %6.1f ms cold | %6.1f ms warm   (%d rows)", tFlowCold, tFlowWarm, nFlow)
+        say("  settings view %6.1f ms cold | %6.1f ms warm   (%d rows)", tSetCold, tSetWarm, nSet)
+    end
+
+    SmartDistribution._legacyInputMath = wasLegacy
+    for _, line in ipairs(out) do print(line) end
+    return "sdStress done -- see console/log above"
+end
+
 function SmartDistribution.cmdPalletHook(self, what)
     what = what ~= nil and tostring(what):lower() or nil
     if what == "redirect" then
@@ -11987,6 +12341,9 @@ installPersistence()
 if addConsoleCommand ~= nil then
     addConsoleCommand("sdPalletHook", "Pallet spawner: toggle spawn logging / the production top-up redirect [dev]", "cmdPalletHook", SmartDistribution)
     addConsoleCommand("sdShedRepair", "Remove unusable stored objects from every pallet shed [dev]", "cmdShedRepair", SmartDistribution)
+    -- sdStress: measure the menu cost at a farm size this save does not have (see 5.46 / the function's
+    -- own header). Read-only and synthetic -- it touches no game state.
+    addConsoleCommand("sdStress", "Benchmark the input-cap maths at scale: sdStress [maxF] [buildings] [dev]", "cmdStress", SmartDistribution)
 end
 installInteraction()
 installHusbandryPatch()
@@ -12193,7 +12550,11 @@ end
 --     (the barn shows a single "Food" total). Straw and water are SEPARATE specs, each a single fill type,
 --     so they are individual -- never pooled. A food pool only matters when 2+ food types share it.
 --   * bulk store: pooled when ONE storage tank supports 2+ fill types.
-function SmartDistribution.pooledInputCapacity(p)
+-- The uncached body. Callers must go through SmartDistribution.pooledInputCapacity below, which memoises
+-- it -- this walks getAllStorages, iterates every storage's fillLevels and allocates an `fts` array as long
+-- as the number of products the building supports, and it was being called several times per product per
+-- product (see the memo note below).
+function SmartDistribution._computePooledInputCapacity(p)
     if p == nil then return nil end
     -- Feeding-robot barns take ingredients into INDIVIDUAL per-fill-type bunkers (unloadingSpots), each with
     -- its own capacity. They also carry a generic spec_husbandryFood pool whose supported types include
@@ -12322,6 +12683,136 @@ function SmartDistribution.pooledInputCapacity(p)
     return pool
 end
 
+-- ---- the input-pool memo, and why it is the fix for the reported freeze ------
+-- inputEffectiveMaxLiters loops the pool calling inputCapPct once per member, and EVERY one of those went
+-- back through defaultInputCapPct -> pooledInputCapacity, rebuilding the whole pool from scratch. So one
+-- "what will this building accept" question cost O(F^2) in the number of products it supports -- and the
+-- Overview asks it once per product, i.e. O(F^3) per building. On a silo supporting ~270 products that is
+-- tens of millions of operations and millions of table allocations, per building, per 2-second refresh:
+-- a hard freeze with no error and no log line, which is exactly what was reported.
+--
+-- Caching is sound because what this returns is STRUCTURE and CAPACITY, not level:
+--   * `fts` is the supported set
+--   * `liters` is level + free, i.e. a capacity -- filling the tank moves both terms and leaves the sum
+--     unchanged, so it does not go stale as product arrives
+-- (SHED's `perSlot` is the one soft term, and it is already documented as a best-effort estimate.)
+-- That invariance is also why this memo, unlike the share memo below, is safe to read INSIDE the hourly
+-- pass -- which is where the repeated rebuilds cost the most.
+--
+-- The returned table must be treated as READ-ONLY by callers; every existing caller already only reads
+-- .fts / .liters / .kind / .sharedLevel (audited).
+function SmartDistribution.pooledInputCapacity(p)
+    if p == nil then return nil end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    -- no clock, or the A/B switch is on: always rebuild, which IS the pre-fix behaviour
+    if now == nil or SmartDistribution._legacyInputMath then
+        return SmartDistribution._computePooledInputCapacity(p)
+    end
+    local m = SmartDistribution._poolMemo[p]
+    if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
+        return m.pool                                   -- nil is a legitimate cached answer (p has no pool)
+    end
+    local pool = SmartDistribution._computePooledInputCapacity(p)
+    SmartDistribution._poolMemo[p] = { pool = pool, at = now, epoch = SmartDistribution._memoEpoch }
+    return pool
+end
+
+-- Every pooled product's held level, effective percentage and blocked flag, resolved in ONE pass.
+--
+-- This is the work inputEffectiveMaxLiters used to do inline, and the inline form is what made it
+-- quadratic. The key observation is that the DEFAULT share is a property of the POOL, not of one product:
+-- it is 100 / the number of members still unblocked (the 5.5 redistribution rule), so it is the same answer
+-- for every member and only ever needed computing once.
+--
+-- The percentages below reproduce inputCapPct -> defaultInputCapPct AND its 5.5 wrapper exactly:
+--   advanced routing off      -> 100 for everything (no input constraint at all)
+--   a bulk HALL               -> 100 (bays are reallocatable, so there is no share to pre-reserve)
+--   an explicit player value  -> that value, always; only the default ever moves
+--   otherwise                 -> 100 / active members, falling back to 100 / all members when the receiver
+--                                uid cannot be resolved or everything is blocked (the wrapper's own
+--                                fall-through into _origDefaultInputCapPct)
+--
+-- Returns nil when p has no pool. Read-only; pass `pool` in when you already have it so the memo cannot
+-- be matched against a pool rebuilt between the two calls.
+function SmartDistribution.poolShares(p, pool)
+    pool = pool or SmartDistribution.pooledInputCapacity(p)
+    if pool == nil or type(pool.fts) ~= "table" then return nil end
+    local now  = (getTimeSec ~= nil) and getTimeSec() or nil
+    local live = SmartDistribution.memoReadable()
+    local m = SmartDistribution._shareMemo[p]
+    if now ~= nil and live and m ~= nil and m.pool == pool
+       and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
+        return m.shares
+    end
+    local uid      = getUid(p)
+    local advanced = SmartDistribution.advancedEnabled()
+    local n = #pool.fts
+    -- pass 1: blocked flags, and how many members still reserve anything
+    local blocked, active = {}, 0
+    for i = 1, n do
+        local f = pool.fts[i]
+        local b = (uid ~= nil) and SmartDistribution.isInputBlocked(uid, f) or false
+        blocked[f] = b
+        if not b then active = active + 1 end
+    end
+    local dflt
+    if not advanced then dflt = 100
+    elseif pool.kind == "HALL" then dflt = 100
+    elseif uid ~= nil and active > 0 then dflt = math.floor(100 / active + 0.5)
+    elseif n > 0 then dflt = math.floor(100 / n + 0.5)
+    else dflt = 100 end
+    -- pass 2: each member's effective % and what it is actually holding
+    local T = SmartDistribution.control.inputCapPct
+    local C = (advanced and uid ~= nil and T ~= nil) and T[uid] or nil
+    local pct, held = {}, {}
+    for i = 1, n do
+        local f  = pool.fts[i]
+        local ex = (C ~= nil) and C[f] or nil          -- 0 is a valid explicit value, so test against nil
+        pct[f]   = (ex ~= nil) and ex or dflt
+        held[f]  = SmartDistribution.inputHeldLevel(p, f) or 0
+    end
+    local shares = { pool = pool, pct = pct, held = held, blocked = blocked, active = active, default = dflt }
+    if now ~= nil and live then
+        SmartDistribution._shareMemo[p] =
+            { shares = shares, pool = pool, at = now, epoch = SmartDistribution._memoEpoch }
+    end
+    return shares
+end
+
+-- The pool-wide aggregates behind inputEffectiveMaxLiters, resolved ONCE per pool instead of once per
+-- product. Every one of them turns out to be independent of the product being asked about:
+--   * `cap` is pool.liters, the same for every member, so the "is f over its share" test depends only on f
+--   * usedOver (held by members over their share) and denom (the shares still competing) are plain sums
+--     over the pool -- the ft in hand never appears in either condition
+--   * othersHeld is the only ft-dependent term, and it is just totalHeld - held[ft]
+-- So the O(F) loop per product collapses to O(1) per product after one O(F) pass, taking the whole call
+-- from quadratic to linear in F. Cached on the shares table (and so under the same memo), with the cap it
+-- was built for, so a caller passing a different capacity rebuilds rather than reading a wrong answer.
+function SmartDistribution.poolAggregates(pool, sh, cap)
+    if sh._agg ~= nil and sh._aggCap == cap then return sh._agg end
+    local shared = pool.sharedLevel == true
+    local totalHeld, usedOver, denom, over = 0, 0, 0, {}
+    for _, f in ipairs(pool.fts) do
+        local held = sh.held[f] or 0
+        local fPct = sh.pct[f] or 100
+        local o = held > (cap * fPct / 100) + 0.5          -- tolerance: litres are fractional
+        over[f]   = o
+        totalHeld = totalHeld + held
+        if o then
+            -- On a SHARED-LEVEL pool (a husbandry food store) every member reports the SAME pool total, so
+            -- nothing is attributable to one product and nothing may be summed across them -- that
+            -- multiplication is the 5.43 bug. Contention is already expressed through denom, and the real
+            -- limit still lands because inputAcceptableLiters subtracts the pool's own held total.
+            if not shared then usedOver = usedOver + held end
+        elseif not sh.blocked[f] then
+            denom = denom + fPct                            -- a blocked product reserves nothing
+        end
+    end
+    sh._agg    = { shared = shared, totalHeld = totalHeld, usedOver = usedOver, denom = denom, over = over }
+    sh._aggCap = cap
+    return sh._agg
+end
+
 -- best-effort litres-per-slot for a shed: average of what's stored, else a bale-sized default.
 function SmartDistribution._shedLitresPerSlot(p)
     local spec = p ~= nil and p.spec_objectStorage or nil
@@ -12422,6 +12913,7 @@ end
 
 -- ---- input block ----------------------------------------------------------
 function SmartDistribution.setInputBlocked(rcvUid, ft, blocked)
+    SmartDistribution.invalidateMenuMemos()   -- a block changes every share in the pool; show it at once
     local C = SmartDistribution.control
     C.inputBlock = C.inputBlock or {}
     local B = C.inputBlock
@@ -12482,6 +12974,7 @@ function SmartDistribution.inputCapPctHeadroom(p, ft)
 end
 function SmartDistribution.setInputCapPct(rcvUid, ft, pct)
     if pct == nil then return end
+    SmartDistribution.invalidateMenuMemos()   -- the cached share for this pool is now wrong
     pct = math.max(0, math.min(100, math.floor(pct + 0.5)))
     local C = SmartDistribution.control
     C.inputCapPct = C.inputCapPct or {}
@@ -12490,6 +12983,7 @@ function SmartDistribution.setInputCapPct(rcvUid, ft, pct)
     T[rcvUid][ft] = pct
 end
 function SmartDistribution.clearInputCapPct(rcvUid, ft)
+    SmartDistribution.invalidateMenuMemos()
     local C = SmartDistribution.control.inputCapPct
     if C ~= nil and C[rcvUid] ~= nil then
         C[rcvUid][ft] = nil
@@ -12692,46 +13186,70 @@ end
 -- total 1000%), so the proportional divisor is capped at 100 -- dividing by the raw total would cut every
 -- hall crop to a tenth, which is the bug this pooling change already had to fix once.
 -- Returns the effective litre ceiling for ft; falls back to the plain nominal share when p has no pool.
-function SmartDistribution.inputEffectiveMaxLiters(p, ft)
+-- The PRE-FIX algorithm, kept verbatim and reachable only through the sdStress A/B switch. Its cost is the
+-- point: it re-derives every member's % through inputCapPct -> defaultInputCapPct, and with the memo also
+-- disabled each of those rebuilds the whole pool -- which is the O(F^3)-per-building shape that froze the
+-- menu. Proven to return identical answers to the rewrite (232,800 cases; see CLAUDE.md 5.46), so this is
+-- a performance A/B, not a correctness one.
+function SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
     local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
     if type(cap) ~= "number" or cap <= 0 or cap >= INF then return cap end
     local pct = SmartDistribution.inputCapPct(p, ft) or 100
     local nominal = cap * pct / 100
     if pool == nil or type(pool.fts) ~= "table" or #pool.fts < 2 then return nominal end
     local rcvUid = getUid(p)
-    -- On a SHARED-LEVEL pool (a husbandry food store) every fill type reports the SAME pool total, so
-    -- "what the others hold" cannot be summed -- doing so multiplies one quantity by the number of food
-    -- types. Reported in game 2026-08-02: a cow barn with five food types, four blocked, showed the
-    -- survivor as "100% (0 L)" because othersHeld came out at 4 x 33,750 and freeForFt clamped to zero.
-    -- 95% masked it -- at 95% the product reads as over its own share and returns through the branch
-    -- below, never reaching the clamp, which is exactly why only the round number looked broken.
-    -- Nothing is attributable to a single product in such a pool, so there is no "others" figure to
-    -- subtract; contention is already handled by usedOver / denom above.
     local shared = pool.sharedLevel == true
     local usedOver, denom, othersHeld, ftIsOver = 0, 0, 0, false
     for _, f in ipairs(pool.fts) do
         local held  = SmartDistribution.inputHeldLevel(p, f) or 0
         local fPct  = SmartDistribution.inputCapPct(p, f) or 100
-        local over  = held > (cap * fPct / 100) + 0.5           -- tolerance: litres are fractional
+        local over  = held > (cap * fPct / 100) + 0.5
         if f ~= ft then
             if not shared then othersHeld = othersHeld + held end
         else ftIsOver = over end
         if over then
-            -- ...and the SAME multiplication would happen here. On a shared-level pool two products
-            -- reading "over" would each contribute the whole pool total, so `remaining` collapses to 0
-            -- and every share reads as no space -- the reported bug again, just reached by a different
-            -- configuration (blocked products still carrying an explicit low percentage). There is no
-            -- per-product occupancy to attribute in such a pool, so nothing is reserved here; the real
-            -- limit still lands, because inputAcceptableLiters subtracts the pool's own held total.
-            if not shared then usedOver = usedOver + held end   -- occupied beyond its share: really spoken for
+            if not shared then usedOver = usedOver + held end
         elseif rcvUid == nil or not SmartDistribution.isInputBlocked(rcvUid, f) then
-            denom = denom + fPct                                -- a blocked product reserves nothing
+            denom = denom + fPct
         end
     end
-    -- over its own share: the limit rises to match what is actually piled there
     if ftIsOver then return SmartDistribution.inputHeldLevel(p, ft) or nominal end
     local remaining = math.max(0, cap - usedOver)
     local div = math.min(100, denom)
+    local eff = (div > 0) and (remaining * pct / div) or 0
+    if eff > nominal then eff = nominal end
+    local freeForFt = math.max(0, cap - othersHeld)
+    if eff > freeForFt then eff = freeForFt end
+    return eff
+end
+
+function SmartDistribution.inputEffectiveMaxLiters(p, ft)
+    if SmartDistribution._legacyInputMath then
+        return SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
+    end
+    local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
+    if type(cap) ~= "number" or cap <= 0 or cap >= INF then return cap end
+    -- ONE resolved view of the pool, instead of re-deriving every member's % and level per member. This is
+    -- what turned an O(F^2) call into an O(F) one; see poolShares. `pool` is handed in so the shares can
+    -- never be matched against a differently-built pool.
+    local sh = (pool ~= nil and type(pool.fts) == "table" and #pool.fts >= 2)
+        and SmartDistribution.poolShares(p, pool) or nil
+    local pct = (sh ~= nil and sh.pct[ft]) or SmartDistribution.inputCapPct(p, ft) or 100
+    local nominal = cap * pct / 100
+    if sh == nil then return nominal end
+    local a = SmartDistribution.poolAggregates(pool, sh, cap)
+    -- over its own share: the limit rises to match what is actually piled there
+    if a.over[ft] then return sh.held[ft] or nominal end
+    -- On a SHARED-LEVEL pool (a husbandry food store) every fill type reports the SAME pool total, so
+    -- "what the others hold" is not a meaningful quantity and must not be formed -- summing it multiplies
+    -- one figure by the number of food types. Reported in game 2026-08-02: a cow barn with five food types,
+    -- four blocked, showed the survivor as "100% (0 L)" because othersHeld came out at 4 x 33,750 and
+    -- freeForFt clamped to zero. 95% masked it -- at 95% the product reads as over its own share and
+    -- returns through the branch above, never reaching the clamp, which is exactly why only the round
+    -- number looked broken.
+    local othersHeld = a.shared and 0 or (a.totalHeld - (sh.held[ft] or 0))
+    local remaining = math.max(0, cap - a.usedOver)
+    local div = math.min(100, a.denom)
     local eff = (div > 0) and (remaining * pct / div) or 0
     if eff > nominal then eff = nominal end                     -- never exceed the player's own share
     local freeForFt = math.max(0, cap - othersHeld)             -- never promise space the others occupy
@@ -12925,7 +13443,14 @@ end
 
 -- All network sources that could feed ft to the consumer (uid), each flagged blocked
 -- per the current control state. consumerUid is excluded from its own source list.
-function SmartDistribution.sourcesFor(consumerUid, ft)
+--
+-- MEMOISED through SmartDistribution.sourcesFor below -- callers must go through that, not this. This is the
+-- INPUT-side twin of outputDestinationsForMode's cost and it is worse: it walks every placeable, calls
+-- canProvide on each (whose pallet branch runs palletFillLevel, a FULL vehicleSystem scan per pallet-spawner
+-- building), then builds a named + iconed record per source and sorts them. inputLinkStatus asks for it per
+-- input row, so on the Overview's settings view -- where most rows ARE inputs -- it was the dominant cost
+-- left after 5.46b: measured 40.0 ms for 210 rows once the destination memo was working.
+function SmartDistribution._computeSourcesFor(consumerUid, ft)
     local out = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return out end
@@ -12946,6 +13471,39 @@ function SmartDistribution.sourcesFor(consumerUid, ft)
     end
     table.sort(out, function(a, b) return tostring(a.name) < tostring(b.name) end)
     return out
+end
+
+-- Memo front for the above. Keyed by consumer UID (a STRING, not a placeable), so unlike the other memos
+-- here it cannot use a weak-keyed table to shed entries for demolished buildings. Instead the whole store is
+-- dropped whenever the epoch moves -- which bounds it by construction, since the epoch bumps at least once
+-- an in-game hour, and makes invalidation O(1) rather than a sweep.
+--
+-- Same TTL and the same reasoning as the destination memo: every control change that alters the `blocked`
+-- flags funnels through DistributionControlEvent.applyLocal, which bumps the epoch, so the TTL is only a
+-- backstop. It IS partly level-dependent -- canProvide's bunker / pallet / shed branches test that the
+-- source actually holds something -- so a source that empties can linger in the list for up to the TTL.
+-- That affects only the Idle/Blocked status WORD, never what DR moves: the allocator does not read this.
+SmartDistribution._srcMemo = { epoch = -1, byUid = {} }
+
+function SmartDistribution.sourcesFor(consumerUid, ft)
+    if consumerUid == nil or ft == nil then return {} end
+    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    if now == nil or not SmartDistribution.memoReadable() then
+        return SmartDistribution._computeSourcesFor(consumerUid, ft)
+    end
+    local M = SmartDistribution._srcMemo
+    if M.epoch ~= SmartDistribution._memoEpoch then
+        M.epoch, M.byUid = SmartDistribution._memoEpoch, {}      -- the whole store is stale; drop it
+    end
+    local byFt = M.byUid[consumerUid]
+    if byFt ~= nil then
+        local e = byFt[ft]
+        if e ~= nil and (now - e.at) < SmartDistribution.DEST_MEMO_TTL then return e.srcs end
+    end
+    local srcs = SmartDistribution._computeSourcesFor(consumerUid, ft)
+    if byFt == nil then byFt = {}; M.byUid[consumerUid] = byFt end
+    byFt[ft] = { srcs = srcs, at = now }
+    return srcs
 end
 
 -- ---- Advanced window data --------------------------------------------------
@@ -13099,9 +13657,31 @@ SmartDistribution.OUT_LINK_LABEL = {
 -- The destinations relevant to (asset, ft)'s CURRENT mode -- demands for a distribute mode, stores for a
 -- store / Move To mode, markets for a market mode (combined for combo modes) -- each carrying a .blocked
 -- flag. Mirrors DistributionAdvancedDialog:resolveOutput so the status matches what the Advanced dialog shows.
+--
+-- MEMOISED, because this is the Overview settings view's dominant cost. Every call walks the WHOLE
+-- placeableSystem (outputDestinations' store branch scans it directly; its demand branch goes through
+-- sinksFor, which scans it and then builds a named + iconed record per accepting building and sorts them),
+-- and the settings view asks for it TWICE per output row -- once here from settingsFor and once from
+-- outputLinkStatus below. Measured in game 2026-08-04 on a 25-building save: the settings view cost
+-- 52.5 ms for 210 rows against 5.2 ms for the flow view's 41, i.e. 10x the cost for 5x the rows. It is
+-- O(rows x placeables), so it grows on BOTH axes at once and would be seconds on the reported farm.
+--
+-- Safe to share the returned table: this function has exactly two callers (settingsFor and
+-- outputLinkStatus) and both only READ `.blocked`. DistributionAdvancedDialog deliberately does NOT come
+-- through here -- it calls outputDestinations directly, so the dialog the player actually interacts with
+-- still builds a fresh, live list every time it opens.
 function SmartDistribution.outputDestinationsForMode(asset, ft)
     local out = {}
     if asset == nil or ft == nil then return out end
+    local now  = (getTimeSec ~= nil) and getTimeSec() or nil
+    local live = SmartDistribution.memoReadable()
+    local byFt = SmartDistribution._destMemo[asset]
+    if now ~= nil and live and byFt ~= nil then
+        local m = byFt[ft]
+        if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.DEST_MEMO_TTL then
+            return m.dests
+        end
+    end
     local showDemands, rightKind = false, nil
     local pp = getProductionPoint(asset)
     if pp ~= nil then
@@ -13119,12 +13699,34 @@ function SmartDistribution.outputDestinationsForMode(asset, ft)
     if showDemands then append(SmartDistribution.outputDestinations(asset, ft, true, false, false)) end
     if rightKind == "STORE" then append(SmartDistribution.outputDestinations(asset, ft, false, true, false))
     elseif rightKind == "MARKET" then append(SmartDistribution.outputDestinations(asset, ft, false, false, true)) end
+    if now ~= nil and live then
+        if byFt == nil then byFt = {}; SmartDistribution._destMemo[asset] = byFt end
+        byFt[ft] = { dests = out, at = now, epoch = SmartDistribution._memoEpoch }
+    end
     return out
 end
 
--- Overall status of an OUTGOING product row: Sending if it moved product anywhere last cycle; Blocked if it
--- has routable destinations but every one is blocked; otherwise Idle. Returns nil for a non-sending mode
--- (Hold / Hold Internal / Inherit / production Keep) so the status column stays blank there.
+-- Overall status of an OUTGOING product row: Blocked if it has routable destinations and every one of them
+-- is blocked; else Sending if it moved product anywhere last cycle; otherwise Idle. Returns nil for a
+-- non-sending mode (Hold / Hold Internal / Inherit / production Keep) so the status column stays blank.
+--
+-- BLOCKED IS TESTED FIRST, and the order is the whole point. It used to come second, so a building that had
+-- moved product on the last hourly pass read "Sending" however its destinations were configured -- block
+-- every one of them and the status went on claiming it was sending until a full in-game hour had passed
+-- with nothing moved. Reported in game 2026-08-04: DEST read "0/1" while OUT STATUS beside it read
+-- "Sending", and pressing Refresh could not help because the answer was stale BY DESIGN, not cached.
+--
+-- The two facts are not the same tense: "it moved last hour" is the PAST, "everything is blocked" is NOW,
+-- and it is the second that tells the player what will happen next. 5.37 added the DEST column precisely to
+-- surface a silent stall ("0 of N red is exactly the silent stall that cost an evening in 6.9"), so a
+-- status cell contradicting it defeated the feature it sits next to.
+--
+-- Only ONE case changes: moved-last-cycle AND now fully blocked, which was ACTIVE and is now BLOCKED.
+-- Everything else is untouched -- no routable destinations at all still falls through to the movement test,
+-- so a building with nowhere listed still reads Sending when it is demonstrably sending.
+--
+-- Note this reorder is only cheap because outputDestinationsForMode is memoised: it is now resolved on
+-- every call rather than being short-circuited for an active row.
 function SmartDistribution.outputLinkStatus(p, ft)
     if p == nil or ft == nil then return nil end
     local L, M = SmartDistribution.LINK, MODE
@@ -13136,14 +13738,14 @@ function SmartDistribution.outputLinkStatus(p, ft)
         local m = SmartDistribution.resolvedAssetMode(p, ft)
         if m == nil or m == M.INHERIT or m == M.HOLD or m == M.HOLD_INTERNAL then return nil end
     end
-    local dist, sold, stored = SmartDistribution.lastCycleStats(p, ft)
-    if (dist + sold + stored) > 0 then return L.ACTIVE end   -- Sending
     local dests = SmartDistribution.outputDestinationsForMode(p, ft)
     if #dests > 0 then
         local allBlocked = true
         for _, d in ipairs(dests) do if not d.blocked then allBlocked = false; break end end
         if allBlocked then return L.BLOCKED end
     end
+    local dist, sold, stored = SmartDistribution.lastCycleStats(p, ft)
+    if (dist + sold + stored) > 0 then return L.ACTIVE end   -- Sending
     return L.IDLE
 end
 
@@ -13223,12 +13825,23 @@ function SmartDistribution.sourceLinkStatus(consumerUid, ft, sourceUid)
     return L.IDLE
 end
 
--- overall status of an INPUT row on a building page: Active if anything fed it last pass; Blocked only
--- when it has possible sources and every one of them is blocked; otherwise Idle.
+-- Overall status of an INPUT row: Blocked when it has possible sources and every one of them is blocked;
+-- else Active if anything fed it last pass; otherwise Idle.
+--
+-- BLOCKED IS TESTED FIRST, for the same reason as outputLinkStatus (5.46b): "something fed me last hour" is
+-- the PAST, "every source that could feed me is blocked" is NOW, and it is the second that says what
+-- happens next. Left the other way round, blocking every source read "Active (Receiving)" until a full
+-- in-game hour had passed with nothing arriving.
+--
+-- Note the receiver-side block was ALREADY correct and is not this test: setStatusCell asks isInputBlocked
+-- first and shows "Blocked" (5.6). This is the SOURCE-side case -- every building that could supply this
+-- product has blocked this destination in its own Advanced Outputs.
+--
+-- Only affordable because sourcesFor is memoised: it is now resolved on every call rather than being
+-- short-circuited whenever the row was fed, and it is the most expensive lookup on the input side.
 function SmartDistribution.inputLinkStatus(consumerUid, ft)
     local L = SmartDistribution.LINK
     if consumerUid == nil or ft == nil then return L.IDLE end
-    if SmartDistribution.fedTotal(consumerUid, ft) > 0 then return L.ACTIVE end
     local srcs = SmartDistribution.sourcesFor(consumerUid, ft)
     if #srcs > 0 then
         local allBlocked = true
@@ -13237,17 +13850,26 @@ function SmartDistribution.inputLinkStatus(consumerUid, ft)
         end
         if allBlocked then return L.BLOCKED end
     end
+    if SmartDistribution.fedTotal(consumerUid, ft) > 0 then return L.ACTIVE end
     return L.IDLE
 end
 
 -- The sources that could fulfil an input, each with its link status. This is what the (future) input
 -- drill-down shows; sourcesFor() already handles farm scoping + the blocked flag.
+--
+-- COPIES each entry rather than decorating it in place. sourcesFor is memoised and hands back a SHARED
+-- table, so writing status / label / fed into its entries would poison the cache for every other reader --
+-- and this function has no callers yet, so the damage would surface long after the change that caused it.
 function SmartDistribution.inputSources(consumerUid, ft)
-    local out = SmartDistribution.sourcesFor(consumerUid, ft)
-    for _, s in ipairs(out) do
-        s.status = SmartDistribution.sourceLinkStatus(consumerUid, ft, s.uid)
-        s.label  = SmartDistribution.LINK_LABEL[s.status]
-        s.fed    = SmartDistribution.fedBy(consumerUid, ft, s.uid)
+    local out = {}
+    for i, s in ipairs(SmartDistribution.sourcesFor(consumerUid, ft)) do
+        local status = SmartDistribution.sourceLinkStatus(consumerUid, ft, s.uid)
+        out[i] = {
+            uid = s.uid, name = s.name, icon = s.icon, blocked = s.blocked,
+            status = status,
+            label  = SmartDistribution.LINK_LABEL[status],
+            fed    = SmartDistribution.fedBy(consumerUid, ft, s.uid),
+        }
     end
     return out
 end

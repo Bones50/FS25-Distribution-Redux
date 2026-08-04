@@ -38,9 +38,11 @@ Fixed
 18) Fixed the advanced inputs not showing for the markets/kiosks, removed the advanced outputs as they don't apply to markets. (30/7)
 19) Streamlined many of the hourly calculations to address stuttering when sleeping or passing through the hourly cycle reported by some users (more options here to streamline so will continue to monitor). (2/8)
 20) Fixed an issue where if a productions pallet spawner was blocked the product would just store internally and never be able to be distributed (now distributes from internal storage if no pallets). (2/8)
-21) (NEW) MArkets now properly take the default sell type (immediate or Best price) as set in the settings page. (3/8)
-22) (NEW) Bunker Silo's now show correct amount once opened in DR. (3/8)
-23) (NEW) Bunker Silo Level now correctly render when DR takes out material. Previously the colour would change but the heap level would stay until you interacted with the remaining material with a vehicle. (3/8) 
+21) MArkets now properly take the default sell type (immediate or Best price) as set in the settings page. (3/8)
+22) Bunker Silo's now show correct amount once opened in DR. (3/8)
+23) Bunker Silo Level now correctly render when DR takes out material. Previously the colour would change but the heap level would stay until you interacted with the remaining material with a vehicle. (3/8) 
+24) (NEW) Phase 2 of performance improvements, should fix stutters or freezes on very large production setups. Just to put the scale of the improvement into context there is roughly a 4000x time improvement in processing time (Extreme example: what would have taken 9.5 mins previously, now takes 0.14s). (4/8)
+25) (NEW) Fix for dedicated servers not maintaining settings across sessions. (4/8) 
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -57,7 +59,8 @@ Added
 12) Added the ability to manually tip product to markets/kiosks and have it obey the output mode (previously would just immediately sell regardless of the setting). (30/7)
 13) Added a new mode to the overview that allows you to see all the advanced settings of each building/product (e.g. reserved amounts, output mode, etc etc) (31/7)
 14) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
-15) (NEW) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
+15) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
+16) (NEW) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8) 
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
@@ -79,4 +82,3 @@ Notes
 2) Many people have reported issues with Manure Heaps/Slurry Pits and the related extensions. To keep everything consistent the mod very much modifies how these items work. If you just place the manure pit near a cow farm for example, nothing will happen unlike base game. You now need to set the manure/slurry output on the farm to a Store To mode to have the output go into the heap/pit. Extensions now can only be placed within 50m of a matching storage and will just increase the manure stored in the nearest heap/pit.
 3) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
 4) By Default setting a storage output set to Move To does nothing unless you sepcify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check teh advanced output settings.
-5) Bunker silo's for silage are a bit weird. The distribution system will work, however the way it updates the heap level is a bit werid. If DR removes silage from the heap a part of the heap will change colour but not level. A game reload or picking up some remaining silage with a tractor will update the fill level properly.

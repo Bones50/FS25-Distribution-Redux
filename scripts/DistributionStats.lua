@@ -237,7 +237,15 @@ local function heldOf(p, ft)
     -- Asked for on ANY pallet-spawner building, production or pen. It is returned SEPARATELY from the
     -- internal figure so the page can show "buffer + pad" rather than one lump whose meaning depends on
     -- what is where.
-    if SmartDistribution.palletLitresOf ~= nil then
+    -- ONE padSnapshot instead of palletLitresOf THEN palletCountOf: each of those walks the entire
+    -- vehicleSystem list with a getWorldTranslation per pallet, and this runs per (building, product) --
+    -- so on a farm with ~100 pallet-spawner buildings the pair was hundreds of thousands of world-transform
+    -- reads per refresh. Same two figures, half the scans, and memoised on top (see padSnapshot).
+    if SmartDistribution.padSnapshot ~= nil then
+        local ok, litres, count = pcall(SmartDistribution.padSnapshot, p, ft)
+        if ok and type(litres) == "number" then pallets = litres end
+        if ok and type(count)  == "number" then palletCount = count end
+    elseif SmartDistribution.palletLitresOf ~= nil then
         local ok, v = pcall(SmartDistribution.palletLitresOf, p, ft)
         if ok and type(v) == "number" then pallets = v end
     end
@@ -247,11 +255,11 @@ local function heldOf(p, ft)
         internal = internal - pallets
         if internal < 0 then internal = 0 end
     end
-    -- the COUNT is asked for separately rather than derived as pallets/1000: capacity differs by fill
-    -- type, and a part-filled pallet must still read as one pallet or it shows "(0p)" while standing
-    -- plainly on the pad. palletCountOf returns 0 for anything that is not a pallet-spawner asset, so
-    -- bulk rows are unchanged.
-    if SmartDistribution.palletCountOf ~= nil then
+    -- the COUNT is never derived as pallets/1000: capacity differs by fill type, and a part-filled pallet
+    -- must still read as one pallet or it shows "(0p)" while standing plainly on the pad. It comes back
+    -- from the same padSnapshot above (0 for anything that is not a pallet-spawner asset, so bulk rows are
+    -- unchanged); only the pre-padSnapshot fallback path needs its own call.
+    if SmartDistribution.padSnapshot == nil and SmartDistribution.palletCountOf ~= nil then
         local ok, v = pcall(SmartDistribution.palletCountOf, p, ft)
         if ok and type(v) == "number" then palletCount = v end
     end

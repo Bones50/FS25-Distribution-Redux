@@ -157,6 +157,25 @@ DistributionSettings.SETTINGS = {
         values  = { 0, 1, 2 },
         strings = { "Vanilla (fill gradually)", "Whole pallets only", "Never spawn pallets" },
     },
+    -- How hard the OPEN menu works. Every DR tab re-reads live state on a timer -- the building tabs
+    -- re-populate their number cells, and the Overview re-enumerates the entire network. That cost scales
+    -- with the farm, and on a very large one (reported: ~103 productions, ~270 active products) it is worth
+    -- being able to turn down or stop. "Manual only" still refreshes on every action the player takes
+    -- (selecting a building, changing a selector, pressing Refresh) -- it only stops the background timer.
+    -- Seconds between refreshes; -1 means manual only.
+    menuRefresh = {
+        -- LOCAL ONLY: deliberately excluded from the multiplayer settings sync (see ORDERED_IDS). Every
+        -- other setting is world state the server is authoritative for; this one is a display pacing dial
+        -- for the machine the menu is open on, and the whole point of it is that a player whose PC is
+        -- struggling can turn their own menu down. Syncing it would let the server overwrite that choice.
+        localOnly = true,
+        order   = 9.9,
+        label   = "Menu refresh rate",
+        tooltip = "How often the open menu re-reads the farm. The Overview re-enumerates every building and product, so on a large farm a slower rate keeps the menu responsive. Manual only stops the background refresh entirely - the figures still update whenever you select something or press Refresh on the Overview.",
+        default = 2,                                            -- Normal (2s)
+        values  = { 0.5, 2, 10, -1 },
+        strings = { "Live (0.5s)", "Normal (2s)", "Relaxed (10s)", "Manual only" },
+    },
     debugEnabled = {
         order   = 10,
         label   = "Debug logging",
@@ -174,8 +193,13 @@ end
 
 -- a FIXED serialization order for the multiplayer settings event (pairs() is unordered, so the
 -- write and read sides must agree on the sequence). Sorted by each setting's display order.
+-- A `localOnly` setting is NOT world state and never goes on the wire, so it is left out of this list
+-- entirely -- which is also what keeps the write and read sides the same length, since both ends build the
+-- list from this same table with this same filter.
 local ORDERED_IDS = {}
-for id in pairs(DistributionSettings.SETTINGS) do ORDERED_IDS[#ORDERED_IDS + 1] = id end
+for id, d in pairs(DistributionSettings.SETTINGS) do
+    if not d.localOnly then ORDERED_IDS[#ORDERED_IDS + 1] = id end
+end
 table.sort(ORDERED_IDS, function(a, b)
     return DistributionSettings.SETTINGS[a].order < DistributionSettings.SETTINGS[b].order
 end)
@@ -239,6 +263,13 @@ function DistributionSettings.apply()
     -- what the new NEVER behaviour tests (SmartDistribution.palletSpawnAllowed).
     g.palletSpawnMode  = DistributionSettings.palletSpawnMode
     g.fullPalletSpawn  = (DistributionSettings.palletSpawnMode ~= 0)
+    -- purely a GUI pacing dial: read by DistributionMenuPage and the Overview, never by the hourly pass.
+    -- Clearing the adaptive backoff gives an explicit choice a fresh start rather than leaving it stretched
+    -- by whatever the menu measured before -- the menu re-learns within a refresh or two if it needs to.
+    g.menuRefresh      = DistributionSettings.menuRefresh
+    if DistributionMenuPage ~= nil and DistributionMenuPage.resetRefreshPacing ~= nil then
+        DistributionMenuPage.resetRefreshPacing()
+    end
     SD.debug = DistributionSettings.debugEnabled
     if SD.debug then
         print(string.format("[DistributionSettings] applied scope=%s husbandry=%s silos/sheds=%s markets=%s radius=%d buffer=%dh selling=%s cost=%s($%d/%dm)",
@@ -258,7 +289,13 @@ function DistributionSettings.save()
     else
         xml = createXMLFile("DistReduxSettings", path, "distributionRedux")
     end
-    if xml == nil or xml == 0 then return end
+    -- Unconditional print, not gated on debugEnabled: a settings file that cannot be written is the exact
+    -- shape of "none of my settings persist", and until now this returned in total silence. Matches the
+    -- [SmartDistribution persist] lines so both halves of persistence are greppable from one log.
+    if xml == nil or xml == 0 then
+        print(string.format("[DistributionSettings persist] SAVE FAILED: could not open %s", tostring(path)))
+        return
+    end
     setXMLString(xml, "distributionRedux.settings#scope",       tostring(DistributionSettings.scope))
     setXMLBool(xml,   "distributionRedux.settings#includeHusbandry",  DistributionSettings.includeHusbandry)
     setXMLBool(xml,   "distributionRedux.settings#includeSilosSheds", DistributionSettings.includeSilosSheds)
@@ -276,19 +313,26 @@ function DistributionSettings.save()
     setXMLBool(xml,   "distributionRedux.settings#bestPriceEnabled", DistributionSettings.bestPriceEnabled)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceDefault", DistributionSettings.bestPriceDefault)
     setXMLInt(xml,    "distributionRedux.settings#palletSpawnMode", DistributionSettings.palletSpawnMode)
+    setXMLFloat(xml,  "distributionRedux.settings#menuRefresh", DistributionSettings.menuRefresh)
     setXMLBool(xml,   "distributionRedux.settings#debugEnabled", DistributionSettings.debugEnabled)
     saveXMLFile(xml)
     delete(xml)
+    print(string.format("[DistributionSettings persist] SAVED -> %s", tostring(path)))
 end
 
 function DistributionSettings.load()
     local path = Utils.getFilename(SETTINGS_FILE, getUserProfileAppPath())
     if not fileExists(path) then
+        print(string.format("[DistributionSettings persist] LOAD: no file at %s -- writing defaults", tostring(path)))
         DistributionSettings.save()        -- write defaults on first run
         return
     end
     local xml = loadXMLFile("DistReduxSettings", path)
-    if xml == nil or xml == 0 then return end
+    if xml == nil or xml == 0 then
+        print(string.format("[DistributionSettings persist] LOAD FAILED: could not open %s", tostring(path)))
+        return
+    end
+    print(string.format("[DistributionSettings persist] LOAD fired: %s", tostring(path)))
 
     local scope = getXMLString(xml, "distributionRedux.settings#scope")
     if scope ~= nil and isAllowed("scope", scope) then DistributionSettings.scope = scope end
@@ -350,6 +394,10 @@ function DistributionSettings.load()
         local fullPal = getXMLBool(xml, "distributionRedux.settings#fullPalletSpawn")
         if fullPal ~= nil then DistributionSettings.palletSpawnMode = fullPal and 1 or 0 end
     end
+
+    -- absent in a settings file written before this option existed, so it simply keeps its default
+    local refresh = getXMLFloat(xml, "distributionRedux.settings#menuRefresh")
+    if refresh ~= nil and isAllowed("menuRefresh", refresh) then DistributionSettings.menuRefresh = refresh end
 
     local dbg = getXMLBool(xml, "distributionRedux.settings#debugEnabled")
     if dbg ~= nil then DistributionSettings.debugEnabled = dbg end
@@ -500,6 +548,10 @@ end
 function DistributionControlEvent.applyLocal(act, a, ft, b, delta, flag, amount)
     local SD = SmartDistribution
     if SD == nil then return end
+    -- Every advanced-routing mutation funnels through here -- including one arriving from another player --
+    -- so this is the one place that has to drop the menu's cached destination lists and pooled shares.
+    -- Without it a block or priority change would keep reading its old value for up to MEMO_TTL.
+    if SD.invalidateMenuMemos ~= nil then SD.invalidateMenuMemos() end
     local A = DistributionControlEvent.ACT
     if     act == A.BLOCK       then SD.setDestBlocked(a, ft, b, flag)
     elseif act == A.PRIO_TOGGLE then SD.toggleDestPriority(a, ft, b)
@@ -524,6 +576,72 @@ function DistributionControlEvent.send(act, a, ft, b, delta, flag, amount)
     end
 end
 
+-- Event: the server tells a client which uniqueId IT uses for each placeable.
+--
+-- Required because a placeable's uniqueId is never streamed, so a client MINTS its own for every
+-- player-built building and no uid-keyed DR state can match across the wire. The full reasoning is
+-- in the _serverUidById note above getUid in SmartDistribution.lua.
+--
+-- Addressed by NETWORK OBJECT ID, not by a node object, and that is the whole point: an id is a
+-- plain number in a shared server-assigned space, so neither end has to have finished loading the
+-- placeable for the entry to be recorded. A joining client loads player-built placeables
+-- asynchronously, so anything sent as a node object during the join burst can read back nil.
+DistributionUidMapEvent = {}
+local DistributionUidMapEvent_mt = Class(DistributionUidMapEvent, Event)
+InitEventClass(DistributionUidMapEvent, "DistributionUidMapEvent")
+
+DistributionUidMapEvent.CHUNK          = 64   -- entries per event, so one stream stays small
+DistributionUidMapEvent.COUNT_NUM_BITS = 8    -- 0..255; CHUNK must stay within that
+
+function DistributionUidMapEvent.emptyNew() return Event.new(DistributionUidMapEvent_mt) end
+function DistributionUidMapEvent.new(entries)
+    local self = DistributionUidMapEvent.emptyNew()
+    self.entries = entries or {}                 -- { {id = <objectId>, uid = <string>}, ... }
+    return self
+end
+function DistributionUidMapEvent:writeStream(streamId, connection)
+    streamWriteUIntN(streamId, #self.entries, DistributionUidMapEvent.COUNT_NUM_BITS)
+    for _, e in ipairs(self.entries) do
+        NetworkUtil.writeNodeObjectId(streamId, e.id)   -- the ID, not the object: no resolution needed
+        streamWriteString(streamId, e.uid)
+    end
+end
+function DistributionUidMapEvent:readStream(streamId, connection)
+    local n = streamReadUIntN(streamId, DistributionUidMapEvent.COUNT_NUM_BITS)
+    self.entries = {}
+    for i = 1, n do
+        local id  = NetworkUtil.readNodeObjectId(streamId)
+        self.entries[i] = { id = id, uid = streamReadString(streamId) }
+    end
+    self:run(connection)
+end
+function DistributionUidMapEvent:run(connection)
+    -- server -> client only. A client never sends this, and the server must never adopt one:
+    -- it is the authority on its own ids.
+    if connection == nil or not connection:getIsServer() then return end
+    if SmartDistribution == nil or SmartDistribution.setServerUid == nil then return end
+    for _, e in ipairs(self.entries) do SmartDistribution.setServerUid(e.id, e.uid) end
+    print(string.format("[SmartDistribution mp] uid map: adopted %d server id(s)", #self.entries))
+end
+-- Send the whole map to ONE connection, in chunks.
+function DistributionUidMapEvent.sendTo(connection)
+    if connection == nil or SmartDistribution == nil or SmartDistribution.forEachServerUid == nil then return end
+    local batch, sent = {}, 0
+    SmartDistribution.forEachServerUid(function(id, uid)
+        batch[#batch + 1] = { id = id, uid = uid }
+        if #batch >= DistributionUidMapEvent.CHUNK then
+            connection:sendEvent(DistributionUidMapEvent.new(batch))
+            sent  = sent + #batch
+            batch = {}                                   -- a NEW table; the event keeps the old one
+        end
+    end)
+    if #batch > 0 then
+        connection:sendEvent(DistributionUidMapEvent.new(batch))
+        sent = sent + #batch
+    end
+    print(string.format("[SmartDistribution mp] uid map: sent %d placeable id(s) to a joining client", sent))
+end
+
 -- Event: a joining client asks the server for the current state; the server replies (to that one
 -- connection) with the settings event + every per-asset override, so the client's display and
 -- behaviour match the host immediately instead of showing its own local defaults.
@@ -543,6 +661,10 @@ function DistributionStateRequestEvent:readStream(streamId, connection)
 end
 function DistributionStateRequestEvent:run(connection)
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    -- FIRST, before any state: the client cannot key ANYTHING correctly until it knows our ids.
+    -- Everything below is either keyed by uid outright (the control replay) or resolves one locally
+    -- on arrival (the mode / timing replays), so the map has to be in place before they land.
+    if DistributionUidMapEvent ~= nil then DistributionUidMapEvent.sendTo(connection) end
     connection:sendEvent(DistributionSettingsEvent.new())                       -- global settings
     if SmartDistribution ~= nil and SmartDistribution.forEachAssetOverride ~= nil
        and DistributionModeEvent ~= nil then

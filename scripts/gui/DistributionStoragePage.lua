@@ -61,14 +61,21 @@ end
 -- milk / manure / slurry rows are unchanged.
 local function heldWithPallets(placeable, ft, held)
     if placeable == nil or ft == nil or SmartDistribution == nil then return fmt(held) .. " L" end
+    -- one memoised pad scan for both figures rather than two full vehicle-list walks per row per refresh
     local pallets, n = 0, 0
-    if SmartDistribution.palletLitresOf ~= nil then
-        local ok, v = pcall(SmartDistribution.palletLitresOf, placeable, ft)
-        if ok and type(v) == "number" then pallets = v end
-    end
-    if pallets > 0 and SmartDistribution.palletCountOf ~= nil then
-        local ok, v = pcall(SmartDistribution.palletCountOf, placeable, ft)
-        if ok and type(v) == "number" then n = v end
+    if SmartDistribution.padSnapshot ~= nil then
+        local ok, litres, count = pcall(SmartDistribution.padSnapshot, placeable, ft)
+        if ok and type(litres) == "number" then pallets = litres end
+        if ok and type(count)  == "number" then n = count end
+    else
+        if SmartDistribution.palletLitresOf ~= nil then
+            local ok, v = pcall(SmartDistribution.palletLitresOf, placeable, ft)
+            if ok and type(v) == "number" then pallets = v end
+        end
+        if pallets > 0 and SmartDistribution.palletCountOf ~= nil then
+            local ok, v = pcall(SmartDistribution.palletCountOf, placeable, ft)
+            if ok and type(v) == "number" then n = v end
+        end
     end
     local internal = math.max(0, (held or 0) - pallets)
     local text = fmt(internal) .. " L"

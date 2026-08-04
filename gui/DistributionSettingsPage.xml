@@ -130,6 +130,13 @@
             </Bitmap>
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="menuRefresh">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="How often the open menu re-reads the farm. The Overview re-enumerates every building and product, so on a large farm a slower rate keeps the menu responsive. Manual only stops the background refresh entirely - the figures still update whenever you select something or press Refresh on the Overview."/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="Menu refresh rate"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="debugEnabled">
                     <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="Write detailed distribution activity to log.txt (moves, sales, stores, water top-ups and charges). Turn off for a quieter log."/>
                 </MultiTextOption>

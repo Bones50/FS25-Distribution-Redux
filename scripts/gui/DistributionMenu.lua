@@ -87,10 +87,15 @@ function DistributionMenu:setupPages()
         { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
         -- Overview carries one action beside Back: swap the flow figures for the Advanced Inputs / Outputs
         -- settings behind the same rows. The label flips with the view (updateViewButton).
+        -- Refresh re-enumerates the network on demand. It is what makes the "Manual only" menu refresh rate
+        -- usable on a large farm, and is a harmless no-op-ish extra at every other rate.
         { self.pageOverview,    "gui.icon_ingameMenu_statistics",
             { back, btn(InputAction.MENU_EXTRA_1, "Show Settings",
                 function() local p = self.pageOverview; if p ~= nil and p.onToggleSettingsView ~= nil then p:onToggleSettingsView() end end,
-                "viewToggle") }, always },
+                "viewToggle"),
+              btn(InputAction.MENU_EXTRA_2, "Refresh",
+                function() local p = self.pageOverview; if p ~= nil and p.onRefresh ~= nil then p:onRefresh() end end) },
+            always },
         { self.pageHelp,        "gui.icon_options_help2",               { back }, always },
         { self.pageSettings,    "gui.icon_options_generalSettings2",    { back }, always },
     }
@@ -120,9 +125,29 @@ function DistributionMenu:onClickBack()
 end
 
 -- On open, if [ + gaze stashed a target asset, jump to its tab and select it.
+-- MULTIPLAYER CLIENT: the server's uid map (DistributionUidMapEvent) is sent at JOIN, so a building
+-- placed since then has no entry and every uid-keyed read and write for it would silently miss --
+-- the same failure the map exists to fix, just for a newer building. Re-ask whenever the placeable
+-- count has moved. Cheap, bounded, and self-limiting: the reply is the full state replay, which is
+-- idempotent (it only ever writes values the server already holds), and the player has to open this
+-- menu to configure a new building anyway.
+DistributionMenu._uidMapCount = nil
+
+function DistributionMenu.refreshServerUids()
+    if g_currentMission == nil or g_currentMission.getIsServer == nil then return end
+    if g_currentMission:getIsServer() then return end                    -- host owns the ids already
+    if DistributionStateRequestEvent == nil or DistributionStateRequestEvent.sendToServer == nil then return end
+    local ps = g_currentMission.placeableSystem
+    local n  = (ps ~= nil and ps.placeables ~= nil) and #ps.placeables or 0
+    if n == DistributionMenu._uidMapCount then return end
+    DistributionMenu._uidMapCount = n
+    DistributionStateRequestEvent.sendToServer()
+end
+
 function DistributionMenu:onOpen()
     DistributionMenu:superClass().onOpen(self)
     pcall(function() self:rebuildTabList() end)         -- re-evaluate tab predicates against current Settings
+    pcall(function() DistributionMenu.refreshServerUids() end)
     if self._focusAsset ~= nil then
         self:focusAsset()
     end

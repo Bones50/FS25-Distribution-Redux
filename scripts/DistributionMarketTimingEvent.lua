@@ -25,6 +25,11 @@ function DistributionMarketTimingEvent.new(placeable, fillTypeIndex, mode)
     self.placeable     = placeable
     self.fillTypeIndex = fillTypeIndex
     self.mode          = mode or 0
+    -- sender's uid beside the node object -- see the note in DistributionModeEvent.new
+    self.uid = ""
+    if placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.assetUid ~= nil then
+        self.uid = SmartDistribution.assetUid(placeable) or ""
+    end
     return self
 end
 
@@ -32,12 +37,14 @@ function DistributionMarketTimingEvent:writeStream(streamId, connection)
     NetworkUtil.writeNodeObject(streamId, self.placeable)
     streamWriteUIntN(streamId, self.fillTypeIndex, FillTypeManager.SEND_NUM_BITS)
     streamWriteUIntN(streamId, self.mode, DistributionMarketTimingEvent.MODE_NUM_BITS)
+    streamWriteString(streamId, self.uid or "")
 end
 
 function DistributionMarketTimingEvent:readStream(streamId, connection)
     self.placeable     = NetworkUtil.readNodeObject(streamId)
     self.fillTypeIndex = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
     self.mode          = streamReadUIntN(streamId, DistributionMarketTimingEvent.MODE_NUM_BITS)
+    self.uid           = streamReadString(streamId)
     self:run(connection)
 end
 
@@ -46,7 +53,12 @@ function DistributionMarketTimingEvent:run(connection)
     if not connection:getIsServer() then
         g_server:broadcastEvent(self, false, connection)
     end
-    if self.placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.applyMarketTiming ~= nil then
+    if SmartDistribution == nil then return end
+    -- client prefers the uid string, server prefers the placeable -- see DistributionModeEvent:run
+    if connection ~= nil and connection:getIsServer()
+       and self.uid ~= nil and self.uid ~= "" and SmartDistribution.setMarketSellMode ~= nil then
+        SmartDistribution.setMarketSellMode(self.uid, self.fillTypeIndex, self.mode)
+    elseif self.placeable ~= nil and SmartDistribution.applyMarketTiming ~= nil then
         SmartDistribution.applyMarketTiming(self.placeable, self.fillTypeIndex, self.mode, true)   -- noEventSend
     end
 end

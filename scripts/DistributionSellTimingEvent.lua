@@ -24,6 +24,11 @@ function DistributionSellTimingEvent.new(placeable, fillTypeIndex, bestPrice)
     self.placeable     = placeable
     self.fillTypeIndex = fillTypeIndex
     self.bestPrice     = bestPrice and true or false
+    -- sender's uid beside the node object -- see the note in DistributionModeEvent.new
+    self.uid = ""
+    if placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.assetUid ~= nil then
+        self.uid = SmartDistribution.assetUid(placeable) or ""
+    end
     return self
 end
 
@@ -31,12 +36,14 @@ function DistributionSellTimingEvent:writeStream(streamId, connection)
     NetworkUtil.writeNodeObject(streamId, self.placeable)
     streamWriteUIntN(streamId, self.fillTypeIndex, FillTypeManager.SEND_NUM_BITS)
     streamWriteBool(streamId, self.bestPrice)
+    streamWriteString(streamId, self.uid or "")
 end
 
 function DistributionSellTimingEvent:readStream(streamId, connection)
     self.placeable     = NetworkUtil.readNodeObject(streamId)
     self.fillTypeIndex = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
     self.bestPrice     = streamReadBool(streamId)
+    self.uid           = streamReadString(streamId)
     self:run(connection)
 end
 
@@ -45,7 +52,12 @@ function DistributionSellTimingEvent:run(connection)
     if not connection:getIsServer() then
         g_server:broadcastEvent(self, false, connection)
     end
-    if self.placeable ~= nil and SmartDistribution ~= nil and SmartDistribution.applyAssetSellTiming ~= nil then
+    if SmartDistribution == nil then return end
+    -- client prefers the uid string, server prefers the placeable -- see DistributionModeEvent:run
+    if connection ~= nil and connection:getIsServer()
+       and self.uid ~= nil and self.uid ~= "" and SmartDistribution.setAssetSellTiming ~= nil then
+        SmartDistribution.setAssetSellTiming(self.uid, self.fillTypeIndex, self.bestPrice)
+    elseif self.placeable ~= nil and SmartDistribution.applyAssetSellTiming ~= nil then
         SmartDistribution.applyAssetSellTiming(self.placeable, self.fillTypeIndex, self.bestPrice, true) -- noEventSend
     end
 end
