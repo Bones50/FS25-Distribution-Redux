@@ -68,7 +68,19 @@ function DistributionModeEvent:run(connection)
     -- its own uid from it, so a client can never write state under a key the server does not own.
     if connection ~= nil and connection:getIsServer()
        and self.uid ~= nil and self.uid ~= "" and SmartDistribution.setAssetMode ~= nil then
+        -- SELF-HEALING IDENTITY: this event carries BOTH the server's uid string and the placeable, so it
+        -- can teach the client that building's server-side id directly -- independent of the bulk uid map
+        -- and of when that map happens to arrive.
+        if self.placeable ~= nil and NetworkUtil ~= nil and NetworkUtil.getObjectId ~= nil
+           and SmartDistribution.setServerUid ~= nil then
+            local oid = NetworkUtil.getObjectId(self.placeable)
+            if oid ~= nil and oid ~= 0 then SmartDistribution.setServerUid(oid, self.uid) end
+        end
         SmartDistribution.setAssetMode(self.uid, self.fillTypeIndex, self.mode)
+        -- An override arriving now can change what a production's mode resolves to, and the join replay
+        -- can land after something has already read (and cached) a derived answer. Same race as the uid
+        -- map; same remedy.
+        if SmartDistribution.invalidateSeededVModes ~= nil then SmartDistribution.invalidateSeededVModes() end
     elseif self.placeable ~= nil and SmartDistribution.applyAssetMode ~= nil then
         SmartDistribution.applyAssetMode(self.placeable, self.fillTypeIndex, self.mode, true) -- noEventSend
     end

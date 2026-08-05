@@ -41,8 +41,10 @@ Fixed
 21) MArkets now properly take the default sell type (immediate or Best price) as set in the settings page. (3/8)
 22) Bunker Silo's now show correct amount once opened in DR. (3/8)
 23) Bunker Silo Level now correctly render when DR takes out material. Previously the colour would change but the heap level would stay until you interacted with the remaining material with a vehicle. (3/8) 
-24) (NEW) Phase 2 of performance improvements, should fix stutters or freezes on very large production setups. Just to put the scale of the improvement into context there is roughly a 4000x time improvement in processing time (Extreme example: what would have taken 9.5 mins previously, now takes 0.14s). (4/8)
-25) (NEW) Fix for dedicated servers not maintaining settings across sessions. (4/8) 
+24) Phase 2 of performance improvements, should fix stutters or freezes on very large production setups. Just to put the scale of the improvement into context there is roughly a 4000x time improvement in processing time (Extreme example: what would have taken 9.5 mins previously, now takes 0.14s). (4/8)
+25) Fix for dedicated servers not maintaining settings across sessions. (4/8)
+26) (NEW) Fix for certain modes resetting to "Hold" each cycle on dedicated servers. (5/8)
+27) (NEW) Fix for seasonal reserve only applying to Sell modes, not Market Supply Modes (5/8)
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -60,7 +62,7 @@ Added
 13) Added a new mode to the overview that allows you to see all the advanced settings of each building/product (e.g. reserved amounts, output mode, etc etc) (31/7)
 14) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
 15) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
-16) (NEW) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8) 
+16) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8) 
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:

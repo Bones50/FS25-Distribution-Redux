@@ -58,8 +58,34 @@ local origSet = ProductionPoint.setOutputDistributionMode
 
 local function placeableOf(pp) return pp ~= nil and pp.owningPlaceable or nil end
 
+-- IDENTITY COMES FROM SmartDistribution.assetUid -- NEVER resolve it locally.
+--
+-- getUid there carries a CLIENT-SIDE REMAP this copy did not: on a multiplayer client it asks the server
+-- for the placeable's real uniqueId (_serverUidById, filled by DistributionUidMapEvent at join), because
+-- a PLAYER-BUILT placeable is minted a different local uniqueId on every client -- a locally generated
+-- MD5 the server has never seen. Reading pl.uniqueId directly therefore produced a key nothing was ever
+-- stored under.
+--
+-- REPORTED IN GAME 2026-08-05, and the split names the cause exactly: after a rejoin to a dedicated
+-- server a SILO kept its mode while a BAKERY and a GRAIN MILL both fell back to plain "Distribute".
+--   * silos go through getUid, so they were always right;
+--   * productions came through here, the lookup missed, seedV saw INHERIT and fell through to the
+--     vanilla engine flag -- which DR sets to AUTO_DELIVER for EVERY distribute-y compound mode, so
+--     Distribute+Sell and Distribute+Store both collapsed to plain Distribute;
+--   * the silo was PREPLACED, and forEachServerUid deliberately skips preplaced placeables because
+--     their ids already agree on both machines -- which is why only player-built buildings broke.
+-- DistributionModeEvent had already been fixed this same way ("this is why output modes came back as
+-- defaults after a rejoin"); this second copy of the logic was missed.
+--
+-- SERVER-SIDE NOTHING CHANGES: _serverUidById is nil there, so assetUid returns pl.uniqueId exactly as
+-- this function used to. The bug was only ever visible on a client.
 local function uidOf(pl)
     if pl == nil then return nil end
+    if SD.assetUid ~= nil then
+        local u = SD.assetUid(pl)
+        if u ~= nil then return u end
+    end
+    -- fallback only if SmartDistribution.lua somehow did not publish its accessor
     if pl.uniqueId ~= nil then return pl.uniqueId end
     if pl.getUniqueId ~= nil then
         local ok, u = pcall(pl.getUniqueId, pl)
@@ -95,11 +121,46 @@ end
 -- per-productionPoint / per-fillType virtual mode (weak so it GCs with the world)
 local VTAB = setmetatable({}, { __mode = "k" })
 
+-- WHICH VTAB ENTRIES ARE MERELY DERIVED, and therefore PROVISIONAL.
+--
+-- getV caches whatever seedV worked out, and used to keep it for the rest of the session. On a
+-- MULTIPLAYER CLIENT that is a race it can lose: seedV resolves the building's identity through
+-- SmartDistribution.assetUid, which needs the server's uid map (DistributionUidMapEvent), and that map
+-- arrives asynchronously during the join burst. Anything that reads a production's mode BEFORE it lands
+-- resolves the LOCAL uniqueId instead, finds no override under that key, and falls back to the global
+-- default -- and then that wrong answer was cached permanently.
+--
+-- MEASURED IN GAME 2026-08-05, and the two buildings differ by 68 milliseconds:
+--     11:03:46.767  seedV [Bread]  resolved=<local id>  stored=0   <- read BEFORE the map
+--     11:03:46.835  uid map: adopted 34 server id(s)
+--     11:03:51.861  seedV [Flour]  resolved=<server id> stored=5   <- read AFTER, correct
+-- The player saw a Bakery on Distribute + Store come back as plain "Distribute" while a Grain Mill set
+-- the same way survived, with the mode provably correct in smartDistribution.xml the whole time.
+--
+-- So a SEEDED entry is provisional and must be dropped whenever the information it was derived from
+-- improves. An entry written by an explicit player choice (setV, from applyVLocal) is NOT provisional and
+-- is never touched -- which matters because for a sellDirectly output applyVLocal maps the v-mode onto the
+-- asset mode LOSSILY (DISTSTORE and DISTMARKET both -> DISTRIBUTE_SELL), so re-seeding one of those would
+-- silently change the player's choice. That is why this tracks provenance instead of just clearing VTAB.
+local VSEED = setmetatable({}, { __mode = "k" })   -- pp -> { [ft] = true } : this entry came from seedV
+
 local function seedV(pp, ft)
     -- explicit per-output mod override wins (these persist + sync): Store / Distribute+Store /
     -- Distribute+Sell / Sell / Hold / Distribute that the player set on this building.
     local pl  = placeableOf(pp)
-    local raw = (pl ~= nil and SD.getAssetMode ~= nil) and SD.getAssetMode(uidOf(pl), ft) or SD.MODE.INHERIT
+    local uid = uidOf(pl)
+    local raw = (pl ~= nil and SD.getAssetMode ~= nil) and SD.getAssetMode(uid, ft) or SD.MODE.INHERIT
+    -- DIAGNOSTIC (debug only). THIS is the lookup that decides a production's displayed mode, and the one
+    -- place a client/server uniqueId disagreement becomes visible. It prints the LOCAL id, the RESOLVED id
+    -- (which differ on a client whenever the server remap is doing its job) and the mode actually found
+    -- under that key -- so a building that "reverts" can be read directly against one that does not.
+    -- raw=0 means INHERIT, i.e. NOTHING was stored under the key used, and the caller then falls back to
+    -- the global default (Distribute) -- which is what a spurious "reverted to Distribute" really is.
+    if SD.debug then
+        dbg("seedV [%s] local=%s resolved=%s stored=%s",
+            tostring(SD._ftTitle ~= nil and SD._ftTitle(ft) or ft),
+            tostring(pl ~= nil and pl.uniqueId or "?"), tostring(uid), tostring(raw))
+    end
     if raw == SD.MODE.STORE then return STORE end
     if raw == SD.MODE.DISTRIBUTE_STORE then return DISTSTORE end
     if raw == SD.MODE.DISTRIBUTE_SELL then return DISTSELL end
@@ -131,12 +192,32 @@ local function getV(pp, ft)
     local v = seedV(pp, ft)
     VTAB[pp] = t or {}
     VTAB[pp][ft] = v
+    VSEED[pp] = VSEED[pp] or {}     -- DERIVED, not chosen: may be re-derived later (see VSEED)
+    VSEED[pp][ft] = true
     return v
 end
 
 local function setV(pp, ft, v)
     VTAB[pp] = VTAB[pp] or {}
     VTAB[pp][ft] = v
+    if VSEED[pp] ~= nil then VSEED[pp][ft] = nil end   -- an explicit choice is never re-derived
+end
+
+-- Drop every DERIVED v-mode so the next read re-runs seedV against better information. Called when the
+-- client learns something that changes what seedV would answer: the server's uid map arriving, or a
+-- per-asset override being replayed into S.assets during the join sync. Explicit choices are untouched.
+-- Cheap and idempotent -- it only clears cache entries; nothing is recomputed until something asks.
+function SD.invalidateSeededVModes()
+    for pp, fts in pairs(VSEED) do
+        local t = VTAB[pp]
+        if t ~= nil then for ft in pairs(fts) do t[ft] = nil end end
+        VSEED[pp] = nil
+    end
+    -- Tell an OPEN menu to repaint now instead of waiting out its refresh interval (up to 2 s by default,
+    -- longer on a big farm). Not cosmetic: a page still showing the pre-map value is a page whose "Cycle
+    -- Output" button would step from the WRONG mode and write that back to the server. DistributionMenuPage
+    -- watches this counter each frame; a plain integer bump keeps the GUI decoupled from this file.
+    SD._vmodeEpoch = (SD._vmodeEpoch or 0) + 1
 end
 
 -- Biogas grid outputs (electricity / methane) are sellDirectly: the engine sells them the instant
@@ -159,6 +240,32 @@ local function isSellDirectlyOutput(pp, ft)
         SELLDIRECT_CACHE[pp] = c
     end
     return c[ft] == true
+end
+
+-- THE ENGINE WRITE MUST NEVER BE ABLE TO LOSE DR'S OWN RECORD.
+--
+-- Every branch of applyVLocal calls origSet (the vanilla setOutputDistributionMode) BEFORE
+-- SD.applyAssetMode. The engine REJECTS a mode-set for a fill type it does not consider a live output --
+-- it throws "is not an output fillType", which is exactly why the sellDirectly branch below exists. A
+-- throw there skipped applyAssetMode entirely, so:
+--   * setV had ALREADY cached the new v-mode, so the menu showed the new mode all session;
+--   * nothing was ever written to S.assets, so nothing was saved;
+--   * on reload seedV found no override and fell back to the global default -- reading "Distribute".
+-- i.e. "the mode sticks while I play and reverts once I save and reload", with no error visible in the UI.
+-- It also aborted whatever loop was setting several outputs, so later fill types were silently skipped --
+-- which is how a building with two outputs ends up with exactly ONE entry in smartDistribution.xml.
+--
+-- Reported 2026-08-05: a Bakery on Distribute + Store, whose savegame had only its bread line enabled and
+-- only a BREAD entry saved.
+--
+-- pcall'd, and the RESULT IS DELIBERATELY IGNORED. The vanilla flag is a hint DR sets so the base UI
+-- agrees with it; DR's own S.assets entry is what actually drives routing and what persists. If the engine
+-- will not take the flag for an output it does not recognise, that must not stop DR recording the player's
+-- choice for a product it is perfectly capable of routing itself.
+local function engineSet(pp, ft, mode)
+    local ok, err = pcall(origSet, pp, ft, mode, true)
+    if not ok then dbg("engine rejected output mode for %s: %s", tostring(ft), tostring(err)) end
+    return ok
 end
 
 -- apply a virtual state on THIS machine only: refresh the cache, set the vanilla
@@ -202,13 +309,13 @@ local function applyVLocal(pp, ft, v)
         -- the priced surplus. Mirrors how DISTSTORE / DISTMARKET already work. (The old comment claimed
         -- AUTO_DELIVER let "the base engine distribute the surplus", but DR suppresses the base engine pass,
         -- so that never happened -- it only enabled the premature sell.)
-        origSet(pp, ft, store, true)
+        engineSet(pp, ft, store)
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_SELL, true) end
     elseif v == DISTSTORE then
-        origSet(pp, ft, store, true)                            -- STORE so the production spawns its output as pallets;
+        engineSet(pp, ft, store)                            -- STORE so the production spawns its output as pallets;
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_STORE, true) end  -- phase 1 distributes from them, palletPhase stores the remainder
     elseif v == STORE then
-        origSet(pp, ft, store, true)                            -- vanilla STORE so output accumulates / spawns pallets;
+        engineSet(pp, ft, store)                            -- vanilla STORE so output accumulates / spawns pallets;
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.STORE, true) end  -- engine STORE: no distribute, storePhase/palletPhase moves it all to storage
     elseif v == SELL then
         -- The mod's HOOK 3 pass can only sell outputs that have a market price (it
@@ -223,27 +330,27 @@ local function applyVLocal(pp, ft, v)
             hasPrice = ok and type(p) == "number" and p > 0
         end
         if hasPrice then
-            origSet(pp, ft, store, true)
+            engineSet(pp, ft, store)
             if pl ~= nil then SD.applyAssetMode(pl, ft, M.SELL, true) end
         else
-            origSet(pp, ft, sell, true)
+            engineSet(pp, ft, sell)
             if pl ~= nil then SD.applyAssetMode(pl, ft, M.INHERIT, true) end
         end
     elseif v == TRANSFER then
-        origSet(pp, ft, store, true)                            -- keep the output in pp.storage so marketTransferPhase can drain it to the market
+        engineSet(pp, ft, store)                            -- keep the output in pp.storage so marketTransferPhase can drain it to the market
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.TRANSFER_MARKET, true) end
     elseif v == DISTMARKET then
-        origSet(pp, ft, store, true)                            -- keep output in pp.storage; the allocator distributes first, the remainder transfers
+        engineSet(pp, ft, store)                            -- keep output in pp.storage; the allocator distributes first, the remainder transfers
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_MARKET, true) end
     elseif v == HOLD_INTERNAL_V then
-        origSet(pp, ft, store, true)                            -- engine KEEP so output accumulates as bulk; the updateProduction gate suppresses the auto pallet-spawn
+        engineSet(pp, ft, store)                            -- engine KEEP so output accumulates as bulk; the updateProduction gate suppresses the auto pallet-spawn
         if pl ~= nil then SD.applyAssetMode(pl, ft, M.HOLD_INTERNAL, true) end
     else
         -- DISTRIBUTE and KEEP(Hold) both keep the output in pp.storage (engine STORE) so DR's phase-1
         -- allocator distributes from it. Plain DISTRIBUTE previously used AUTO_DELIVER, which for an output
         -- with a delivery target drained storage before DR could distribute (same root cause as DISTSELL
         -- above) -- and for a "Distribute" (no-sell) output, auto-delivering/selling it was wrong anyway.
-        origSet(pp, ft, store, true)
+        engineSet(pp, ft, store)
         -- Record the base-state choice in the mod's OWN table so the resolver can tell Hold from
         -- Distribute (the engine flag alone cannot, and an output left on the global Distribute default
         -- must be usable as a source). Both persist (save skips only INHERIT) and sync exactly as before.

@@ -205,6 +205,19 @@ function DistributionMenuPage:update(dt)
 
     -- throttled real-time refresh of the open page's number lists. Wall-clock (getTimeSec, real seconds) so
     -- it is immune to whatever units dt is in.
+    -- A production's cached v-mode was just re-derived (the server's uid map or a replayed override landed
+    -- mid-join, see invalidateSeededVModes). Repaint NOW rather than waiting out the refresh interval --
+    -- and do it even under "Manual only", because this is not a stale FIGURE, it is a stale MODE, and
+    -- pressing Cycle Output against it would step from the wrong value and write that back to the server.
+    if self._realtimeLists ~= nil and SmartDistribution ~= nil then
+        local ep = SmartDistribution._vmodeEpoch or 0
+        if self._vmodeEpochSeen ~= ep then
+            self._vmodeEpochSeen = ep
+            self._rtLast = (getTimeSec ~= nil) and getTimeSec() or self._rtLast   -- also restarts the throttle
+            pcall(function() self:refreshRealtimeLists() end)
+        end
+    end
+
     local every = DistributionMenuPage.refreshSeconds()      -- nil = Manual only: no background refresh
     if self._realtimeLists ~= nil and every ~= nil then
         local now = (getTimeSec ~= nil) and getTimeSec() or nil

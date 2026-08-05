@@ -1369,9 +1369,13 @@ function SmartDistribution._seedMoveToBlocks(placeable, ft, mode)
     local myFarm = SmartDistribution._ownerFarmId(placeable)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
+        -- STRUCTURAL, not room-based: seed a block for every store that could EVER be a target. A store that
+        -- merely happened to be FULL at this instant was not seeded, and then became an ACTIVE destination
+        -- the player never approved the moment it had room again -- defeating the loop-safe default this
+        -- whole function exists to provide. See storeToTargetPossible.
         if tp ~= placeable and tp.rootNode ~= nil and isEnrolled(tp)
            and SmartDistribution._ownerFarmId(tp) == myFarm
-           and SmartDistribution.storeToTargetValid(form, tp, ft) then
+           and SmartDistribution.storeToTargetPossible(form, tp, ft) then
             local du = getUid(tp)
             if du ~= nil then SmartDistribution.setDestBlocked(srcUid, ft, du, true) end
         end
@@ -2892,6 +2896,58 @@ local function isPalletShedSink(p, ft)
     return cap <= 0 or stored < cap
 end
 
+-- STRUCTURAL twin of gatherSinks + gatherShedSinks, for the ENDPOINT TEST ONLY.
+--
+-- "Could this product ever be stored anywhere on this farm", NOT "is there room this instant". That is
+-- the same rule hasAnySink already states for the distribute side ("the answer is capability-based, not
+-- room-based ... that is the correct question for an endpoint test") -- hasStoreEndpoint was the one that
+-- broke it, by asking gatherSinks (which filters getFree(s, ft) > 0) and gatherShedSinks (which filters
+-- on a free slot via isPalletShedSink).
+--
+-- WHY THAT MATTERED (CLAUDE.md 6.10): enforceValidModes reverts any mode whose endpoint test fails, and
+-- that revert is PERMANENT and PERSISTED -- there is no restore path. So a shed that merely filled up for
+-- an hour silently destroyed the player's Store / Distribute+Store setting for good, and emptying the shed
+-- did not bring it back. For a palletized output (bread, furniture, bottled milk) the only sink IS a
+-- pallet shed, so one full shed was enough.
+--
+-- Nothing is lost by dropping the room test here: the pass clamps to inputAcceptableLiters at move time,
+-- so a full store already moves nothing without the mode having to be deleted.
+--
+-- Written as a SEPARATE function rather than a flag threaded through getSinkStorages / isPalletShedSink
+-- deliberately: those two are on the live allocator's path (gatherSinks / gatherShedSinks -> storePhase),
+-- and they stay byte-for-byte unchanged, so this cannot alter what actually moves. Its filter mirrors
+-- theirs line for line apart from the two room checks -- if either of them changes, change this with them.
+function SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, srcReach)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return false end
+    local r2 = S.global.radius * S.global.radius
+    for _, p in ipairs(ps.placeables) do
+        if p ~= asset and p.rootNode ~= nil then
+            local pFarm = p.ownerFarmId
+            if pFarm == nil or farmId == nil or pFarm == farmId then
+                local px, _, pz = getWorldTranslation(p.rootNode)
+                local dx, dz = px - x, pz - z
+                if srcReach == REACH.FARM_WIDE or (dx * dx + dz * dz) <= r2 then
+                    -- BULK: any silo / bulk hall / manure pit storage that SUPPORTS ft (room ignored)
+                    if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil or isManurePit(p) then
+                        for _, s in ipairs(getAllStorages(p)) do
+                            if storageSupports(s, ft) then return true end
+                        end
+                    end
+                    -- PALLET SHED: supports pallets + supports ft (free slot ignored)
+                    local spec = p.spec_objectStorage
+                    if spec ~= nil and spec.supportsPallets ~= false then
+                        if p.getObjectStorageSupportsFillType == nil then return true end
+                        local ok, sup = pcall(p.getObjectStorageSupportsFillType, p, ft)
+                        if ok and sup then return true end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- gather pallet-shed sinks (object storages) within reach; entries carry `.shed` instead of
 -- `.storage`, so the pallet store path moves whole pallets into them rather than draining liters.
 local function gatherShedSinks(sourcePlaceable, ft, x, z, farmId, srcReach)
@@ -2989,6 +3045,17 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     local rm = resolveMode(p, ft)
     if rm ~= MODE.STORE_TO and rm ~= MODE.DISTRIBUTE_STORE_TO then return end
     if p.rootNode == nil then return end
+    -- Move To IS the Advanced routing feature: its destinations are chosen in the Advanced Outputs
+    -- dialog and it is driven entirely by the block/priority model. With Advanced OFF it must do
+    -- NOTHING and simply hold, which is this mode's graceful-degradation case.
+    --
+    -- THIS GATE IS LOAD-BEARING. It used to live only inside modeHasEndpoint, so switching Advanced off
+    -- was neutralised solely by enforceValidModes REVERTING the mode to Hold on the next pass. Now that
+    -- a player's mode is never rewritten (see the note where enforceValidModes used to be), nothing else
+    -- would stop it -- and clearAdvancedControl EMPTIES control.blocked when Advanced is switched off,
+    -- so every destination would read unblocked and the source would push to every compatible store on
+    -- the farm. Deleting the revert without this would have been strictly worse than the bug it fixed.
+    if not SmartDistribution.advancedEnabled() then return end
     local srcUid = getUid(p)
     if srcUid == nil then return end
 
@@ -3128,9 +3195,17 @@ local function computeSeasonalBudget()
             local fts = SmartDistribution.assetFillTypes(p)
             if type(fts) == "table" then
                 for ft in pairs(fts) do
-                    if SmartDistribution.isCropFillType(ft)
-                       and SmartDistribution.resolvedAssetMode(p, ft) == MODE.DISTRIBUTE_SELL then
-                        want[ft] = true
+                    -- DISTRIBUTE_MARKET counts as well as DISTRIBUTE_SELL. marketTransferAmount has always
+                    -- consumed this budget, but only DISTRIBUTE_SELL sources created an entry -- so a crop
+                    -- shipped ONLY to markets got no entry, `b` came back nil, and the reserve did not apply
+                    -- to it AT ALL: Market Supply shipped the lot, including the months of feedstock the
+                    -- feature exists to hold back. Its capping used to work only by accident, when some
+                    -- OTHER building happened to have the same crop on Distribute + Sell.
+                    if SmartDistribution.isCropFillType(ft) then
+                        local am = SmartDistribution.resolvedAssetMode(p, ft)
+                        if am == MODE.DISTRIBUTE_SELL or am == MODE.DISTRIBUTE_MARKET then
+                            want[ft] = true
+                        end
                     end
                 end
             end
@@ -3147,6 +3222,29 @@ local function computeSeasonalBudget()
         budget[ft] = surplus > 0 and surplus or 0
     end
     return budget
+end
+
+-- Debit the shared seasonal pot by what ACTUALLY MOVED.
+--
+-- The pot is one farm-wide allowance per crop per cycle, drawn on by every source shipping that crop. It
+-- used to be debited at the moment a source worked out how much it MIGHT move -- before best-price could
+-- decide to hold, before the price test, and before the caller discovered there was no market to ship to.
+-- A source that then moved NOTHING still consumed the allowance and starved every other source of that
+-- crop for the cycle, and since which source draws first is just placeableSystem order, which building
+-- lost was arbitrary. Callers now CLAMP to the pot when sizing a shipment and call this once the litres
+-- have genuinely left.
+--
+-- Made worse by 5.48: the old revert used to flip an endpoint-less source to Hold within the hour, so it
+-- stopped drawing. Modes are never rewritten now, so the leak would have repeated every hour indefinitely.
+--
+-- No-op when the reserve is off (seasonalBudget is nil) or the crop has no entry, so the default save pays
+-- one nil test. Never goes negative.
+function SmartDistribution.noteSeasonalSpend(ft, liters)
+    if seasonalBudget == nil or ft == nil or type(liters) ~= "number" or liters <= 0 then return end
+    local b = seasonalBudget[ft]
+    if b == nil then return end
+    b = b - liters
+    seasonalBudget[ft] = (b > 0) and b or 0
 end
 
 -- ---- best-price inflow tracker --------------------------------------------
@@ -3223,12 +3321,16 @@ local function sellAmount(p, storage, ft, farmId)
     local amount = SmartDistribution.drawableLevel(p, ft, level) - (S.global.sellReserve or 0)
     -- seasonal reserve: a CROP in Distribute+Sell may only sell the farm-wide surplus
     -- above ~a year's feedstock. Plain SELL is unaffected (sell it all, as configured).
+    -- CLAMP ONLY -- the pot is debited at the sale below, with what actually sold (noteSeasonalSpend).
+    -- Debiting here meant a source that went on to sell NOTHING -- bestPriceSellAmount holding for the
+    -- seasonal peak, or a zero price -- still consumed the shared farm-wide allowance.
+    local budgeted = false
     if amount > 0 and m == MODE.DISTRIBUTE_SELL and seasonalBudget ~= nil then
         local b = seasonalBudget[ft]
         if b ~= nil then
             if b <= 0 then return end
             if amount > b then amount = b end
-            seasonalBudget[ft] = b - amount     -- consume the shared farm-wide budget
+            budgeted = true
         end
     end
     if amount <= 0 then return end
@@ -3245,6 +3347,9 @@ local function sellAmount(p, storage, ft, farmId)
         log("[dry-run] would sell %d %s for %d", amount, fillTypeName(ft), amount * price)
         return
     end
+    -- the sale is now certain: charge the shared pot with the litres that actually leave (the dry-run
+    -- path returned above, so a dry run never consumes anyone's allowance)
+    if budgeted then SmartDistribution.noteSeasonalSpend(ft, amount) end
     setLevel(storage, ft, level - amount, farmId, -amount)
     ledgerAdd(p, ft, "sold", amount)
     ledgerAdd(p, ft, "money", amount * price)
@@ -3673,12 +3778,16 @@ function SmartDistribution.marketTransferAmount(p, ft, mode, level)
     end
     local amount = level - (S.global.sellReserve or 0)
     if amount <= 0 then return 0 end
+    -- CLAMP ONLY. This function sizes a shipment; it does not know whether the litres actually leave --
+    -- the caller may find no market in reach, or a market with no room, and move less or nothing. Debiting
+    -- here charged the shared farm-wide allowance for product that never went anywhere, which silently
+    -- stopped every OTHER source of that crop shipping for the rest of the cycle. Callers debit what they
+    -- really moved, via SmartDistribution.noteSeasonalSpend.
     if mode == MODE.DISTRIBUTE_MARKET and seasonalBudget ~= nil then
         local b = seasonalBudget[ft]
         if b ~= nil then
             if b <= 0 then return 0 end
             if amount > b then amount = b end
-            seasonalBudget[ft] = b - amount     -- consume the shared farm-wide harvest budget
         end
     end
     return amount
@@ -3779,7 +3888,7 @@ function SmartDistribution.marketTransferPhase(manager)
                     local m = resolveMode(p, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, getLevel(storage, ft)))
-                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz, reach, amt, p); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(storage, ft, farmId, sx, sz, reach, amt, p); if moved > 0 then ledgerAdd(p, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
                     end
                 end
             end
@@ -3791,7 +3900,7 @@ function SmartDistribution.marketTransferPhase(manager)
                         -- pad + queue, matching what transferPalletsToMarkets can actually move
                         local padQ = (palletFillLevel(p, ft) or 0) + SmartDistribution.releasableLiters(p, ft)
                         local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, padQ))
-                        if amt > 0 then local moved = SmartDistribution.transferPalletsToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                        if amt > 0 then local moved = SmartDistribution.transferPalletsToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
                     end
                 end
             end
@@ -3800,7 +3909,7 @@ function SmartDistribution.marketTransferPhase(manager)
                     local m = resolveMode(p, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, shedStoredLiters(p, ft)))
-                        if amt > 0 then local moved = SmartDistribution.transferShedToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved) end end
+                        if amt > 0 then local moved = SmartDistribution.transferShedToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
                     end
                 end
             end
@@ -3836,7 +3945,7 @@ function SmartDistribution.marketTransferPhase(manager)
                                 SmartDistribution.drawableLevel(placeable, ft, pad))
                             if amt > 0 then
                                 local moved = SmartDistribution.transferPalletsToMarkets(placeable, ft, farmId, sx, sz, reach, amt)
-                                if moved > 0 then ledgerAdd(placeable, ft, "stored", moved) end
+                                if moved > 0 then ledgerAdd(placeable, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end
                             end
                         end
                     end
@@ -3849,7 +3958,7 @@ function SmartDistribution.marketTransferPhase(manager)
                     local m = resolveMode(placeable, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(placeable, ft, m, SmartDistribution.drawableLevel(placeable, ft, getLevel(pp.storage, ft)))
-                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(pp.storage, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(placeable, ft, "stored", moved) end end
+                        if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(pp.storage, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(placeable, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
                     end
                 end
             end
@@ -5041,6 +5150,45 @@ function SmartDistribution.storeToTargetValid(srcForm, dst, ft)
     return SmartDistribution._bulkStorageFor(dst, ft) ~= nil  -- any bulk tank that supports ft
 end
 
+-- STRUCTURAL twin of storeToTargetValid: "could this store EVER take ft in this form", ignoring whether it
+-- happens to have room RIGHT NOW. Same class gate, same form rule; only the free-SLOT test is dropped.
+--
+-- Needed because storeToTargetValid answers a transient question, and two callers are asking a permanent
+-- one:
+--   * hasStoreToEndpoint -- "is Move To meaningful for this product at all". A pallet shed that is full for
+--     an hour made Move To look impossible, so the mode RING skipped it and the player could not select it
+--     (and, before 5.48, enforceValidModes deleted the setting outright -- that half is gone).
+--   * _seedMoveToBlocks -- Move To's loop-safe guarantee, which blocks EVERY candidate target the moment an
+--     output enters the mode so nothing cascades until the player deliberately activates one. A target that
+--     was full at that instant was not a candidate, so it was never seeded blocked -- and became an ACTIVE
+--     destination the player never approved as soon as a slot freed. That is a hole in a safety default,
+--     which is why it matters more than the mode-ring half.
+--
+-- The BULK branch was already structural (_bulkStorageFor is capability-based and tests no levels), so only
+-- the PALLET branch differs. The room test stays exactly where it belongs -- in the PASS, where a full shed
+-- genuinely cannot take a pallet and must not be chosen: storeToTargetValid and isPalletShedSink are
+-- untouched, so what actually MOVES is bit-for-bit unchanged.
+function SmartDistribution.storeToTargetPossible(srcForm, dst, ft)
+    if dst == nil or ft == nil then return false end
+    local cls = getAssetClass(dst)
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    if srcForm == "PALLET" then
+        local spec = dst.spec_objectStorage
+        if spec == nil or spec.supportsPallets == false then return false end
+        -- Mirrors isPalletShedSink's fill-type test, including its "no method -> assume it can" case, and
+        -- reads the answer for TRUTH rather than for `== true`: that function passes anything truthy, and
+        -- this one must never be STRICTER than it. The invariant is valid => possible -- if a target the
+        -- PASS would accept were judged impossible here, the mode ring would refuse to offer a mode that
+        -- demonstrably works. Fails OPEN on a throw for the same reason: a wider answer can only preserve a
+        -- mode or seed an extra block, both of which are the safe direction (cf. 5.47a).
+        if dst.getObjectStorageSupportsFillType == nil then return true end
+        local ok, sup = pcall(dst.getObjectStorageSupportsFillType, dst, ft)
+        if not ok then return true end
+        return sup and true or false
+    end
+    return SmartDistribution._bulkStorageFor(dst, ft) ~= nil
+end
+
 -- The form a source hands `ft` out in ("PALLET" or "BULK"), or nil if it has none.
 --   * object-storage sheds hold pallets/bales directly -> PALLET
 --   * a production PALLETIZES some outputs (bottled milk, bread, ...): those leave as pallets even though
@@ -5522,33 +5670,42 @@ local function snapshotCropLevels()
     lastCropLevels = scanCropHeld()
 end
 
--- ---- self-healing: a mode whose endpoint disappears reverts to the default (Hold) -----------------
--- Endpoints are live: demolish the only market that takes a product and any building still set to a
--- market mode would be stranded on a mode that can never do anything. Each pass we sweep the network and
--- revert those to the default HOLD (which the menu shows as "Hold Pallets" where the asset spawns
--- pallets, and a plain internal hold where it does not). Server-side; applyAssetMode syncs + persists.
-function SmartDistribution.enforceValidModes()
-    if not S.master or g_currentMission == nil or g_currentMission.placeableSystem == nil then return end
-    for _, p in ipairs(g_currentMission.placeableSystem.placeables) do
-        if p.rootNode ~= nil and isEnrolled(p) then
-            local pp = getProductionPoint(p)
-            -- assetMenuFillTypes returns a SET, not an array: ipairs would iterate NOTHING and this
-            -- whole self-heal would silently never run.
-            for ft in pairs(SmartDistribution.assetMenuFillTypes(p) or {}) do
-                local cur = SmartDistribution.resolvedAssetMode(p, ft)
-                if cur ~= nil and not SmartDistribution.modeHasEndpoint(p, ft, cur) then
-                    if pp ~= nil and SmartDistribution.setProductionOutputMode ~= nil then
-                        SmartDistribution.setProductionOutputMode(pp, ft, 0)   -- production virtual KEEP (= Hold)
-                    else
-                        SmartDistribution.applyAssetMode(p, ft, MODE.HOLD)
-                    end
-                    log("%s [%s]: %s has no endpoint any more -> reverted to Hold",
-                        placeableName(p), fillTypeName(ft), SmartDistribution.modeName(cur))
-                end
-            end
-        end
-    end
-end
+-- ---- A PLAYER'S MODE IS NEVER REWRITTEN. `enforceValidModes` USED TO LIVE HERE; DO NOT BRING IT BACK.
+--
+-- It swept the network every in-game hour and reverted any mode whose endpoint test failed to HOLD, via
+-- applyAssetMode / setProductionOutputMode -- so the revert was PERMANENT, PERSISTED and SYNCED, with no
+-- restore path when the endpoint came back. That is the wrong model twice over:
+--
+--   * A MODE IS INTENT, NOT A CACHED FACT. "Distribute + Store" means "distribute this, and store what is
+--     left". If there is nowhere to store right now, the correct behaviour is to distribute and HOLD the
+--     remainder -- not to forget that the player ever asked. World state is transient; the instruction is
+--     not, and only the player should change it.
+--   * IT DESTROYED CONFIGURATION ON A GUESS. Every endpoint test is environment-dependent, so any single
+--     wrong answer was unrecoverable. Two real cases shipped: a dedicated server had no local player, so
+--     the distribute test matched nothing and EVERY Distribute* mode on the server was deleted hourly
+--     (5.47); and a store that merely filled up for an hour deleted Store outright (6.10 / 5.47a).
+--
+-- Removing it costs nothing, because EVERY MODE ALREADY DEGRADES TO "HOLD" ON ITS OWN. Each phase gates on
+-- resolveMode and then hunts endpoints, so an empty candidate list moves nothing and the product stays put:
+--   DISTRIBUTE      allocate finds no slot                     -> holds
+--   SELL            sellAmount / sellProduction return on price <= 0 -> holds
+--   STORE           storeAmount's sink loop does not execute; the pallet twin
+--                   _storeToPalletAmount returns at `#ordered == 0`     -> holds
+--   MARKET          transferStorageToMarkets iterates an empty market list -> moves 0
+--   MOVE TO         `#targets == 0` returns (and flags the store-target-full status)
+--   compound modes  the two halves are independent phases, so losing one leaves the other intact
+--   HOLD / HOLD_INTERNAL / INHERIT   need no endpoint at all
+-- The ONE case that was not self-limiting -- Move To while Advanced routing is OFF -- is now gated
+-- directly in storeToAmount, where it belongs. See the long note there; it is load-bearing.
+--
+-- Endpoint tests are still used to decide what to OFFER: cycleNextForAsset skips a mode with no endpoint
+-- when stepping the ring, and cycleAssetMode leaves such a fill type unchanged ("no endpoint, unchanged").
+-- That is the right place for them -- it stops a player CHOOSING a dead mode without ever un-choosing one
+-- they already made.
+--
+-- Bonus, and not a small one: this sweep was O(assets x fill types x placeables) at the top of every hour
+-- and was documented as the largest single cost in the pass and the main cause of the on-the-hour and
+-- fast-forward stutter (5.38, 5.46a). It is simply gone now.
 
 function SmartDistribution.runHourly(manager)
     if not S.master then return end
@@ -5560,7 +5717,7 @@ function SmartDistribution.runHourly(manager)
     end
     SmartDistribution.invalidateMenuMemos()                    -- the display memos must not carry across a pass
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
-    SmartDistribution.enforceValidModes()                      -- drop any mode whose endpoint has gone away
+    -- (no enforceValidModes here any more -- a player's mode is never rewritten; see the note above it)
     SmartDistribution.beginFeedPass()                          -- start a fresh feed log; the UI reads the previous (complete) one
     detectHarvests()                                          -- learn crop harvest months (pre-phase levels)
     cycleAcc = {}                                              -- begin per-cycle accounting
@@ -5990,6 +6147,35 @@ local function loadOverrides()
             end
         end
         i = i + 1
+    end
+    -- INTEGRITY CHECK: does every stored override still match a LIVE placeable?
+    --
+    -- An override whose uniqueId resolves to nothing is silently dead: the join replay skips it
+    -- (forEachAssetOverride needs byUid[uid] to resolve), the building falls back to the global default,
+    -- and the player sees their mode "revert" with nothing in the log to say why. That is indistinguishable
+    -- from a routing bug when looking at the game, and it is the difference between the two candidate
+    -- causes of the 2026-08-05 bakery report -- the mode was provably saved correctly, so the only
+    -- remaining question is whether its uniqueId still matches the building.
+    --
+    -- Deliberately a bare print, NOT gated on debug: this is silent data loss, it costs one pass over the
+    -- placeables ONCE at load, and it prints nothing at all when everything resolves.
+    if g_currentMission ~= nil and g_currentMission.placeableSystem ~= nil then
+        local live = {}
+        for _, p in ipairs(g_currentMission.placeableSystem.placeables or {}) do
+            if p.rootNode ~= nil then
+                local u = getUid(p)
+                if u ~= nil then live[u] = p end
+            end
+        end
+        for uid, byFt in pairs(S.assets) do
+            if live[uid] == nil then
+                local names = {}
+                for ft in pairs(byFt) do names[#names + 1] = tostring(fillTypeName(ft)) end
+                print(string.format(
+                    "[SmartDistribution persist] ORPHANED override: uniqueId=%s matches no live building (%s) -- this setting cannot appear in game",
+                    tostring(uid), table.concat(names, ", ")))
+            end
+        end
     end
     -- learned harvest windows per crop
     local j, c = 0, 0
@@ -8137,17 +8323,17 @@ function SmartDistribution.hasMarketEndpoint(asset, ft)
     return ms ~= nil and #ms > 0
 end
 
+-- STRUCTURAL, not room-based -- see hasAnyStoreSink. This used to ask gatherSinks / gatherShedSinks,
+-- which both filter out a store with no room RIGHT NOW, so a shed that filled for an hour made Store look
+-- endpoint-less and enforceValidModes then deleted the player's mode permanently (CLAUDE.md 6.10).
+-- Pallet sheds are covered by the same call: for a palletized output (bread, furniture, bottled milk) a
+-- shed is the ONLY sink, which is why one full shed was enough to lose the setting.
 function SmartDistribution.hasStoreEndpoint(asset, ft)
     if asset == nil or ft == nil or asset.rootNode == nil then return false end
     if not assetCanStore(asset) then return false end            -- class can't store-cascade at all
     local farmId = SmartDistribution._ownerFarmId(asset)
     local x, _, z = getWorldTranslation(asset.rootNode)
-    local sinks = gatherSinks(asset, ft, x, z, farmId, resolveReach(asset))
-    if sinks ~= nil and #sinks > 0 then return true end
-    -- palletized outputs (bottled milk, bread, ...) store into pallet sheds, which gatherSinks does not
-    -- return -- check those too, or Store would look endpoint-less and enforceValidModes would revert it.
-    local shedSinks = gatherShedSinks(asset, ft, x, z, farmId, resolveReach(asset))
-    return shedSinks ~= nil and #shedSinks > 0
+    return SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, resolveReach(asset))
 end
 
 -- Is ft a sellDirectly (virtual grid) output of this placeable -- electricity / methane / a modded
@@ -8180,11 +8366,18 @@ end
 -- Goes through hasAnySink, NOT sinksFor: this only ever asked "is the list non-empty", while sinksFor
 -- scans every placeable to the end and builds a NAMED, ICONED record for each accepting one (two pcalls
 -- and a g_storeManager lookup apiece) before sorting the lot -- all of it discarded here. See hasAnySink.
+--
+-- SCOPED TO THE SOURCE'S OWN FARM, never to the local player's. This test is authoritative and
+-- SERVER-SIDE (enforceValidModes runs inside runHourly, which onHourChanged gates on getIsServer), and a
+-- dedicated server has no local player -- so asking "is this sink on the LOCAL PLAYER's farm" answered no
+-- for every building in the world and reverted every Distribute* mode to Hold, every hour, persisted.
+-- hasStoreEndpoint / hasMarketEndpoint / hasStoreToEndpoint all already pass _ownerFarmId(asset), as do
+-- gatherSources / gatherSinks in the pass itself; this was the odd one out.
 function SmartDistribution.hasDistributeEndpoint(asset, ft)
     if asset == nil or ft == nil then return false end
     local uid = getUid(asset)
     if uid == nil then return false end
-    return SmartDistribution.hasAnySink(uid, ft)
+    return SmartDistribution.hasAnySink(uid, ft, SmartDistribution._realFarmId(SmartDistribution._ownerFarmId(asset)))
 end
 
 -- Store To is meaningful when this asset is itself a store (silo / shed) AND some OTHER store on the
@@ -8212,7 +8405,10 @@ function SmartDistribution.hasStoreToEndpoint(asset, ft)
     for _, p in ipairs(ps.placeables) do
         if p ~= asset and p.rootNode ~= nil and isEnrolled(p)
            and SmartDistribution._ownerFarmId(p) == myFarm
-           and SmartDistribution.storeToTargetValid ~= nil and SmartDistribution.storeToTargetValid(form, p, ft) then
+           -- STRUCTURAL, not room-based (storeToTargetPossible): "is Move To meaningful at all", not "is
+           -- there space this instant". A pallet shed that was momentarily full used to make Move To look
+           -- impossible, so the mode ring skipped it and the player could not even select it.
+           and SmartDistribution.storeToTargetPossible ~= nil and SmartDistribution.storeToTargetPossible(form, p, ft) then
             return true
         end
     end
@@ -12414,8 +12610,10 @@ end
 -- Reset ALL advanced input/output overrides to default (empty the source blocks / priority, and the
 -- receiver input blocks / caps / targets). Called when the Advanced routing master switch is turned OFF,
 -- so switching it off truly resets those settings rather than just ignoring them until it's turned back on.
--- Move To modes aren't stored here -- they lose their endpoint with Advanced off and enforceValidModes
--- reverts them to Hold on the next hourly pass.
+-- Move To modes aren't stored here, and are deliberately NOT reverted when Advanced is switched off: the
+-- mode is kept and simply does nothing, because storeToAmount self-disables while Advanced is off. So
+-- toggling the master switch off and on again no longer destroys a Move To setup -- it just pauses it.
+-- (This block still wipes the block/priority/cap tables, so the DESTINATIONS do have to be re-chosen.)
 function SmartDistribution.clearAdvancedControl()
     local C = SmartDistribution.control
     if C == nil then return end
@@ -13340,14 +13538,37 @@ function SmartDistribution.assetIconFile(p)
     return fillHudIconFile(placeablePrimaryProduct(p))
 end
 
--- The local player's farm id (best-effort across FS25 accessors); nil if unknown.
+-- THE SPECTATOR FARM (0) IS "NO FARM", NOT A FARM ID -- normalise it to nil.
+-- Base game precedent: Player.lua initialises farmId to FarmManager.SPECTATOR_FARM_ID, and every base
+-- caller of getFarmId() tests `~= FarmManager.SPECTATOR_FARM_ID` rather than `~= nil`.
+-- Field, not a top-level local (CLAUDE.md 1.1). Named literal rather than a bare 0 at the call sites.
+SmartDistribution.SPECTATOR_FARM_ID = 0
+function SmartDistribution._realFarmId(f)
+    if f == nil or f == SmartDistribution.SPECTATOR_FARM_ID then return nil end
+    return f
+end
+
+-- The local player's farm id (best-effort across FS25 accessors); nil if unknown OR spectator.
+--
+-- A DEDICATED SERVER HAS NO LOCAL PLAYER, so getFarmId() answers SPECTATOR_FARM_ID -- and 0 is a real
+-- number, so the old `f ~= nil` test returned it happily. Every caller here is written
+-- `myFarm == nil or of == myFarm`: it fails OPEN on an unknown farm and CLOSED on a mismatched one, so
+-- handing back 0 compared owned buildings (farm 1) against 0 and matched NOTHING. That silently emptied
+-- every farm-scoped list on a dedicated server -- see hasAnySink for what it cost.
+-- Same family as the 5.46c trap: a value that is 0 must be compared numerically, never treated as absent
+-- or present by nil-ness alone.
 function SmartDistribution._playerFarmId()
     local m = g_currentMission
     if m == nil then return nil end
-    if m.getFarmId ~= nil then local ok, f = pcall(m.getFarmId, m); if ok and f ~= nil then return f end end
-    if m.player ~= nil and m.player.farmId ~= nil then return m.player.farmId end
-    if g_localPlayer ~= nil and g_localPlayer.farmId ~= nil then return g_localPlayer.farmId end
-    return m.playerFarmId
+    local f
+    if m.getFarmId ~= nil then
+        local ok, r = pcall(m.getFarmId, m)
+        if ok then f = SmartDistribution._realFarmId(r) end
+    end
+    if f == nil and m.player ~= nil then f = SmartDistribution._realFarmId(m.player.farmId) end
+    if f == nil and g_localPlayer ~= nil then f = SmartDistribution._realFarmId(g_localPlayer.farmId) end
+    if f == nil then f = SmartDistribution._realFarmId(m.playerFarmId) end
+    return f
 end
 
 -- Owner farm id of a placeable (getOwnerFarmId method or the field), or nil.
@@ -13613,7 +13834,8 @@ function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores
     end
 
     -- DEMANDS: buildings that consume ft (from the network sink list).
-    for _, s in ipairs(SmartDistribution.sinksFor(srcUid, ft)) do
+    -- Scoped to the SOURCE's farm, exactly as the store branch above does -- not to the local player's.
+    for _, s in ipairs(SmartDistribution.sinksFor(srcUid, ft, SmartDistribution._ownerFarmId(asset))) do
         local p = SmartDistribution.placeableByUid(s.uid)
         if p ~= nil and p.rootNode ~= nil then
             local cls = getAssetClass(p)
@@ -13926,10 +14148,14 @@ end
 --
 -- NOTE the answer is capability-based, not room-based: canAccept asks whether the building supports the
 -- fill type, not whether it currently has space. That is the correct question for an endpoint test.
-function SmartDistribution.hasAnySink(sourceUid, ft)
+--
+-- sourceFarmId is the farm the SOURCE belongs to. Pass it whenever the caller knows it: the local
+-- player's farm is only a fallback for UI callers holding nothing but a uid, and it is WRONG on a
+-- dedicated server, where there is no local player at all (see hasDistributeEndpoint and _playerFarmId).
+function SmartDistribution.hasAnySink(sourceUid, ft, sourceFarmId)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return false end
-    local myFarm = SmartDistribution._playerFarmId()
+    local myFarm = SmartDistribution._realFarmId(sourceFarmId) or SmartDistribution._playerFarmId()
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil and isEnrolled(p) then
             local of = SmartDistribution._ownerFarmId(p)
@@ -13945,7 +14171,9 @@ end
 -- All network sinks that can accept ft from the source (uid), with the source's current
 -- priority rank for each (0 = unranked). Ordered ranked-first (by rank), then by name.
 -- For a mere "is there one?" use hasAnySink above -- this builds display records and sorts them.
-function SmartDistribution.sinksFor(sourceUid, ft)
+-- sourceFarmId mirrors hasAnySink's third argument, and must stay mirrored: the two are only allowed to
+-- differ in that this one builds display records and sorts them.
+function SmartDistribution.sinksFor(sourceUid, ft, sourceFarmId)
     local out = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return out end
@@ -13954,7 +14182,7 @@ function SmartDistribution.sinksFor(sourceUid, ft)
     local list = pf ~= nil and pf[ft] or nil
     local rank = {}
     if list ~= nil then for i = 1, #list do rank[list[i]] = i end end
-    local myFarm = SmartDistribution._playerFarmId()
+    local myFarm = SmartDistribution._realFarmId(sourceFarmId) or SmartDistribution._playerFarmId()
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil and isEnrolled(p) then
             local of = SmartDistribution._ownerFarmId(p)

@@ -622,6 +622,12 @@ function DistributionUidMapEvent:run(connection)
     if SmartDistribution == nil or SmartDistribution.setServerUid == nil then return end
     for _, e in ipairs(self.entries) do SmartDistribution.setServerUid(e.id, e.uid) end
     print(string.format("[SmartDistribution mp] uid map: adopted %d server id(s)", #self.entries))
+    -- Every uid this map teaches changes what getUid answers, and therefore what a production's mode
+    -- resolves to. Anything read BEFORE this event landed was derived from the local (wrong) id and cached
+    -- -- measured at 68 ms too early for one building on a real join. Drop those derived answers so they
+    -- are recomputed correctly; explicit player choices are not affected.
+    if SmartDistribution.invalidateSeededVModes ~= nil then SmartDistribution.invalidateSeededVModes() end
+    if SmartDistribution.invalidateMenuMemos ~= nil then SmartDistribution.invalidateMenuMemos() end
 end
 -- Send the whole map to ONE connection, in chunks.
 function DistributionUidMapEvent.sendTo(connection)

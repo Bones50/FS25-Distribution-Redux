@@ -2,6 +2,8 @@
 *.jpg
 *.jpeg
 *.png
+*.code-workspace
+*.gitignore
 
 # Local help/notes
 helpGuide.txt
