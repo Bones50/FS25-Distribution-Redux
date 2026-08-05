@@ -48,6 +48,29 @@ local FILTER_CHAIN  = 4   -- the chain mode's index, referenced in a few places 
 local GROUP_LABELS  = { "Off (one row per building)", "On (combine same building type)" }
 local REBUILD_SEC   = 2.0     -- how often the row set is re-enumerated while the tab is open
 
+-- ---- OPEN / SCROLL PROFILING ----------------------------------------------
+-- Reported 2026-08-05: on a large farm the Overview takes "a good while" to appear in the SETTINGS view,
+-- and stays slow with Menu refresh rate on Manual only -- because onFrameOpen rebuilds unconditionally and
+-- the refresh dial only governs the PERIODIC rebuild. Speed-scrolling the whole list was reported at ~30 s.
+--
+-- sdStress measures SmartDistribution.overviewRows, which on a 25-building save is 40.9 ms for 210 rows --
+-- nowhere near "a good while". But it does NOT cover the rest of the open: rebuildRows also builds the
+-- "Show" filter list around that call, then reloadData repopulates the list, then focus is set. So the
+-- measured part is only one of four, and the reported farm is ~4x the buildings AND more products each,
+-- against a cost that is O(rows x placeables) -- it grows on both axes at once.
+--
+-- These two lines split the open into its phases and time the cell populate separately, so the next report
+-- names the phase instead of us guessing at it a fifth time.
+--
+-- NOT gated on SmartDistribution.debug: it prints only when something is genuinely slow, so a player who
+-- hits this produces the diagnostic without being talked through enabling anything. Silent otherwise.
+local PROFILE_OPEN_MS = 150    -- print the open breakdown when it costs more than this
+local PROFILE_POP_MS  = 500    -- print the populate summary once this much cell time has accumulated
+local PROFILE_POP_MAX = 10     -- ...at most this many times a session, so a long scroll cannot flood the log
+local function nowMs()
+    return (getTimeSec ~= nil) and (getTimeSec() * 1000) or nil
+end
+
 -- integer liters with thousands separators; a plain dash for nothing, so a busy table stays readable
 local function fmt(n)
     n = math.floor((n or 0) + 0.5)
@@ -254,20 +277,29 @@ end
 function DistributionOverviewPage:rebuildRows()
     -- The chain filter is resolved FIRST: the engine tags the rows as it builds them, so it needs the
     -- product up front, and its option list does not come from the rows anyway.
+    -- phase timings, read by onFrameOpen's breakdown (nil when there is no clock)
+    local tf0 = nowMs()
+    self._profFilter, self._profEnum = 0, 0
+
     local chainFt = nil
     if self.filterMode == FILTER_CHAIN then
         self:updateFilterValues(self:buildFilterValues(nil))
         chainFt = (self.filterValue ~= nil) and (self.chainFtByName or {})[self.filterValue] or nil
     end
+    if tf0 ~= nil then self._profFilter = nowMs() - tf0 end
 
     local all = nil
+    local te0 = nowMs()
     if SmartDistribution ~= nil and SmartDistribution.overviewRows ~= nil then
         local ok, r = pcall(SmartDistribution.overviewRows, self:currentWindow(), self.grouped, chainFt,
                             self:settingsViewOn())
         if ok and type(r) == "table" then all = r end
     end
+    if te0 ~= nil then self._profEnum = nowMs() - te0 end
     all = all or {}
+    self._profAll = #all
 
+    local tf1 = nowMs()
     if self.filterMode == FILTER_CHAIN then
         if chainFt == nil then
             self.rows = all                     -- nothing producible to pick: show everything, not a blank table
@@ -288,6 +320,8 @@ function DistributionOverviewPage:rebuildRows()
             self.rows = kept
         end
     end
+    -- the post-enumeration filter pass belongs with the pre-enumeration one: both are "Show" list work
+    if tf1 ~= nil then self._profFilter = (self._profFilter or 0) + (nowMs() - tf1) end
     self._lastRebuild = (getTimeSec ~= nil) and getTimeSec() or nil
 end
 
@@ -333,17 +367,58 @@ function DistributionOverviewPage:onFrameOpen()
     -- refresh the tab will ever do, so it is what should decide the backoff -- otherwise a farm big enough
     -- to hitch would hitch at least twice before the menu noticed. Not overlapped with the periodic timing
     -- in refreshRealtimeLists, which measures a different call.
+    -- REUSE ROWS THAT ARE STILL FRESH instead of re-enumerating on every tab switch.
+    --
+    -- onFrameOpen used to rebuild unconditionally, which is why "Menu refresh rate = Manual only" did not
+    -- help the reported case at all: that setting governs the PERIODIC rebuild, and leaving the tab and
+    -- coming back went straight past it. On a large farm that is a full O(rows x placeables) enumeration
+    -- per tab switch.
+    --
+    -- Fresh means "younger than the refresh interval the player chose". Under Manual only there is no
+    -- interval, so rows stay valid until they press Refresh -- which is exactly what that setting promises.
+    -- A selector change still rebuilds on demand (applySelectorChange), so this only ever skips work the
+    -- player has not asked to be redone.
+    local every = DistributionMenuPage.refreshSeconds()
+    local age   = (self._lastRebuild ~= nil and getTimeSec ~= nil) and (getTimeSec() - self._lastRebuild) or nil
+    local fresh = (self.rows ~= nil) and (age ~= nil) and (every == nil or age < math.max(every, REBUILD_SEC))
+
     local t0 = (getTimeSec ~= nil) and getTimeSec() or nil
-    self:rebuildRows()
-    if t0 ~= nil then DistributionMenuPage.noteRefreshCost(getTimeSec() - t0) end
+    if not fresh then
+        self:rebuildRows()
+        if t0 ~= nil then DistributionMenuPage.noteRefreshCost(getTimeSec() - t0) end
+    end
+    local tRebuild = (t0 ~= nil) and ((getTimeSec() - t0) * 1000) or nil
+
+    local tR0  = nowMs()
     local list = self:activeList()
     if list ~= nil then list:reloadData() end
+    local tReload = (tR0 ~= nil) and (nowMs() - tR0) or nil
 
+    local tF0 = nowMs()
     self:setSoundSuppressed(true)
     if list ~= nil then
         FocusManager:setFocus(list)
     end
     self:setSoundSuppressed(false)
+    local tFocus = (tF0 ~= nil) and (nowMs() - tF0) or nil
+
+    -- WHERE DID THE OPEN GO? One line, printed only when the open was actually slow (or under debug), so a
+    -- player who hits this produces the breakdown without being walked through enabling anything.
+    --   enumerate = SmartDistribution.overviewRows -- the part sdStress already measures
+    --   filters   = building the "Show" dropdown around it -- NOT covered by sdStress
+    --   reload    = SmoothList rebuilding + populating cells
+    --   focus     = FocusManager over the list
+    -- The rows= pair is "kept after filtering / total enumerated", because a filter can make the visible
+    -- list small while the work behind it stays large.
+    if tRebuild ~= nil then
+        local total = tRebuild + (tReload or 0) + (tFocus or 0)
+        if total >= PROFILE_OPEN_MS or (SmartDistribution ~= nil and SmartDistribution.debug) then
+            print(string.format(
+                "[SmartDistribution] Overview open (%s): rows=%d/%d  TOTAL %.0f ms  = enumerate %.0f + filters %.0f + reload %.0f + focus %.0f",
+                on and "settings" or "flow", #(self.rows or {}), self._profAll or -1,
+                total, self._profEnum or 0, self._profFilter or 0, tReload or 0, tFocus or 0))
+        end
+    end
 end
 
 -- ---- selectors -------------------------------------------------------------
@@ -416,7 +491,26 @@ function DistributionOverviewPage:getNumberOfItemsInSection(list, section)
 end
 
 function DistributionOverviewPage:populateCellForItemInSection(list, section, index, cell)
-    if list == self.settingsList then return self:populateSettingsCell(index, cell) end
+    if list == self.settingsList then
+        -- SCROLL COST. SmoothList calls this per VISIBLE cell, so it runs on every reload AND continuously
+        -- while scrolling -- speed-scrolling the whole list was reported at ~30 s. Accumulated rather than
+        -- printed per cell, and self-limiting (PROFILE_POP_MAX lines a session) so a long scroll cannot
+        -- flood the log. ms/cell is the number that matters: multiply it by the row count for what a full
+        -- pass over the list costs.
+        local tp0 = nowMs()
+        if tp0 == nil then return self:populateSettingsCell(index, cell) end
+        local r = self:populateSettingsCell(index, cell)
+        self._popMs = (self._popMs or 0) + (nowMs() - tp0)
+        self._popN  = (self._popN or 0) + 1
+        if self._popMs >= PROFILE_POP_MS and (self._popLines or 0) < PROFILE_POP_MAX then
+            self._popLines = (self._popLines or 0) + 1
+            print(string.format(
+                "[SmartDistribution] Overview settings populate: %d cells in %.0f ms (%.2f ms/cell, %d rows in list)",
+                self._popN, self._popMs, self._popMs / math.max(1, self._popN), #(self.rows or {})))
+            self._popMs, self._popN = 0, 0
+        end
+        return r
+    end
     if list ~= self.statsList then return end
     local r = self.rows[index]
     if r == nil then return end
@@ -567,7 +661,9 @@ end
 function DistributionOverviewPage:populateSettingsCell(index, cell)
     local r = self.rows[index]
     if r == nil then return end
-    local s = r.settings or {}
+    -- resolved on first display, then cached on the row -- see SmartDistribution.rowSettings
+    local s = (SmartDistribution ~= nil and SmartDistribution.rowSettings ~= nil)
+        and (SmartDistribution.rowSettings(r) or {}) or (r.settings or {})
     local col = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
     local function setc(name, text)
         local c = cell:getAttribute(name)

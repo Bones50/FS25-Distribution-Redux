@@ -4501,7 +4501,33 @@ SmartDistribution.MEMO_TTL   = 0.5
 -- a backstop for structural drift nothing signals, i.e. a building being placed or demolished, where being
 -- up to a couple of seconds behind in a DEST count is of no consequence. Comfortably longer than the
 -- default 2 s menu refresh so consecutive refreshes reuse the answer instead of racing the window.
-SmartDistribution.DEST_MEMO_TTL = 3.0
+-- RAISED from 3.0 after sdStressBig showed the cliff it caused: a pass that took longer than the TTL
+-- expired its own entries before the NEXT pass could use them, so the cache switched itself off at exactly
+-- the farm size that needed it (6,331 rows: 6,237 ms cold -> 6,461 ms "warm", i.e. no reuse at all). The
+-- backstop role the TTL used to play -- noticing a building placed or demolished -- is now signalled
+-- explicitly by the placeable-count check in overviewRows, so this no longer has to be short to stay honest.
+SmartDistribution.DEST_MEMO_TTL = 30.0
+
+-- THE CLOCK EVERY MEMO BELOW MUST USE. Normally real time -- but FROZEN for the duration of one Overview
+-- enumeration (overviewRows sets _memoNow around itself).
+--
+-- MEASURED 2026-08-05 with sdStressBig, and it is the reason a big farm falls off a cliff rather than
+-- degrading gracefully. The TTL was checked per LOOKUP against live wall-clock, so once a single
+-- enumeration took longer than the TTL, entries cached for the FIRST rows had already expired by the time
+-- the LAST rows asked for them -- and the next pass found everything stale too, because the pass itself
+-- had outlived the window. The cache stopped working at exactly the size where it was needed:
+--     1,767 rows: 1041 ms cold -> 66.8 ms warm   (15x -- memos holding)
+--     3,267 rows: 3085 ms cold -> 3160 ms warm   (1x  -- memos dead, pass outran DEST_MEMO_TTL = 3.0)
+--     6,331 rows: 6294 ms cold -> 6279 ms warm   (1x)
+-- Self-defeating by construction: the slower it got, the less the cache helped, which made it slower.
+--
+-- Freezing the clock for one enumeration is SAFE, not a fudge: nothing mutates during a menu read, so
+-- every answer computed in that pass is equally valid throughout it. Entries are also STAMPED with the
+-- frozen value, so they age from the start of the pass in real time afterwards -- a pass cannot mint
+-- entries that look artificially fresh to the next one.
+function SmartDistribution.memoNow()
+    return SmartDistribution._memoNow or ((getTimeSec ~= nil) and getTimeSec() or nil)
+end
 -- Bumped whenever something a memo depends on changes out from under it (the hourly pass, an input block,
 -- an input percentage). Belt and braces beside the TTL: it makes those changes visible IMMEDIATELY rather
 -- than up to MEMO_TTL later, which matters for a control the player just pressed.
@@ -4561,7 +4587,7 @@ end
 function SmartDistribution.padSnapshot(p, ft)
     if p == nil or ft == nil then return 0, 0 end
     if not isPalletSpawnerAsset(p) then return 0, 0 end
-    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    local now = SmartDistribution.memoNow()
     local live = SmartDistribution.memoReadable()
     local byFt = SmartDistribution._padMemo[p]
     if now ~= nil and live and byFt ~= nil then
@@ -8829,6 +8855,145 @@ function SmartDistribution.cmdStress(self, argF, argBuildings)
     return "sdStress done -- see console/log above"
 end
 
+-- ===========================================================================
+-- sdStressBig -- synthesise a whole FARM, not one building
+--
+-- sdStress answers "what does F cost on ONE building" and multiplies by a building count, on the stated
+-- assumption that buildings scale LINEARLY. That is true of the input-cap maths it measures.
+--
+-- IT IS NOT TRUE OF THE OVERVIEW SETTINGS VIEW, and that is why the reported hitch was under-projected.
+-- settingsFor resolves sourcesFor / outputDestinationsForMode PER ROW, and each of those walks the WHOLE
+-- placeableSystem. Rows grow with buildings AND the scan grows with buildings, so that term is QUADRATIC in
+-- building count -- which a per-building measurement cannot see by construction. sdStress reported 147 ms
+-- projected at 103 buildings; the real figure is whatever this prints.
+--
+-- The reported farm is also mod-heavy, so products-per-building is high as well. Both axes are synthesised.
+--
+-- SAFETY, since this is the thing 5.46a declined to do: the original placeables array is restored on EVERY
+-- path (the measurement is pcall'd and the restore happens before anything can throw again), the mocks are
+-- never persisted (nothing writes placeableSystem), and the memo epoch is bumped afterwards so no mock uid
+-- lingers in the uid-keyed sourcesFor memo. Weak-keyed memos drop their mocks at the next GC. It escalates
+-- building count in steps and STOPS once a step gets expensive, because this runs on the main thread.
+
+-- Real fill-type indices, so fillTypeTitle / icons / pool maths behave as they do in a live farm.
+function SmartDistribution._stressFillTypes(count)
+    local out = {}
+    if g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeByIndex ~= nil then
+        local i = 1
+        while #out < count and i < 4000 do
+            local ok, def = pcall(g_fillTypeManager.getFillTypeByIndex, g_fillTypeManager, i)
+            if ok and type(def) == "table" and def.name ~= nil and def.name ~= "UNKNOWN" then
+                out[#out + 1] = i
+            end
+            i = i + 1
+        end
+    end
+    if #out == 0 then for i = 1, count do out[i] = i end end   -- last resort
+    return out
+end
+
+-- A few repeated names on purpose: a real farm has several of each building, which is what makes
+-- enrolledAssetsWithUniqueNames do its grouping + " (n)" suffix work.
+SmartDistribution._STRESS_NAMES = { "Stress Silo", "Stress Store", "Stress Depot", "Stress Yard", "Stress Shed" }
+
+-- Duck-typed like _stressMock, plus the three things overviewRows needs that the one-building mock did not:
+-- a real rootNode (outputDestinationsForMode's store branch calls getWorldTranslation -- borrowed from a
+-- live placeable, since reading a transform is harmless), an ownerFarmId so farm-scoped scans include it,
+-- and a getName so the row actually has a label.
+function SmartDistribution._stressBigMock(idx, fts, rootNode, farmId)
+    local fills, caps = {}, {}
+    for k = 1, #fts do
+        local ft = fts[k]
+        fills[ft] = (k % 7) * 1000        -- a mix of empty, part-full and heavier products
+        caps[ft]  = 250000
+    end
+    local nm = SmartDistribution._STRESS_NAMES[(idx % #SmartDistribution._STRESS_NAMES) + 1]
+    return {
+        uniqueId    = string.format("sdStressBig%05d", idx),
+        rootNode    = rootNode,
+        ownerFarmId = farmId,
+        getName     = function() return nm end,
+        spec_silo   = { storages = { { fillLevels = fills, capacities = caps } } },
+    }
+end
+
+-- usage: sdStressBig [buildings] [products]     (defaults 100 x 60)
+function SmartDistribution.cmdStressBig(self, argB, argP)
+    local maxB = math.min(math.max(math.floor(tonumber(argB) or 100), 1), 600)
+    local nP   = math.min(math.max(math.floor(tonumber(argP) or 60),  1), 400)
+    local ps   = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or type(ps.placeables) ~= "table" then return "no placeableSystem -- load a savegame first" end
+    if SmartDistribution.overviewRows == nil then return "overviewRows missing (DistributionStats not loaded)" end
+
+    local node = nil
+    for _, p in ipairs(ps.placeables) do if p.rootNode ~= nil then node = p.rootNode; break end end
+    if node == nil then return "no placeable with a rootNode to borrow -- load a savegame first" end
+
+    local farmId = SmartDistribution._realFarmId(SmartDistribution._playerFarmId()) or 1
+    local fts    = SmartDistribution._stressFillTypes(nP)
+    local orig   = ps.placeables
+    local out    = {}
+    local function say(fmt, ...) out[#out + 1] = string.format(fmt, ...) end
+
+    say("sdStressBig -- SYNTHETIC FARM spliced into placeableSystem, real overviewRows.")
+    say("  %d real buildings + up to %d mock silos, %d products each", #orig, maxB, #fts)
+    say("  a mock silo is In/Out for every product, so rows ~ buildings x products (as on a mod-heavy farm)")
+    say("")
+    say("%-7s | %7s | %10s | %13s | %13s", "mocks", "rows", "flow cold", "settings cold", "settings warm")
+    say("%s", string.rep("-", 62))
+
+    local steps, seen = {}, {}
+    for _, n in ipairs({ 25, 50, 100, 200, 400, maxB }) do
+        if n <= maxB and not seen[n] then seen[n] = true; steps[#steps + 1] = n end
+    end
+    table.sort(steps)
+
+    local prevN, prevT = nil, nil
+    for _, n in ipairs(steps) do
+        local list = {}
+        for i = 1, #orig do list[i] = orig[i] end
+        for i = 1, n do list[#list + 1] = SmartDistribution._stressBigMock(i, fts, node, farmId) end
+        ps.placeables = list
+
+        local okRun, res = pcall(function()
+            local function timeRows(withSettings, cold)
+                if cold then SmartDistribution.invalidateMenuMemos() end
+                local t0 = getTimeSec()
+                local okR, rows = pcall(SmartDistribution.overviewRows, "month", false, nil, withSettings)
+                return (getTimeSec() - t0) * 1000, (okR and type(rows) == "table") and #rows or -1
+            end
+            local tFlow           = timeRows(false, true)
+            local tSetCold, nRows = timeRows(true,  true)
+            local tSetWarm        = timeRows(true,  false)
+            return { flow = tFlow, cold = tSetCold, warm = tSetWarm, rows = nRows }
+        end)
+        ps.placeables = orig      -- RESTORE FIRST, before anything else can go wrong
+
+        if not okRun or type(res) ~= "table" then
+            say("%-7d | %7s | %s", n, "?", "ERROR: " .. tostring(res))
+            break
+        end
+        say("%-7d | %7d | %8.0f ms | %11.0f ms | %11.1f ms", n, res.rows, res.flow, res.cold, res.warm)
+        if prevT ~= nil and prevT > 0 and prevN ~= nil then
+            local costX, sizeX = res.cold / prevT, n / prevN
+            say("        (x%.1f cost for x%.1f buildings -> %s)", costX, sizeX,
+                (costX > sizeX * 1.6) and "SUPERLINEAR (quadratic term dominating)" or "roughly linear")
+        end
+        prevN, prevT = n, res.cold
+        if res.cold > 2500 then
+            say("        (stopping -- this runs on the main thread and the trend is already clear)")
+            break
+        end
+    end
+
+    SmartDistribution.invalidateMenuMemos()     -- drop mock uids from the uid-keyed memos
+    say("")
+    say("restored: placeableSystem back to %d buildings", #ps.placeables)
+    for _, line in ipairs(out) do print(line) end
+    return "sdStressBig done -- see console/log above"
+end
+-- ===========================================================================
+
 function SmartDistribution.cmdPalletHook(self, what)
     what = what ~= nil and tostring(what):lower() or nil
     if what == "redirect" then
@@ -12540,6 +12705,7 @@ if addConsoleCommand ~= nil then
     -- sdStress: measure the menu cost at a farm size this save does not have (see 5.46 / the function's
     -- own header). Read-only and synthetic -- it touches no game state.
     addConsoleCommand("sdStress", "Benchmark the input-cap maths at scale: sdStress [maxF] [buildings] [dev]", "cmdStress", SmartDistribution)
+    addConsoleCommand("sdStressBig", "Benchmark the Overview on a SYNTHETIC FARM: sdStressBig [buildings] [products]", "cmdStressBig", SmartDistribution)
 end
 installInteraction()
 installHusbandryPatch()
@@ -12901,7 +13067,7 @@ end
 -- .fts / .liters / .kind / .sharedLevel (audited).
 function SmartDistribution.pooledInputCapacity(p)
     if p == nil then return nil end
-    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    local now = SmartDistribution.memoNow()
     -- no clock, or the A/B switch is on: always rebuild, which IS the pre-fix behaviour
     if now == nil or SmartDistribution._legacyInputMath then
         return SmartDistribution._computePooledInputCapacity(p)
@@ -12935,7 +13101,7 @@ end
 function SmartDistribution.poolShares(p, pool)
     pool = pool or SmartDistribution.pooledInputCapacity(p)
     if pool == nil or type(pool.fts) ~= "table" then return nil end
-    local now  = (getTimeSec ~= nil) and getTimeSec() or nil
+    local now = SmartDistribution.memoNow()
     local live = SmartDistribution.memoReadable()
     local m = SmartDistribution._shareMemo[p]
     if now ~= nil and live and m ~= nil and m.pool == pool
@@ -13708,7 +13874,7 @@ SmartDistribution._srcMemo = { epoch = -1, byUid = {} }
 
 function SmartDistribution.sourcesFor(consumerUid, ft)
     if consumerUid == nil or ft == nil then return {} end
-    local now = (getTimeSec ~= nil) and getTimeSec() or nil
+    local now = SmartDistribution.memoNow()
     if now == nil or not SmartDistribution.memoReadable() then
         return SmartDistribution._computeSourcesFor(consumerUid, ft)
     end
@@ -13895,7 +14061,7 @@ SmartDistribution.OUT_LINK_LABEL = {
 function SmartDistribution.outputDestinationsForMode(asset, ft)
     local out = {}
     if asset == nil or ft == nil then return out end
-    local now  = (getTimeSec ~= nil) and getTimeSec() or nil
+    local now = SmartDistribution.memoNow()
     local live = SmartDistribution.memoReadable()
     local byFt = SmartDistribution._destMemo[asset]
     if now ~= nil and live and byFt ~= nil then

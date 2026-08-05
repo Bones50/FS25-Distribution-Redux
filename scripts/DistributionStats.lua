@@ -767,6 +767,39 @@ local function settingsFor(p, ft, role)
     return s
 end
 
+-- LAZY per-row settings: resolved on FIRST DISPLAY, then cached on the row.
+--
+-- settingsFor is the single most expensive thing on the Overview: for an input row it runs sourcesFor and
+-- for an output row outputDestinationsForMode, and BOTH walk the entire placeableSystem. Computing it
+-- eagerly for every row made opening the tab O(rows x placeables) -- and every row is a distinct
+-- (uid, ft), so the memos cannot help WITHIN one enumeration; every lookup is a miss by construction.
+--
+-- MEASURED with sdStressBig: 6,331 rows cost 6,237 ms to enumerate with settings on, against 112 ms for
+-- the same farm's flow view. The list shows ~15 rows at a time, so the overwhelming majority of that work
+-- was for rows the player never looked at.
+--
+-- Deferring it makes the OPEN proportional to what is on screen instead of to the whole farm. The work is
+-- not free -- it moves into the cell populate, so scrolling onto fresh rows pays it -- but each row pays
+-- once and then caches, and the populate profiler in DistributionOverviewPage reports the per-cell cost.
+--
+-- `false` is stored for a row that legitimately has no settings, so a nil result is not recomputed on
+-- every repopulate (the settings list repopulates on every menu refresh).
+function SmartDistribution.rowSettings(row)
+    if row == nil then return nil end
+    local s = row.settings
+    if s ~= nil then
+        if s == false then return nil end
+        return s
+    end
+    if row.placeable == nil or row.ft == nil or row.role == nil then
+        row.settings = false
+        return nil
+    end
+    s = settingsFor(row.placeable, row.ft, row.role)
+    row.settings = s or false
+    return s
+end
+
 -- One row per (enrolled building, product) with any figure to show, for the Overview tab.
 -- window = "hour" | "month" | "year". HELD is deliberately a live stock reading, not a windowed flow:
 -- it is what the building is holding right now, whichever timescale the other columns are showing.
@@ -817,7 +850,9 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
                 -- nil (not 0) when there is no recipe expectation, so the page knows to leave the cell
                 -- plain rather than painting a row red for a building that simply has no target
                 consumedExpected = expCons[ft], producedExpected = expProd[ft],
-                settings = withSettings and settingsFor(p, ft, roleTag) or nil,
+                -- settings are resolved LAZILY -- see SmartDistribution.rowSettings. Computing them here
+                -- cost one full placeableSystem walk PER ROW (sourcesFor / outputDestinationsForMode) for
+                -- rows the player may never scroll to, which is what made opening the tab expensive.
             }
             -- SETTINGS VIEW: keep EVERY input and output the building has, whether or not anything moved.
             -- A cap, reserve or block set on a product that has not arrived yet is exactly what that view
@@ -881,4 +916,43 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
         return tostring(x.product) < tostring(y.product)
     end)
     return rows
+end
+
+-- ---------------------------------------------------------------------------
+-- FREEZE THE MEMO CLOCK FOR ONE ENUMERATION.
+--
+-- Every memo in SmartDistribution.lua checks its TTL against SmartDistribution.memoNow(). Left as live
+-- wall-clock, an enumeration that takes longer than the TTL expires its OWN earlier entries before the
+-- later rows ask for them, and the next pass finds them stale too -- so the cache switched itself off at
+-- exactly the farm size that needed it. Measured with sdStressBig: 1,767 rows went 1041 ms cold -> 66.8 ms
+-- warm, while 3,267 rows went 3085 ms -> 3160 ms, i.e. no benefit at all once the pass outran
+-- DEST_MEMO_TTL (3.0 s).
+--
+-- Nothing mutates during a menu read, so one answer is valid for the whole pass by construction. Entries
+-- are stamped with the FROZEN value, so they age from the start of the pass in real time afterwards and a
+-- pass cannot mint entries that look artificially fresh to the next one.
+--
+-- Wrapped rather than edited inline because overviewRows has several exit paths, and the clock must be
+-- restored on every one -- the same reason runHourly is wrapped for _selfWrite (5.8). `prev` is restored
+-- rather than nil'd so a nested call (there is none today) could not clear an outer pass's clock.
+SmartDistribution._overviewRowsInner = SmartDistribution.overviewRows
+function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
+    -- STRUCTURAL DRIFT, signalled rather than waited out. The destination/source memos are correct because
+    -- everything that changes their ANSWER bumps the epoch; the TTL only ever covered the one thing nothing
+    -- signals -- a building placed or demolished. Checking the placeable count here, once per enumeration
+    -- and O(1), signals exactly that -- which is what lets DEST_MEMO_TTL be long enough to survive a slow
+    -- pass without a newly built shed being invisible until it expires.
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    local n  = (ps ~= nil and type(ps.placeables) == "table") and #ps.placeables or 0
+    if n ~= SmartDistribution._memoPlaceableCount then
+        SmartDistribution._memoPlaceableCount = n
+        if SmartDistribution.invalidateMenuMemos ~= nil then SmartDistribution.invalidateMenuMemos() end
+    end
+
+    local prev = SmartDistribution._memoNow
+    SmartDistribution._memoNow = (getTimeSec ~= nil) and getTimeSec() or nil
+    local ok, res = pcall(SmartDistribution._overviewRowsInner, window, grouped, chainFt, withSettings)
+    SmartDistribution._memoNow = prev
+    if not ok then error(res, 0) end
+    return res
 end
