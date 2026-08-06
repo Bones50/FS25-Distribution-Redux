@@ -12,20 +12,8 @@ TO TEST THE WORKING (UNRELEASED) VERSION
 7) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
 NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
 
-v1.0.0.1 - Released
-- UI fixes and consistency edits.
-- Added Markets and Kiosks to the distribution system.
-- Fixed the sell-at-best-price logic that could sell too early on the first pass.
-- Added the Hold Internal output mode: keep a production's bulk product in the building instead of auto-spawning pallets.
-- Added manual pallet spawning from a Hold Internal output's held stock - a pop-up lets you pick the pallet type and quantity (capped by what's stored), available from the Distribution Redux menu and the base-game production screen.
-
-v1.0.0.2 - Released
-- Buildings can now be renamed: all buildings in the distribution network can be given a custom name from the base-game construction menu (silos, sheds and pits included, which the game does not normally allow). Distribution Redux uses that name throughout its menu, with the original building name shown beneath it as a reference.
-- Fixed the Manure Heap and Slurry Pit listing each other's product: the Manure Heap now shows only Manure and the Slurry Pit only Slurry.
-- Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
-
 V1.1.0.0 Release candidate Changelog (To Date)
-Changelog Last updated: 30/07/2026
+Changelog Last updated: 06/08/2026
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -100,3 +88,15 @@ Notes
 1) Many people have reported issues with Manure Heaps/Slurry Pits and the related extensions. To keep everything consistent the mod very much modifies how these items work. If you just place the manure pit near a cow farm for example, nothing will happen unlike base game. You now need to set the manure/slurry output on the farm to a Store To mode to have the output go into the heap/pit. Extensions now can only be placed within 50m of a matching storage and will just increase the manure stored in the nearest heap/pit.
 2) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
 3) By Default setting a storage output set to Move To does nothing unless you specify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check the advanced output settings.
+
+v1.0.0.2 - Released
+- Buildings can now be renamed: all buildings in the distribution network can be given a custom name from the base-game construction menu (silos, sheds and pits included, which the game does not normally allow). Distribution Redux uses that name throughout its menu, with the original building name shown beneath it as a reference.
+- Fixed the Manure Heap and Slurry Pit listing each other's product: the Manure Heap now shows only Manure and the Slurry Pit only Slurry.
+- Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
+
+v1.0.0.1 - Released
+- UI fixes and consistency edits.
+- Added Markets and Kiosks to the distribution system.
+- Fixed the sell-at-best-price logic that could sell too early on the first pass.
+- Added the Hold Internal output mode: keep a production's bulk product in the building instead of auto-spawning pallets.
+- Added manual pallet spawning from a Hold Internal output's held stock - a pop-up lets you pick the pallet type and quantity (capped by what's stored), available from the Distribution Redux menu and the base-game production screen.
