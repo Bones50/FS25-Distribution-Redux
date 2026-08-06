@@ -2,6 +2,16 @@
 Replaces Farming Simulator 25's standard distribution system with a smarter, demand-driven logistics network.
 Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled.
 
+TO TEST THE WORKING (UNRELEASED) VERSION
+1) Go to the "Code" Option at the top right and download zip
+2) Go to where the zip downloaded and unzip it.
+3) Navigate through the folders until you get to the folder with 3 files and 2 folders in it.
+4) Delete the readme.md file
+5) Select the 2 remaining files and the 2 folders and zip it back up.
+6) Rename the ZIP file to FS25_Distribution_Redux.
+7) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
+NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
+
 v1.0.0.1 - Released
 - UI fixes and consistency edits.
 - Added Markets and Kiosks to the distribution system.
@@ -43,8 +53,14 @@ Fixed
 23) Bunker Silo Level now correctly render when DR takes out material. Previously the colour would change but the heap level would stay until you interacted with the remaining material with a vehicle. (3/8) 
 24) Phase 2 of performance improvements, should fix stutters or freezes on very large production setups. Just to put the scale of the improvement into context there is roughly a 4000x time improvement in processing time (Extreme example: what would have taken 9.5 mins previously, now takes 0.14s). (4/8)
 25) Fix for dedicated servers not maintaining settings across sessions. (4/8)
-26) (NEW) Fix for certain modes resetting to "Hold" each cycle on dedicated servers. (5/8)
-27) (NEW) Fix for seasonal reserve only applying to Sell modes, not Market Supply Modes (5/8)
+26) Fix for certain modes resetting to "Hold" each cycle on dedicated servers. (5/8)
+27) Fix for seasonal reserve only applying to Sell modes, not Market Supply Modes (5/8)
+28) (NEW) Fixed MultiFruit Silo's that supported manure and slurry being incorrectly classified as animal husbandry objects (6/8)
+29) (NEW) Fixed Pallet/Bale store issue where under certain circumstances non-bale products would be stored as bales instead of pallets (6/8)
+30) (NEW) Fixed an issue where if a modded extension (e.g. LDC Silo Extension) was added to a base game silo, the base game silo would inherit all of the additional filltypes the extension supports. (6/8)
+31) (NEW) Redid how pooled storage is handled and displayed to reduce confusion. Pooled Storage now works the same way as base game, but allows you to set the maximum storage for each input type. (6/8)
+32) (NEW) storage now shown in kL in the UI where above 1000l stored, to help fit all the info on the UI. (6/8)
+33) (NEW) Fixed some issues with silo extensions bleeding into silo's it wasn't supposed too. (6/8) 
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -62,7 +78,8 @@ Added
 13) Added a new mode to the overview that allows you to see all the advanced settings of each building/product (e.g. reserved amounts, output mode, etc etc) (31/7)
 14) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
 15) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
-16) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8) 
+16) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8)
+17) (NEW) When advanced routing is activated in the settings (on by default), the Building UI's will only show inputs/outputs that are either active (Not Blocked) or have material in storage. If an input is Blocked AND is empty, that material will not be shown. Instead an extra line will be visible that shows "+ X Inputs that are blocked (see Advanced inputs for details)" (4/8)  
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
@@ -80,7 +97,6 @@ New Features
 	e) Note that lines only show if there is some activity/storage related to them, to keep the list a reasonable length.
 
 Notes
-1) Storages with pooled stroage spaces will now reserve a portion of that space for each type of possible input by deafult. For example a silo with 400,000l of storage and 10 inputs will automatically be set to only store 40,000l of each type by default. You will need to change the input settings to store more of a particular type of product (e.g. block or set to zero the storage reserved for all other products and max out wheat). If a silo is not getting the amount you expect this is the first thing to check! Note that the reserved space only applies to distirbution, manually filling the silo works as per base game (can put as much of anything you want in up to the max storage space), however if you overfill a particular product, distribution will stop feeding any additional product until the stored amount goes below the reserved storage space.
-2) Many people have reported issues with Manure Heaps/Slurry Pits and the related extensions. To keep everything consistent the mod very much modifies how these items work. If you just place the manure pit near a cow farm for example, nothing will happen unlike base game. You now need to set the manure/slurry output on the farm to a Store To mode to have the output go into the heap/pit. Extensions now can only be placed within 50m of a matching storage and will just increase the manure stored in the nearest heap/pit.
-3) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
-4) By Default setting a storage output set to Move To does nothing unless you sepcify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check teh advanced output settings.
+1) Many people have reported issues with Manure Heaps/Slurry Pits and the related extensions. To keep everything consistent the mod very much modifies how these items work. If you just place the manure pit near a cow farm for example, nothing will happen unlike base game. You now need to set the manure/slurry output on the farm to a Store To mode to have the output go into the heap/pit. Extensions now can only be placed within 50m of a matching storage and will just increase the manure stored in the nearest heap/pit.
+2) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
+3) By Default setting a storage output set to Move To does nothing unless you specify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check the advanced output settings.

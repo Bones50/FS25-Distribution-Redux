@@ -36,9 +36,69 @@ local function fmt(n)
     return s
 end
 
+-- EVERY litre figure on this page goes through here; it delegates to SmartDistribution.formatVolume so
+-- the whole mod switches to kilolitres in one place (up to 999 L in litres, above that kL with the
+-- extraneous zeros dropped). It carries the UNIT itself -- do not append " L" to it.
+local function fmtV(n)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, n or 0)
+        if ok and type(s) == "string" then return s end
+    end
+    return fmt(n) .. " L"
+end
+
+-- ---- BLOCKED-PRODUCT NOTICE (twin of the DistributionStoragePage helpers; keep the two in step) -------
+local NOTICE_CELLS = { "name", "amount", "remainingText", "received", "consumed", "produced", "distr",
+                       "method", "statusText", "status", "prodMo" }
+
+local function renderNoticeRow(cell, hidden, what)
+    local icon = cell:getAttribute("fillIcon")
+    if icon ~= nil and icon.setVisible ~= nil then icon:setVisible(false) end
+    -- SmoothList RECYCLES cells: clear every column or this row inherits the last product row in the slot
+    for _, k in ipairs(NOTICE_CELLS) do
+        local c = cell:getAttribute(k)
+        if c ~= nil then
+            if c.setText ~= nil then c:setText("") end
+            if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
+        end
+    end
+    local n = cell:getAttribute("noticeText")
+    if n == nil then return end
+    if n.setVisible ~= nil then n:setVisible(true) end
+    if n.setText ~= nil then
+        local word = what
+        if hidden == 1 then word = word:sub(1, #word - 1) end
+        n:setText(string.format("+%d %s blocked (See Advanced Inputs)", hidden, word))
+    end
+    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    local col = COL.IDLE or { 0.95, 0.65, 0.20, 1 }
+    if n.setTextColor ~= nil then n:setTextColor(col[1], col[2], col[3], col[4] or 1) end
+end
+
+local function hideNoticeRow(cell)
+    local n = cell:getAttribute("noticeText")
+    if n ~= nil and n.setVisible ~= nil then n:setVisible(false) end
+end
+
+-- Drop blocked-and-empty products from an already-built row list and append the count as a final row.
+-- Takes the RECORDS (not bare fill types) because this page carries held / capacity / flow on each.
+local function filterBlockedRows(asset, rows)
+    if asset == nil or SmartDistribution == nil or SmartDistribution.visibleProducts == nil then return rows end
+    local fts = {}
+    for _, r in ipairs(rows) do fts[#fts + 1] = r.ft end
+    local keep, hidden = SmartDistribution.visibleProducts(asset, fts)
+    if hidden <= 0 then return rows end
+    local ok = {}
+    for _, ft in ipairs(keep) do ok[ft] = true end
+    local out = {}
+    for _, r in ipairs(rows) do if ok[r.ft] then out[#out + 1] = r end end
+    out[#out + 1] = { notice = hidden }
+    return out
+end
+
 -- "<liters>  (<money>)" for the SOLD /mo column; money omitted when zero/unknown
 local function soldWithMoney(liters, money)
-    local base = fmt(liters)
+    local base = fmtV(liters)
     if money ~= nil and money > 0.5 and SmartDistribution ~= nil and SmartDistribution.formatMoneyShort ~= nil then
         return base .. "  (" .. SmartDistribution.formatMoneyShort(money) .. ")"
     end
@@ -48,8 +108,8 @@ end
 -- "450 L (5,000 L)" (or just "450 L" when capacity is unknown). Bracket, not "/", so every held figure in
 -- the mod reads the same way: the amount, then what it can hold beside it, then any pallets.
 local function amountText(held, cap)
-    if cap ~= nil and cap > 0 then return fmt(held) .. " L (" .. fmt(cap) .. " L)" end
-    return fmt(held) .. " L"
+    if cap ~= nil and cap > 0 then return fmtV(held) .. " (" .. fmtV(cap) .. ")" end
+    return fmtV(held)
 end
 
 -- " + 5,000 L (5p)" for whole pallets standing on this production's own pad, matching the Animal Husbandry
@@ -61,7 +121,7 @@ end
 -- Empty for bulk outputs, so rows that never palletize are unchanged.
 local function palletPart(litres, count)
     if (litres or 0) <= 0 then return "" end
-    return " + " .. fmt(litres) .. " L (" .. tostring(count or 0) .. "p)"
+    return " + " .. fmtV(litres) .. " (" .. tostring(count or 0) .. "p)"
 end
 
 local function percentText(held, cap)
@@ -83,17 +143,46 @@ local function inputMaxLiters(placeable, ft)
     local ok, cap = pcall(SmartDistribution.inputProductCapacity, placeable, ft)
     if not ok or type(cap) ~= "number" or cap <= 0 or cap >= math.huge then return nil end
     -- pooled storage resolves elastically against what it really holds (twin of the StoragePage helper)
-    if SmartDistribution.inputEffectiveMaxLiters ~= nil then
-        local okE, v = pcall(SmartDistribution.inputEffectiveMaxLiters, placeable, ft)
-        if okE and type(v) == "number" and v >= 0 and v < math.huge then return v end
-    end
+    -- MAX is the CAP: this product's percentage of the buffer, matching the Advanced Inputs dialog's MAX IN.
+    -- It used to return inputEffectiveMaxLiters, the elastic "what could still fit given what the others
+    -- hold", which bore no relation to the percentage the player set. (Twin of the StoragePage helper.)
     local pct = 100
     if SmartDistribution.inputCapPct ~= nil then
         local okP, v = pcall(SmartDistribution.inputCapPct, placeable, ft)
         if okP and type(v) == "number" then pct = v end
     end
     if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
-    return cap * pct / 100
+    return cap * pct / 100, pct
+end
+
+-- ---- REMAINING (twins of the DistributionStoragePage helpers; keep the two in step) ----------------
+-- inputs  -> inputAcceptableLiters, the figure the allocator clamps deliveries to and the Advanced Inputs
+--            dialog shows as AVAILABLE
+-- outputs -> a straight capacity - held
+-- red when nothing is left (or overfilled), orange at 10% or less, green otherwise.
+local function inputRemaining(placeable, ft)
+    if placeable == nil or ft == nil or SmartDistribution == nil then return nil end
+    if SmartDistribution.inputAcceptableLiters == nil then return nil end
+    local ok, v = pcall(SmartDistribution.inputAcceptableLiters, placeable, ft)
+    if not ok or type(v) ~= "number" or v ~= v or v < 0 or v >= math.huge then return nil end
+    return v
+end
+
+-- Cells are RECYCLED by SmoothList, so the nil path must actively reset the colour or a row inherits the
+-- previous row's.
+local function setRemainingCell(cell, remaining, capacity)
+    local c = cell:getAttribute("remainingText")
+    if c == nil then return end
+    if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
+    if c.setTextColor == nil then return end
+    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    local col = nil
+    if remaining ~= nil and capacity ~= nil and capacity > 0 then
+        if remaining <= 0.5 then col = COL.BLOCKED
+        elseif remaining <= capacity * 0.10 then col = COL.IDLE
+        else col = COL.ACTIVE end
+    end
+    if col ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) else c:setTextColor(1, 1, 1, 1) end
 end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). The label set is
@@ -197,8 +286,8 @@ function DistributionProductionsPage:onGuiSetupFinished()
     if self.inputList ~= nil then
         self.inputList:setDataSource(self)
     end
-    -- rows that fit each frame at the 38px SDListItemData pitch (the timescale row took 46px off the top)
-    self._scrollMap = { { "inputSlider", "inputList", 4 }, { "lineSlider", "lineList", 4 }, { "outputSlider", "outputList", 7 } }
+    -- rows that fit each frame at the 42px SDListItemStats pitch (152/42 = 3, 277/42 = 6)
+    self._scrollMap = { { "inputSlider", "inputList", 3 }, { "lineSlider", "lineList", 3 }, { "outputSlider", "outputList", 6 } }
 end
 
 function DistributionProductionsPage:rebuildAssets()
@@ -314,6 +403,10 @@ function DistributionProductionsPage:buildSections()
             end
         end
     end
+
+    -- blocked-and-empty products are dropped and counted (Advanced routing only; see visibleProducts)
+    self.inputs  = filterBlockedRows(p, self.inputs)
+    self.outputs = filterBlockedRows(p, self.outputs)
 end
 
 function DistributionProductionsPage:selectAsset(index)
@@ -395,14 +488,19 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     if list == self.inputList then
         local inp = self.inputs[index]
         if inp == nil then return end
+        if inp.notice ~= nil then renderNoticeRow(cell, inp.notice, "inputs"); return end
+        hideNoticeRow(cell)
         applyRowHighlight(cell, (self._focusRole or "output") == "input")
         setc("name", inp.name)
-        setc("received", fmt(inp.received))
-        setc("consumed", fmt(inp.consumed))
-        -- capacity shown is the Advanced Inputs %-adjusted max; fall back to the raw buffer if unresolved
-        local maxL = inputMaxLiters(self.selectedAsset, inp.ft)
-        setc("amount", maxL ~= nil and (fmt(inp.held) .. " L (" .. fmt(maxL) .. " L)")
-                                    or amountText(inp.held, inp.capacity))
+        setc("received", fmtV(inp.received))
+        setc("consumed", fmtV(inp.consumed))
+        -- "619 L / 50,000 L (50%)": held, the ceiling the Advanced Inputs percentage sets, and that
+        -- percentage. Same form as the other tabs' input lists. Falls back to the raw buffer if unresolved.
+        local maxL, pct = inputMaxLiters(self.selectedAsset, inp.ft)
+        setc("amount", maxL ~= nil
+            and (fmtV(inp.held) .. " / " .. fmtV(maxL) .. (pct ~= nil and string.format(" (%d%%)", pct) or ""))
+            or amountText(inp.held, inp.capacity))
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, inp.ft), maxL)
         setStatusCell(cell, self.selectedAsset, inp.ft)
         setIcon(cell, inp.ft)
         return
@@ -413,19 +511,26 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
         if ln == nil then return end
         setc("name", ln.name)
         setc("status", ln.status or "")
-        setc("prodMo", ln.enabled and fmt(ln.perMonth) or "")   -- PROD /mo only while the line is ON
+        setc("prodMo", ln.enabled and fmtV(ln.perMonth) or "")   -- PROD /mo only while the line is ON
         return
     end
 
     -- outputList
     local o = self.outputs[index]
     if o == nil then return end
+    if o.notice ~= nil then renderNoticeRow(cell, o.notice, "outputs"); return end
+    hideNoticeRow(cell)
     applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
     setc("name", o.name)
-    setc("produced", fmt(o.produced))
+    setc("produced", fmtV(o.produced))
     -- one column now: everything that left, with the sale value in brackets when any of it sold
     setc("distr", soldWithMoney(o.outTotal, o.sold > 0.5 and o.money or nil))
     setc("amount", amountText(o.held, o.capacity) .. palletPart(o.heldPalletLitres, o.heldPallets))
+    -- REMAINING for an output is a straight capacity - held. o.capacity is the production BUFFER's, which
+    -- is what the amount cell brackets, so the two figures describe the same tank.
+    setRemainingCell(cell,
+        (type(o.capacity) == "number" and o.capacity > 0) and math.max(0, o.capacity - (o.held or 0)) or nil,
+        o.capacity)
     local method = o.modeName or "-"
     if o.sellTiming ~= nil then method = method .. " - " .. o.sellTiming end
     setc("method", method)
@@ -482,7 +587,10 @@ function DistributionProductionsPage:selectedLine()
 end
 
 function DistributionProductionsPage:selectedOutput()
-    return self.outputs[self.outputIndex or 1]
+    local o = self.outputs[self.outputIndex or 1]
+    -- the "+N blocked" row is a message, not a product: footer actions must see it as no selection
+    if o ~= nil and o.notice ~= nil then return nil end
+    return o
 end
 
 -- rebuild rows after a change, keeping both selections highlighted

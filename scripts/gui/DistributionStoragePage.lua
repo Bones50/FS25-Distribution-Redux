@@ -34,9 +34,61 @@ local function fmt(n)
     return s
 end
 
+-- EVERY litre figure on this page goes through here, and here delegates to SmartDistribution.formatVolume
+-- so the whole mod switches to kilolitres in one place: up to 999 L reads in litres, anything above reads
+-- in kL with the extraneous zeros dropped (600,000 L -> "600 kL", 123,123 L -> "123.123 kL"). It carries
+-- the UNIT itself -- do not append " L" to it. `fmt` above survives for things that are not volumes.
+local function fmtV(n)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, n or 0)
+        if ok and type(s) == "string" then return s end
+    end
+    return fmt(n) .. " L"
+end
+
+-- ---- BLOCKED-PRODUCT NOTICE ------------------------------------------------
+-- With Advanced routing ON, a blocked product the building is not holding is dropped from these lists
+-- (SmartDistribution.visibleProducts) and the count comes back as one final row, so a shortened table
+-- always explains itself rather than quietly losing rows. The row carries `notice` and NO `ft`, and every
+-- accessor that reaches for a product treats it as absent -- see selectedDetailRow.
+local NOTICE_CELLS = { "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
+                       "consumedText", "consumed", "prodText", "produced", "distText", "distr",
+                       "modeText", "method", "statusText", "status" }
+
+local function renderNoticeRow(cell, hidden, what)
+    local icon = cell:getAttribute("fillIcon")
+    if icon ~= nil and icon.setVisible ~= nil then icon:setVisible(false) end
+    -- SmoothList RECYCLES cells, so every column must be actively cleared or this row inherits whatever
+    -- the product row that last used the slot left behind -- the trap 5.7 already hit with colours.
+    for _, k in ipairs(NOTICE_CELLS) do
+        local c = cell:getAttribute(k)
+        if c ~= nil then
+            if c.setText ~= nil then c:setText("") end
+            if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
+        end
+    end
+    local n = cell:getAttribute("noticeText")
+    if n == nil then return end
+    if n.setVisible ~= nil then n:setVisible(true) end
+    if n.setText ~= nil then
+        local word = what
+        if hidden == 1 then word = word:sub(1, #word - 1) end        -- "1 input", not "1 inputs"
+        n:setText(string.format("+%d %s blocked (See Advanced Inputs)", hidden, word))
+    end
+    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    local col = COL.IDLE or { 0.95, 0.65, 0.20, 1 }
+    if n.setTextColor ~= nil then n:setTextColor(col[1], col[2], col[3], col[4] or 1) end
+end
+
+-- ...and every NORMAL row has to hide the overlay again, for that same recycling reason
+local function hideNoticeRow(cell)
+    local n = cell:getAttribute("noticeText")
+    if n ~= nil and n.setVisible ~= nil then n:setVisible(false) end
+end
+
 -- "<liters>  (<money>)" for the SOLD /mo column; money omitted when zero/unknown (e.g. MP clients)
 local function soldWithMoney(liters, money)
-    local base = fmt(liters)
+    local base = fmtV(liters)
     if money ~= nil and money > 0.5 and SmartDistribution ~= nil and SmartDistribution.formatMoneyShort ~= nil then
         return base .. "  (" .. SmartDistribution.formatMoneyShort(money) .. ")"
     end
@@ -47,7 +99,7 @@ end
 -- with the sale value in brackets when any of it sold. The three-way split now lives on the Overview tab,
 -- which is where these pages point the player for detail.
 local function outTotalText(e)
-    if type(e) ~= "table" then return fmt(0) end
+    if type(e) ~= "table" then return fmtV(0) end
     return soldWithMoney((e.dist or 0) + (e.stored or 0) + (e.sold or 0), e.money)
 end
 
@@ -60,7 +112,7 @@ end
 -- standing on the pad, not zero. Falls back to the plain total for anything that spawns no pallets, so
 -- milk / manure / slurry rows are unchanged.
 local function heldWithPallets(placeable, ft, held)
-    if placeable == nil or ft == nil or SmartDistribution == nil then return fmt(held) .. " L" end
+    if placeable == nil or ft == nil or SmartDistribution == nil then return fmtV(held) end
     -- one memoised pad scan for both figures rather than two full vehicle-list walks per row per refresh
     local pallets, n = 0, 0
     if SmartDistribution.padSnapshot ~= nil then
@@ -78,15 +130,15 @@ local function heldWithPallets(placeable, ft, held)
         end
     end
     local internal = math.max(0, (held or 0) - pallets)
-    local text = fmt(internal) .. " L"
+    local text = fmtV(internal)
     -- capacity sits directly beside the figure it qualifies, not trailing after the pad part
     if SmartDistribution.outputCapacityTotal ~= nil then
         local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft)
         if ok and type(c) == "number" and c > 0 and c < math.huge then
-            text = text .. " (" .. fmt(c) .. " L)"
+            text = text .. " (" .. fmtV(c) .. ")"
         end
     end
-    if pallets > 0 then text = text .. " + " .. fmt(pallets) .. " L (" .. tostring(n) .. "p)" end
+    if pallets > 0 then text = text .. " + " .. fmtV(pallets) .. " (" .. tostring(n) .. "p)" end
     return text
 end
 
@@ -106,6 +158,18 @@ local function fillTypeTitle(ft)
     end
     return tostring(ft)
 end
+-- Build the product rows for one list, dropping blocked-and-empty products and appending the notice.
+-- Shared by all three classes in this file so the rule cannot drift between the tabs.
+local function buildProductRows(asset, ordered)
+    local rows, hidden = {}, 0
+    if SmartDistribution ~= nil and SmartDistribution.visibleProducts ~= nil then
+        ordered, hidden = SmartDistribution.visibleProducts(asset, ordered)
+    end
+    for _, ft in ipairs(ordered) do rows[#rows + 1] = { ft = ft, name = fillTypeTitle(ft) } end
+    if hidden > 0 then rows[#rows + 1] = { notice = hidden } end
+    return rows
+end
+
 
 -- How much of this product the building will actually take: its storage AFTER the Advanced Inputs
 -- percentage is applied, so the figure on the main list matches the one the dialog reserves. A pooled
@@ -128,30 +192,69 @@ local function inputMaxLiters(placeable, ft)
         if ok and type(c) == "number" then cap = c end
     end
     if cap == nil or cap <= 0 or cap >= math.huge then return nil end
-    -- Pooled storage resolves elastically against what the pool actually holds, so a product that has been
-    -- overfilled by hand no longer leaves the others advertising space that is not there. Engine-side so
-    -- the number shown matches what inputAcceptableLiters will really let in (and holds in multiplayer).
-    if SmartDistribution.inputEffectiveMaxLiters ~= nil then
-        local ok, v = pcall(SmartDistribution.inputEffectiveMaxLiters, placeable, ft)
-        if ok and type(v) == "number" and v >= 0 and v < math.huge then return v end
-    end
+    -- MAX means the CAP: this product's percentage of the building's capacity, matching the Advanced Inputs
+    -- dialog's own MAX IN column exactly. It used to return inputEffectiveMaxLiters -- the ELASTIC "what
+    -- could still fit given what the others hold" -- which made the figure shrink as neighbours filled up
+    -- and had no relationship to the percentage the player had set. That elastic number is still shown, as
+    -- AVAILABLE in the dialog, where it is labelled honestly.
     local pct = 100
     if SmartDistribution.inputCapPct ~= nil then
         local ok, v = pcall(SmartDistribution.inputCapPct, placeable, ft)
         if ok and type(v) == "number" then pct = v end
     end
     if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
-    return cap * pct / 100
+    return cap * pct / 100, pct
 end
 
--- "12,345 L (50,000 L)" for an input row; drops the denominator when it can't be resolved.
--- Bracket, not "/", so every held figure in the mod reads the same way: the amount, then what it can hold
--- beside it, then any pallets. A "/" ratio here and a bracket on the output rows was the same information
--- written two ways in adjacent lists.
+-- "619 L / 50,000 L (50%)" for an input row: what is there, the most that may go in, and the percentage
+-- that ceiling comes from. Drops the tail when capacity cannot be resolved rather than inventing one.
 local function heldOfMaxText(placeable, ft, held)
-    local maxL = inputMaxLiters(placeable, ft)
-    if maxL == nil then return fmt(held) .. " L" end
-    return fmt(held) .. " L (" .. fmt(maxL) .. " L)"
+    local maxL, pct = inputMaxLiters(placeable, ft)
+    if maxL == nil then return fmtV(held) end
+    local s = fmtV(held) .. " / " .. fmtV(maxL)
+    if pct ~= nil then s = s .. string.format(" (%d%%)", pct) end
+    return s
+end
+
+-- ---- REMAINING ------------------------------------------------------------
+-- How much more will fit, and the colour that says how comfortable that is.
+--   inputs  -> inputAcceptableLiters: the very figure the allocator clamps every delivery to, and the same
+--              one the Advanced Inputs dialog shows as AVAILABLE, so the three can never disagree
+--   outputs -> a straight capacity - held
+-- Colour: red when nothing is left (or it is overfilled), orange at 10% or less of the ceiling, green
+-- otherwise. nil capacity means there is nothing to judge against, so the cell shows a dash in the default
+-- colour rather than inventing a verdict.
+local function inputRemaining(placeable, ft)
+    if placeable == nil or ft == nil or SmartDistribution == nil then return nil end
+    if SmartDistribution.inputAcceptableLiters == nil then return nil end
+    local ok, v = pcall(SmartDistribution.inputAcceptableLiters, placeable, ft)
+    if not ok or type(v) ~= "number" or v ~= v or v < 0 or v >= math.huge then return nil end
+    return v
+end
+
+local function outputRemaining(placeable, ft, held)
+    if placeable == nil or ft == nil or SmartDistribution == nil then return nil, nil end
+    if SmartDistribution.outputCapacityTotal == nil then return nil, nil end
+    local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft)
+    if not ok or type(c) ~= "number" or c <= 0 or c >= math.huge then return nil, nil end
+    return math.max(0, c - (held or 0)), c
+end
+
+-- Writes the figure AND the colour. Cells are RECYCLED by SmoothList, so the nil path must actively reset
+-- to white or the row inherits whatever colour the previous row left in that cell.
+local function setRemainingCell(cell, remaining, capacity)
+    local c = cell:getAttribute("remainingText")
+    if c == nil then return end
+    if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
+    if c.setTextColor == nil then return end
+    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    local col = nil
+    if remaining ~= nil and capacity ~= nil and capacity > 0 then
+        if remaining <= 0.5 then col = COL.BLOCKED
+        elseif remaining <= capacity * 0.10 then col = COL.IDLE
+        else col = COL.ACTIVE end
+    end
+    if col ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) else c:setTextColor(1, 1, 1, 1) end
 end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
@@ -229,7 +332,9 @@ function DistributionStoragePage:onGuiSetupFinished()
         self.inputList:setDataSource(self)
         self.inputList:setDelegate(self)
     end
-    self._scrollMap = { { "detailSlider", "detailList", 13 }, { "inputSlider", "inputList", 13 } }   -- hide the scrollbar track unless the list overflows its frame
+    -- rows that fit each frame at the 42px SDListItemStats pitch (340/42 = 8, 280/42 = 6); this only
+    -- hides the scrollbar track when the list does NOT overflow its frame
+    self._scrollMap = { { "detailSlider", "detailList", 8 }, { "inputSlider", "inputList", 6 } }
 end
 
 -- which configurable assets belong on this tab
@@ -253,9 +358,7 @@ function DistributionStoragePage:buildDetailRows()
     local ordered = {}
     for ft in pairs(fts) do ordered[#ordered + 1] = ft end
     table.sort(ordered)
-    for _, ft in ipairs(ordered) do
-        self.rows[#self.rows + 1] = { ft = ft, name = fillTypeTitle(ft) }
-    end
+    self.rows = buildProductRows(asset, ordered)
 end
 
 function DistributionStoragePage:selectAsset(index)
@@ -335,6 +438,11 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     -- detail row
     local row = self.rows[index]
     if row == nil then return end
+    if row.notice ~= nil then
+        renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        return
+    end
+    hideNoticeRow(cell)
 
     local iconCell = cell:getAttribute("fillIcon")
     if iconCell ~= nil then
@@ -358,8 +466,9 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         setc("fillName", row.name)
         local e = self:windowStats(row.ft)
         local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(e.received))
+        setc("recvText", fmtV(e.received))
         setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
         setStatusCell(cell, self.selectedAsset, row.ft)
         return
     end
@@ -369,6 +478,7 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
 
     local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
     setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
+    setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held))
     setc("distText", outTotalText(self:windowStats(row.ft)))
 
     local modeCell = cell:getAttribute("modeText")
@@ -430,7 +540,11 @@ end
 
 -- ---- footer actions (wired from the menu's setMenuButtonInfo) ---------------
 function DistributionStoragePage:selectedDetailRow()
-    return self.rows[self.detailIndex or 1]
+    local r = self.rows[self.detailIndex or 1]
+    -- the "+N blocked" row is a message, not a product: every footer action (cycle mode, sell timing,
+    -- Advanced) must see it as no selection at all rather than acting on a nil fill type
+    if r ~= nil and r.notice ~= nil then return nil end
+    return r
 end
 
 -- current best-price/immediate label of the selected product (nil if not a sell mode)
@@ -608,7 +722,8 @@ function DistributionAnimalHusbandryPage:onGuiSetupFinished()
     if self.outputList ~= nil then
         self.outputList:setDataSource(self); self.outputList:setDelegate(self)
     end
-    self._scrollMap = { { "inputSlider", "inputList", 5 }, { "outputSlider", "outputList", 6 } }
+    -- rows that fit each frame at the 42px SDListItemStats pitch (280/42 = 6, 340/42 = 8)
+    self._scrollMap = { { "inputSlider", "inputList", 6 }, { "outputSlider", "outputList", 8 } }
 end
 
 -- This layout's output rows live in outputList (there is no detailList), so the inherited onFrameOpen's
@@ -630,13 +745,13 @@ function DistributionAnimalHusbandryPage:buildDetailRows()
         local ins = {}
         for ft in pairs(SmartDistribution.husbandryInputFillTypes(asset)) do ins[#ins + 1] = ft end
         table.sort(ins)
-        for _, ft in ipairs(ins) do self.inputRows[#self.inputRows + 1] = { ft = ft, name = fillTypeTitle(ft) } end
+        self.inputRows = buildProductRows(asset, ins)
     end
     if SmartDistribution.husbandryOutputSet ~= nil then
         local outs = {}
         for ft in pairs(SmartDistribution.husbandryOutputSet(asset)) do outs[#outs + 1] = ft end
         table.sort(outs)
-        for _, ft in ipairs(outs) do self.outputRows[#self.outputRows + 1] = { ft = ft, name = fillTypeTitle(ft) } end
+        self.outputRows = buildProductRows(asset, outs)
     end
 end
 
@@ -681,23 +796,29 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
 
     if list == self.inputList then
         local row = self.inputRows[index]; if row == nil then return end
+        if row.notice ~= nil then renderNoticeRow(cell, row.notice, "inputs"); return end
+        hideNoticeRow(cell)
         applyRowHighlight(cell, (self._focusRole or "output") == "input")
         setIcon(row.ft); setc("fillName", row.name)
         local e = self:windowStats(row.ft)
         local held = (SmartDistribution.husbandryInputHeld ~= nil) and SmartDistribution.husbandryInputHeld(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(e.received))
-        setc("consumedText", fmt(e.consumed))
+        setc("recvText", fmtV(e.received))
+        setc("consumedText", fmtV(e.consumed))
         setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
         setStatusCell(cell, self.selectedAsset, row.ft)
     elseif list == self.outputList then
         local row = self.outputRows[index]; if row == nil then return end
+        if row.notice ~= nil then renderNoticeRow(cell, row.notice, "outputs"); return end
+        hideNoticeRow(cell)
         applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
         setIcon(row.ft); setc("fillName", row.name)
         local e = self:windowStats(row.ft)
         local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-        setc("prodText", fmt(e.produced))
+        setc("prodText", fmtV(e.produced))
         setc("distText", outTotalText(e))
         setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
+        setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held))
         local modeCell = cell:getAttribute("modeText")
         if modeCell ~= nil then
             -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
@@ -754,7 +875,9 @@ function DistributionAnimalHusbandryPage:onClickOutputRow(element) end
 
 -- footer mode / sell-timing actions operate on the selected OUTPUT row (inputs are demand-only)
 function DistributionAnimalHusbandryPage:selectedDetailRow()
-    return self.outputRows[self.detailIndex or 1]
+    local r = self.outputRows[self.detailIndex or 1]
+    if r ~= nil and r.notice ~= nil then return nil end
+    return r
 end
 
 -- the base footer handlers reload self.detailList (absent in this layout); refresh the output list instead
@@ -787,9 +910,7 @@ function DistributionMarketsPage:buildDetailRows()
     local ordered = {}
     for ft in pairs(SmartDistribution.marketMenuFillTypes(asset)) do ordered[#ordered + 1] = ft end
     table.sort(ordered)
-    for _, ft in ipairs(ordered) do
-        self.rows[#self.rows + 1] = { ft = ft, name = fillTypeTitle(ft) }
-    end
+    self.rows = buildProductRows(asset, ordered)
 end
 
 function DistributionMarketsPage:populateCellForItemInSection(list, section, index, cell)
@@ -798,6 +919,11 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     end
     local row = self.rows[index]
     if row == nil then return end
+    if row.notice ~= nil then
+        renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        return
+    end
+    hideNoticeRow(cell)
     local iconCell = cell:getAttribute("fillIcon")
     if iconCell ~= nil then
         local file = fillIconFile(row.ft)
@@ -816,14 +942,21 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
         setc("fillName", row.name)
         local e = self:windowStats(row.ft)
         local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmt(e.received))
-        setc("heldText", fmt(buffer))
+        setc("recvText", fmtV(e.received))
+        -- was the bare held figure, with no ceiling beside it -- the one input list in the mod that did not
+        -- say what it could take. A market resolves through inputProductCapacity -> marketCap like any other
+        -- receiver (5.36), so the shared helper works here and the column now matches every other tab.
+        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, buffer))
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
         setStatusCell(cell, self.selectedAsset, row.ft)
         return
     end
     setc("fillName", row.name)
     local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-    setc("heldText", fmt(buffer) .. " / " .. fmt((SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset)) or SmartDistribution.MARKET_CAP or 200000))
+    -- HELD (MAX), the same bracket form every other OUTGOING list uses -- this was the last "a / b" ratio left
+    setc("heldText", fmtV(buffer) .. " ("
+        .. fmtV((SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset))
+               or SmartDistribution.MARKET_CAP or 200000) .. ")")
     setc("distText", outTotalText(self:windowStats(row.ft)))
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then

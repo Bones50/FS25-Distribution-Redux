@@ -23,11 +23,12 @@
 
             <!-- single list: input products -->
             <Bitmap profile="SDList" position="40px -122px" size="1120px 34px">
-                <Text profile="SDHeaderLeft" position="12px 0px"  size="250px 34px"  text="INCOMING PRODUCT" />
-                <Text profile="SDHeaderLeft" position="300px 0px" size="120px 34px"  text="TYPE" />
-                <Text profile="SDHeaderLeft" position="430px 0px" size="170px 34px"  text="HELD" />
-                <Text profile="SDHeaderLeft" position="610px 0px" size="220px 34px"  text="MAX IN" />
-                <Text profile="SDHeaderLeft" position="840px 0px" size="280px 34px"  text="FILL TARGET" />
+                <Text profile="SDHeaderLeft" position="12px 0px"  size="240px 34px"  text="INCOMING PRODUCT" />
+                <Text profile="SDHeaderLeft" position="296px 0px" size="90px 34px"   text="TYPE" />
+                <Text profile="SDHeaderLeft" position="392px 0px" size="150px 34px"  text="HELD" />
+                <Text profile="SDHeaderLeft" position="548px 0px" size="195px 34px"  text="MAX IN" />
+                <Text profile="SDHeaderLeft" position="749px 0px" size="150px 34px"  text="AVAILABLE" />
+                <Text profile="SDHeaderLeft" position="905px 0px" size="215px 34px"  text="FILL TARGET" />
                 <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
             </Bitmap>
             <GuiElement profile="SDList" position="40px -160px" size="1120px 480px">
@@ -35,11 +36,12 @@
                             onSelectionChanged="onListSelectionChanged">
                     <ListItem profile="SDListItem" name="rowTemplate" size="1120px 46px" onClick="onClickInputRow">
                         <Bitmap position="12px 11px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                        <Text profile="SDRowCell" position="48px 0px"  size="240px 46px" textSize="17px" name="name" />
-                        <Text profile="SDRowCell" position="300px 0px" size="120px 46px" textSize="16px" name="kind" />
-                        <Text profile="SDRowCell" position="430px 0px" size="170px 46px" textSize="16px" name="held" />
-                        <Text profile="SDRowCell" position="610px 0px" size="220px 46px" textSize="16px" name="cap" />
-                        <Text profile="SDRowCell" position="840px 0px" size="280px 46px" textSize="16px" name="target" />
+                        <Text profile="SDRowCell" position="48px 0px"  size="230px 46px" textSize="17px" name="name" />
+                        <Text profile="SDRowCell" position="296px 0px" size="90px 46px"  textSize="16px" name="kind" />
+                        <Text profile="SDRowCell" position="392px 0px" size="150px 46px" textSize="16px" name="held" />
+                        <Text profile="SDRowCell" position="548px 0px" size="195px 46px" textSize="16px" name="cap" />
+                        <Text profile="SDRowCell" position="749px 0px" size="150px 46px" textSize="16px" name="avail" />
+                        <Text profile="SDRowCell" position="905px 0px" size="215px 46px" textSize="16px" name="target" />
                     </ListItem>
                 </SmoothList>
             </GuiElement>

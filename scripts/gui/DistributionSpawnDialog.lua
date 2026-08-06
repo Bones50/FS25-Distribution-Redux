@@ -20,6 +20,15 @@ local function fmt(n)
     return s
 end
 
+-- the mod-wide litres/kilolitres rule (SmartDistribution.formatVolume); carries the unit itself
+local function fmtV(n)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, n or 0)
+        if ok and type(s) == "string" then return s end
+    end
+    return fmt(n) .. " L"
+end
+
 function DistributionSpawnDialog.new(target, custom_mt)
     local self = MessageDialog.new(target, custom_mt or Dlg_mt)
     self.options   = {}
@@ -107,8 +116,8 @@ function DistributionSpawnDialog:refresh()
         else
             held = self.held
         end
-        local capTxt = (o ~= nil and o.capacity ~= nil) and (fmt(o.capacity) .. " l") or "?"
-        self.dialogTextElement:setText(string.format("Held: %s l    Pallet: %s    Max: %d", fmt(held), capTxt, maxN))
+        local capTxt = (o ~= nil and o.capacity ~= nil) and fmtV(o.capacity) or "?"
+        self.dialogTextElement:setText(string.format("Held: %s    Pallet: %s    Max: %d", fmtV(held), capTxt, maxN))
     end
     if self.yesButton ~= nil and self.yesButton.setDisabled ~= nil then self.yesButton:setDisabled(maxN <= 0) end
 end

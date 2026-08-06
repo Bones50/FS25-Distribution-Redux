@@ -38,23 +38,27 @@
 
         <!-- right: incoming products (inputs / demand) -->
         <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="240px 40px" text="INCOMING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="292px 0px" size="280px 40px" text="HELD (CAP)" />
-            <Text profile="SDHeaderLeft" position="580px 0px" size="150px 40px" text="RECEIVED" />
-            <Text profile="SDHeaderLeft" position="738px 0px" size="150px 40px" text="CONSUMED" />
-            <Text profile="SDHeaderLeft" position="894px 0px" size="196px 40px" text="DISTRIBUTION" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="215px 40px" textSize="11px" text="INCOMING PRODUCTS" />
+            <Text profile="SDHeaderLeft" position="267px 0px" size="225px 40px" textSize="11px" text="HELD / MAX" />
+            <Text profile="SDHeaderLeft" position="500px 0px" size="110px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="618px 0px" size="110px 40px" textSize="11px" text="RECEIVED" />
+            <Text profile="SDHeaderLeft" position="736px 0px" size="110px 40px" textSize="11px" text="CONSUMED" />
+            <Text profile="SDHeaderLeft" position="854px 0px" size="236px 40px" textSize="11px" text="DISTRIBUTION" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
             <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 280px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
-                <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickInputRow">
-                    <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="240px 52px" textSize="16px" name="fillName" />
-                    <Text profile="SDRowCell" position="292px 0px" size="280px 52px" textSize="15px" name="heldText" />
-                    <Text profile="SDRowCell" position="580px 0px" size="150px 52px" textSize="16px" name="recvText" />
-                    <Text profile="SDRowCell" position="738px 0px" size="150px 52px" textSize="16px" name="consumedText" />
-                    <Text profile="SDRowCell" position="894px 0px" size="196px 52px" textSize="15px" name="statusText" />
+                <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickInputRow">
+                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
+                    <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
+                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="215px 42px" textSize="12px" name="fillName" />
+                    <Text profile="SDRowCell" position="267px 0px" size="225px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCell" position="500px 0px" size="110px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="618px 0px" size="110px 42px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCell" position="736px 0px" size="110px 42px" textSize="12px" name="consumedText" />
+                    <Text profile="SDRowCell" position="854px 0px" size="236px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight">
@@ -65,28 +69,32 @@
         <!-- outgoing products. DISTRIBUTED is everything that left: distributed + stored/moved + sold,
              with the sale value in brackets. -->
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="170px 40px" text="OUTGOING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="224px 0px" size="250px 40px" text="HELD (CAP)" />
-            <Text profile="SDHeaderLeft" position="484px 0px" size="100px 40px" text="PRODUCED" />
-            <Text profile="SDHeaderLeft" position="594px 0px" size="130px 40px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderLeft" position="734px 0px" size="220px 40px" text="OUTPUT MODE" />
-            <Text profile="SDHeaderLeft" position="964px 0px" size="126px 40px" text="STATUS" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="OUTGOING PRODUCTS" />
+            <Text profile="SDHeaderLeft" position="207px 0px" size="210px 40px" textSize="11px" text="HELD (MAX)" />
+            <Text profile="SDHeaderLeft" position="425px 0px" size="100px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="533px 0px" size="95px 40px"  textSize="11px" text="PRODUCED" />
+            <Text profile="SDHeaderLeft" position="636px 0px" size="115px 40px" textSize="11px" text="DISTRIBUTED" />
+            <Text profile="SDHeaderLeft" position="759px 0px" size="215px 40px" textSize="11px" text="OUTPUT MODE" />
+            <Text profile="SDHeaderLeft" position="982px 0px" size="108px 40px" textSize="11px" text="STATUS" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">
             <SmoothList profile="SDList" id="outputList" position="0px 0px" size="1090px 340px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
-                <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickOutputRow">
-                    <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="170px 52px" textSize="16px" name="fillName" />
+                <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickOutputRow">
+                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
+                    <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
+                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="155px 42px" textSize="12px" name="fillName" />
                     <!-- HELD sits next to the product and takes the widest slot: it is the only cell that
                          carries three figures ("473 L (150,000 L) + 3,000 L (3p)") and it was truncating. -->
-                    <Text profile="SDRowCell" position="224px 0px" size="250px 52px" textSize="15px" name="heldText" />
-                    <Text profile="SDRowCell" position="484px 0px" size="100px 52px" textSize="16px" name="prodText" />
-                    <Text profile="SDRowCell" position="594px 0px" size="130px 52px" textSize="16px" name="distText" />
+                    <Text profile="SDRowCell" position="207px 0px" size="210px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCell" position="425px 0px" size="100px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="533px 0px" size="95px 42px"  textSize="12px" name="prodText" />
+                    <Text profile="SDRowCell" position="636px 0px" size="115px 42px" textSize="12px" name="distText" />
                     <!-- mode AND its sell timing share this cell ("Distribute + Sell - Sell Immediately") -->
-                    <Text profile="SDRowCell" position="734px 0px" size="220px 52px" textSize="14px" name="modeText" />
-                    <Text profile="SDRowCell" position="964px 0px" size="126px 52px" textSize="14px" name="statusText" />
+                    <Text profile="SDRowCell" position="759px 0px" size="215px 42px" textSize="12px" name="modeText" />
+                    <Text profile="SDRowCell" position="982px 0px" size="108px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">

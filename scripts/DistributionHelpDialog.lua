@@ -97,9 +97,11 @@ STATUS - Active - Running, Active - Idle, or Blocked.
 ## How Held is written
 Held always reads the same way across every tab: the amount, then what it can hold in brackets, then any pallets standing on the building's pad.
 
-  473 L (55,000 L) + 3,000 L (3p)
+  473 L (55 kL) + 3 kL (3p)
 
 That is 473 litres in the building's internal store, out of a 55,000 litre capacity, plus three pallets on the pad carrying 3,000 litres between them. A building with no pallets simply omits the last part. Where capacity cannot be determined, the bracket is left off rather than guessed at.
+
+Volumes switch unit at 1,000 litres. Up to 999 L they read in litres; from 1,000 L up they read in kilolitres with any extraneous zeros dropped, so 1,001 L shows as 1.001 kL, 123,123 L as 123.123 kL, and 600,000 L simply as 600 kL. Three decimals is exactly one litre, so nothing is lost in the change of unit.
 
 ## Changing settings
 To turn a production line on or off, select the line and press Toggle Line.
@@ -151,11 +153,9 @@ Advanced routing lets you control every individual input and output of every bui
 
 ## Advanced Inputs
 Select any incoming product and press Advanced.
-Block / Unblock - stop this building from ever receiving that product. Blocking a product also hands its reserved space back to the other products (see Max In).
-Max In - the most of that product the building may hold. This matters for pooled storage. A silo with 400,000 litres of total space accepting 10 products gives each one 40,000 by default, so no single product can fill the silo and lock the others out. Blocking a product redistributes its share across the rest automatically.
+Block / Unblock - stop this building from ever receiving that product.
+Max In - the most of that product the building may hold. This matters for pooled storage, where several products share one tank. A pool is first come, first served: by default every product may use all of it, exactly as the base game behaves. That means a busy product can fill a silo and leave little room for the others - so set Max In on that product to cap it and hold space back for the rest. Caps are independent and do not have to add up to 100 percent; anything you leave alone stays unlimited.
 Target - a fill target for that product. Instead of delivering only what the next cycle needs, the network works towards this level and then holds it - in effect an input reserve.
-
-Note that setting Max In or Target by hand is undone when you next block or unblock a product in the same pool, because blocking rebalances every share back to its automatic default.
 
 ## Advanced Outputs
 Select the outgoing product you want to adjust and press Advanced.

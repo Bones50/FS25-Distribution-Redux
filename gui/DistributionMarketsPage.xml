@@ -39,21 +39,25 @@
         <!-- right: INCOMING PRODUCTS (what the market receives). Animal Husbandry column set;
              rows selectable, ready for the input drill-down. -->
         <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="240px 40px" text="INCOMING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="292px 0px" size="300px 40px" text="HELD (CAP)" />
-            <Text profile="SDHeaderLeft" position="600px 0px" size="180px 40px" text="RECEIVED" />
-            <Text profile="SDHeaderLeft" position="788px 0px" size="302px 40px" text="DISTRIBUTION" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="260px 40px" textSize="11px" text="INCOMING PRODUCTS" />
+            <Text profile="SDHeaderLeft" position="312px 0px" size="240px 40px" textSize="11px" text="HELD / MAX" />
+            <Text profile="SDHeaderLeft" position="560px 0px" size="115px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="683px 0px" size="140px 40px" textSize="11px" text="RECEIVED" />
+            <Text profile="SDHeaderLeft" position="831px 0px" size="259px 40px" textSize="11px" text="DISTRIBUTION" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
             <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 280px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
-                <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickInputRow">
-                    <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="240px 52px" textSize="16px" name="fillName" />
-                    <Text profile="SDRowCell" position="292px 0px" size="300px 52px" textSize="15px" name="heldText" />
-                    <Text profile="SDRowCell" position="600px 0px" size="180px 52px" textSize="16px" name="recvText" />
-                    <Text profile="SDRowCell" position="788px 0px" size="302px 52px" textSize="15px" name="statusText" />
+                <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickInputRow">
+                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
+                    <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
+                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="260px 42px" textSize="12px" name="fillName" />
+                    <Text profile="SDRowCell" position="312px 0px" size="240px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCell" position="560px 0px" size="115px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="683px 0px" size="140px 42px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCell" position="831px 0px" size="259px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight">
@@ -64,22 +68,26 @@
         <!-- OUTGOING PRODUCTS (what the market sells). DISTRIBUTED is everything that left the buffer,
              with the sale value in brackets. A market makes nothing, so there is no PRODUCED column. -->
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="240px 40px" text="OUTGOING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="292px 0px" size="300px 40px" text="HELD (CAP)" />
-            <Text profile="SDHeaderLeft" position="600px 0px" size="220px 40px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderLeft" position="828px 0px" size="262px 40px" text="OUTPUT MODE" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="230px 40px" textSize="11px" text="OUTGOING PRODUCTS" />
+            <Text profile="SDHeaderLeft" position="282px 0px" size="235px 40px" textSize="11px" text="HELD (MAX)" />
+            <Text profile="SDHeaderLeft" position="525px 0px" size="115px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="648px 0px" size="150px 40px" textSize="11px" text="DISTRIBUTED" />
+            <Text profile="SDHeaderLeft" position="806px 0px" size="284px 40px" textSize="11px" text="OUTPUT MODE" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
         <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">
             <SmoothList profile="SDList" id="detailList" position="0px 0px" size="1090px 340px"
                         focusChangeTop="nil" focusChangeBottom="nil">
-                <ListItem profile="SDListItem" name="rowTemplate" size="1090px 52px" onClick="onClickDetailRow">
-                    <Bitmap position="12px 14px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="240px 52px" textSize="16px" name="fillName" />
-                    <Text profile="SDRowCell" position="292px 0px" size="300px 52px" textSize="15px" name="heldText" />
-                    <Text profile="SDRowCell" position="600px 0px" size="220px 52px" textSize="16px" name="distText" />
-                    <Text profile="SDRowCell" position="828px 0px" size="262px 52px" textSize="15px" name="modeText" />
+                <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickDetailRow">
+                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
+                    <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
+                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="230px 42px" textSize="12px" name="fillName" />
+                    <Text profile="SDRowCell" position="282px 0px" size="235px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCell" position="525px 0px" size="115px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="648px 0px" size="150px 42px" textSize="12px" name="distText" />
+                    <Text profile="SDRowCell" position="806px 0px" size="284px 42px" textSize="12px" name="modeText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">

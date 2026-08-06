@@ -49,16 +49,17 @@
         <Bitmap profile="SDList" id="flowHeaderRow" position="0px -140px" size="1480px 40px">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
-            <Text profile="SDHeaderRight" position="406px 0px"  size="70px 40px"  textSize="11px" text="RECEIVED" />
-            <Text profile="SDHeaderRight" position="480px 0px"  size="58px 40px"  textSize="11px" text="LOADED" />
-            <Text profile="SDHeaderRight" position="542px 0px"  size="118px 40px" textSize="11px" text="CONSUMED (EXP.)" />
-            <Text profile="SDHeaderRight" position="664px 0px"  size="70px 40px"  textSize="11px" text="UNLOADED" />
-            <Text profile="SDHeaderRight" position="738px 0px"  size="240px 40px" textSize="11px" text="HELD (CAP)" />
-            <Text profile="SDHeaderRight" position="982px 0px"  size="118px 40px" textSize="11px" text="PRODUCED (EXP.)" />
-            <Text profile="SDHeaderRight" position="1104px 0px" size="76px 40px"  textSize="11px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderRight" position="1184px 0px" size="90px 40px"  textSize="11px" text="STORED/MOVED" />
-            <Text profile="SDHeaderRight" position="1278px 0px" size="130px 40px" textSize="11px" text="SOLD" />
-            <Text profile="SDHeaderRight" position="1412px 0px" size="68px 40px"  textSize="11px" text="DISTR. COST" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="64px 40px"  textSize="11px" text="RECEIVED" />
+            <Text profile="SDHeaderRight" position="474px 0px"  size="54px 40px"  textSize="11px" text="LOADED" />
+            <Text profile="SDHeaderRight" position="532px 0px"  size="110px 40px" textSize="11px" text="CONSUMED (EXP.)" />
+            <Text profile="SDHeaderRight" position="646px 0px"  size="64px 40px"  textSize="11px" text="UNLOADED" />
+            <Text profile="SDHeaderRight" position="714px 0px"  size="220px 40px" textSize="11px" text="HELD (MAX)" />
+            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderRight" position="1022px 0px" size="110px 40px" textSize="11px" text="PRODUCED (EXP.)" />
+            <Text profile="SDHeaderRight" position="1136px 0px" size="72px 40px"  textSize="11px" text="DISTRIBUTED" />
+            <Text profile="SDHeaderRight" position="1212px 0px" size="84px 40px"  textSize="11px" text="STORED/MOVED" />
+            <Text profile="SDHeaderRight" position="1300px 0px" size="118px 40px" textSize="11px" text="SOLD" />
+            <Text profile="SDHeaderRight" position="1422px 0px" size="58px 40px"  textSize="11px" text="DISTR. COST" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
@@ -98,23 +99,24 @@
                     <Text profile="SDRowCell"  position="56px 0px"   size="160px 42px" textSize="12px" name="assetName" />
                     <Bitmap position="220px 12px" size="18px 18px" name="productIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell"  position="244px 0px"  size="156px 42px" textSize="12px" name="productName" />
-                    <Text profile="SDRowCellR" position="406px 0px"  size="70px 42px"  textSize="12px" name="receivedText" />
-                    <Text profile="SDRowCellR" position="480px 0px"  size="58px 42px"  textSize="12px" name="loadedText" />
-                    <Text profile="SDRowCellR" position="542px 0px"  size="118px 42px" textSize="12px" name="consumedText" />
-                    <Text profile="SDRowCellR" position="664px 0px"  size="70px 42px"  textSize="12px" name="unloadedText" />
-                    <!-- HELD carries the longest string on the page: "473 L (150,000 L) + 3,000 L (3p)".
-                         At 118px it truncated to "360 L (150,000 L) + ...", so it keeps a wide slot. It
-                         gave up 10px when SOLD needed room; the rest came from the narrow columns, which
-                         only ever hold a short figure or a dash. -->
-                    <Text profile="SDRowCellR" position="738px 0px"  size="240px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCellR" position="982px 0px"  size="118px 42px" textSize="12px" name="producedText" />
-                    <Text profile="SDRowCellR" position="1104px 0px" size="76px 42px"  textSize="12px" name="distributedText" />
+                    <Text profile="SDRowCellR" position="406px 0px"  size="64px 42px"  textSize="12px" name="receivedText" />
+                    <Text profile="SDRowCellR" position="474px 0px"  size="54px 42px"  textSize="12px" name="loadedText" />
+                    <Text profile="SDRowCellR" position="532px 0px"  size="110px 42px" textSize="12px" name="consumedText" />
+                    <Text profile="SDRowCellR" position="646px 0px"  size="64px 42px"  textSize="12px" name="unloadedText" />
+                    <!-- HELD carries the longest string on the page: "473 L / 150,000 L (100%)" for an input
+                         row, "473 L (150,000 L) + 3,000 L (3p)" for a palletised output. It keeps the widest
+                         slot; REMAINING was fitted beside it by taking a few px from each of the narrow
+                         columns, which only ever hold a short figure or a dash. Table still ends at 1480. -->
+                    <Text profile="SDRowCellR" position="714px 0px"  size="220px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCellR" position="938px 0px"  size="80px 42px"  textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCellR" position="1022px 0px" size="110px 42px" textSize="12px" name="producedText" />
+                    <Text profile="SDRowCellR" position="1136px 0px" size="72px 42px"  textSize="12px" name="distributedText" />
                     <!-- SOLD carries a figure AND its money in brackets, "78,000 (E40,950)", so it needs
                          far more than the plain-number columns beside it. STORED/MOVED gained a little
                          with it, its header having been clipped to "STORED/MOV...". -->
-                    <Text profile="SDRowCellR" position="1184px 0px" size="90px 42px"  textSize="12px" name="storedText" />
-                    <Text profile="SDRowCellR" position="1278px 0px" size="130px 42px" textSize="12px" name="soldText" />
-                    <Text profile="SDRowCellR" position="1412px 0px" size="68px 42px"  textSize="12px" name="costText" />
+                    <Text profile="SDRowCellR" position="1212px 0px" size="84px 42px"  textSize="12px" name="storedText" />
+                    <Text profile="SDRowCellR" position="1300px 0px" size="118px 42px" textSize="12px" name="soldText" />
+                    <Text profile="SDRowCellR" position="1422px 0px" size="58px 42px"  textSize="12px" name="costText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 626px" with="anchorTopRight">

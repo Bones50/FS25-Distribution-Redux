@@ -200,6 +200,29 @@ local function storageCapacity(storage, ft)
         local ok, c = pcall(storage.getCapacity, storage, ft)
         if ok and type(c) == "number" and c > 0 then return c end
     end
+    -- SHARED-CAPACITY TANK, third basis. Some storages -- a modded silo extension notably -- declare no
+    -- per-fill-type capacity at all (`capacities[ft]` absent, `getCapacity` silent) yet report free space
+    -- perfectly well through getFreeCapacity. Returning nil for those made assetCapacity (the OUTPUT basis)
+    -- skip the tank entirely, while _computePooledInputCapacity (the INPUT basis, built on level + free)
+    -- counted it -- so ONE silo read 800,000 L of input capacity and 600,000 L of output capacity for the
+    -- same product. Two DR figures for one quantity disagreeing is the single most expensive bug shape in
+    -- this codebase (5.27 / 5.28), and this is that shape.
+    --
+    -- Total = everything the tank currently holds + what is still free, which is precisely the figure the
+    -- input path computes, so the two bases now agree BY CONSTRUCTION rather than by coincidence.
+    -- Levels are summed over EVERYTHING the tank holds, not just ft: on a shared tank the free space is
+    -- common to all products, so ft's own level alone would under-report by whatever else is in there.
+    --
+    -- `storage.fillLevels` is read directly rather than through storageFillTypes -- that helper is declared
+    -- ~1000 lines below this one, and calling it here would resolve to a nil global and throw at runtime
+    -- while luac -p passed clean (CLAUDE.md 5.44).
+    local levels = storage.fillLevels
+    if type(levels) == "table" and levels[ft] ~= nil then
+        local total = 0
+        for _, v in pairs(levels) do if type(v) == "number" then total = total + v end end
+        local free = getFree(storage, ft)
+        if type(free) == "number" and free < math.huge then return total + free end
+    end
     return nil
 end
 
@@ -289,6 +312,185 @@ local function recordExtensionParent(station, storage)
     if set == nil then set = {}; EXT_BY_PARENT[owner] = set end
     set[storage] = true
 end
+-- Is `storage` some production point's OWN buffer, on ANY placeable?
+--
+-- REPORTED 2026-08-06: a Farma 400 silo showed 113 incoming products in Advanced Inputs -- Cement Brick,
+-- Cheese, Chocolate, Clothes -- and a pooled capacity of 600,000 L against its own 400,000. A modded
+-- production (a Logistics Distribution Centre) standing inside the silo's 50 m storageRadius declares its
+-- buffer isExtension="true", so the base game attached it to the silo's station and DR folded it in as
+-- extra silo capacity.
+--
+-- blocksSiloSelfExtension did not stop it: that guard is scoped to SILO -> SILO pooling and bails on
+-- `owner.spec_silo == nil`, so a production-owned storage was never policed. recordExtensionParent's own
+-- production guard only refuses the STATION OWNER's buffer (a production absorbing itself) -- the owner
+-- here is the silo, so it never fired. The fold was simply wider than either guard.
+--
+-- Not cosmetic: the silo's capacity, held and Overview role tagging all read getAllStorages, so DR believed
+-- it had 200,000 L of space that is really a production's buffer -- and Store / Move To would have pushed
+-- crops into it.
+--
+-- FILTERED AT READ TIME, not at attach: the attach happens during placeable load, when the owning
+-- production may not exist yet. This function already excludes the silo's own storages at read time "so it
+-- is robust regardless of the order in which storages were added at load" -- the same argument applies.
+--
+-- Deliberately NOT built on SmartDistribution.storageOwnerOf: that map is built by calling getAllStorages
+-- for every placeable, and getAllStorages calls parentExtensionStorages -- the very function that needs
+-- this answer. That is straight infinite recursion. This reads pp.storage only, so it cannot recurse.
+-- _uncachedProductionPoint for the same reason recordExtensionParent uses it: this can run during load, and
+-- memoising a MISS on a modded production that has not populated its spec_* field yet would hide that
+-- building from DR for the whole session (5.29).
+-- FIRST ATTEMPT WAS TOO NARROW, and the reason generalises: it matched only `pp.storage`. A modded
+-- production can declare a SEPARATE storage in its own <silo><storages> block with isExtension="true" --
+-- a different object from its production buffer -- and that sailed straight through. Identity of one
+-- storage is the wrong question; OWNERSHIP is the right one.
+--
+-- Maps a storage to the placeable that DECLARES it, from DIRECT sources only (a silo's own storages, a
+-- husbandry's spec storages, a production's buffer). It must NOT use getAllStorages, which calls
+-- parentExtensionStorages -- the caller of this -- and would recurse forever.
+SmartDistribution._ownerDirectMap   = nil
+SmartDistribution._ownerDirectCount = nil
+function SmartDistribution.storageOwnerDirect(storage)
+    if storage == nil then return nil end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return nil end
+    local n = #ps.placeables
+    if SmartDistribution._ownerDirectMap == nil or SmartDistribution._ownerDirectCount ~= n then
+        local map = setmetatable({}, { __mode = "k" })   -- weak: a demolished building must not be held alive
+        for _, cand in ipairs(ps.placeables) do
+            -- EVERY spec_* table, not just spec_silo / spec_husbandry. A modded production declares its
+            -- storages under a NAMESPACED spec (spec_FS25_SomeMod_thing), so naming the known specs
+            -- explicitly resolved no owner at all for exactly the buildings this needs to catch -- and an
+            -- unresolved owner means the storage is not filtered. Same generic sweep
+            -- _uncachedProductionPoint uses to find a modded production point.
+            for k, v in pairs(cand) do
+                if type(k) == "string" and k:sub(1, 5) == "spec_" and type(v) == "table" then
+                    if v.storage ~= nil and map[v.storage] == nil then map[v.storage] = cand end
+                    if type(v.storages) == "table" then
+                        for _, s in ipairs(v.storages) do if map[s] == nil then map[s] = cand end end
+                    end
+                end
+            end
+            local pp = SmartDistribution._uncachedProductionPoint(cand)
+            if pp ~= nil and pp.storage ~= nil and map[pp.storage] == nil then map[pp.storage] = cand end
+        end
+        SmartDistribution._ownerDirectMap   = map
+        SmartDistribution._ownerDirectCount = n
+    end
+    return SmartDistribution._ownerDirectMap[storage]
+end
+
+-- Should `storage` be refused as an extension of `parent`? True when it belongs to a DIFFERENT, standalone
+-- building rather than to a genuine extension placeable.
+--
+-- MEASURED, not inferred (sdExtFold, 2026-08-06). The reported Farma 400 read:
+--     OWN     10 fillType(s)  cap~400000  declared by: Wheat Collector
+--     FOLDED 113 fillType(s)  cap~200000  declared by: LDC 200000
+--     -> pool: BULK, 600000 L, 113 product(s)
+-- so the owner resolves perfectly well -- and the LDC is NOT a production point, which is why the first
+-- two attempts here (pp.storage identity, then "is the owner a production") both sailed past it. It is a
+-- standalone STORAGE building that happens to sit inside the silo's 50 m storageRadius.
+--
+-- That makes it silo -> silo pooling, which blocksSiloSelfExtension already exists to prevent -- but that
+-- guard runs at ATTACH time, during placeable load, where storageOwnerPlaceable often cannot resolve the
+-- owner yet and it deliberately fails OPEN (5.2: "already-pooled saves may stay pooled"). This is the same
+-- rule applied at READ time, where the owner demonstrably does resolve.
+--
+-- A genuine extension is identified exactly as blocksSiloSelfExtension identifies it: its build-menu
+-- category is whitelisted in extensionStoreCategories, or -- when the category cannot be read -- it is
+-- structurally an extension, i.e. a capacity-only placeable with no stations and no production of its own.
+-- Anything else is its own asset: DR enrols it separately, so folding it in double-counts its capacity AND
+-- offers its products as though the parent could hold them.
+function SmartDistribution.isForeignPoolStorage(storage, parent)
+    local ow = SmartDistribution.storageOwnerDirect(storage)
+    if ow == nil or ow == parent then return false end     -- unresolved, or the parent's own: leave alone
+    local cat = (SmartDistribution.storeCategoryName ~= nil) and SmartDistribution.storeCategoryName(ow) or nil
+    if cat ~= nil then
+        return SmartDistribution.extensionStoreCategories[cat] ~= true
+    end
+    -- category unreadable: structural fallback. A real extension is a bare tank -- no stations of its own,
+    -- and not a production. Anything with a station is a building in its own right.
+    local silo = ow.spec_silo
+    local hasStations = silo ~= nil and (silo.loadingStation ~= nil or silo.unloadingStation ~= nil)
+    if hasStations then return true end
+    return SmartDistribution._uncachedProductionPoint(ow) ~= nil
+end
+
+-- AN EXTENSION BELONGS TO EXACTLY ONE PARENT: the nearest one that claimed it.
+--
+-- The base game offers an extension storage to EVERY station whose storageRadius reaches it, so all three
+-- of a cluster of silos recorded the same 200,000 L extension and each counted it as its own -- 600,000 L
+-- of phantom capacity added to the farm from one tank (reported 2026-08-06). Distance is measured from the
+-- extension placeable to each claimant, so "closest silo wins" means what the player sees on the ground.
+--
+-- Cached against the placeable count (the _soMap pattern); ties break on uniqueId so the winner is stable
+-- rather than depending on table order. Fails OPEN -- if the extension's own placeable or a claimant has no
+-- resolvable position, every claimant keeps it, which is exactly the previous behaviour.
+SmartDistribution._extParentMap   = nil
+SmartDistribution._extParentCount = nil
+function SmartDistribution.extensionParentFor(storage)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return nil end
+    local n = #ps.placeables
+    if SmartDistribution._extParentMap == nil or SmartDistribution._extParentCount ~= n then
+        local map = setmetatable({}, { __mode = "k" })
+        local claims = {}                                  -- storage -> { parent, ... }
+        for parent, set in pairs(EXT_BY_PARENT) do
+            for s in pairs(set) do
+                local c = claims[s]; if c == nil then c = {}; claims[s] = c end
+                c[#c + 1] = parent
+            end
+        end
+        for s, list in pairs(claims) do
+            -- DEMOLISHED FIRST, and the distinction is the whole point. Nothing prunes EXT_BY_PARENT when a
+            -- placeable is sold, so a demolished extension's storage object lingers in every claimant's set
+            -- and still answers for its capacity. Resolving it then fell into the "unmeasurable" branch
+            -- below, whose fail-open hands the tank to EVERY claimant -- so selling the extension made all
+            -- three silos gain its 200,000 L instead of losing it. Reported 2026-08-06 with exactly that
+            -- shape: 400K / 400K / 600K before (correct -- nearest wins), 600K / 600K / 600K after.
+            --
+            -- "The declaring placeable no longer exists" and "I cannot measure the distance to it" are
+            -- different facts and must not share an answer: the first means DROP, only the second means
+            -- share. Dropping is also the safe direction if this ever misfires -- DR would under-report
+            -- capacity and move less, where the fail-open invents space on every silo in range.
+            --
+            -- Load-order note: storageOwnerDirect can transiently answer nil before a placeable populates
+            -- its spec_* tables, which would drop a LIVE extension for one read. Both this map and the
+            -- owner map are rebuilt whenever the placeable count changes, so that self-heals within a
+            -- frame or two of load and costs at most a cycle of under-reported capacity.
+            local ow = SmartDistribution.storageOwnerDirect(s)
+            if ow == nil then
+                map[s] = "dead"                            -- sold / demolished: nobody keeps it
+            elseif #list == 1 then
+                map[s] = list[1]
+            else
+                local ok, ex, _, ez = false, nil, nil, nil
+                if ow.rootNode ~= nil then ok, ex, _, ez = pcall(getWorldTranslation, ow.rootNode) end
+                if not ok or ex == nil then
+                    map[s] = false                         -- unmeasurable: fail open, everyone keeps it
+                else
+                    local best, bestD = nil, nil
+                    for _, parent in ipairs(list) do
+                        if parent.rootNode ~= nil then
+                            local okP, px, _, pz = pcall(getWorldTranslation, parent.rootNode)
+                            if okP and px ~= nil then
+                                local d = (px - ex) * (px - ex) + (pz - ez) * (pz - ez)
+                                if bestD == nil or d < bestD
+                                   or (d == bestD and tostring(parent.uniqueId) < tostring(best.uniqueId)) then
+                                    best, bestD = parent, d
+                                end
+                            end
+                        end
+                    end
+                    map[s] = best or false
+                end
+            end
+        end
+        SmartDistribution._extParentMap   = map
+        SmartDistribution._extParentCount = n
+    end
+    return SmartDistribution._extParentMap[storage]
+end
+
 local function parentExtensionStorages(p)
     local out = {}
     local set = p ~= nil and EXT_BY_PARENT[p] or nil
@@ -299,11 +501,30 @@ local function parentExtensionStorages(p)
     if p.spec_silo ~= nil and p.spec_silo.storages ~= nil then
         for _, s in ipairs(p.spec_silo.storages) do own[s] = true end
     end
+    -- ...and never a storage belonging to ANOTHER building that is a production. Its buffers and tanks are
+    -- that production's own business, not spare capacity on a neighbouring silo. See
+    -- isForeignPoolStorage above -- a genuine EXTENSION placeable still folds; a standalone building
+    -- (another silo, a storage building, a production) never does, because DR enrols it as its own asset.
+    -- NOTE this does not touch the 5.29c case: a greenhouse's supplementary Water Tank IS a genuine
+    -- extension by store category, so it still folds into the greenhouse exactly as before.
     for s in pairs(set) do
-        if not own[s] then out[#out + 1] = s end
+        if not own[s] and not SmartDistribution.isForeignPoolStorage(s, p) then
+            -- ...and only for the NEAREST claimant: the base game offers an extension to every station in
+            -- range, so a cluster of silos each counted the same tank. `false` means unmeasurable, in which
+            -- case every claimant keeps it (the previous behaviour).
+            -- THREE answers, not two: a real winner (only that parent keeps it), `false`/nil meaning
+            -- unmeasurable (everyone keeps it, the pre-5.54 behaviour), and "dead" meaning the declaring
+            -- placeable has been sold or demolished -- which nobody keeps. Conflating the last two handed
+            -- a demolished extension's capacity to every silo in range instead of removing it.
+            local winner = SmartDistribution.extensionParentFor(s)
+            if winner ~= "dead" and (winner == nil or winner == false or winner == p) then
+                out[#out + 1] = s
+            end
+        end
     end
     return out
 end
+
 
 -- DR's only concern here is SILO -> SILO pooling, which blocksSiloSelfExtension polices at attach time.
 -- So strip only a SILO station that is not a plain storage silo; a station owned by something that is not
@@ -314,6 +535,71 @@ end
 -- "needs to be placed near a Greenhouse" -- a greenhouse is a production point with no spec_silo, so it
 -- failed isStorageSiloStation on both counts.  The attach hooks below already say non-silo stations are to
 -- be let through; this is the query that has to agree with them.
+-- AN EXTENSION BINDS TO ONE SILO -- enforced where the base game CHOOSES, not after the fact.
+--
+-- The base game offers an extension to every station in range and attaches it to all of them, so three
+-- silos clustered around one 200,000 L tank each hold it: the vanilla info box shows its contents on all
+-- three, product tipped at one can be loaded out at another, and DR's read-time nearest-claimant rule
+-- (extensionParentFor) can correct DR's OWN accounting but cannot un-share the tank itself.
+--
+-- READ FROM THE SHIPPED SOURCE, not inferred (PlaceableSiloExtension.lua, 26% blank = complete):
+--   local lastFound... = storageSystem:getExtendableUnloadingStationsInRange(spec.storage, ownerFarmId)
+--   storageSystem:addStorageToUnloadingStations(spec.storage, lastFound...)
+-- so the list this query returns IS the set it attaches to. DR already wraps both queries, which makes
+-- this the natural seam -- and it has NO load-order problem, unlike an attach-time refusal: the query
+-- enumerates every candidate at the moment the extension binds.
+--
+-- SAFE FOR PLACEMENT, and this is the thing 5.29a got wrong. That same source shows the placement test as
+--   if #lastFoundUnloadingStations == 0 and #lastFoundLoadingStations == 0 then return false, warning end
+-- -- it fails only on an EMPTY list. keepOnlyStorageSiloStations once returned zero stations for a
+-- greenhouse and made the supplementary Water Tank unplaceable across the whole map; returning exactly ONE
+-- cannot reproduce that.
+--
+-- Deliberately narrow: only SILO-owned stations are thinned, and only when two or more compete. A station
+-- owned by anything else (a greenhouse's WATER loading station, 5.29c) passes through untouched, and an
+-- extension with a single candidate is not touched at all. Fails OPEN -- if the extension's own position
+-- cannot be resolved, every candidate is kept, which is exactly the previous behaviour.
+SmartDistribution._extExclusive = true      -- sdExtExclusive toggles; see cmdExtExclusive
+function SmartDistribution.narrowToNearestSilo(list, storage)
+    if not SmartDistribution._extExclusive then return list end
+    if type(list) ~= "table" or #list < 2 or storage == nil then return list end
+    -- which candidates are silo-owned? anything else is not ours to arbitrate
+    local silos = 0
+    for _, st in ipairs(list) do
+        local ow = st ~= nil and st.owningPlaceable or nil
+        if ow ~= nil and ow.spec_silo ~= nil then silos = silos + 1 end
+    end
+    if silos < 2 then return list end
+    -- the extension's own position, via the placeable that declares this storage
+    local ext = SmartDistribution.storageOwnerDirect(storage)
+    if ext == nil or ext.rootNode == nil then return list end
+    local okE, ex, _, ez = pcall(getWorldTranslation, ext.rootNode)
+    if not okE or ex == nil then return list end
+    local best, bestD = nil, nil
+    for _, st in ipairs(list) do
+        local ow = st ~= nil and st.owningPlaceable or nil
+        if ow ~= nil and ow.spec_silo ~= nil and ow.rootNode ~= nil then
+            local okP, px, _, pz = pcall(getWorldTranslation, ow.rootNode)
+            if okP and px ~= nil then
+                local d = (px - ex) * (px - ex) + (pz - ez) * (pz - ez)
+                -- ties break on uniqueId so the winner is stable rather than table-order dependent,
+                -- and so the UNLOADING and LOADING lists cannot pick different silos
+                if bestD == nil or d < bestD
+                   or (d == bestD and tostring(ow.uniqueId) < tostring(best.uniqueId)) then
+                    best, bestD = ow, d
+                end
+            end
+        end
+    end
+    if best == nil then return list end
+    local out = {}
+    for _, st in ipairs(list) do
+        local ow = st ~= nil and st.owningPlaceable or nil
+        if ow == nil or ow.spec_silo == nil or ow == best then out[#out + 1] = st end
+    end
+    return out
+end
+
 local function keepOnlyStorageSiloStations(list)
     if type(list) ~= "table" then return list end
     if not S.master then return list end
@@ -368,15 +654,19 @@ local function installExtensionBlock()
     end
     if StorageSystem ~= nil and StorageSystem.getExtendableUnloadingStationsInRange ~= nil then
         local orig = StorageSystem.getExtendableUnloadingStationsInRange
-        StorageSystem.getExtendableUnloadingStationsInRange = function(self, ...)
-            return keepOnlyStorageSiloStations(orig(self, ...))
+        -- `storage` is named so the nearest-silo narrowing can locate the extension that is binding;
+        -- everything else is passed straight through untouched.
+        StorageSystem.getExtendableUnloadingStationsInRange = function(self, storage, ...)
+            return SmartDistribution.narrowToNearestSilo(
+                keepOnlyStorageSiloStations(orig(self, storage, ...)), storage)
         end
         installed[#installed + 1] = "getExtendableUnloadingStationsInRange"
     end
     if StorageSystem ~= nil and StorageSystem.getExtendableLoadingStationsInRange ~= nil then
         local orig = StorageSystem.getExtendableLoadingStationsInRange
-        StorageSystem.getExtendableLoadingStationsInRange = function(self, ...)
-            return keepOnlyStorageSiloStations(orig(self, ...))
+        StorageSystem.getExtendableLoadingStationsInRange = function(self, storage, ...)
+            return SmartDistribution.narrowToNearestSilo(
+                keepOnlyStorageSiloStations(orig(self, storage, ...)), storage)
         end
         installed[#installed + 1] = "getExtendableLoadingStationsInRange"
     end
@@ -1030,15 +1320,45 @@ end
 
 -- a "slurry pit": a storage silo whose tank holds LIQUIDMANURE (and isn't a barn or a production).
 -- Grouped with the manure pit under the HEAP class so the Animal Husbandry setting governs both.
+-- REPORTED 2026-08-05: a MULTI-FRUIT SILO moved itself from the Silos tab to Animal Husbandry "after some
+-- time", and then offered only manure and slurry -- so its crops could no longer be configured at all. A
+-- vanilla grain silo was unaffected.
+--
+-- Cause: this used to return true if ANY storage merely SUPPORTED LiquidManure. A multi-fruit silo that
+-- lists LIQUIDMANURE among its many fill types therefore matched -- and getAssetClass tests this BEFORE
+-- `spec_silo -> SILO`, so the silo was reclassified HEAP, which is what put it on the husbandry tab and
+-- reduced its product list to the manure family. A vanilla grain silo never lists LIQUIDMANURE, which is
+-- exactly why only multi-fruit ones were hit. (The "after some time" is consistent with a slurry storage
+-- being added to spec_silo.storages later -- e.g. an extension attaching -- but the rule was wrong from the
+-- start either way, and this fix does not depend on knowing the trigger.)
+--
+-- A real slurry pit holds NOTHING BUT slurry: the vanilla tank declares fillTypeCategories="slurryTank",
+-- and the base game defines that category as exactly "LIQUIDMANURE DIGESTATE" (maps_fillTypes.xml). So the
+-- honest test is "supports LiquidManure AND nothing outside the manure family" -- MANURE is allowed too so
+-- a combined manure/slurry pit still reads as a HEAP. Anything that also holds a crop is a SILO.
 local function isLiquidManureSilo(p)
     if p == nil or p.spec_silo == nil then return false end
     if p.spec_husbandry ~= nil or getProductionPoint(p) ~= nil then return false end
-    local idx = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("LIQUIDMANURE") or nil
-    if idx == nil or type(p.spec_silo.storages) ~= "table" then return false end
-    for _, s in ipairs(p.spec_silo.storages) do
-        if s.fillTypes ~= nil and s.fillTypes[idx] == true then return true end
+    if type(p.spec_silo.storages) ~= "table" or g_fillTypeManager == nil then return false end
+    local slurry = g_fillTypeManager:getFillTypeIndexByName("LIQUIDMANURE")
+    if slurry == nil then return false end
+    local allowed = {}
+    for _, nm in ipairs({ "LIQUIDMANURE", "DIGESTATE", "MANURE" }) do
+        local i = g_fillTypeManager:getFillTypeIndexByName(nm)
+        if i ~= nil then allowed[i] = true end
     end
-    return false
+    local hasSlurry = false
+    for _, s in ipairs(p.spec_silo.storages) do
+        if type(s.fillTypes) == "table" then
+            for ft, on in pairs(s.fillTypes) do
+                if on then
+                    if not allowed[ft] then return false end   -- holds a crop (etc.): a genuine SILO
+                    if ft == slurry then hasSlurry = true end
+                end
+            end
+        end
+    end
+    return hasSlurry
 end
 
 -- ---- owned markets / kiosks (sell points) ----------------------------------
@@ -2103,6 +2423,91 @@ function SmartDistribution.formatMoneyShort(v)
     return (v < 0 and "-" or "") .. sym .. num
 end
 
+-- THE ONE PLACE A VOLUME IS TURNED INTO TEXT. Every litre figure on every tab and dialog comes through
+-- here, so the whole UI cannot drift into two conventions the way the held/capacity formats once did.
+--
+-- Rule: up to 999 L reads in LITRES; anything larger reads in KILOLITRES with up to three decimals and no
+-- extraneous zeros --  1,001 L -> "1.001 kL",  600,000 L -> "600 kL",  123,123 L -> "123.123 kL".
+-- Three decimals is exactly one litre of resolution, so the kL form loses nothing: it is the same number
+-- with the point moved, which is why the switchover can be silent rather than a rounding cliff.
+--
+-- Rounded to whole litres FIRST, then tested against the threshold, so 999.6 L reads "1 kL" rather than
+-- "1,000 L" -- otherwise the two branches disagree about the same quantity at the boundary.
+-- Returns "0 L" for zero (never a dash): callers that want a dash for "nothing happened" decide that for
+-- themselves, and a HELD or REMAINING cell genuinely holding nothing must say so.
+function SmartDistribution.formatVolume(v)
+    if type(v) ~= "number" or v ~= v then return "-" end          -- nil / NaN
+    if v >= math.huge or v <= -math.huge then return "-" end
+    local n = math.floor(math.abs(v) + 0.5)
+    local sign = (v < 0 and n > 0) and "-" or ""
+    local s, unit
+    if n < 1000 then
+        s, unit = tostring(n), " L"
+    else
+        s = string.format("%.3f", n / 1000)
+        s = s:gsub("0+$", "")                                     -- drop extraneous zeros: 600.000 -> 600.
+        s = s:gsub("%.$", "")                                     -- ...and the bare point it can leave
+        unit = " kL"
+    end
+    -- thousands separators on the integer part (1,234.567 kL); the decimals must not be grouped
+    local int, freq = s:match("^(%d+)"), nil
+    if int ~= nil and #int > 3 then
+        local grouped = int
+        repeat grouped, freq = grouped:gsub("^(%d+)(%d%d%d)", "%1,%2") until freq == 0
+        s = grouped .. s:sub(#int + 1)
+    end
+    return sign .. s .. unit
+end
+
+-- ---- BLOCKED-PRODUCT HIDING (building tabs) --------------------------------------------------------
+-- Does this building hold ANY of ft right now? Deliberately the MAXIMUM of the two bases rather than a
+-- per-class branch: inputHeldLevel is right for a market buffer / production input / shared FOOD pool,
+-- assetHeld for a silo, pen or shed, and either may legitimately read 0 where the other does not. This
+-- decides whether a blocked product stays VISIBLE, so it must fail toward showing the row -- hiding stock
+-- the player can see in the world would be far worse than one redundant row.
+function SmartDistribution.productHeldAny(p, ft)
+    local best = 0
+    if p == nil or ft == nil then return 0 end
+    if SmartDistribution.inputHeldLevel ~= nil then
+        local ok, v = pcall(SmartDistribution.inputHeldLevel, p, ft)
+        if ok and type(v) == "number" and v > best then best = v end
+    end
+    if SmartDistribution.assetHeld ~= nil then
+        local ok, v = pcall(SmartDistribution.assetHeld, p, ft)
+        if ok and type(v) == "number" and v > best then best = v end
+    end
+    return best
+end
+
+-- With Advanced routing ON, a product the player has BLOCKED and that the building is not actually holding
+-- is noise: a Farma 400 with eight of its ten crops blocked should read as a two-crop silo, not as ten rows
+-- of dashes. Blocked but still HOLDING is kept, because that stock is real, has to be dealt with, and is
+-- exactly what a player would come looking for.
+--
+-- Returns the surviving list plus how many were dropped, so the caller can say so rather than silently
+-- shortening the table -- a hidden row with no explanation is the worse failure of the two.
+--
+-- With Advanced routing OFF it returns the ORIGINAL table and 0, unchanged and un-copied, so every tab is
+-- byte-identical to before for anyone not using the feature. Blocking is an advanced-only concept
+-- (clearAdvancedControl wipes the block table when the switch goes off), so there is nothing to hide.
+function SmartDistribution.visibleProducts(p, ordered)
+    if p == nil or type(ordered) ~= "table" then return ordered, 0 end
+    if SmartDistribution.advancedEnabled == nil or not SmartDistribution.advancedEnabled() then
+        return ordered, 0
+    end
+    local uid = (SmartDistribution.assetUid ~= nil) and SmartDistribution.assetUid(p) or nil
+    if uid == nil or SmartDistribution.isInputBlocked == nil then return ordered, 0 end
+    local out, hidden = {}, 0
+    for _, ft in ipairs(ordered) do
+        if SmartDistribution.isInputBlocked(uid, ft) and SmartDistribution.productHeldAny(p, ft) <= 0 then
+            hidden = hidden + 1
+        else
+            out[#out + 1] = ft
+        end
+    end
+    return out, hidden
+end
+
 -- Emit one combined notification for the cycle just completed, then clear the tally.
 -- Called at the START of the next cycle so a removable add-on's late biogas-surplus
 -- sale (ProductionDistributeSell, which runs after this pass) is already counted.
@@ -2847,7 +3252,11 @@ local function getSinkStorages(p, ft)
         end
     end
     if isSilo then
-        for _, s in ipairs(parentExtensionStorages(p)) do stores[#stores+1] = s end
+        -- an extension contributes SPACE, never PRODUCTS: fold its tanks in for a product the silo itself
+        -- can hold, and not at all for one only the extension supports (5.54)
+        if not SmartDistribution.isExtensionOnlyFillType(p, ft) then
+            for _, s in ipairs(parentExtensionStorages(p)) do stores[#stores+1] = s end
+        end
     end
     if pit then
         local hs = manureHeapStorage(p)
@@ -4536,6 +4945,7 @@ SmartDistribution._padMemo   = setmetatable({}, { __mode = "k" })
 SmartDistribution._poolMemo  = setmetatable({}, { __mode = "k" })
 SmartDistribution._shareMemo = setmetatable({}, { __mode = "k" })
 SmartDistribution._destMemo  = setmetatable({}, { __mode = "k" })
+SmartDistribution._extOnlyMemo = setmetatable({}, { __mode = "k" })   -- see isExtensionOnlyFillType
 
 -- Bump the epoch: every memo above is stamped with it, so this makes a change visible on the NEXT read
 -- rather than up to MEMO_TTL later. Called at the top of the hourly pass, from the input-control setters,
@@ -5156,6 +5566,8 @@ end
 -- A bulk storage on `p` that supports `ft` (nil if none). This is the receiving tank for a bulk push.
 function SmartDistribution._bulkStorageFor(p, ft)
     if p == nil then return nil end
+    -- Move To must not pick an extension tank for a product the silo itself cannot hold (5.54)
+    if SmartDistribution.isExtensionOnlyFillType(p, ft) then return nil end
     for _, s in ipairs(getAllStorages(p)) do
         if storageFillTypes(s)[ft] ~= nil then return s end
     end
@@ -8994,6 +9406,86 @@ function SmartDistribution.cmdStressBig(self, argB, argP)
 end
 -- ===========================================================================
 
+-- (moved here from just after parentExtensionStorages: it calls getAllStorages / storageFillTypes,
+--  which are declared FURTHER DOWN the file. Referencing a not-yet-declared local resolves to a nil
+--  GLOBAL and throws only when reached -- luac -p passes clean. Same trap as CLAUDE.md 5.44.)
+-- sdExtFold [name] -- what is folded into a building, and where each storage came from.
+--
+-- Added after two wrong guesses at the Farma 400 case (5.54): the first filter matched only pp.storage and
+-- missed a modded production declaring its own <silo> storage. This prints the answer instead of inferring
+-- it: every storage getAllStorages returns for the building, whether it is the building's OWN or FOLDED in,
+-- who declares it, how many fill types it contributes and its capacity -- so a wrong fold names itself.
+function SmartDistribution.cmdExtExclusive(self)
+    SmartDistribution._extExclusive = not SmartDistribution._extExclusive
+    return string.format(
+        "exclusive extension binding = %s -- an extension attaches to the NEAREST silo only. " ..
+        "Takes effect on the next LOAD (the base game binds at placement/load time, and DR narrows the " ..
+        "station list it chooses from).",
+        tostring(SmartDistribution._extExclusive))
+end
+
+function SmartDistribution.cmdExtFold(self, nameArg)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return "no placeableSystem -- load a savegame first" end
+    local want = nameArg ~= nil and tostring(nameArg):lower() or nil
+    local out, hits = {}, 0
+    local function say(fmt, ...) out[#out + 1] = string.format(fmt, ...) end
+    for _, p in ipairs(ps.placeables) do
+        if p.spec_silo ~= nil or getProductionPoint(p) ~= nil then
+            local nm = placeableName(p)
+            if want == nil or tostring(nm):lower():find(want, 1, true) then
+                hits = hits + 1
+                local own = {}
+                if p.spec_silo ~= nil and type(p.spec_silo.storages) == "table" then
+                    for _, s in ipairs(p.spec_silo.storages) do own[s] = true end
+                end
+                local all = getAllStorages(p)
+                say("%s -- %d storage(s) in getAllStorages", tostring(nm), #all)
+                for _, s in ipairs(all) do
+                    local n = 0
+                    for _ in pairs(storageFillTypes(s)) do n = n + 1 end
+                    local ow  = SmartDistribution.storageOwnerDirect(s)
+                    local owN = (ow ~= nil) and placeableName(ow) or "?unresolved"
+                    local isP = (ow ~= nil) and (SmartDistribution._uncachedProductionPoint(ow) ~= nil)
+                    -- Reproduce _computePooledInputCapacity's OWN arithmetic exactly, term by term, so a
+                    -- pool total that disagrees with the storages under it names which term moved. The
+                    -- first version sampled ONE fill type (`break` after the first) and printed
+                    -- level+free from it, which reads 0 on a full tank and cannot show the sum at all --
+                    -- so two runs 29 s apart printed identical storage lines under pool totals of
+                    -- 600,000 and 800,000 (reported 2026-08-06).
+                    local ownFts = SmartDistribution.ownStorageFillTypes(p)
+                    local nOwn, total = 0, 0
+                    for ft in pairs(storageFillTypes(s)) do
+                        total = total + (getLevel(s, ft) or 0)
+                        if ownFts[ft] then nOwn = nOwn + 1 end
+                    end
+                    local firstOwn = nil
+                    for ft in pairs(storageFillTypes(s)) do if ownFts[ft] then firstOwn = ft; break end end
+                    local free = firstOwn ~= nil and (getFree(s, firstOwn) or 0) or 0
+                    local contrib = (nOwn >= 2) and (total + free) or 0
+                    say("    %-6s %3d fillType(s) (%d own)  levels=%-9d free=%-9d -> contributes %-9d  by: %s%s",
+                        own[s] and "OWN" or "FOLDED", n, nOwn, total, free, contrib, owN,
+                        isP and "  [PRODUCTION]" or "")
+                    -- and what the building reports it is holding, for the same product the pool is about
+                    if firstOwn ~= nil then
+                        say("           first own ft=%s level=%s  storageCapacity=%s  assetHeld(building)=%s",
+                            tostring(fillTypeName(firstOwn)), tostring(getLevel(s, firstOwn)),
+                            tostring(storageCapacity(s, firstOwn)),
+                            tostring(SmartDistribution.assetHeld(p, firstOwn)))
+                    end
+                end
+                local pool = SmartDistribution.pooledInputCapacity(p)
+                if pool ~= nil then
+                    say("    -> pool: %s, %d L, %d product(s)", tostring(pool.kind), pool.liters or -1, #(pool.fts or {}))
+                end
+            end
+        end
+    end
+    if hits == 0 then say("no silo/production matched '%s'", tostring(nameArg)) end
+    for _, line in ipairs(out) do print(line) end
+    return "sdExtFold done -- see console/log above"
+end
+
 function SmartDistribution.cmdPalletHook(self, what)
     what = what ~= nil and tostring(what):lower() or nil
     if what == "redirect" then
@@ -11349,9 +11841,25 @@ function SmartDistribution.receiverInputRows(p)
             blocked = rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft) or false,
             pct = pct,
             capLiters = cap,
-            -- elastic: reflects what the pool can REALLY still take, not the flat share (see
-            -- inputEffectiveMaxLiters) -- so the dialog never advertises space another product occupies
-            maxLiters = SmartDistribution.inputEffectiveMaxLiters(p, ft) or (cap * (pct / 100)),
+            -- MAX IN: exactly what the percentage means -- that share of the building's total capacity.
+            -- 50% of a 75,000 L silo is 37,500 L; 100% is 75,000 L. It used to carry
+            -- inputEffectiveMaxLiters, the ELASTIC "what could still fit given what the others hold", which
+            -- paired a cap percentage with a number that was not that percentage of anything: a 75,000 L
+            -- silo holding 60,000 L of other crops displayed "100%  (15,000 L)" and read as broken.
+            -- The elastic figure is still shown -- as its own AVAILABLE column below, where it is honest.
+            maxLiters = cap * (pct / 100),
+            -- AVAILABLE: how many more litres of this product the building will actually accept right now.
+            -- This is the enforcement figure the allocator itself clamps every delivery to, so the column
+            -- cannot disagree with what DR then does. It is the smaller of "this product's own ceiling minus
+            -- what it already holds" and "the space the other products have left free" -- e.g. a 75,000 L
+            -- silo with 25,000 L used shows 7,500 at Max 10%, and 50,000 at Max 100%.
+            -- nil when unconstrained: inputAcceptableLiters returns INF for a building whose capacity
+            -- cannot be resolved, and "inf L" in a column is worse than an honest dash.
+            availLiters = (function()
+                local a = SmartDistribution.inputAcceptableLiters(p, ft)
+                if type(a) ~= "number" or a ~= a or a >= INF then return nil end
+                return a
+            end)(),
             held = SmartDistribution.inputHeldLevel(p, ft),
             explicit = rcvUid ~= nil and SmartDistribution.hasExplicitInputCapPct(rcvUid, ft) or false,
             targetPct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil,
@@ -11379,6 +11887,119 @@ end
 
 -- Which input products a building can receive (for the Advanced Inputs dialog). Productions use their
 -- input fill types; husbandries use husbandryInputFillTypes; storage/sheds use their supported fts.
+-- The fill types a building supports through its OWN storages -- excluding anything a folded EXTENSION
+-- brings with it.
+--
+-- AN EXTENSION ADDS SPACE, NOT PRODUCTS (author's rule, 2026-08-06). The reported case: a valid 200,000 L
+-- extension from a mod pack supports 113 fill types, so folding it into a 10-crop Farma 400 made the silo
+-- advertise Cement Brick, Cheese, Chocolate and Clothes as things it could receive. The extra SPACE is
+-- legitimate and is still counted; the extra PRODUCTS are not, because the silo itself cannot hold them and
+-- DR would route them there.
+--
+-- This is also what makes the Advanced Inputs dialog agree with the building page again: the page has
+-- always read the building's own storages (siloFillTypes), and now so does the dialog.
+function SmartDistribution.ownStorageFillTypes(p)
+    local out = {}
+    if p == nil then return out end
+    local silo = p.spec_silo
+    if silo ~= nil and type(silo.storages) == "table" then
+        for _, s in ipairs(silo.storages) do
+            for ft in pairs(storageFillTypes(s)) do out[ft] = true end
+        end
+    end
+    -- a bulk hall bay lists only the crop currently piled there under fillTypes, so prefer its supported set
+    for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do
+        local sup = s.supportedFillTypes or storageFillTypes(s)
+        for ft in pairs(sup) do out[ft] = true end
+    end
+    local h = p.spec_husbandry
+    if h ~= nil then
+        if h.storage ~= nil then for ft in pairs(storageFillTypes(h.storage)) do out[ft] = true end end
+        if type(h.storages) == "table" then
+            for _, s in ipairs(h.storages) do for ft in pairs(storageFillTypes(s)) do out[ft] = true end end
+        end
+    end
+    local pp = getProductionPoint(p)
+    if pp ~= nil and pp.storage ~= nil then
+        for ft in pairs(storageFillTypes(pp.storage)) do out[ft] = true end
+    end
+    local heap = manureHeapStorage(p)
+    if heap ~= nil then for ft in pairs(storageFillTypes(heap)) do out[ft] = true end end
+    return out
+end
+
+-- Is `ft` reachable ONLY through a folded-in extension -- i.e. a product the silo itself cannot hold,
+-- offered to it purely because a neighbouring extension placeable happens to support it?
+--
+-- This is the ENGINE half of 5.54. Filtering the Advanced Inputs list (ownStorageFillTypes, above) stops
+-- DR ADVERTISING Cement Brick on a Farma 400, but on its own it leaves every routing path still willing
+-- to PUT it there: canAccept (the distribute sink gate), getSinkStorages (Store), _bulkStorageFor
+-- (Move To) and assetProducts (the tab + Overview product list) all sweep getAllStorages, which folds the
+-- extension in by design. A display-only fix would have been the worst of both worlds -- product moving
+-- somewhere the UI denies is even possible.
+--
+-- DELIBERATELY RESTRICTED TO `spec_silo`, and that restriction is load-bearing: 5.29c folds a
+-- supplementary Water Tank into a GREENHOUSE, and a production's own WATER capacity may live entirely in
+-- that tank rather than in pp.storage. A blanket rule would read WATER as "extension-only" and cut the
+-- greenhouse off from its own water supply. Manure-heap extensions are untouched too -- they come through
+-- parentPitExtensionStorages, which this never consults.
+--
+-- Returns false for any silo with no folded extension at all (the overwhelming majority), so it cannot
+-- change behaviour on a farm this bug never affected.
+-- MEMOISED per placeable, and it has to be: canAccept is on the allocator's per-candidate hot path and
+-- sinksFor walks every placeable, while assetProducts asks once per fill type -- so the uncached form is
+-- O(F) table building inside an O(A x F) loop, the exact shape 5.46 had to unpick. The memo returns a SET
+-- so the per-ft question is one lookup.
+--
+-- Like the POOL memo (and unlike the pad / share ones) this deliberately does NOT take the memoReadable
+-- guard, so it is live inside the hourly pass too -- where canAccept needs it. Same justification: what it
+-- caches is STRUCTURE (which tanks are folded in, and which products each supports), not a LEVEL, so it
+-- cannot go stale as a tank fills during a fast-forward. Extensions attaching or detaching bump the epoch.
+function SmartDistribution.extensionOnlyFillTypes(p)
+    if p == nil or p.spec_silo == nil then return nil end
+    local now = SmartDistribution.memoNow()
+    local m = SmartDistribution._extOnlyMemo[p]
+    if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
+        return m.set
+    end
+    local set = nil
+    local ext = parentExtensionStorages(p)
+    if #ext > 0 then
+        -- storageSupports answers from fillTypes OR capacities OR fillLevels, so enumerate all three or
+        -- the two would disagree about the same tank. Applied to BOTH sides on purpose, and the direction
+        -- matters: a wider OWN set can only ever let a product through (the pre-fix behaviour), while a
+        -- narrower one would BLOCK something the silo really holds -- much the worse failure.
+        local function union(s, into)
+            for _, k in ipairs({ "fillTypes", "capacities", "fillLevels" }) do
+                local t = s[k]
+                if type(t) == "table" then for ft in pairs(t) do into[ft] = true end end
+            end
+        end
+        local own = {}
+        for ft in pairs(SmartDistribution.ownStorageFillTypes(p)) do own[ft] = true end
+        if type(p.spec_silo.storages) == "table" then
+            for _, s in ipairs(p.spec_silo.storages) do union(s, own) end
+        end
+        for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do union(s, own) end
+        local extFts = {}
+        for _, s in ipairs(ext) do union(s, extFts) end
+        for ft in pairs(extFts) do
+            if own[ft] == nil then
+                if set == nil then set = {} end
+                set[ft] = true
+            end
+        end
+    end
+    SmartDistribution._extOnlyMemo[p] = { set = set, at = now, epoch = SmartDistribution._memoEpoch }
+    return set
+end
+
+function SmartDistribution.isExtensionOnlyFillType(p, ft)
+    if p == nil or ft == nil or p.spec_silo == nil then return false end
+    local set = SmartDistribution.extensionOnlyFillTypes(p)
+    return set ~= nil and set[ft] == true
+end
+
 function SmartDistribution.receiverInputFillTypes(p)
     local out = {}
     if p == nil then return out end
@@ -11411,9 +12032,10 @@ function SmartDistribution.receiverInputFillTypes(p)
     if p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
         for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do out[ft] = true end
     end
-    for _, s in ipairs(getAllStorages(p)) do
-        for ft in pairs(storageFillTypes(s)) do out[ft] = true end
-    end
+    -- OWN storages only: a folded extension contributes SPACE, never new products (see ownStorageFillTypes).
+    -- This used to sweep getAllStorages, which is why a silo with a 113-product extension attached listed
+    -- 113 incoming products here while its building page correctly showed 10.
+    for ft in pairs(SmartDistribution.ownStorageFillTypes(p)) do out[ft] = true end
     return out
 end
 
@@ -12161,8 +12783,31 @@ function SmartDistribution.storedAttrsKey(obj)
     return nil
 end
 
--- any stored object anywhere on the farm we can copy: same fill type first (nothing to rewrite but the
--- level), otherwise any pallet object at all
+-- Is this stored object a PALLET rather than a BALE?
+--
+-- REPORTED 2026-08-06: a Bale & Pallet Storage holding 24 straw round bales and no pallets ended up with
+-- "Round bale (Noodle Soup 1,000 l)" and "Round bale (Carton Roll 3,000 l)" in it, and taking them out
+-- produced STRAW BALES. _findStoredTemplate's fallback was "the first stored object of any kind", so with
+-- no pallet on the farm to model on it cloned a BALE: the clone inherited the bale's class and its model,
+-- and only fillType / fillLevel / ownerFarmId were rewritten. The cross-product retarget could not save it
+-- either -- it writes `configFileName`, which is a PALLET attribute; a bale keeps its own filename field,
+-- so the clone stayed a straw bale wearing a pallet's fill type.
+--
+-- IDENTIFIES A PALLET POSITIVELY, and returns false when it cannot tell. Declining costs only the slower
+-- spawn-chain fallback; guessing puts an object in the player's shed that is not what it claims to be.
+function SmartDistribution.storedObjectIsPallet(obj)
+    if type(obj) ~= "table" then return false end
+    local key = SmartDistribution.storedAttrsKey(obj)
+    if key == "baleAttributes" then return false end
+    local cn = obj.REFERENCE_CLASS_NAME
+    if cn == "Bale" or cn == "PackedBale" then return false end
+    if key == "palletAttributes" then return true end
+    return cn == "Vehicle"        -- probed 2026-08-02: a stored pallet's REFERENCE_CLASS_NAME is "Vehicle"
+end
+
+-- A pallet template to clone: same fill type first (nothing to rewrite but the level), otherwise any other
+-- PALLET. Never a bale -- insertPalletsIntoShed only ever inserts pallets, and the kind must match or the
+-- shed ends up holding something the player cannot get back out as what it says it is.
 function SmartDistribution._findStoredTemplate(ft)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return nil end
@@ -12171,10 +12816,12 @@ function SmartDistribution._findStoredTemplate(ft)
         local oss = p.spec_objectStorage
         if oss ~= nil and type(oss.storedObjects) == "table" then
             for _, obj in ipairs(oss.storedObjects) do
-                local a = storedObjectAttrs(obj)
-                if a ~= nil then
-                    if a.fillType == ft then return obj, true end
-                    if fallback == nil then fallback = obj end
+                if SmartDistribution.storedObjectIsPallet(obj) then
+                    local a = storedObjectAttrs(obj)
+                    if a ~= nil then
+                        if a.fillType == ft then return obj, true end
+                        if fallback == nil then fallback = obj end
+                    end
                 end
             end
         end
@@ -12299,12 +12946,18 @@ function SmartDistribution.insertPalletsIntoShed(shed, ft, count, litresEach, fa
     -- is not a data record -- the base game CALLS it (getIsIdentical to group identical objects,
     -- getSpawnInfo to size them, getLimitedObjectId and removeFromStorage to hand them back). So the
     -- object must be verified as an OBJECT, not just as the right numbers.
+    -- AND NOT ENOUGH ON ITS OWN EITHER: it must be the right KIND of object. A clone made from a BALE
+    -- template answers every method and carries the right fillType, so both tests above pass -- and the
+    -- player still gets "Round bale (Noodle Soup)" that comes back out as a straw bale (reported
+    -- 2026-08-06). _findStoredTemplate now refuses a bale up front; this is the backstop, and it is the
+    -- same lesson twice over -- verify the thing as what it is supposed to BE, not merely as well-formed.
     local good = 0
     for i = #oss.storedObjects, before + 1, -1 do
         local obj = oss.storedObjects[i]
         local a   = storedObjectAttrs(obj)
         local ok  = a ~= nil and a.fillType == ft and (a.fillLevel or 0) > 0
                     and SmartDistribution.storedObjectIsUsable(obj)
+                    and SmartDistribution.storedObjectIsPallet(obj)
         if ok then good = good + 1 else table.remove(oss.storedObjects, i) end
     end
     oss.numStoredObjects = #oss.storedObjects
@@ -12706,6 +13359,10 @@ if addConsoleCommand ~= nil then
     -- own header). Read-only and synthetic -- it touches no game state.
     addConsoleCommand("sdStress", "Benchmark the input-cap maths at scale: sdStress [maxF] [buildings] [dev]", "cmdStress", SmartDistribution)
     addConsoleCommand("sdStressBig", "Benchmark the Overview on a SYNTHETIC FARM: sdStressBig [buildings] [products]", "cmdStressBig", SmartDistribution)
+    addConsoleCommand("sdExtFold", "What storages are folded into a silo/production, and who declares them: sdExtFold [name]", "cmdExtFold", SmartDistribution)
+    -- one-key revert for the exclusive-extension binding, the role sdPalletHook plays for 5.39. Takes
+    -- effect on the next LOAD, because the binding happens when the extension is placed or loaded.
+    addConsoleCommand("sdExtExclusive", "Toggle 'an extension binds to the NEAREST silo only' (next load)", "cmdExtExclusive", SmartDistribution)
 end
 installInteraction()
 installHusbandryPatch()
@@ -13013,16 +13670,35 @@ function SmartDistribution._computePooledInputCapacity(p)
     --
     -- Folded only when the fill-type sets OVERLAP, so a placeable carrying two genuinely independent
     -- multi-product tanks is not silently merged into one pool.
+    -- AN EXTENSION ADDS SPACE, NOT PRODUCTS. The pool's product list is the building's OWN supported set;
+    -- a folded extension only ever contributes LITRES. A valid 200,000 L extension from a mod pack that
+    -- happens to support 113 fill types used to drag all 113 into a 10-crop silo's pool, because this
+    -- unioned the fill types of every overlapping storage (reported 2026-08-06).
+    local ownFts = SmartDistribution.ownStorageFillTypes(p)
     local pool = nil
     for _, s in ipairs(getAllStorages(p)) do
+        -- exposed products: only those the building supports itself
         local fts = {}
-        for ft in pairs(storageFillTypes(s)) do fts[#fts + 1] = ft end
+        for ft in pairs(storageFillTypes(s)) do if ownFts[ft] then fts[#fts + 1] = ft end end
         if #fts >= 2 then
-            -- shared capacity: getFreeCapacity returns the same remaining total for every ft, so total
-            -- capacity = current total level + free
-            local total = 0
-            for _, ft in ipairs(fts) do total = total + (getLevel(s, ft) or 0) end
-            local cap = total + getFree(s, fts[1])
+            -- CAPACITY IS STATIC -- read it as such. This used to compute `sum of all levels + free`,
+            -- which is arithmetically the same thing ONLY while every litre counted is in this storage
+            -- and nowhere else. With a silo extension attached that stops holding: product physically in
+            -- the extension is reported by the extension AND is included where the station aggregates,
+            -- so it is added twice and the pool GROWS as the silo fills.
+            --
+            -- MEASURED (sdExtFold, 2026-08-06, Barley Collector + a 200,000 L LDC extension): at 400,000 L
+            -- held the pool read a correct 600,000, and at 600,000 L held -- the same two storages, the
+            -- same 200,000 L extension -- it read 800,000. A capacity that moves with the fill level is
+            -- the tell; nothing about the tanks changed between those two runs.
+            --
+            -- storageCapacity answers from capacities[ft], then getCapacity(), and only then falls back to
+            -- level+free for a tank that declares neither -- so an honest declaration is used where it
+            -- exists and the old formulation survives exactly where it was actually needed. It is also the
+            -- SAME function assetCapacity uses, which is the point: input MAX and output MAX are two DR
+            -- figures for one quantity and must not disagree (5.27 / 5.28). Output read 600,000 correctly
+            -- throughout this whole investigation; input is now on that basis too.
+            local cap = storageCapacity(s, fts[1]) or 0
             if cap > 0 and cap < INF then
                 if pool == nil then
                     pool = { liters = cap, fts = fts, kind = "BULK", storage = s, _set = {} }
@@ -13031,13 +13707,7 @@ function SmartDistribution._computePooledInputCapacity(p)
                     local shares = false
                     for _, ft in ipairs(fts) do if pool._set[ft] then shares = true; break end end
                     if shares then
-                        pool.liters = pool.liters + cap
-                        for _, ft in ipairs(fts) do
-                            if not pool._set[ft] then
-                                pool._set[ft] = true
-                                pool.fts[#pool.fts + 1] = ft
-                            end
-                        end
+                        pool.liters = pool.liters + cap   -- SPACE folds in; the product list does not grow
                     end
                 end
             end
@@ -13084,17 +13754,15 @@ end
 -- Every pooled product's held level, effective percentage and blocked flag, resolved in ONE pass.
 --
 -- This is the work inputEffectiveMaxLiters used to do inline, and the inline form is what made it
--- quadratic. The key observation is that the DEFAULT share is a property of the POOL, not of one product:
--- it is 100 / the number of members still unblocked (the 5.5 redistribution rule), so it is the same answer
--- for every member and only ever needed computing once.
+-- quadratic. It still resolves the pool once rather than per product, which is what keeps the call linear
+-- in F -- that part is unchanged and still matters.
 --
--- The percentages below reproduce inputCapPct -> defaultInputCapPct AND its 5.5 wrapper exactly:
---   advanced routing off      -> 100 for everything (no input constraint at all)
---   a bulk HALL               -> 100 (bays are reallocatable, so there is no share to pre-reserve)
---   an explicit player value  -> that value, always; only the default ever moves
---   otherwise                 -> 100 / active members, falling back to 100 / all members when the receiver
---                                uid cannot be resolved or everything is blocked (the wrapper's own
---                                fall-through into _origDefaultInputCapPct)
+-- The percentages below reproduce inputCapPct -> defaultInputCapPct exactly:
+--   an explicit player value  -> that value, always
+--   otherwise                 -> 100
+-- The even split that used to live here (100 / active members, redistributed as products were blocked) is
+-- gone; see defaultInputCapPct. `blocked` and `active` are still resolved because poolAggregates excludes
+-- blocked members from the pool's sums.
 --
 -- Returns nil when p has no pool. Read-only; pass `pool` in when you already have it so the memo cannot
 -- be matched against a pool rebuilt between the two calls.
@@ -13111,7 +13779,7 @@ function SmartDistribution.poolShares(p, pool)
     local uid      = getUid(p)
     local advanced = SmartDistribution.advancedEnabled()
     local n = #pool.fts
-    -- pass 1: blocked flags, and how many members still reserve anything
+    -- pass 1: blocked flags (still needed -- a blocked product is excluded from the pool's aggregates)
     local blocked, active = {}, 0
     for i = 1, n do
         local f = pool.fts[i]
@@ -13119,12 +13787,10 @@ function SmartDistribution.poolShares(p, pool)
         blocked[f] = b
         if not b then active = active + 1 end
     end
-    local dflt
-    if not advanced then dflt = 100
-    elseif pool.kind == "HALL" then dflt = 100
-    elseif uid ~= nil and active > 0 then dflt = math.floor(100 / active + 0.5)
-    elseif n > 0 then dflt = math.floor(100 / n + 0.5)
-    else dflt = 100 end
+    -- POOLED IS POOLED: 100% by default for every member, matching defaultInputCapPct. The even split this
+    -- used to compute (100 / active) is gone -- see the long note there. Nothing is redistributed when a
+    -- product is blocked either, because there is no share to hand back.
+    local dflt = 100
     -- pass 2: each member's effective % and what it is actually holding
     local T = SmartDistribution.control.inputCapPct
     local C = (advanced and uid ~= nil and T ~= nil) and T[uid] or nil
@@ -13146,33 +13812,27 @@ end
 -- The pool-wide aggregates behind inputEffectiveMaxLiters, resolved ONCE per pool instead of once per
 -- product. Every one of them turns out to be independent of the product being asked about:
 --   * `cap` is pool.liters, the same for every member, so the "is f over its share" test depends only on f
---   * usedOver (held by members over their share) and denom (the shares still competing) are plain sums
---     over the pool -- the ft in hand never appears in either condition
 --   * othersHeld is the only ft-dependent term, and it is just totalHeld - held[ft]
+--
+-- It returns exactly three things -- `over`, `totalHeld` and `shared`. It USED to also carry `usedOver`
+-- and `denom`, which fed a proportional-share step that rationed each product to a slice of the pool's
+-- FREE space. 5.53b deleted that step (a cap is a private ceiling, not a slice of a partition -- it was
+-- rationing a capped product below what it already held), leaving both terms unread, and they are now
+-- gone. Do not reintroduce either: needing them again means a partition rule has crept back in.
 -- So the O(F) loop per product collapses to O(1) per product after one O(F) pass, taking the whole call
 -- from quadratic to linear in F. Cached on the shares table (and so under the same memo), with the cap it
 -- was built for, so a caller passing a different capacity rebuilds rather than reading a wrong answer.
 function SmartDistribution.poolAggregates(pool, sh, cap)
     if sh._agg ~= nil and sh._aggCap == cap then return sh._agg end
     local shared = pool.sharedLevel == true
-    local totalHeld, usedOver, denom, over = 0, 0, 0, {}
+    local totalHeld, over = 0, {}
     for _, f in ipairs(pool.fts) do
         local held = sh.held[f] or 0
         local fPct = sh.pct[f] or 100
-        local o = held > (cap * fPct / 100) + 0.5          -- tolerance: litres are fractional
-        over[f]   = o
+        over[f]   = held > (cap * fPct / 100) + 0.5        -- tolerance: litres are fractional
         totalHeld = totalHeld + held
-        if o then
-            -- On a SHARED-LEVEL pool (a husbandry food store) every member reports the SAME pool total, so
-            -- nothing is attributable to one product and nothing may be summed across them -- that
-            -- multiplication is the 5.43 bug. Contention is already expressed through denom, and the real
-            -- limit still lands because inputAcceptableLiters subtracts the pool's own held total.
-            if not shared then usedOver = usedOver + held end
-        elseif not sh.blocked[f] then
-            denom = denom + fPct                            -- a blocked product reserves nothing
-        end
     end
-    sh._agg    = { shared = shared, totalHeld = totalHeld, usedOver = usedOver, denom = denom, over = over }
+    sh._agg    = { shared = shared, totalHeld = totalHeld, over = over }
     sh._aggCap = cap
     return sh._agg
 end
@@ -13297,44 +13957,51 @@ function SmartDistribution.isInputBlocked(rcvUid, ft)
 end
 
 -- ---- input max % ----------------------------------------------------------
--- Default % when the player hasn't set one: pooled storage splits evenly across the products that share
--- it (250k pool, 2 products -> 125k -> 50% each); individual storage defaults to 100% (no restriction).
+-- POOLED STORAGE IS POOLED: every product may use 100% of it by default. A cap is only ever what the
+-- player set in Advanced Inputs.
+--
+-- This used to split the pool evenly (`floor(100 / #pool.fts + 0.5)`), so a 250k pool over 2 products gave
+-- 50% each. That was written to stop one product filling a shared store before the others got a look in.
+-- It was wrong in three ways and is reverted:
+--
+--  * IT BROKE OUTRIGHT ON BIG POOLS. `floor(100/n + 0.5)` reaches ZERO once n > 200, so a mod-heavy
+--    multi-fruit silo gave every crop 0% -- inputAcceptableLiters then returned 0 and the silo accepted
+--    NOTHING. Below that it was merely punishing: 100 products meant 1% each, i.e. 5,000 L of a 500,000 L
+--    silo per crop. Reported 2026-08-06.
+--  * IT WAS PROTECTING ALMOST NOTHING. A production's inputs are demand-bounded already -- getPullAmount
+--    asks for `hourly * bufferHours - current`, never the free space -- so DR could not hog a shared input
+--    buffer whatever this returned. Husbandry FOOD pools have their own `desired` figure plus a
+--    quality-tiered proportional fill. The only writers that actually fill to this cap are Store and
+--    Move To pushing into a shared bulk store.
+--  * AND THAT CASE IS ADVANCED-ONLY. Move To requires Advanced routing, where the player can set an
+--    explicit percentage -- so the split was imposing a default restriction to solve a problem that only
+--    exists once the tools to solve it properly are switched on.
+--
+-- Accepted consequence, deliberately: Store / Move To can now fill a shared silo with one product, exactly
+-- as the base game would. Reserving room for the others is an explicit "Max in %" (or a Fill target), set
+-- where a player would look for it.
+--
+-- The HALL exemption is gone because it is now the rule rather than the exception -- its own comment
+-- ("bays are REALLOCATABLE ... there is no space to pre-reserve") was the first sign the even split was
+-- the wrong model.
 function SmartDistribution.defaultInputCapPct(p, ft)
-    local pool = SmartDistribution.pooledInputCapacity(p)
-    -- A bulk hall is the exception to the even split. Its bays are REALLOCATABLE -- an empty bay takes
-    -- whichever crop turns up -- so there is no space to pre-reserve, and splitting evenly across the ten
-    -- crops it accepts capped each one at a tenth of the hall (a 900,000 L hall offered 90,000 L of wheat).
-    -- Default the whole hall to every crop; an explicit per-crop % set by the player is still honoured, and
-    -- the physical one-crop-per-bay limit is enforced separately by bulkHallBayAccepts.
-    if pool ~= nil and pool.kind == "HALL" then return 100 end
-    if pool ~= nil then
-        for _, pf in ipairs(pool.fts) do
-            if pf == ft then
-                local n = #pool.fts
-                if n > 0 then return math.floor(100 / n + 0.5) end
-            end
-        end
-    end
     return 100
 end
 
--- For a POOLED product, the highest % it may be set to so the pool's shares still sum to <= 100%:
---   100 - (sum of the OTHER pooled products' effective caps).
--- Individual (non-pooled) products aren't constrained this way, so they return 100.
+-- The highest % a product may be set to. ALWAYS 100 now.
+--
+-- This used to be `100 - (sum of the OTHER pooled products' caps)`, enforcing "the shares must sum to
+-- 100%". That rule only made sense while the defaults PARTITIONED the pool. With every product defaulting
+-- to 100% it would compute `100 - 100*(n-1)` and pin every slider to ZERO -- the player could not set any
+-- cap at all, which is the exact opposite of the point. The HALL kind already carried an exemption saying
+-- precisely this ("the others would total 900% and pin every crop's headroom to 0"), which is what
+-- confirms the rule had to go rather than be adjusted.
+--
+-- Shares no longer need to sum to anything: a pooled store is first-come, and a cap is one product's
+-- private ceiling, not its slice of a partition. inputEffectiveMaxLiters still refuses to promise space
+-- the other products physically occupy (`freeForFt`), so overlapping caps cannot over-commit the tank.
 function SmartDistribution.inputCapPctHeadroom(p, ft)
-    local pool = SmartDistribution.pooledInputCapacity(p)
-    if pool == nil then return 100 end
-    -- hall crops each default to 100% (see defaultInputCapPct), so the "shares must sum to 100" rule does
-    -- not apply -- without this exemption the others would total 900% and pin every crop's headroom to 0.
-    if pool.kind == "HALL" then return 100 end
-    local inPool = false
-    for _, pf in ipairs(pool.fts) do if pf == ft then inPool = true; break end end
-    if not inPool then return 100 end
-    local others = 0
-    for _, pf in ipairs(pool.fts) do
-        if pf ~= ft then others = others + (SmartDistribution.inputCapPct(p, pf) or 0) end
-    end
-    return math.max(0, 100 - others)
+    return 100
 end
 function SmartDistribution.setInputCapPct(rcvUid, ft, pct)
     if pct == nil then return end
@@ -13611,14 +14278,12 @@ function SmartDistribution.inputEffectiveMaxLiters(p, ft)
     -- freeForFt clamped to zero. 95% masked it -- at 95% the product reads as over its own share and
     -- returns through the branch above, never reaching the clamp, which is exactly why only the round
     -- number looked broken.
+    -- TWO clamps, and only two. A cap is a PRIVATE CEILING on this product's own holding (5.53), not a
+    -- slice of a partition -- so what is left for it is simply its own ceiling, minus nothing, bounded only
+    -- by the space the other products have not physically taken.
     local othersHeld = a.shared and 0 or (a.totalHeld - (sh.held[ft] or 0))
-    local remaining = math.max(0, cap - a.usedOver)
-    local div = math.min(100, a.denom)
-    local eff = (div > 0) and (remaining * pct / div) or 0
-    if eff > nominal then eff = nominal end                     -- never exceed the player's own share
     local freeForFt = math.max(0, cap - othersHeld)             -- never promise space the others occupy
-    if eff > freeForFt then eff = freeForFt end
-    return eff
+    return math.min(nominal, freeForFt)
 end
 
 -- ENFORCEMENT: how many more litres of `ft` this building will accept right now, given its input block
@@ -13772,7 +14437,11 @@ function SmartDistribution.assetProducts(p)
         end
     end
     for _, s in ipairs(getAllStorages(p)) do
-        for ft in pairs(storageFillTypes(s)) do addIn(ft); addOut(ft) end
+        -- a folded extension's own fill types are NOT this building's products (5.54): without this the
+        -- silo's tab and the Overview list every product the neighbouring extension happens to support
+        for ft in pairs(storageFillTypes(s)) do
+            if not SmartDistribution.isExtensionOnlyFillType(p, ft) then addIn(ft); addOut(ft) end
+        end
     end
 
     local function byName(a, b) return tostring(SmartDistribution._ftTitle(a)) < tostring(SmartDistribution._ftTitle(b)) end
@@ -14267,6 +14936,9 @@ end
 -- `supportsOnly` answers the first question and reports active=false without computing it: see the
 -- production branch below for why that half is the expensive one, and hasAnySink for who needs it.
 function SmartDistribution.canAccept(p, ft, supportsOnly)
+    -- a folded extension adds SPACE, never PRODUCTS: a silo is never a distribute sink for something its
+    -- own storages cannot hold (5.54). Fires only for a silo that actually has an extension folded in.
+    if SmartDistribution.isExtensionOnlyFillType(p, ft) then return false, false end
     local pp = getProductionPoint(p)
     if pp ~= nil then
         local supports = type(pp.inputFillTypeIds) == "table" and pp.inputFillTypeIds[ft] == true
@@ -15527,107 +16199,26 @@ else
     print("[SmartDistribution] addConsoleCommand unavailable -- console commands disabled by the game")
 end
 
--- ---- pooled input share: a blocked product gives its share back -------------
--- A pooled store splits its capacity evenly across the products sharing it, so 250,000 L across 2 products
--- defaults to 50% (125,000 L) each.  Once a product is BLOCKED it needs no reservation at all, and its
--- share should return to the rest instead of sitting idle: block one of three and the remaining two should
--- read 50% each, not 33%.  These wrappers apply that to the DEFAULT share and to the headroom test.  An
--- explicitly set percentage is the player's and is never overwritten -- only the default moves.
-if type(SmartDistribution.defaultInputCapPct) == "function" then
-    SmartDistribution._origDefaultInputCapPct = SmartDistribution.defaultInputCapPct
-    SmartDistribution.defaultInputCapPct = function(p, ft)
-        local pool = (SmartDistribution.pooledInputCapacity ~= nil)
-            and SmartDistribution.pooledInputCapacity(p) or nil
-        -- bulk hall bays are reallocatable: no even split, no block-redistribution -- every crop may use
-        -- the whole hall by default (see the base defaultInputCapPct for the reasoning)
-        if pool ~= nil and pool.kind == "HALL" then return 100 end
-        if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
-           and SmartDistribution.assetUid ~= nil then
-            -- isInputBlocked is keyed by RECEIVER UID (control.inputBlock[rcvUid][ft]), not the placeable
-            local uid = SmartDistribution.assetUid(p)
-            -- only products that actually SHARE the pool get the redistributed split; one with its own
-            -- individual tank (straw / water beside a food pool) is unaffected by what the pool does.
-            local inPool, active = false, 0
-            for _, f in ipairs(pool.fts) do
-                if f == ft then inPool = true end
-                if uid ~= nil and not SmartDistribution.isInputBlocked(uid, f) then active = active + 1 end
-            end
-            if uid ~= nil and inPool and active > 0 then
-                return math.floor(100 / active + 0.5)
-            end
-        end
-        return SmartDistribution._origDefaultInputCapPct(p, ft)
-    end
-end
-
--- Headroom for raising a pooled product's share is 100 minus what the OTHER products hold.  A blocked
--- product holds nothing, so the share it used to reserve becomes available to the rest.
-if type(SmartDistribution.inputCapPctHeadroom) == "function" then
-    SmartDistribution._origInputCapPctHeadroom = SmartDistribution.inputCapPctHeadroom
-    SmartDistribution.inputCapPctHeadroom = function(p, ft)
-        local pool = (SmartDistribution.pooledInputCapacity ~= nil)
-            and SmartDistribution.pooledInputCapacity(p) or nil
-        -- hall crops are not constrained to sum to 100% (see the base inputCapPctHeadroom)
-        if pool ~= nil and pool.kind == "HALL" then return 100 end
-        if pool ~= nil and type(pool.fts) == "table" and SmartDistribution.isInputBlocked ~= nil
-           and SmartDistribution.inputCapPct ~= nil and SmartDistribution.assetUid ~= nil then
-            local uid = SmartDistribution.assetUid(p)
-            local inPool = false
-            for _, f in ipairs(pool.fts) do
-                if f == ft then inPool = true; break end
-            end
-            if uid ~= nil and inPool then
-                local used = 0
-                for _, f in ipairs(pool.fts) do
-                    if f ~= ft and not SmartDistribution.isInputBlocked(uid, f) then
-                        used = used + (SmartDistribution.inputCapPct(p, f) or 0)
-                    end
-                end
-                return math.max(0, 100 - used)
-            end
-        end
-        return SmartDistribution._origInputCapPctHeadroom(p, ft)
-    end
-end
-
--- ---- blocking a pooled input hands its share back ---------------------------
--- Blocking or unblocking changes how the pool should divide, but a product carrying an EXPLICIT
--- percentage ignores the default and so never rescales -- it stays pinned at whatever it was last set to
--- while every other product redistributes around it.  Clearing the stored percentages across that pool on
--- each block change returns them all to the automatic share, which is the behaviour the split is meant to
--- have.  Wrapped on setInputBlocked rather than done in the dialog so it runs identically when the change
--- arrives as a DistributionControlEvent from another player.
--- Only a product that actually SHARES the pool triggers this: blocking an individual tank (straw / water
--- beside a food pool) leaves the pool's percentages alone.
-if type(SmartDistribution.setInputBlocked) == "function" then
-    SmartDistribution._origSetInputBlocked = SmartDistribution.setInputBlocked
-    SmartDistribution.setInputBlocked = function(rcvUid, ft, flag, ...)
-        local res = SmartDistribution._origSetInputBlocked(rcvUid, ft, flag, ...)
-        if rcvUid ~= nil and ft ~= nil and SmartDistribution.clearInputCapPct ~= nil
-           and SmartDistribution.pooledInputCapacity ~= nil and SmartDistribution.assetUid ~= nil then
-            -- setInputBlocked is keyed by uid, pooledInputCapacity wants the placeable
-            local owner = nil
-            local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
-            if ps ~= nil and ps.placeables ~= nil then
-                for _, cand in ipairs(ps.placeables) do
-                    if SmartDistribution.assetUid(cand) == rcvUid then owner = cand; break end
-                end
-            end
-            if owner ~= nil then
-                local pool = SmartDistribution.pooledInputCapacity(owner)
-                if pool ~= nil and type(pool.fts) == "table" then
-                    local shares = false
-                    for _, f in ipairs(pool.fts) do
-                        if f == ft then shares = true; break end
-                    end
-                    if shares then
-                        for _, f in ipairs(pool.fts) do
-                            pcall(SmartDistribution.clearInputCapPct, rcvUid, f)
-                        end
-                    end
-                end
-            end
-        end
-        return res
-    end
-end
+-- ---- the pooled-share wrappers USED TO LIVE HERE. They are gone; do not restore them. --------------
+--
+-- Three wrappers implemented "a pooled store splits its capacity evenly, and a BLOCKED product hands its
+-- share back to the rest" (5.5). All three existed only to service the even split, and the split itself is
+-- reverted -- a pooled store now defaults every product to 100% (see defaultInputCapPct for why).
+--
+--   * defaultInputCapPct  -- recomputed the split over UNBLOCKED members (block 1 of 3 -> others read 50%,
+--                            not 33%). There is no share to redistribute now.
+--   * inputCapPctHeadroom -- the same redistribution applied to "how high may I set this". The
+--                            shares-sum-to-100 rule it served is gone; headroom is always 100.
+--   * setInputBlocked     -- ON EVERY BLOCK CHANGE it called clearInputCapPct for EVERY member of that
+--                            product's pool, to drag them all back onto the automatic share.
+--
+-- THAT LAST ONE HAD TO GO, and it is the reason this removal is not merely tidying. Its own note admitted
+-- the cost -- "explicit hand-set percentages are wiped on the next block change" (5.5) -- which was a fair
+-- trade while the automatic split was the primary mechanism and an explicit value was the exception. Now
+-- that an explicit percentage is the ONLY thing that ever restricts a pooled product, silently deleting
+-- every cap on the pool because the player blocked something would destroy the exact settings this design
+-- depends on. Keeping it would have been worse than the bug being fixed.
+--
+-- Nothing replaces them: with a flat 100% default there is no share to move, no sum to maintain, and
+-- nothing to reset. inputEffectiveMaxLiters still refuses to promise space the other products occupy, so
+-- the pool cannot be over-committed.

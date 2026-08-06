@@ -408,6 +408,9 @@ local function groupRows(rows, assets)
             -- capacity sums across the group, but only over buildings that HAVE one -- nil must survive
             -- as nil (unresolvable) rather than becoming a zero that reads as "holds nothing"
             if r.capacity ~= nil then g.capacity = (g.capacity or 0) + r.capacity end
+            -- REMAINING sums the same way and for the same reason: a group with no resolvable capacity
+            -- keeps nil rather than collapsing to a zero that would paint the row red.
+            if r.remaining ~= nil then g.remaining = (g.remaining or 0) + r.remaining end
             g.heldInternal = (g.heldInternal or 0) + (r.heldInternal or 0)
             g.heldPallets  = (g.heldPallets  or 0) + (r.heldPallets  or 0)
             g.heldPalletCount = (g.heldPalletCount or 0) + (r.heldPalletCount or 0)
@@ -685,19 +688,48 @@ local function capacityOf(p, ft, role, held)
         if uid ~= nil and SmartDistribution.isInputBlocked ~= nil and SmartDistribution.isInputBlocked(uid, ft) then
             return 0                                             -- blocked: it will take nothing
         end
-        if SmartDistribution.inputEffectiveMaxLiters ~= nil then
-            local ok, v = pcall(SmartDistribution.inputEffectiveMaxLiters, p, ft)
-            if ok and type(v) == "number" and v >= 0 and v < math.huge then
-                -- On a POOLED store, a product sitting over its even share makes inputEffectiveMaxLiters
-                -- return the held level itself ("the limit rises to match what is actually piled there").
-                -- Correct for the allocator, useless as a denominator -- every product of a multi-fruit
-                -- silo would read "58,597 (58,597)". Fall back to the silo's real capacity there.
-                if raw ~= nil and held ~= nil and v <= held + 0.5 and v < raw then return raw end
-                return v
+        -- MAX = this product's percentage of the building's capacity, the SAME figure the building tabs and
+        -- the Advanced Inputs dialog show. It used to be inputEffectiveMaxLiters, the ELASTIC "what could
+        -- still fit given what the others hold" -- which needed a special case here because on a pooled
+        -- store an over-share product makes it collapse to the held level, so every product of a
+        -- multi-fruit silo read "58,597 (58,597)". A percentage of a capacity cannot do that, so the
+        -- workaround goes with it. The elastic number now lives in the REMAINING column, where it belongs.
+        local cap = nil
+        if SmartDistribution.inputProductCapacity ~= nil then
+            local ok, c = pcall(SmartDistribution.inputProductCapacity, p, ft)
+            if ok and type(c) == "number" and c > 0 and c < math.huge then cap = c end
+        end
+        if cap ~= nil then
+            local pct = 100
+            if SmartDistribution.inputCapPct ~= nil then
+                local ok, v = pcall(SmartDistribution.inputCapPct, p, ft)
+                if ok and type(v) == "number" then pct = math.max(0, math.min(100, v)) end
             end
+            return cap * pct / 100
         end
     end
     return raw
+end
+
+-- REMAINING: how much more of this product the building can take.
+--   inputs  -> inputAcceptableLiters, exactly what the Advanced Inputs dialog's AVAILABLE column shows and
+--              what the allocator itself clamps every delivery to, so the two can never disagree
+--   outputs -> a straight capacity - held
+-- An (In/Out) silo uses the INPUT rule: it is the binding constraint on what can still arrive, and it is
+-- never looser than capacity - held. nil when nothing can be resolved, so the cell shows a dash rather than
+-- an invented figure.
+local function remainingOf(p, ft, role, held, capacity)
+    if p == nil or ft == nil then return nil end
+    if role == "In" or role == "In/Out" then
+        if SmartDistribution.inputAcceptableLiters ~= nil then
+            local ok, v = pcall(SmartDistribution.inputAcceptableLiters, p, ft)
+            if ok and type(v) == "number" and v == v and v >= 0 and v < math.huge then return v end
+        end
+    end
+    if type(capacity) == "number" and capacity > 0 and capacity < math.huge then
+        return math.max(0, capacity - (held or 0))
+    end
+    return nil
 end
 
 -- ---- advanced-settings view -------------------------------------------------
@@ -829,6 +861,18 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
             local function v(field) return (e ~= nil and e[field]) or 0 end
             local held, heldInternal, heldPallets, heldPalletCount = heldOf(p, ft)
             local roleTag = roleLabel(ft, ins, outs, kind)
+            -- A folded silo EXTENSION contributes SPACE, never PRODUCTS (5.54). roleLabel gives a
+            -- storage-kind building "In/Out" for EVERY candidate fill type, and candidateFillTypes seeds
+            -- itself from the LEDGER as well as the supported set -- so a product DR moved there before
+            -- this was fixed keeps its row for as long as that history is in the window, and in the
+            -- settings view (which deliberately keeps every in/out row regardless of activity) it would
+            -- never age out at all. isExtensionOnlyFillType is nil-guarded and false for any building
+            -- with no folded extension, so no other tab or building kind is touched.
+            if roleTag ~= nil and SmartDistribution.isExtensionOnlyFillType ~= nil
+               and SmartDistribution.isExtensionOnlyFillType(p, ft) then
+                roleTag = nil
+            end
+            local rowCap  = capacityOf(p, ft, roleTag, held)   -- resolved once: REMAINING is derived from it
             local row = {
                 -- carried for the row double-click (jump to this building's tab). groupRows copies every
                 -- field from the FIRST row of a group, so a grouped row lands on one of its buildings
@@ -839,7 +883,8 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
                 assetOrigName = a.origName, assetIcon = icon,
                 product = fillTypeTitle(ft), productIcon = fillTypeIcon(ft),
                 role = roleTag, assetKind = kind,
-                capacity = capacityOf(p, ft, roleTag, held),
+                capacity = rowCap,
+                remaining = remainingOf(p, ft, roleTag, held, rowCap),
                 received = v("received"), loaded   = v("loaded"),
                 consumed = v("consumed"), unloaded = v("unloaded"),
                 held = held, heldInternal = heldInternal, heldPallets = heldPallets,

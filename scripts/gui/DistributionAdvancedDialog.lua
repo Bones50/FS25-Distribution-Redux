@@ -193,7 +193,13 @@ function DistributionAdvancedDialog:currentReserve()
     return SmartDistribution.getOutputReserve(uid, self.ft)
 end
 
+-- the mod's single litres/kilolitres rule, via SmartDistribution.formatVolume (up to 999 L in litres,
+-- above that kL with the extraneous zeros dropped); the local form is only a fallback
 local function litres(v)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, v or 0)
+        if ok and type(s) == "string" then return s end
+    end
     local s = tostring(math.floor((v or 0) + 0.5))
     local k
     repeat s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2") until k == 0

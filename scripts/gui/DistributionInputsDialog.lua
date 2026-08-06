@@ -7,13 +7,19 @@
 --   Block / Allow    -- refuse this product entirely (or allow it again)
 --   -  /  +          -- raise / lower this product's MAX % of the (pooled) capacity
 --
--- POOLED vs INDIVIDUAL is shown explicitly. A pooled store (hay loft: hay + straw
--- share one slot pool; a husbandry's FOOD pool across grain/silage/etc; a multi-product
--- bulk tank) is where one product can starve another, so the max % there actually
--- reserves room and the shares must sum to <= 100%. Pooled products default to an even
--- split (250k pool / 2 products -> 50% -> 125,000 L each). Individual per-product tanks
--- (straw, water, a single-product silo) can't starve each other, so their max defaults
--- to 100% and is just a fine-tune.
+-- POOLED vs INDIVIDUAL is shown explicitly. A pooled store (hay loft: hay + straw share
+-- one slot pool; a husbandry's FOOD pool; a multi-product bulk tank) is where one product
+-- CAN starve another -- but it is first-come by default: every product may use 100% of the
+-- pool, exactly as the base game would, and a max is a private ceiling the player sets on
+-- ONE product to hold room back for the rest.
+--
+-- Caps therefore do NOT have to sum to 100%. Pooled products used to default to an even
+-- split (250k / 2 products -> 50% each), which broke down completely on a mod-heavy silo:
+-- past 200 products the rounded share reached 0% and the silo accepted nothing at all.
+-- See defaultInputCapPct in SmartDistribution.lua for the full reasoning.
+--
+-- Individual per-product tanks (straw, water, a single-product silo) can't starve each
+-- other, so a max there is purely a fine-tune.
 --
 -- The % is shown with its live litre equivalent ("50%  (125,000 L)") so the player
 -- always sees the real number, and because it's a PERCENT it rides capacity changes
@@ -40,6 +46,16 @@ local function fmtL(liters)
     local s = tostring(liters)
     local out, n = s:reverse():gsub("(%d%d%d)", "%1,")
     return out:reverse():gsub("^,", "")
+end
+
+-- the mod-wide litres/kilolitres rule (SmartDistribution.formatVolume): up to 999 L in litres, above that
+-- kL with the extraneous zeros dropped. It carries the UNIT itself -- do not append " L" to it.
+local function fmtV(n)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, n or 0)
+        if ok and type(s) == "string" then return s end
+    end
+    return fmtL(n) .. " L"
 end
 
 function DistributionInputsDialog.new(target, custom_mt)
@@ -81,12 +97,28 @@ function DistributionInputsDialog:refresh()
     end
     if self.dialogTextElement ~= nil then
         if self.poolLiters ~= nil then
-            -- show how much of the pool the current shares add up to (should stay <= 100%)
-            local alloc = 0
+            -- A pooled store is FIRST-COME: every product may use all of it unless the player caps it.
+            -- This used to read "N% allocated -- shares can't exceed 100% together", which described the
+            -- old even-split model where the defaults partitioned the pool. With every product now
+            -- defaulting to 100% that sentence would both be wrong and print an absurd number (thirty
+            -- products would report "3000% allocated"), so it states the actual rule instead. A cap is a
+            -- private ceiling on one product, not its slice -- so caps do NOT have to sum to anything.
+            local shared, capped = 0, 0
             for _, r in ipairs(self.rows) do
-                if r.pooled and not r.blocked then alloc = alloc + (r.pct or 0) end
+                if r.pooled and not r.blocked then
+                    shared = shared + 1
+                    if (r.pct or 100) < 100 then capped = capped + 1 end
+                end
             end
-            self.dialogTextElement:setText(string.format("Pooled storage: %s L shared - %d%% allocated. Shares can't exceed 100%% together.", fmtL(self.poolLiters), alloc))
+            local msg
+            if capped > 0 then
+                msg = string.format("Pooled storage: %s shared by %d products, %d capped. Anything uncapped may use the whole pool.",
+                    fmtV(self.poolLiters), shared, capped)
+            else
+                msg = string.format("Pooled storage: %s shared by %d products. Each may use all of it - set a max to reserve room for the others.",
+                    fmtV(self.poolLiters), shared)
+            end
+            self.dialogTextElement:setText(msg)
         else
             self.dialogTextElement:setText("Set each product's max, or block it. This building has individual per-product storage.")
         end
@@ -110,17 +142,24 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
     if r == nil then return end
     setc("name", r.readOnly and (r.name or "") or fillTypeTitle(r.ft))
     setc("kind", r.readOnly and "Internal" or (r.pooled and "Pooled" or "Individual"))
-    setc("held", fmtL(r.held) .. " L")
+    setc("held", fmtV(r.held))
     if r.readOnly then
-        setc("cap", fmtL(r.maxLiters) .. " L")   -- capacity, informational
+        setc("cap", fmtV(r.maxLiters))   -- capacity, informational
+        setc("avail", "-")
         setc("target", "-")
     elseif r.blocked then
         setc("cap", "BLOCKED")
+        setc("avail", "0 L")                     -- a blocked product will accept nothing, which is the point
         setc("target", "-")
     else
-        setc("cap", string.format("%d%%  (%s L)", r.pct, fmtL(r.maxLiters)))
+        -- MAX IN is the CAP: the percentage and the litres that percentage represents. AVAILABLE is what
+        -- will actually go in right now -- the cap less what this product holds, and never more than the
+        -- space the other products have left. Two different questions, so two columns; pairing "100%" with
+        -- the elastic figure in one cell is what made a 75,000 L silo read "100%  (15,000 L)".
+        setc("cap", string.format("%d%%  (%s)", r.pct, fmtV(r.maxLiters)))
+        setc("avail", r.availLiters ~= nil and fmtV(r.availLiters) or "-")
         if r.targetPct ~= nil then
-            setc("target", string.format("%d%%  (%s L)", r.targetPct, fmtL(r.targetLiters or 0)))
+            setc("target", string.format("%d%%  (%s)", r.targetPct, fmtV(r.targetLiters or 0)))
         else
             setc("target", "Off")
         end

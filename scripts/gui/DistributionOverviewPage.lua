@@ -81,6 +81,26 @@ local function fmt(n)
     return s
 end
 
+-- A volume WITH its unit, via SmartDistribution.formatVolume -- the mod's single litres/kilolitres rule
+-- (up to 999 L in litres, above that kL with the extraneous zeros dropped). Always a real figure, "0 L"
+-- included: a HELD or REMAINING cell holding nothing must say so. Do not append " L" to it.
+local function fmtV(n)
+    if SmartDistribution ~= nil and SmartDistribution.formatVolume ~= nil then
+        local ok, s = pcall(SmartDistribution.formatVolume, n or 0)
+        if ok and type(s) == "string" then return s end
+    end
+    return fmt(n) .. " L"
+end
+
+-- The same, but keeping THIS page's dash-for-nothing convention, which the FLOW columns depend on: a table
+-- this wide is only scannable because an hour with no movement reads as "-" rather than a wall of zeros
+-- (5.7 drops such rows entirely for the same reason). Held / capacity / remaining deliberately do NOT use
+-- this -- there, zero is a fact about the building rather than an absence of activity.
+local function flowV(n)
+    if n == nil or math.abs(n) < 0.5 then return "-" end
+    return fmtV(n)
+end
+
 -- a compact currency figure ("$1.2k"), or a dash for nothing
 local function money(v)
     if v == nil or v < 0.5 then return "-" end
@@ -93,7 +113,7 @@ end
 
 -- "12,345  ($1.2k)" for the SOLD column; money is dropped when zero or unavailable (MP clients)
 local function soldWithMoney(liters, revenue)
-    local base = fmt(liters)
+    local base = flowV(liters)
     if revenue ~= nil and revenue > 0.5 and SmartDistribution ~= nil and SmartDistribution.formatMoneyShort ~= nil then
         return base .. "  (" .. SmartDistribution.formatMoneyShort(revenue) .. ")"
     end
@@ -103,10 +123,10 @@ end
 -- "1,234  (2,000)" -- the actual, then what the recipe says to expect over the same window. Expectation
 -- is nil for anything without a recipe (silos, husbandry), and those read as a bare figure.
 local function withExpected(actual, expected)
-    if expected == nil or expected < 0.5 then return fmt(actual) end
+    if expected == nil or expected < 0.5 then return flowV(actual) end
     -- an explicit "0" rather than fmt's dash: against a stated target, "produced nothing" is the point
     local a = math.floor((actual or 0) + 0.5)
-    return (a == 0 and "0" or fmt(actual)) .. "  (" .. fmt(expected) .. ")"
+    return (a == 0 and "0 L" or fmtV(actual)) .. "  (" .. fmtV(expected) .. ")"
 end
 
 -- "12,345 +2p  (50,000)" -- what is held, then how much room there is for it. For a product the building
@@ -131,12 +151,46 @@ local function withCapacity(row)
     -- "473 L (55,000 L) + 3,000 L (3p)". The capacity bracket belongs directly BESIDE the figure it
     -- qualifies -- trailing it after the pad part gave two bracketed groups in a row
     -- ("473 L + 3,000 L (3p)  (6,000)") which read as though the last one qualified the pallets.
-    local text = (h == 0 and "0" or fmt(shown)) .. " L"
-    if capacity ~= nil then text = text .. " (" .. fmt(capacity) .. " L)" end
+    local text = (h == 0) and "0 L" or fmtV(shown)
+    -- Match the building tabs exactly: an INPUT row reads "held / max (pct%)", an output "held (max)".
+    -- A row that is both (a silo) takes the input form, because that is the side carrying a settable
+    -- percentage -- the litres are identical either way, so the figures still agree with the OUTGOING list.
+    if capacity ~= nil then
+        if row.role == "In" or row.role == "In/Out" then
+            local pct = nil
+            if SmartDistribution ~= nil and SmartDistribution.inputCapPct ~= nil and row.placeable ~= nil then
+                local ok, v = pcall(SmartDistribution.inputCapPct, row.placeable, row.ft)
+                if ok and type(v) == "number" then pct = math.max(0, math.min(100, math.floor(v + 0.5))) end
+            end
+            text = text .. " / " .. fmtV(capacity)
+            if pct ~= nil then text = text .. string.format(" (%d%%)", pct) end
+        else
+            text = text .. " (" .. fmtV(capacity) .. ")"
+        end
+    end
     if pallets > 0 then
-        text = text .. " + " .. fmt(pallets) .. " L (" .. tostring(count) .. "p)"
+        text = text .. " + " .. fmtV(pallets) .. " (" .. tostring(count) .. "p)"
     end
     return text
+end
+
+-- REMAINING, shared by the Overview and every building tab: how much more will fit, colour-coded.
+--   red    -- nothing left (or overfilled): this product cannot take any more
+--   orange -- 10% or less of its ceiling still free
+--   green  -- room to spare
+-- nil capacity means nothing to measure against, so the cell shows a dash in the default colour rather
+-- than an invented judgement. Cells are RECYCLED by SmoothList, so every path MUST set a colour or a row
+-- inherits whatever the previous row left there (the bug 5.7 already had to fix once on this page).
+local function remainingText(remaining)
+    if remaining == nil then return "-" end
+    return fmtV(remaining)
+end
+local function remainingColor(remaining, capacity)
+    local C = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
+    if remaining == nil or capacity == nil or capacity <= 0 then return nil end
+    if remaining <= 0.5 then return C.BLOCKED end                    -- full, or over
+    if remaining <= capacity * 0.10 then return C.IDLE end           -- nearly full
+    return C.ACTIVE
 end
 
 -- MET_TARGET: within 1% counts as MET, not a near miss -- a plant running at 14,390 against 14,400 is on
@@ -521,14 +575,22 @@ function DistributionOverviewPage:populateCellForItemInSection(list, section, in
     setc("assetName",       r.assetName or "?")
     -- "Wheat (In/Out)" -- what the product is to THIS building
     setc("productName",     (r.product or "?") .. (r.role ~= nil and (" (" .. r.role .. ")") or ""))
-    setc("receivedText",    fmt(r.received))
-    setc("loadedText",      fmt(r.loaded))
+    setc("receivedText",    flowV(r.received))
+    setc("loadedText",      flowV(r.loaded))
     setc("consumedText",    withExpected(r.consumed, r.consumedExpected))
-    setc("unloadedText",    fmt(r.unloaded))
+    setc("unloadedText",    flowV(r.unloaded))
     setc("heldText",        withCapacity(r))
+    setc("remainingText",   remainingText(r.remaining))
+    -- colour must be set on EVERY path (including the nil case), or a recycled cell keeps the last row's
+    local rc = cell:getAttribute("remainingText")
+    if rc ~= nil and rc.setTextColor ~= nil then
+        local col = remainingColor(r.remaining, r.capacity)
+        if col ~= nil then rc:setTextColor(col[1], col[2], col[3], col[4])
+        else rc:setTextColor(1, 1, 1, 1) end
+    end
     setc("producedText",    withExpected(r.produced, r.producedExpected))
-    setc("distributedText", fmt(r.distributed))
-    setc("storedText",      fmt(r.stored))
+    setc("distributedText", flowV(r.distributed))
+    setc("storedText",      flowV(r.stored))
     setc("soldText",        soldWithMoney(r.sold, r.money))
     setc("costText",        money(r.cost))
     setPerformanceColor(cell, "consumedText", r.consumed, r.consumedExpected)
@@ -605,7 +667,7 @@ end
 local function pctText(pct, liters, explicit)
     if type(pct) ~= "number" then return "-" end
     local t = string.format("%d%%", math.floor(pct + 0.5))
-    if type(liters) == "number" and liters > 0 and liters < math.huge then t = t .. "  " .. fmt(liters) .. " L" end
+    if type(liters) == "number" and liters > 0 and liters < math.huge then t = t .. "  " .. fmtV(liters) end
     if not explicit then t = t .. " *" end          -- * = auto (DR's default share), not a value you set
     return t
 end
@@ -680,7 +742,7 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
         setCellColor(cell, "typeText", s.blocked and col.BLOCKED or nil)
         setc("maxInText", s.blocked and "0 L" or pctText(s.pct, s.maxL, s.explicit))
         -- held of the effective ceiling, with the fill % that drives the highlight
-        local held = (type(s.inHeld) == "number") and (fmt(s.inHeld) .. " L") or "-"
+        local held = (type(s.inHeld) == "number") and fmtV(s.inHeld) or "-"
         if type(s.fillRatio) == "number" then
             held = held .. string.format("  (%d%%)", math.floor(s.fillRatio * 100 + 0.5))
         end
@@ -706,7 +768,7 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
     -- ---- output side
     if s.isOut then
         setc("outModeText", s.mode or "-")
-        setc("reserveText", (type(s.reserve) == "number" and s.reserve > 0) and (fmt(s.reserve) .. " L") or "-")
+        setc("reserveText", (type(s.reserve) == "number" and s.reserve > 0) and fmtV(s.reserve) or "-")
         setCellColor(cell, "reserveText", (type(s.reserve) == "number" and s.reserve > 0) and col.IDLE or nil)
         setc("priorityText", ((s.ranked or 0) > 0) and string.format("Ranked (%d)", s.ranked) or "Distance")
         -- "3/5" active destinations. Red at 0 of some -- configured to send, nowhere left to send it, which
