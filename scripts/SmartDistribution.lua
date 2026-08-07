@@ -15304,6 +15304,16 @@ function SmartDistribution.makeBunkerSourceProxy(p)
         addFillLevel = function(_, farmId, ft, delta)
             if delta ~= nil and delta < 0 then SmartDistribution.bunkerTakeSilage(p, ft, -delta) end
         end,
+        -- A BUNKER ROUTINELY DELIVERS LESS THAN IT IS ASKED FOR, and without this the shortfall was
+        -- credited anyway. `bunkerBandForLiters` is documented as "deliberately biased to UNDER-take" --
+        -- it picks the largest band holding NO MORE than the demand, so a request for 2,000 L against a
+        -- coarse pile legitimately yields 1,700 -- and `bunkerTakeSilage` then credits only what it
+        -- MEASURED leaving the terrain. transfer/slotMove, however, credit the amount they computed from
+        -- the level the source ADVERTISED, so the difference was silage conjured into the consumer. Same
+        -- shape as the pen-queue phantom in 5.30 and the pallet drain in 5.40, both of which set this.
+        -- Safe to re-read here: getFillLevel is a live terrain query, not a cached figure, so it reflects
+        -- what actually went. The guard only ever clamps DOWNWARD.
+        verifyDrain  = true,
     }
 end
 
@@ -15317,9 +15327,33 @@ function SmartDistribution.isHeapFillType(ft)
     return ok and desc ~= nil
 end
 
+-- THE AREA A LEVEL IS READ FROM IS *NOT* THE SILO'S OUTER RECTANGLE.
+-- `BunkerSilo:updateFillLevel` -- the base game's own figure, the one on its info box -- opens with
+-- `local area = self.bunkerSiloArea.inner`, and the XML schema says why: "Inner area start node (Used to
+-- detect fill level - placed 25cm from inner walls)". So vanilla measures a rectangle inset 25 cm from
+-- every wall, and DR was measuring the FULL one -- picking up the border strip vanilla deliberately
+-- ignores, and reading HIGH by whatever is piled against the walls (reported in game: vanilla 25,047 L
+-- against DR's 25,667 L on the same untouched silo, +2.5%).
+--
+-- Read basis ONLY. The withdrawal band (bunkerBand) deliberately stays on the OUTER rectangle so a
+-- clearArea sweep takes the material against the walls with it rather than leaving a rim; that path is
+-- measured before/after and credits only the delta, so a wider removal cannot over-credit.
+--
+-- Falls back to the outer area when a silo declares no innerArea (both nodes default to the outer ones in
+-- the base loader, so this only matters for something hand-built), which is exactly the pre-fix behaviour.
+function SmartDistribution.bunkerReadArea(silo)
+    local a = silo ~= nil and silo.bunkerSiloArea or nil
+    if a == nil then return nil end
+    local inner = a.inner
+    if type(inner) == "table" and type(inner.sx) == "number" and type(inner.hx) == "number" then
+        return inner
+    end
+    return a
+end
+
 -- The fill type physically piled in this silo's area right now (nil when the terrain cannot be read).
 function SmartDistribution.bunkerHeapFillType(silo)
-    local a = silo ~= nil and silo.bunkerSiloArea or nil
+    local a = SmartDistribution.bunkerReadArea(silo)
     if a == nil or a.sx == nil then return nil end
     local ok, util = pcall(function() return DensityMapHeightUtil end)
     if not ok or type(util) ~= "table" or type(util.getFillTypeAtArea) ~= "function" then return nil end
@@ -15342,7 +15376,10 @@ function SmartDistribution.bunkerSilageLiters(silo)
         silage = g_fillTypeManager ~= nil and g_fillTypeManager:getFillTypeIndexByName("SILAGE") or nil
     end
     if heapFt == nil or silage == nil or heapFt ~= silage then return 0 end
-    local a = silo.bunkerSiloArea
+    -- INNER area, the same rectangle BunkerSilo:updateFillLevel measures -- see bunkerReadArea. Reading the
+    -- outer one made DR's figure disagree with the silo's own info box on every silo holding material
+    -- against its walls.
+    local a = SmartDistribution.bunkerReadArea(silo)
     local ok, util = pcall(function() return DensityMapHeightUtil end)
     if ok and type(util) == "table" and type(util.getFillLevelAtArea) == "function" and a ~= nil then
         local okL, lv = pcall(util.getFillLevelAtArea, silage, a.sx, a.sz, a.wx, a.wz, a.hx, a.hz)

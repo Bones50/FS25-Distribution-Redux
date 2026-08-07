@@ -216,7 +216,7 @@ local function heldOfMaxText(placeable, ft, held)
     return s
 end
 
--- ---- REMAINING ------------------------------------------------------------
+-- ---- FREE STORAGE ---------------------------------------------------------
 -- How much more will fit, and the colour that says how comfortable that is.
 --   inputs  -> inputAcceptableLiters: the very figure the allocator clamps every delivery to, and the same
 --              one the Advanced Inputs dialog shows as AVAILABLE, so the three can never disagree
@@ -240,13 +240,19 @@ local function outputRemaining(placeable, ft, held)
     return math.max(0, c - (held or 0)), c
 end
 
--- Writes the figure AND the colour. Cells are RECYCLED by SmoothList, so the nil path must actively reset
--- to white or the row inherits whatever colour the previous row left in that cell.
+-- Writes the FREE STORAGE figure, and paints the verdict on the HELD cell instead of on the figure it was
+-- derived from. Same maths either way -- how full this product is, is the question both cells answer, and
+-- "12,000 L / 50,000 L" is where the eye already goes to ask it. FREE STORAGE therefore stays plain white.
+-- Cells are RECYCLED by SmoothList, so BOTH the nil path and the plain cell must actively reset to white or
+-- a row inherits whatever colour the previous row left behind.
 local function setRemainingCell(cell, remaining, capacity)
     local c = cell:getAttribute("remainingText")
-    if c == nil then return end
-    if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
-    if c.setTextColor == nil then return end
+    if c ~= nil then
+        if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
+        if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
+    end
+    local h = cell:getAttribute("heldText")
+    if h == nil or h.setTextColor == nil then return end
     local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
     local col = nil
     if remaining ~= nil and capacity ~= nil and capacity > 0 then
@@ -254,7 +260,7 @@ local function setRemainingCell(cell, remaining, capacity)
         elseif remaining <= capacity * 0.10 then col = COL.IDLE
         else col = COL.ACTIVE end
     end
-    if col ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) else c:setTextColor(1, 1, 1, 1) end
+    if col ~= nil then h:setTextColor(col[1], col[2], col[3], col[4]) else h:setTextColor(1, 1, 1, 1) end
 end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
@@ -953,10 +959,15 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     end
     setc("fillName", row.name)
     local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
+    local mktCap = (SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset))
+                   or SmartDistribution.MARKET_CAP or 200000
     -- HELD (MAX), the same bracket form every other OUTGOING list uses -- this was the last "a / b" ratio left
-    setc("heldText", fmtV(buffer) .. " ("
-        .. fmtV((SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset))
-               or SmartDistribution.MARKET_CAP or 200000) .. ")")
+    setc("heldText", fmtV(buffer) .. " (" .. fmtV(mktCap) .. ")")
+    -- This column exists in the XML and was never populated, so it sat blank while every other table filled
+    -- it. A market's buffer is its own ceiling (marketCap), so the figure is a straight cap - buffer and the
+    -- colour lands on HELD like everywhere else.
+    setRemainingCell(cell, (type(mktCap) == "number" and mktCap > 0)
+        and math.max(0, mktCap - buffer) or nil, mktCap)
     setc("distText", outTotalText(self:windowStats(row.ft)))
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then

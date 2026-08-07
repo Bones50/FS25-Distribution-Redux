@@ -54,7 +54,7 @@
             <Text profile="SDHeaderRight" position="532px 0px"  size="110px 40px" textSize="11px" text="CONSUMED (EXP.)" />
             <Text profile="SDHeaderRight" position="646px 0px"  size="64px 40px"  textSize="11px" text="UNLOADED" />
             <Text profile="SDHeaderRight" position="714px 0px"  size="220px 40px" textSize="11px" text="HELD (MAX)" />
-            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="FREE STORAGE" />
             <Text profile="SDHeaderRight" position="1022px 0px" size="110px 40px" textSize="11px" text="PRODUCED (EXP.)" />
             <Text profile="SDHeaderRight" position="1136px 0px" size="72px 40px"  textSize="11px" text="DISTRIBUTED" />
             <Text profile="SDHeaderRight" position="1212px 0px" size="84px 40px"  textSize="11px" text="STORED/MOVED" />

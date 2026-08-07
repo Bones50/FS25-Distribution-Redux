@@ -174,13 +174,15 @@ local function withCapacity(row)
     return text
 end
 
--- REMAINING, shared by the Overview and every building tab: how much more will fit, colour-coded.
+-- FREE STORAGE, shared by the Overview and every building tab: how much more will fit. The COLOUR the
+-- figure implies is painted on the HELD cell beside it, not on this one:
 --   red    -- nothing left (or overfilled): this product cannot take any more
 --   orange -- 10% or less of its ceiling still free
 --   green  -- room to spare
--- nil capacity means nothing to measure against, so the cell shows a dash in the default colour rather
--- than an invented judgement. Cells are RECYCLED by SmoothList, so every path MUST set a colour or a row
--- inherits whatever the previous row left there (the bug 5.7 already had to fix once on this page).
+-- nil capacity means nothing to measure against, so the cell shows a dash and HELD stays in the default
+-- colour rather than carrying an invented judgement. Cells are RECYCLED by SmoothList, so every path MUST
+-- set a colour or a row inherits whatever the previous row left there (the bug 5.7 already had to fix once
+-- on this page).
 local function remainingText(remaining)
     if remaining == nil then return "-" end
     return fmtV(remaining)
@@ -581,12 +583,15 @@ function DistributionOverviewPage:populateCellForItemInSection(list, section, in
     setc("unloadedText",    flowV(r.unloaded))
     setc("heldText",        withCapacity(r))
     setc("remainingText",   remainingText(r.remaining))
-    -- colour must be set on EVERY path (including the nil case), or a recycled cell keeps the last row's
+    -- colour must be set on EVERY path (including the nil case), or a recycled cell keeps the last row's.
+    -- It goes on HELD, and FREE STORAGE is actively reset to white for that same recycling reason.
     local rc = cell:getAttribute("remainingText")
-    if rc ~= nil and rc.setTextColor ~= nil then
+    if rc ~= nil and rc.setTextColor ~= nil then rc:setTextColor(1, 1, 1, 1) end
+    local hc = cell:getAttribute("heldText")
+    if hc ~= nil and hc.setTextColor ~= nil then
         local col = remainingColor(r.remaining, r.capacity)
-        if col ~= nil then rc:setTextColor(col[1], col[2], col[3], col[4])
-        else rc:setTextColor(1, 1, 1, 1) end
+        if col ~= nil then hc:setTextColor(col[1], col[2], col[3], col[4])
+        else hc:setTextColor(1, 1, 1, 1) end
     end
     setc("producedText",    withExpected(r.produced, r.producedExpected))
     setc("distributedText", flowV(r.distributed))

@@ -41,7 +41,7 @@
         <Bitmap profile="SDList" id="inputHeaderRow" position="390px -92px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="260px 40px" textSize="11px" text="INCOMING PRODUCTS" />
             <Text profile="SDHeaderLeft" position="312px 0px" size="240px 40px" textSize="11px" text="HELD / MAX" />
-            <Text profile="SDHeaderLeft" position="560px 0px" size="115px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="560px 0px" size="115px 40px" textSize="11px" text="FREE STORAGE" />
             <Text profile="SDHeaderLeft" position="683px 0px" size="140px 40px" textSize="11px" text="RECEIVED" />
             <Text profile="SDHeaderLeft" position="831px 0px" size="259px 40px" textSize="11px" text="DISTRIBUTION" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
@@ -70,7 +70,7 @@
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="185px 40px" textSize="11px" text="OUTGOING PRODUCTS" />
             <Text profile="SDHeaderLeft" position="237px 0px" size="220px 40px" textSize="11px" text="HELD (MAX)" />
-            <Text profile="SDHeaderLeft" position="465px 0px" size="110px 40px" textSize="11px" text="REMAINING" />
+            <Text profile="SDHeaderLeft" position="465px 0px" size="110px 40px" textSize="11px" text="FREE STORAGE" />
             <Text profile="SDHeaderLeft" position="583px 0px" size="130px 40px" textSize="11px" text="DISTRIBUTED" />
             <Text profile="SDHeaderLeft" position="721px 0px" size="235px 40px" textSize="11px" text="OUTPUT MODE" />
             <Text profile="SDHeaderLeft" position="964px 0px" size="126px 40px" textSize="11px" text="STATUS" />
