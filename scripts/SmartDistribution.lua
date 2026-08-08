@@ -6281,6 +6281,32 @@ function SmartDistribution.onHourChanged(manager, superFunc, ...)
     if not S.master then
         return superFunc(manager, ...)                         -- inert: vanilla pass runs
     end
+
+    -- RUN THE REST OF THE CHAIN, then suppress only what we actually mean to suppress.
+    -- This function used to just... not call superFunc, on the reasoning that the vanilla
+    -- distribution + sell pass had to be stopped. It does -- but superFunc is not that pass. The base
+    -- implementation is two lines (`self.hourChangedDirty = true`, ProductionChainManager.lua:326),
+    -- and superFunc is ALSO every other mod that wrapped ProductionChainManager.hourChanged before DR
+    -- loaded. Never calling it silently killed their hourly tick: no error, no log line, and only for
+    -- mods that happen to sort earlier in load order, which is why it would look intermittent.
+    --
+    -- Clearing the flag afterwards leaves the ENGINE in exactly the state it was in before this
+    -- change: DR never set hourChangedDirty, so it was false; now superFunc sets it and we set it
+    -- back. Net state identical, vanilla pass still suppressed -- the only difference is that other
+    -- mods' hooks now run. install() runs at file scope, i.e. before ProductionChainManager.new()
+    -- captures self.hourChanged into its MessageCenter subscription, so this wrapper really is what
+    -- the HOUR_CHANGED broadcast calls.
+    --
+    -- pcall'd deliberately: an error thrown by another mod's hook would otherwise abort DR's pass AND
+    -- the rest of the message-center dispatch (every subscriber after ProductionChainManager). Log it
+    -- and carry on -- containing a foreign fault is worth more here than propagating it faithfully.
+    local okChain, errChain = pcall(superFunc, manager, ...)
+    if not okChain and Logging ~= nil then
+        Logging.error("[SmartDistribution] a chained ProductionChainManager.hourChanged hook failed: %s",
+            tostring(errChain))
+    end
+    manager.hourChangedDirty = false
+
     -- detect sleep / fast-forward: hourly ticks arriving within a few REAL seconds of each other.
     -- getTimeSec() is REAL wall-clock (the engine uses it for network/UI timeouts); g_time is GAME
     -- time and ACCELERATES during sleep, so it must NOT be used for this.
@@ -6326,7 +6352,8 @@ function SmartDistribution.onHourChanged(manager, superFunc, ...)
         SmartDistribution._pendingHourly = manager
         SmartDistribution._pendingHourlyWait = 1   -- skip one update so frame-N hour processing (incl. the deposit) completes first
     end
-    -- master on: suppress the vanilla distribution + sell pass
+    -- master on: the vanilla pass is suppressed by the hourChangedDirty clear at the top, NOT by
+    -- refusing to call superFunc -- see the note there.
 end
 
 local function install()
@@ -12276,6 +12303,30 @@ local function patchHusbandryManureStorage(placeable)
             if storage.fillLevelsLastSynced[manureFT] == nil then storage.fillLevelsLastSynced[manureFT] = 0 end
             storage.fillLevelsLastPublished = storage.fillLevelsLastPublished or {}
             if storage.fillLevelsLastPublished[manureFT] == nil then storage.fillLevelsLastPublished[manureFT] = 0 end
+            -- ...and into the SUPPORTED-TYPE set, or the patched manure never leaves this machine.
+            -- All four Storage stream functions walk sortedFillTypes (Storage.lua:238 readStream,
+            -- 254 writeStream, 272 readUpdateStream, 292 writeUpdateStream), so a fill type missing
+            -- from it is simply never transmitted: a CLIENT's barn would read 0 manure for ever, and
+            -- getIsFillTypeSupported (line 392, which answers from fillTypes) would deny it too.
+            --
+            -- SAFE IN MP BECAUSE BOTH ENDS COMPUTE THE SAME SET, and that is the load-bearing claim
+            -- here -- sortedFillTypes is the WIRE LAYOUT, so a set that differed between server and
+            -- client would desync the bit stream outright, not merely mis-report a number. This patch
+            -- is appended to PlaceableHusbandry.onPostLoad / onFinalizePlacement with no isServer
+            -- guard, and every input it reads (the husbandry specs; the storage's declared
+            -- capacities) comes from the placeable XML -- identical on both machines -- so the two
+            -- ends add MANURE to the same storages and sort it into the same position.
+            --
+            -- A barn that DECLARES MANURE (even at capacity="0") already has it in fillTypes, so this
+            -- whole block is skipped and the common case is byte-for-byte unchanged.
+            storage.fillTypes = storage.fillTypes or {}
+            if storage.fillTypes[manureFT] ~= true then
+                storage.fillTypes[manureFT] = true
+                storage.sortedFillTypes = storage.sortedFillTypes or {}
+                storage.sortedFillTypes[#storage.sortedFillTypes + 1] = manureFT
+                table.sort(storage.sortedFillTypes)   -- the base game sorts this (Storage.lua:128);
+                                                      -- both ends must agree on ORDER, not just membership
+            end
             if storage._sdManurePatch == nil then
                 storage._sdManurePatch = true
                 if storage.capacity ~= nil then

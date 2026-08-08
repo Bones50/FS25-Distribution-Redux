@@ -18,6 +18,18 @@
 DistributionProductionsPage = {}
 local DistributionProductionsPage_mt = Class(DistributionProductionsPage, DistributionMenuPage)
 
+-- A row counts as "holding something" only when the HELD cell would actually SAY so.
+-- SmartDistribution.formatVolume renders litres as math.floor(v + 0.5), so anything below 0.5 L
+-- prints "0 L" -- while the row-inclusion tests further down used a bare `> 0`. A few hundredths of a
+-- litre of residue in pp.storage therefore kept a switched-off line's product on screen showing 0 L.
+-- Flicking a line on and straight back off is the reliable way to leave that residue, which is exactly
+-- how it was reported; setting the output to Sell Immediate "fixed" it only because the next cycle
+-- drained the buffer to a true zero.
+-- Tied to the FORMATTER's own rounding rather than being a taste-chosen epsilon: the rule is "no row
+-- the display would render as 0 L", so if the volume convention changes this has to move with it or
+-- the two will silently disagree again.
+local HELD_VISIBLE_MIN = 0.5
+
 -- Suppress the built-in row highlight on whichever of the input / output lists is NOT active, so only one
 -- list shows a selection at a time. Row elements carry a `hideSelection` flag; set it on the inactive
 -- list's rows. See the twin helper in DistributionStoragePage.lua.
@@ -347,7 +359,8 @@ function DistributionProductionsPage:buildSections()
             -- same escape as the outputs below, and it matters more here: i.held is the pp.storage buffer
             -- alone, so feedstock sitting in a folded extension (a greenhouse's water tank, 5.29c) or in
             -- a pooled/market basis read as nothing at all once the line using it was switched off.
-            if not inSeen[i.ft] and (activeIn[i.ft] or (i.held or 0) > 0 or heldAny(p, i.ft) > 0) then
+            if not inSeen[i.ft] and (activeIn[i.ft] or (i.held or 0) >= HELD_VISIBLE_MIN
+                                     or heldAny(p, i.ft) >= HELD_VISIBLE_MIN) then
                 inSeen[i.ft] = true
                 self.inputs[#self.inputs + 1] = { ft = i.ft, name = i.name, held = i.held or 0, capacity = i.capacity }
             end
@@ -412,8 +425,10 @@ function DistributionProductionsPage:buildSections()
             -- terms above answer for the overwhelming majority and short-circuit it away. It is the wider
             -- test (market buffer, shed, extension, pad), and o.held/pallets alone let a switched-off
             -- greenhouse product vanish while its own HELD column showed buffer AND pallets.
-            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0 or pallets > 0
-                                     or heldAny(p, o.ft) > 0) then
+            -- `pallets` deliberately keeps a bare > 0: it counts physical pallet OBJECTS, not litres,
+            -- so one standing on the pad always earns a row however little is in it.
+            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) >= HELD_VISIBLE_MIN or pallets > 0
+                                     or heldAny(p, o.ft) >= HELD_VISIBLE_MIN) then
                 ftSeen[o.ft] = true
                 local e = self:windowStats(o.ft)          -- scoped by the page's Hour / Month / Year selector
                 self.outputs[#self.outputs + 1] = {
