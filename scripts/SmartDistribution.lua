@@ -12261,6 +12261,21 @@ local function patchHusbandryManureStorage(placeable)
             storage.capacities[manureFT] = MANURE_STORAGE_CAPACITY
             storage.fillLevels = storage.fillLevels or {}
             if storage.fillLevels[manureFT] == nil then storage.fillLevels[manureFT] = 0 end
+            -- The base game initialises THREE tables in lockstep whenever a fill type joins a Storage
+            -- (Storage.lua:124-126: fillLevels / fillLevelsLastSynced / fillLevelsLastPublished).
+            -- Creating only fillLevels makes Storage:setFillLevel THROW on the server: its guard at
+            -- line 423 tests fillLevels[ft] ~= nil and passes, then line 437 reads
+            -- fillLevelsLastSynced[ft] unguarded -> "attempt to perform arithmetic (sub) on nil and
+            -- number", every frame thereafter (nothing heals it -- writeStream/writeUpdateStream, the
+            -- only other writers, iterate sortedFillTypes, which we do not touch).
+            -- HARMLESS ON A BARN THAT DECLARES MANURE AT ALL, even at capacity="0": that declaration
+            -- puts it in the storage's fillTypes set, so the base game already made all three. It only
+            -- bites a manure-producing pen whose <storage> never mentions MANURE -- which is why it
+            -- went unseen for months and then surfaced on a farm full of modded pasture pens.
+            storage.fillLevelsLastSynced = storage.fillLevelsLastSynced or {}
+            if storage.fillLevelsLastSynced[manureFT] == nil then storage.fillLevelsLastSynced[manureFT] = 0 end
+            storage.fillLevelsLastPublished = storage.fillLevelsLastPublished or {}
+            if storage.fillLevelsLastPublished[manureFT] == nil then storage.fillLevelsLastPublished[manureFT] = 0 end
             if storage._sdManurePatch == nil then
                 storage._sdManurePatch = true
                 if storage.capacity ~= nil then
