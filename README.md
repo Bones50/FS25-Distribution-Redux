@@ -43,12 +43,15 @@ Fixed
 25) Fix for dedicated servers not maintaining settings across sessions. (4/8)
 26) Fix for certain modes resetting to "Hold" each cycle on dedicated servers. (5/8)
 27) Fix for seasonal reserve only applying to Sell modes, not Market Supply Modes (5/8)
-28) (NEW) Fixed MultiFruit Silo's that supported manure and slurry being incorrectly classified as animal husbandry objects (6/8)
-29) (NEW) Fixed Pallet/Bale store issue where under certain circumstances non-bale products would be stored as bales instead of pallets (6/8)
-30) (NEW) Fixed an issue where if a modded extension (e.g. LDC Silo Extension) was added to a base game silo, the base game silo would inherit all of the additional filltypes the extension supports. (6/8)
-31) (NEW) Redid how pooled storage is handled and displayed to reduce confusion. Pooled Storage now works the same way as base game, but allows you to set the maximum storage for each input type. (6/8)
-32) (NEW) storage now shown in kL in the UI where above 1000l stored, to help fit all the info on the UI. (6/8)
-33) (NEW) Fixed some issues with silo extensions bleeding into silo's it wasn't supposed too. (6/8) 
+28) Fixed MultiFruit Silo's that supported manure and slurry being incorrectly classified as animal husbandry objects (6/8)
+29) Fixed Pallet/Bale store issue where under certain circumstances non-bale products would be stored as bales instead of pallets (6/8)
+30) Fixed an issue where if a modded extension (e.g. LDC Silo Extension) was added to a base game silo, the base game silo would inherit all of the additional filltypes the extension supports. (6/8)
+31) Redid how pooled storage is handled and displayed to reduce confusion. Pooled Storage now works the same way as base game, but allows you to set the maximum storage for each input type. (6/8)
+32) storage now shown in kL in the UI where above 1000l stored, to help fit all the info on the UI. (6/8)
+33) Fixed some issues with silo extensions bleeding into silo's it wasn't supposed too. (6/8)
+34) (NEW) Fixed productions with remaining produced products on an inactive line not being able to distribute. (8/8)
+35) (NEW) Fixed DR settings being saved globally instead of per savegame. (8/8)
+36) (NEW) Help Guide Updated (8/8)
 
 Added
 1) Support added for the Grazing Pastures Mod
