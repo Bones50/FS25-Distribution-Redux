@@ -2476,6 +2476,35 @@ function SmartDistribution.productHeldAny(p, ft)
         local ok, v = pcall(SmartDistribution.assetHeld, p, ft)
         if ok and type(v) == "number" and v > best then best = v end
     end
+    -- A PRODUCTION's own stock is in NEITHER of the two bases above, and that is not obvious:
+    -- assetHeld is built on getAllStorages, which cannot see pp.storage at all (5.7), and it folds
+    -- pallets in for the two HUSBANDRY specs only -- so a mill standing on 18,000 L of pallets read as
+    -- holding nothing. That is the identical blind spot 5.35 had to fix for the output reserve, and the
+    -- rule it settled applies here word for word: the figure that governs behaviour must be the figure
+    -- on the screen. Both terms are added so every "does this building hold any of ft" question in the
+    -- mod gets ONE answer -- two paths computing one quantity and disagreeing is the most expensive bug
+    -- shape this codebase produces (5.27 / 5.28).
+    local pp = getProductionPoint(p)
+    if pp ~= nil then
+        if pp.storage ~= nil then                              -- the internal buffer
+            local ok, v = pcall(getLevel, pp.storage, ft)
+            if ok and type(v) == "number" and v > best then best = v end
+        end
+        for _, ext in ipairs(parentExtensionStorages(p)) do     -- ...plus any folded silo extension (5.29c)
+            if storageFillTypes(ext)[ft] ~= nil then
+                local ok, v = pcall(getLevel, ext, ft)
+                if ok and type(v) == "number" and v > best then best = v end
+            end
+        end
+    end
+    -- Pallets on this building's OWN pad -- ownership resolved inside padSnapshot, so a neighbour's are
+    -- never counted (5.17). Reached as a FIELD, not the local: husbandryPalletObjects is declared far
+    -- below this point and a local reference here would parse clean and throw a nil-value error only when
+    -- reached, inside a GUI populate, showing as an EMPTY list (the 5.44 / 5.57 trap).
+    if SmartDistribution.padSnapshot ~= nil then
+        local ok, litres = pcall(SmartDistribution.padSnapshot, p, ft)
+        if ok and type(litres) == "number" and litres > best then best = litres end
+    end
     return best
 end
 
@@ -6153,6 +6182,16 @@ function SmartDistribution.runHourly(manager)
     if not SmartDistribution._persistLoaded and SmartDistribution.loadOverrides ~= nil then
         pcall(SmartDistribution.loadOverrides)
     end
+    -- The per-savegame SETTINGS file is deferred by the same nil savegameDirectory and needs the same
+    -- safety net. It rides this hook rather than owning one because the condition is identical and the
+    -- two files resolve through one resolver. A no-op once DistributionSettings._loaded is set.
+    if DistributionSettings ~= nil and not DistributionSettings._loaded
+       and DistributionSettings.load ~= nil then
+        pcall(DistributionSettings.load)
+        if DistributionSettings._loaded and DistributionSettings.apply ~= nil then
+            pcall(DistributionSettings.apply)                   -- push the recovered values into the engine
+        end
+    end
     SmartDistribution.invalidateMenuMemos()                    -- the display memos must not carry across a pass
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
     -- (no enforceValidModes here any more -- a player's mode is never rewritten; see the note above it)
@@ -6338,6 +6377,12 @@ local function getSaveDir(missionInfo)
     end
     return nil, false
 end
+
+-- Exposed so DistributionSettings.lua can land distributionSettings.xml in the SAME folder by the SAME
+-- rules. A second, private copy of this resolver is exactly how the dedicated-server bug documented
+-- above was created -- a writer and a reader that disagree about where the file lives. A FIELD, not a
+-- new local: this file is at Lua's 200 main-chunk local ceiling (CLAUDE.md 1.1).
+SmartDistribution.getSaveDir = getSaveDir
 
 local function saveOverrides(missionInfo)
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end

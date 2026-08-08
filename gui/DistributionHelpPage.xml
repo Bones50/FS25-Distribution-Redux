@@ -25,8 +25,11 @@
         <GuiElement profile="SDList" position="540px -96px" size="1180px 760px">
             <SmoothList profile="SDList" id="bodyList" position="0px 0px" size="1180px 760px"
                         focusChangeTop="nil" focusChangeBottom="nil">
+                <!-- No textSize override: SDBodyCell already resolves to 16px, which is what the base
+                     game uses for body copy (fs25_dialogText). The 18px override here was the only
+                     reason the guide read larger than every other text panel in the game. -->
                 <ListItem profile="SDBodyItem" name="rowTemplate" size="1180px 30px" onClick="onClickBodyRow">
-                    <Text profile="SDBodyCell" position="6px 0px" size="1168px 30px" textSize="18px" name="bodyLine" />
+                    <Text profile="SDBodyCell" position="6px 0px" size="1168px 30px" name="bodyLine" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 760px" with="anchorTopRight">

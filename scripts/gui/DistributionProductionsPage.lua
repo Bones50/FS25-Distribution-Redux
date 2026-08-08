@@ -96,6 +96,19 @@ local function filterBlockedRows(asset, rows)
     return out
 end
 
+-- Does this building hold ANY of ft, by the mod's ONE canonical test? Used as the final escape on the
+-- row-inclusion tests below, so a product with stock is never hidden merely because its line is off.
+-- Deliberately the shared SmartDistribution.productHeldAny rather than a local reading of pp.storage:
+-- this page and the blocked-hiding filter were asking the same question two different ways and getting
+-- two different answers, which is what let a greenhouse's switched-off product disappear while its own
+-- HELD column plainly showed both buffer and pallets.
+local function heldAny(p, ft)
+    if p == nil or ft == nil or SmartDistribution == nil or SmartDistribution.productHeldAny == nil then return 0 end
+    local ok, v = pcall(SmartDistribution.productHeldAny, p, ft)
+    if ok and type(v) == "number" then return v end
+    return 0
+end
+
 -- "<liters>  (<money>)" for the SOLD /mo column; money omitted when zero/unknown
 local function soldWithMoney(liters, money)
     local base = fmtV(liters)
@@ -331,7 +344,10 @@ function DistributionProductionsPage:buildSections()
     local inSeen = {}
     for _, line in ipairs(lines) do
         for _, i in ipairs(line.inputs or {}) do
-            if not inSeen[i.ft] and (activeIn[i.ft] or (i.held or 0) > 0) then
+            -- same escape as the outputs below, and it matters more here: i.held is the pp.storage buffer
+            -- alone, so feedstock sitting in a folded extension (a greenhouse's water tank, 5.29c) or in
+            -- a pooled/market basis read as nothing at all once the line using it was switched off.
+            if not inSeen[i.ft] and (activeIn[i.ft] or (i.held or 0) > 0 or heldAny(p, i.ft) > 0) then
                 inSeen[i.ft] = true
                 self.inputs[#self.inputs + 1] = { ft = i.ft, name = i.name, held = i.held or 0, capacity = i.capacity }
             end
@@ -392,7 +408,12 @@ function DistributionProductionsPage:buildSections()
                     end
                 end
             end
-            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0 or pallets > 0) then
+            -- heldAny LAST, so it is only paid for a row that would otherwise be DROPPED -- the two cheap
+            -- terms above answer for the overwhelming majority and short-circuit it away. It is the wider
+            -- test (market buffer, shed, extension, pad), and o.held/pallets alone let a switched-off
+            -- greenhouse product vanish while its own HELD column showed buffer AND pallets.
+            if not ftSeen[o.ft] and (activeOut[o.ft] or (o.held or 0) > 0 or pallets > 0
+                                     or heldAny(p, o.ft) > 0) then
                 ftSeen[o.ft] = true
                 local e = self:windowStats(o.ft)          -- scoped by the page's Hour / Month / Year selector
                 self.outputs[#self.outputs + 1] = {

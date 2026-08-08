@@ -63,8 +63,8 @@ DistributionSettings.SETTINGS = {
         label   = "Proximity radius",
         tooltip = "How far a consumer reaches for sources in Proximity mode.",
         default = 2,                                            -- 50 m
-        values  = { 25, 50, 75, 100, 150, 200 },
-        strings = { "25 m", "50 m", "75 m", "100 m", "150 m", "200 m" },
+        values  = { 25, 50, 75, 100, 150, 200, 400 },
+        strings = { "25 m", "50 m", "75 m", "100 m", "150 m", "200 m", "400 m" },
     },
     bufferHours = {
         order   = 3,
@@ -207,7 +207,32 @@ end)
 -- live menu option controls, keyed by id, so a sync can refresh what other players see
 DistributionSettings._optionById = {}
 
-local SETTINGS_FILE = "modSettings/FS25_Distribution_Redux/settings.xml"
+-- ---- where settings live ---------------------------------------------------
+-- TWO files, deliberately, because these settings answer two different questions.
+--
+--   WORLD settings -> savegame<N>/distributionSettings.xml
+--     scope, radius, buffer hours, haulage cost, seasonal reserve, pallet spawning -- every rule the
+--     hourly pass runs under. These belong to the WORLD, not to the player: a test map and a realism
+--     map want different answers, and a single profile-wide file forced them to share one. This now
+--     sits beside smartDistribution.xml (the per-asset modes), which has always been per-savegame --
+--     the settings file was the odd one out. Server-authoritative in MP, exactly as before.
+--
+--   LOCAL settings -> modSettings/FS25_Distribution_Redux/settings.xml (the original profile file)
+--     menuRefresh alone, for the reason it carries `localOnly` (see its definition): a display pacing
+--     dial for the machine the menu is open on, not world state. Profile-wide so one choice serves
+--     every savegame.
+--
+-- The profile file ALSO still holds the world keys, historically. They are now read ONLY to seed a
+-- savegame that predates this split -- see firstLoadSource.
+local PROFILE_FILE  = "modSettings/FS25_Distribution_Redux/settings.xml"
+local SAVEGAME_FILE = "distributionSettings.xml"
+
+-- NOTHING may be written until a load has completed. onMenuOptionChanged saves on EVERY option change,
+-- and the load is DEFERRED on a dedicated server (missionInfo.savegameDirectory is nil at
+-- loadMission00Finished -- the trap SmartDistribution's own loader carries a retry for). Without this
+-- guard, a player who opens Settings before that retry lands would write a set of mostly-DEFAULT values
+-- over that savegame's real file, destroying it before it had ever been read.
+DistributionSettings._loaded = false
 
 -- ---- helpers ---------------------------------------------------------------
 local function getStateIndex(id)
@@ -278,17 +303,65 @@ function DistributionSettings.apply()
     end
 end
 
--- ---- save / load (per-profile) ---------------------------------------------
-function DistributionSettings.save()
+-- ---- save / load -----------------------------------------------------------
+-- The savegame folder, resolved by SmartDistribution's OWN resolver so the two files can never land in
+-- different places. A second, private copy of that logic is precisely how the dedicated-server bug in
+-- its header comment was created: a writer and a reader that disagreed about where the file lived.
+-- Second return says whether the answer is AUTHORITATIVE (the engine's own savegameDirectory) or a
+-- GUESS rebuilt from savegameIndex -- and a guess must never be taken as proof that a file is absent.
+-- missionInfo is the one handed to the SAVE HOOK, and passing it is load-bearing rather than tidy: while
+-- a save is in progress the engine points savegameDirectory at .../tempsavegame/, and that is where this
+-- file HAS to be written. See installSaveHook below for why.
+local function savegameDir(missionInfo)
+    if SmartDistribution ~= nil and SmartDistribution.getSaveDir ~= nil then
+        local ok, dir, authoritative = pcall(SmartDistribution.getSaveDir, missionInfo)
+        if ok then return dir, authoritative == true end
+    end
+    return nil, false
+end
+
+-- Open an XML file for writing, reusing the existing document when there is one so unknown keys (an
+-- older build's, or a hand-edit) survive a rewrite. Returns nil on failure; every caller reports it.
+local function openForWrite(path)
+    if fileExists(path) then return loadXMLFile("DistReduxSettings", path) end
+    return createXMLFile("DistReduxSettings", path, "distributionRedux")
+end
+
+-- ---- the LOCAL half: menuRefresh, profile-wide ------------------------------
+function DistributionSettings.saveLocal()
     createFolder(getUserProfileAppPath() .. "modSettings/")
     createFolder(getUserProfileAppPath() .. "modSettings/FS25_Distribution_Redux/")
-    local path = Utils.getFilename(SETTINGS_FILE, getUserProfileAppPath())
-    local xml
-    if fileExists(path) then
-        xml = loadXMLFile("DistReduxSettings", path)
-    else
-        xml = createXMLFile("DistReduxSettings", path, "distributionRedux")
+    local path = Utils.getFilename(PROFILE_FILE, getUserProfileAppPath())
+    local xml = openForWrite(path)
+    if xml == nil or xml == 0 then
+        print(string.format("[DistributionSettings persist] LOCAL SAVE FAILED: could not open %s", tostring(path)))
+        return
     end
+    setXMLFloat(xml, "distributionRedux.settings#menuRefresh", DistributionSettings.menuRefresh)
+    saveXMLFile(xml)
+    delete(xml)
+end
+
+-- ---- the WORLD half: everything else, per savegame --------------------------
+function DistributionSettings.save(missionInfo)
+    -- Refuse to write before the load has landed, or a settings change made during the deferred window
+    -- on a dedicated server would overwrite that savegame's real file with defaults. See _loaded.
+    if not DistributionSettings._loaded then
+        print("[DistributionSettings persist] SAVE skipped: settings not loaded yet (deferred load pending)")
+        return
+    end
+    local dir, authoritative = savegameDir(missionInfo)
+    if dir == nil then
+        print("[DistributionSettings persist] SAVE skipped: savegame directory unresolved")
+        return
+    end
+    -- A brand-new career has not been saved yet, so its savegame folder may not exist the first time a
+    -- setting is changed. Creating an existing folder is a no-op. Gated on an AUTHORITATIVE path so a
+    -- guess reconstructed from savegameIndex can never conjure a savegameN folder that is not the one
+    -- in use -- the same "a guess is not proof" rule the loader works to.
+    if authoritative then createFolder(dir) end
+    local path = dir .. SAVEGAME_FILE
+    local xml = openForWrite(path)
     -- Unconditional print, not gated on debugEnabled: a settings file that cannot be written is the exact
     -- shape of "none of my settings persist", and until now this returned in total silence. Matches the
     -- [SmartDistribution persist] lines so both halves of persistence are greppable from one log.
@@ -313,27 +386,20 @@ function DistributionSettings.save()
     setXMLBool(xml,   "distributionRedux.settings#bestPriceEnabled", DistributionSettings.bestPriceEnabled)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceDefault", DistributionSettings.bestPriceDefault)
     setXMLInt(xml,    "distributionRedux.settings#palletSpawnMode", DistributionSettings.palletSpawnMode)
-    setXMLFloat(xml,  "distributionRedux.settings#menuRefresh", DistributionSettings.menuRefresh)
+    -- menuRefresh is NOT written here: it is localOnly, so it belongs to the machine rather than to the
+    -- world, and lives in the profile file via saveLocal(). Writing it per-savegame would make one
+    -- player's display pacing a property of the map.
     setXMLBool(xml,   "distributionRedux.settings#debugEnabled", DistributionSettings.debugEnabled)
     saveXMLFile(xml)
     delete(xml)
     print(string.format("[DistributionSettings persist] SAVED -> %s", tostring(path)))
 end
 
-function DistributionSettings.load()
-    local path = Utils.getFilename(SETTINGS_FILE, getUserProfileAppPath())
-    if not fileExists(path) then
-        print(string.format("[DistributionSettings persist] LOAD: no file at %s -- writing defaults", tostring(path)))
-        DistributionSettings.save()        -- write defaults on first run
-        return
-    end
-    local xml = loadXMLFile("DistReduxSettings", path)
-    if xml == nil or xml == 0 then
-        print(string.format("[DistributionSettings persist] LOAD FAILED: could not open %s", tostring(path)))
-        return
-    end
-    print(string.format("[DistributionSettings persist] LOAD fired: %s", tostring(path)))
-
+-- Read every WORLD key out of an already-open settings document. Factored out of load() because it is
+-- now applied to TWO different files: the savegame's own, and -- once, for a savegame that predates the
+-- per-savegame split -- the profile file it is seeded from. Every isAllowed() gate and the
+-- palletSpawnMode migration are the originals, moved verbatim. The caller owns the handle.
+local function readWorldSettings(xml)
     local scope = getXMLString(xml, "distributionRedux.settings#scope")
     if scope ~= nil and isAllowed("scope", scope) then DistributionSettings.scope = scope end
 
@@ -395,14 +461,103 @@ function DistributionSettings.load()
         if fullPal ~= nil then DistributionSettings.palletSpawnMode = fullPal and 1 or 0 end
     end
 
-    -- absent in a settings file written before this option existed, so it simply keeps its default
-    local refresh = getXMLFloat(xml, "distributionRedux.settings#menuRefresh")
-    if refresh ~= nil and isAllowed("menuRefresh", refresh) then DistributionSettings.menuRefresh = refresh end
+    -- menuRefresh is deliberately NOT read here -- it is localOnly and comes from the profile file, so a
+    -- savegame written by an older build cannot impose one machine's display pacing on another's.
 
     local dbg = getXMLBool(xml, "distributionRedux.settings#debugEnabled")
     if dbg ~= nil then DistributionSettings.debugEnabled = dbg end
+end
 
+-- The LOCAL half. Its own reader because it comes from a different file on a different schedule, and
+-- because it must still be picked up on a multiplayer CLIENT, which never loads world settings at all.
+local function readLocalSettings()
+    local path = Utils.getFilename(PROFILE_FILE, getUserProfileAppPath())
+    if not fileExists(path) then return end
+    local xml = loadXMLFile("DistReduxSettings", path)
+    if xml == nil or xml == 0 then return end
+    -- absent in a settings file written before this option existed, so it simply keeps its default
+    local refresh = getXMLFloat(xml, "distributionRedux.settings#menuRefresh")
+    if refresh ~= nil and isAllowed("menuRefresh", refresh) then DistributionSettings.menuRefresh = refresh end
     delete(xml)
+end
+
+-- A savegame with no distributionSettings.xml of its own is one of two very different things, and
+-- treating them alike would be wrong in both directions:
+--
+--   EXISTING save -- played with DR before this split, so its owner has settings they tuned in the
+--     profile file. Seed from there, or the update would silently change scope, radius, haulage cost
+--     and pallet spawning on a live farm (the failure class CLAUDE.md 5.31 / 5.44 both had to migrate).
+--
+--   NEW save -- hard defaults, per the author's call. The profile file is explicitly NOT consulted: a
+--     fresh map starts from the mod's own defaults rather than inheriting whatever the last farm was
+--     tuned to.
+--
+-- smartDistribution.xml is the discriminator because saveOverrides writes it UNCONDITIONALLY on every
+-- save (version + backlog marker even with nothing configured), so its presence means exactly "this
+-- savegame has been saved at least once with DR installed". Deleting a savegame takes the whole folder
+-- with it -- verified on this profile, where savegame4's directory is gone entirely -- so a NEW save can
+-- never inherit a stale marker from the slot it reuses.
+local function seedFromProfile(dir)
+    if not fileExists(dir .. "smartDistribution.xml") then
+        print("[DistributionSettings persist] first load: NEW savegame -- using hard defaults")
+        return
+    end
+    local path = Utils.getFilename(PROFILE_FILE, getUserProfileAppPath())
+    if not fileExists(path) then
+        print("[DistributionSettings persist] first load: existing savegame, but no profile file -- using hard defaults")
+        return
+    end
+    local xml = loadXMLFile("DistReduxSettings", path)
+    if xml == nil or xml == 0 then
+        print(string.format("[DistributionSettings persist] first load: could not open profile %s -- using hard defaults", tostring(path)))
+        return
+    end
+    readWorldSettings(xml)
+    delete(xml)
+    print(string.format("[DistributionSettings persist] first load: EXISTING savegame -- migrated settings from %s", tostring(path)))
+end
+
+function DistributionSettings.load()
+    if DistributionSettings._loaded then return end              -- already loaded; never load twice
+    readLocalSettings()                                          -- profile-wide, and safe on a client
+
+    -- A CLIENT owns no world settings -- the server is authoritative and sends them through
+    -- DistributionSettingsEvent on join. Marking the load complete here is what lets a client persist
+    -- its own menuRefresh without ever writing a world file (the world save is guarded on isServer).
+    if g_currentMission ~= nil and not g_currentMission:getIsServer() then
+        DistributionSettings._loaded = true
+        return
+    end
+
+    local dir, authoritative = savegameDir()
+    -- DEDICATED SERVER: savegameDirectory is nil at loadMission00Finished. Leave _loaded false so the
+    -- retry in runHourly picks this up once the path resolves -- and so nothing may be SAVED meanwhile.
+    if dir == nil then
+        print("[DistributionSettings persist] LOAD deferred: savegame directory unresolved -- will retry")
+        return
+    end
+    local path = dir .. SAVEGAME_FILE
+    if not fileExists(path) then
+        -- A GUESSED PATH IS NOT EVIDENCE OF ABSENCE. Concluding "first load" from a guess would seed
+        -- the wrong thing and then write it, permanently. Only an authoritative miss is proof.
+        if not authoritative then
+            print(string.format("[DistributionSettings persist] LOAD deferred: %s absent but path was GUESSED -- will retry", tostring(path)))
+            return
+        end
+        seedFromProfile(dir)
+        DistributionSettings._loaded = true                       -- set BEFORE save(), which is gated on it
+        DistributionSettings.save()                               -- lay down this savegame's own file
+        return
+    end
+    local xml = loadXMLFile("DistReduxSettings", path)
+    if xml == nil or xml == 0 then
+        print(string.format("[DistributionSettings persist] LOAD FAILED: could not open %s", tostring(path)))
+        return
+    end
+    print(string.format("[DistributionSettings persist] LOAD fired: %s", tostring(path)))
+    readWorldSettings(xml)
+    delete(xml)
+    DistributionSettings._loaded = true
 end
 
 -- ---- menu callback target --------------------------------------------------
@@ -415,8 +570,13 @@ function DistributionControls:onMenuOptionChanged(state, menuOption)
     if value == nil then return end
     DistributionSettings[id] = value
     DistributionSettings.apply()                       -- push into the live engine settings
-    -- only the server owns the world settings file; clients persist nothing from an MP session
-    if g_currentMission == nil or g_currentMission:getIsServer() then
+    if def.localOnly then
+        -- A localOnly setting is this MACHINE's, so it is written on a client too -- which is what makes
+        -- a client's menu refresh choice survive a session at last (CLAUDE.md 5.46 records that it did
+        -- not, precisely because the only save path was gated on isServer).
+        DistributionSettings.saveLocal()
+    elseif g_currentMission == nil or g_currentMission:getIsServer() then
+        -- only the server owns the world settings file; clients persist no world state from an MP session
         DistributionSettings.save()
     end
     -- multiplayer: relay the change so the server (authoritative for the hourly pass) and every
@@ -744,6 +904,38 @@ end
 
 -- (the old in-game options-page settings injection was retired; settings now live
 --  on the consolidated menu's Settings tab via DistributionSettingsPage.)
+
+-- ---- hook: write the settings file INTO the game's own save ------------------
+-- THIS IS WHAT MAKES PER-SAVEGAME SETTINGS PERSIST, and its absence is the whole of the bug reported
+-- 2026-08-08 ("set settings on savegame2, saved, reloaded, settings reset").
+--
+-- FS25 does NOT write into savegame<N>/ when the player saves. It builds a fresh **tempsavegame/**
+-- folder, writes the whole savegame into it, and then swaps that folder over savegame<N>/ -- so
+-- ANYTHING already sitting in savegame<N>/ that was not also written into tempsavegame/ is destroyed by
+-- the swap. The log shows it plainly:
+--     [SmartDistribution persist] SAVE fired: dir=.../tempsavegame/  mi.savegameDirectory=.../tempsavegame
+--
+-- distributionSettings.xml was written only at load and on each option change, straight into
+-- savegame<N>/ -- so every game save deleted it, every reload found nothing, and the settings came back
+-- seeded from the profile. The tell was in the log: EVERY load printed "first load: EXISTING savegame
+-- -- migrated" instead of "LOAD fired", i.e. the file was absent every single time.
+--
+-- smartDistribution.xml never had this problem because it has always been written from THIS hook. The
+-- fix is simply to do the same, and to hand save() the missionInfo we are given so it resolves the
+-- TEMP directory rather than the live one.
+if FSCareerMissionInfo ~= nil and FSCareerMissionInfo.saveToXMLFile ~= nil then
+    FSCareerMissionInfo.saveToXMLFile = Utils.appendedFunction(
+        FSCareerMissionInfo.saveToXMLFile,
+        function(self, ...)
+            -- server owns the world settings; a client persists nothing from an MP session
+            if g_currentMission == nil or g_currentMission:getIsServer() then
+                pcall(DistributionSettings.save, self)
+            end
+        end)
+    print("[DistributionSettings persist] save hook attached (FSCareerMissionInfo.saveToXMLFile)")
+else
+    print("[DistributionSettings persist] SAVE HOOK NOT ATTACHED -- FSCareerMissionInfo.saveToXMLFile missing")
+end
 
 -- ---- hook: load + apply + inject once the mission is up ---------------------
 if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
