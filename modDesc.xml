@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!-- descVersion 110. This mod uses only launch-era schema, so a lower value also
      loads; 110 matches the current patch and silences the version notice. -->
-<modDesc descVersion="110">
+<modDesc descVersion="111">
     <author>Bones</author>
     <version>1.1.0.0</version>
 
