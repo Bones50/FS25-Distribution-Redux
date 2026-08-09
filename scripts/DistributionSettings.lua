@@ -343,17 +343,41 @@ function DistributionSettings.saveLocal()
 end
 
 -- ---- the WORLD half: everything else, per savegame --------------------------
+-- STARTING A NEW GAME USED TO LOSE EVERY SETTING. Reported and then reproduced deliberately
+-- 2026-08-09: new game -> place buildings -> change DR settings -> save -> reload -> all settings back
+-- at hard defaults. Modes survived, which is what narrowed it to this file (smartDistribution.xml has
+-- no equivalent gate). The chain, every step visible in one log:
+--
+--   1. a NEW GAME has no savegame folder yet -- it is created BY the first save -- so
+--      missionInfo.savegameDirectory is nil and savegameDir() falls back to a GUESS (authoritative=false)
+--   2. load() finds no file at the guessed path, hits its "a guess is not evidence of absence" guard
+--      (correct, and there for the dedicated server) and returns with _loaded FALSE
+--   3. this function was gated on _loaded, so EVERY save that session was skipped -- including the one
+--      the game's own save hook fires ("SAVE skipped: settings not loaded yet")
+--   4. so distributionSettings.xml never reached tempsavegame/, and the folder swap left the new
+--      savegame with no settings file at all (see installSaveHook below for the swap)
+--   5. next load: authoritative, file absent -> seedFromProfile -> "NEW savegame, hard defaults"
+--
+-- The gate itself is right; refusing an ad-hoc write during the deferred window still protects a live
+-- farm. What was wrong is refusing the GAME SAVE, because skipping that does not preserve the old file,
+-- it DESTROYS it. So the deferral now applies only to non-authoritative callers (a menu change), while
+-- an authoritative one -- the save hook, writing into tempsavegame/ -- always resolves the situation
+-- first via adoptPendingWorldSettings and then writes.
+--
+-- dir is resolved BEFORE the gate now, because the gate needs `authoritative` to tell those two apart.
+-- savegameDir() has no side effects, so the reorder changes nothing else.
 function DistributionSettings.save(missionInfo)
-    -- Refuse to write before the load has landed, or a settings change made during the deferred window
-    -- on a dedicated server would overwrite that savegame's real file with defaults. See _loaded.
-    if not DistributionSettings._loaded then
-        print("[DistributionSettings persist] SAVE skipped: settings not loaded yet (deferred load pending)")
-        return
-    end
     local dir, authoritative = savegameDir(missionInfo)
     if dir == nil then
         print("[DistributionSettings persist] SAVE skipped: savegame directory unresolved")
         return
+    end
+    if not DistributionSettings._loaded then
+        if not authoritative then
+            print("[DistributionSettings persist] SAVE skipped: settings not loaded yet (deferred load pending)")
+            return
+        end
+        if not DistributionSettings.adoptPendingWorldSettings() then return end
     end
     -- A brand-new career has not been saved yet, so its savegame folder may not exist the first time a
     -- setting is changed. Creating an existing folder is a no-op. Gated on an AUTHORITATIVE path so a
@@ -515,6 +539,55 @@ local function seedFromProfile(dir)
     readWorldSettings(xml)
     delete(xml)
     print(string.format("[DistributionSettings persist] first load: EXISTING savegame -- migrated settings from %s", tostring(path)))
+end
+
+-- Called by save() when a GAME SAVE arrives while the load is still deferred. Returns true if the
+-- caller may write, false if it must skip. Reported 2026-08-09: on a NEW GAME every setting reverted
+-- to hard defaults after the first save/reload -- see the block above save() for the full chain.
+--
+-- The two cases look identical from inside the deferred window and must NOT be treated alike:
+--
+--   NEW SAVE -- there is genuinely no file, because the savegame folder itself does not exist until
+--     this very save creates it. The in-memory values ARE the player's (a menu change applies to
+--     memory even when the save is skipped), so writing them is exactly right.
+--
+--   DEFERRED LOAD over a REAL file (the dedicated-server case the _loaded gate was built for) -- a
+--     file exists that we have not read. Writing memory here would overwrite a live farm's settings
+--     with defaults, which is precisely what that gate prevents. So ADOPT it first: read it, apply it,
+--     and let the normal write put it back unchanged. That also repairs the session, which until now
+--     ran on defaults until the hourly retry happened to resolve.
+--
+-- The discriminator is the LIVE savegame folder, rebuilt from savegameIndex. It cannot come from
+-- savegameDir(): during a save the engine points savegameDirectory at .../tempsavegame/, which is where
+-- we are writing TO, never where the existing file lives.
+--
+-- Placed here, BELOW readWorldSettings -- that is a local, and save() sits ABOVE its declaration, so
+-- calling it from there would resolve to a nil global and throw inside the save hook (CLAUDE.md 5.44;
+-- luac -p does not catch it). save() reaches this as a FIELD, which resolves at call time.
+function DistributionSettings.adoptPendingWorldSettings()
+    local mi  = g_currentMission ~= nil and g_currentMission.missionInfo or nil
+    local idx = mi ~= nil and mi.savegameIndex or nil
+    if idx == nil or getUserProfileAppPath == nil then
+        print("[DistributionSettings persist] SAVE skipped: load still pending and the live savegame folder is unresolved")
+        return false
+    end
+    local livePath = getUserProfileAppPath() .. "savegame" .. tostring(idx) .. "/" .. SAVEGAME_FILE
+    if fileExists(livePath) then
+        local xml = loadXMLFile("DistReduxSettings", livePath)
+        if xml == nil or xml == 0 then
+            print(string.format("[DistributionSettings persist] SAVE skipped: load pending and %s could not be read", tostring(livePath)))
+            return false                                          -- never overwrite a file we failed to read
+        end
+        readWorldSettings(xml)
+        delete(xml)
+        DistributionSettings._loaded = true
+        DistributionSettings.apply()                              -- the session has been running on defaults; fix that too
+        print(string.format("[DistributionSettings persist] SAVE: adopted the pending file before writing -> %s", tostring(livePath)))
+        return true
+    end
+    DistributionSettings._loaded = true
+    print("[DistributionSettings persist] SAVE: no settings file for this savegame (NEW save) -- writing the current settings")
+    return true
 end
 
 function DistributionSettings.load()

@@ -31,6 +31,14 @@ Feedback/Issues: https://github.com/Bones50/FS25-Distribution-Redux
 
 Changelog
 
+v1.1.0.0
+1. Over 39 Bug Fixes (see GitHub Readme for full details).
+2. Over 17 QoL Additions (see GitHub Readme for full details).
+3. Compatibility added for many mods, and the code strengthened to improve mod compatibility overall (see GitHub Readme for full details).
+4. Added an Overview tab that allows you to see all distribution activity, and distribution settings, for all buildings in one place (includes filters, and can be set to show all sources and productions contributing to a specific end product)
+5. Added Advanced Input and Output management (block, prioritise, reserve stock, fill target, max in) for all buildings.
+6. Added the ability to move and sort product between storages (i.e. Silos, Pallet Stores etc)
+
 v1.0.0.2
 - Buildings can now be renamed: all buildings in the distribution network can be given a custom name from the base-game construction menu (silos, sheds and pits included, which the game does not normally allow). Distribution Redux uses that name throughout its menu, with the original building name shown beneath it as a reference.
 - Fixed the Manure Heap and Slurry Pit listing each other's product: the Manure Heap now shows only Manure and the Slurry Pit only Slurry.
@@ -64,6 +72,14 @@ Entwickelt für das Grundspiel und kompatibel mit den meisten Standard-Mods. Ein
 Feedback/Issues: https://github.com/Bones50/FS25-Distribution-Redux
 
 Changelog
+
+v1.1.0.0
+1. Über 39 Fehlerbehebungen (vollständige Details in der GitHub-Readme).
+2. Über 17 Komfortverbesserungen (vollständige Details in der GitHub-Readme).
+3. Kompatibilität für viele Mods ergänzt und der Code allgemein robuster gemacht, um die Mod-Kompatibilität insgesamt zu verbessern (vollständige Details in der GitHub-Readme).
+4. Neuer Reiter "Übersicht": zeigt die gesamte Verteilungsaktivität sowie die Verteilungseinstellungen aller Gebäude an einem Ort (mit Filtern; kann außerdem alle Quellen und Produktionen anzeigen, die zu einem bestimmten Endprodukt beitragen).
+5. Erweiterte Eingangs- und Ausgangsverwaltung für alle Gebäude (sperren, priorisieren, Bestand reservieren, Füllziel, max. Eingang).
+6. Produkte können jetzt zwischen Lagern verschoben und sortiert werden (z. B. Silos, Palettenlager usw.).
 
 v1.0.0.2
 - Gebäude können jetzt umbenannt werden: Alle Gebäude im Verteilungsnetz lassen sich über das Baumenü des Grundspiels mit einem eigenen Namen versehen (auch Silos, Schuppen und Gruben, was das Spiel sonst nicht erlaubt). Distribution Redux verwendet diesen Namen im gesamten Menü und zeigt den ursprünglichen Gebäudenamen darunter als Referenz an.

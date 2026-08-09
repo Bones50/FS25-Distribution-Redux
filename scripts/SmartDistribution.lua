@@ -100,6 +100,29 @@ SmartDistribution.modDir = g_currentModDirectory or ""
 SmartDistribution.debug  = false
 SmartDistribution.dryRun = false
 SmartDistribution._prodThruDebug = false  -- production throughput math; on only while diagnosing
+
+-- DEV CONSOLE: QUARANTINED IN THE SHIPPED BUILD. Author's call 2026-08-09 -- "even with console turned
+-- on the player should not be able to reach them or even be aware of them".
+--
+-- Every cmd* FUNCTION BODY is kept (they cost nothing unregistered, and several encode findings that
+-- took days to obtain), but with this false NOTHING is registered with addConsoleCommand and NOTHING is
+-- printed about them. Two things had to be silenced together, because either alone still leaks:
+--   * REACHABILITY -- the two file-scope registration blocks (one after the cmd* definitions near the
+--     end of this file, one beside the pallet-spawner hook) are both gated on this flag. Enabling
+--     game.xml <development><controls>true is then not enough: the commands were never registered, so
+--     the console does not know them and they cannot be tab-completed or guessed at.
+--   * AWARENESS -- the startup lines that NAMED commands ("sd* probes ... registered", "sdPalletHook to
+--     toggle", and the "addConsoleCommand unavailable" branch, which advertised their existence by
+--     saying they were missing) are gated too. A player reading log.txt now sees no mention of any of
+--     them.
+--
+-- This DOES mean the shipping off-switches (sdPalletHook, sdExtExclusive) and the recovery command
+-- (sdShedRepair) are unreachable in a released build. That is the intended trade: if one is ever needed
+-- to diagnose a player's problem, set this true, rebuild, and hand them that build.
+--
+-- FOR DEVELOPMENT: set this true and everything comes back exactly as before. It is a FIELD, not a
+-- local -- the main chunk sits at 199/200 locals (CLAUDE.md 1.1) and a new local here would not compile.
+SmartDistribution.DEV_CONSOLE = false
 -- Reproduce vanilla's sellDirectly-output income (biogas electric charge + methane): our full
 -- suppression of the vanilla hourly pass would otherwise drop it.  Verified in-game (electric 0.35/l,
 -- methane 0.45/l; digestate income is not doubled, confirming vanilla no longer pays this under the
@@ -1923,6 +1946,53 @@ local function getActiveProductionDefs(pp)
     return defs
 end
 
+-- Every fill type this production point can OUTPUT, from every CONFIGURED line -- enabled or NOT.
+--
+-- A SWITCHED-OFF LINE STILL LEAVES REAL STOCK. Turning a line off stops it MAKING more; it does not
+-- unmake what is already in pp.storage, and that stock must stay shippable. Distribute and Sell always
+-- worked with a line off because they enumerate structurally (gatherSources reads pp.outputFillTypeIds,
+-- sellProduction reads pp.outputFillTypeIdsDirectSell, and the market PAD branch reads
+-- palletSpawnerFillTypes) -- but storePhase, marketTransferPhase and networkFillTypes each built their
+-- own set from getActiveProductionDefs, i.e. ENABLED lines only. So one product could be distributed and
+-- sold but never stored, never transferred to a market, and never even LISTED on a market's tab.
+-- Reported in game 2026-08-09: an Advanced Greenhouse holding tomato with its tomato line switched off
+-- shipped nothing to the farmers market and showed no TOMATO row there; switching the line back on
+-- released it. Five paths answering one question, three of them differently.
+--
+-- Built on pp.productions (all configured lines) rather than pp.outputFillTypeIds, which would be the
+-- tidier mirror of gatherSources. ProductionPoint.lua is 78% stripped in the SDK source (CLAUDE.md 8.1),
+-- so it cannot be READ whether that field covers a disabled line -- and an absence there proves nothing.
+-- (In-game evidence says it probably does: assetConfigFillTypes resolves the dialog's output list from
+-- exactly that field, and the tomato row stayed visible with its line off. That is why this is a
+-- preference, not a correction.) pp.productions is already read successfully by receiverInputFillTypes
+-- and productionLines(). The active defs are folded in as well because getActiveProductionDefs resolves a
+-- lightweight activeProductions record to its full definition (5.27) and pp.productions may not be
+-- populated at all on a modded point; the union can only ever be wider, and wider is the safe direction
+-- here -- a missing fill type strands product, a spurious one costs an empty table lookup.
+--
+-- This is the OUTPUT twin of receiverInputFillTypes, which has always unioned active defs with every
+-- configured line for the same reason ("so the player can pre-set caps").
+--
+-- NAMED configuredOutputFillTypes, NOT productionOutputFillTypes: that name is already taken by a local
+-- further down the file which takes a PLACEABLE and returns (set, hasAny) off pp.outputFillTypeIds. Two
+-- functions with one name, a placeable-vs-production-point argument and different return arity is the
+-- silent-failure shape CLAUDE.md 1.5 is about. A FIELD, not a local: the main chunk is at Lua's 200-local
+-- ceiling (CLAUDE.md 1.1). Defined here, BELOW getActiveProductionDefs, because that is a local --
+-- calling it from above would resolve to a nil global at runtime (5.44).
+function SmartDistribution.configuredOutputFillTypes(pp)
+    local out = {}
+    if pp == nil then return out end
+    for _, def in ipairs(getActiveProductionDefs(pp)) do
+        for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
+    end
+    if type(pp.productions) == "table" then
+        for _, def in ipairs(pp.productions) do
+            for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
+        end
+    end
+    return out
+end
+
 -- PARALLEL vs SERIAL production points.
 --
 -- A grain mill is PARALLEL: wheat flour and barley flour each run at their own rated speed, so the point's
@@ -3560,11 +3630,9 @@ local function storePhase(manager, bill)
             local placeable = pp.owningPlaceable
             if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil then
                 local farmId = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
-                local outFts = {}
-                for _, def in ipairs(getActiveProductionDefs(pp)) do
-                    for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then outFts[o.type] = true end end
-                end
-                for ft in pairs(outFts) do
+                -- every CONFIGURED output, not just the enabled lines: stock made before a line was
+                -- switched off is still real and must still be storable (see configuredOutputFillTypes).
+                for ft in pairs(SmartDistribution.configuredOutputFillTypes(pp)) do
                     storeAmount(placeable, pp.storage, ft, farmId, bill)
                 end
             end
@@ -4388,11 +4456,10 @@ function SmartDistribution.marketTransferPhase(manager)
                         end
                     end
                 end
-                local outFts = {}
-                for _, def in ipairs(getActiveProductionDefs(pp)) do
-                    for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then outFts[o.type] = true end end
-                end
-                for ft in pairs(outFts) do
+                -- every CONFIGURED output, not just the enabled lines. This is the reported bug: with its
+                -- tomato line switched off, an Advanced Greenhouse holding tomato had no path to a market
+                -- at all, while the PAD branch above (structural) would have carried it happily.
+                for ft in pairs(SmartDistribution.configuredOutputFillTypes(pp)) do
                     local m = resolveMode(placeable, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(placeable, ft, m, SmartDistribution.drawableLevel(placeable, ft, getLevel(pp.storage, ft)))
@@ -9178,7 +9245,14 @@ function SmartDistribution.installPalletSpawnerHook()
         return SmartDistribution._origGetOrSpawnPallet(self, farmId, ft,
                                                        traced(callback, "getOrSpawn"), target)
     end
-    print("[SmartDistribution] pallet-spawner hook installed (sdPalletHook to toggle)")
+    -- The hook landing is worth one line (its absence is a real fault), but the command name is not:
+    -- naming it advertised a dev tool to every player reading log.txt. Kept factual in release, and the
+    -- toggle hint comes back automatically in a dev build.
+    if SmartDistribution.DEV_CONSOLE then
+        print("[SmartDistribution] pallet-spawner hook installed (sdPalletHook to toggle)")
+    else
+        print("[SmartDistribution] pallet-spawner hook installed")
+    end
 end
 
 -- sdPalletHook            -- show state
@@ -11756,6 +11830,24 @@ function SmartDistribution.networkFillTypes(farmId)
                     for _, def in ipairs(getActiveProductionDefs(pp)) do
                         for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
                     end
+                    -- ...PLUS anything it is actually HOLDING that a configured line outputs. A switched-off
+                    -- line leaves real stock behind, and that stock is still distributable / storable /
+                    -- sellable -- so a market has to be able to LIST it or there is no row to route it from.
+                    --
+                    -- Deliberately NOT the full configured-output set, which is the obvious symmetry with
+                    -- storePhase / marketTransferPhase above: the Advanced Greenhouse declares TEN lines, so
+                    -- that would put all ten crops on every market's tab whether or not the farm has ever
+                    -- made one -- the wall-of-empty-rows problem 5.7 exists to avoid. Held stock is the
+                    -- evidence that the product is genuinely in the network.
+                    --
+                    -- Gated on the OUTPUT set rather than sweeping pp.storage, because a production's buffer
+                    -- holds its INPUTS too: a bakery stocking flour would otherwise advertise FLOUR as
+                    -- something the network can supply a market with.
+                    if pp.storage ~= nil then
+                        for ft in pairs(SmartDistribution.configuredOutputFillTypes(pp)) do
+                            if getLevel(pp.storage, ft) > 0 then out[ft] = true end
+                        end
+                    end
                 end
             elseif cls == "HUSBANDRY" then
                 -- husbandries always generate their outputs: milk / manure + egg / wool / honey pallets (shown regardless of stock)
@@ -13462,8 +13554,10 @@ installPersistence()
 --     one-key A/B if a modded production point ever mishandles PALLET_ALREADY_PRESENT.
 --   * sdShedRepair -- recovery: strips stored objects a shed cannot use. Cheap insurance while direct
 --     insert (6.12) beds in.
--- Both need game.xml <development><controls>true, so neither is reachable in a normal install.
-if addConsoleCommand ~= nil then
+-- QUARANTINED: gated on SmartDistribution.DEV_CONSOLE (false in the shipped build -- see its definition
+-- near the top of this file). Nothing here registers and nothing is printed, so a player cannot reach
+-- these even with game.xml <development><controls>true. Set that flag true for a dev build.
+if SmartDistribution.DEV_CONSOLE and addConsoleCommand ~= nil then
     addConsoleCommand("sdPalletHook", "Pallet spawner: toggle spawn logging / the production top-up redirect [dev]", "cmdPalletHook", SmartDistribution)
     addConsoleCommand("sdShedRepair", "Remove unusable stored objects from every pallet shed [dev]", "cmdShedRepair", SmartDistribution)
     -- sdStress: measure the menu cost at a farm size this save does not have (see 5.46 / the function's
@@ -16295,7 +16389,10 @@ end
 -- The earlier registration block was not taking effect (sdManureProbe reported "command not found"),
 -- so register here at file scope, after every cmd* function above is defined. Guarded so it is a no-op
 -- if the console is unavailable or the command was already registered.
-if addConsoleCommand ~= nil then
+-- QUARANTINED: gated on SmartDistribution.DEV_CONSOLE (false in the shipped build). The cmd* bodies
+-- above are all still compiled -- they cost nothing unregistered -- but none of them is reachable, and
+-- neither branch prints, so nothing in log.txt hints that they exist. See the flag's own comment.
+if SmartDistribution.DEV_CONSOLE and addConsoleCommand ~= nil then
     pcall(addConsoleCommand, "sdManureProbe",
         "Dump manure heaps/extensions + barn manure/slurry storage [dev]",
         "cmdManureProbe", SmartDistribution)
@@ -16343,9 +16440,10 @@ if addConsoleCommand ~= nil then
     --     "DESTRUCTIVE test: take silage from a bunker: sdBunkerTake <index> <litres> (or a fraction <=1) [dev]",
     --     "cmdBunkerTake", SmartDistribution)
     print("[SmartDistribution] sd* probes + sdSpawnHusb / sdRobotFill / sdTarget registered")
-else
-    print("[SmartDistribution] addConsoleCommand unavailable -- console commands disabled by the game")
 end
+-- NO `else` BRANCH. It used to print "addConsoleCommand unavailable -- console commands disabled by the
+-- game", which told any player reading log.txt that this mod HAS hidden console commands -- the exact
+-- awareness this quarantine removes. Silence is the point.
 
 -- ---- the pooled-share wrappers USED TO LIVE HERE. They are gone; do not restore them. --------------
 --

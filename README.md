@@ -13,7 +13,7 @@ TO TEST THE WORKING (UNRELEASED) VERSION
 NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
 
 V1.1.0.0 Release candidate Changelog (To Date)
-Changelog Last updated: 06/08/2026
+Changelog Last updated: 09/08/2026
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -49,9 +49,12 @@ Fixed
 31) Redid how pooled storage is handled and displayed to reduce confusion. Pooled Storage now works the same way as base game, but allows you to set the maximum storage for each input type. (6/8)
 32) storage now shown in kL in the UI where above 1000l stored, to help fit all the info on the UI. (6/8)
 33) Fixed some issues with silo extensions bleeding into silo's it wasn't supposed too. (6/8)
-34) (NEW) Fixed productions with remaining produced products on an inactive line not being able to distribute. (8/8)
-35) (NEW) Fixed DR settings being saved globally instead of per savegame. (8/8)
-36) (NEW) Help Guide Updated (8/8)
+34) Fixed productions with remaining produced products on an inactive line not being able to distribute. (8/8)
+35) Fixed DR settings being saved globally instead of per savegame. (8/8)
+36) Help Guide Updated (8/8)
+37) (NEW) Fixed a mod icompatability that was stopping fields from growing (9/8)
+38) (NEW) Additional fix for productions not supplying to markets when the line was inactive even if there was still stock in the production (9/8)
+39) (NEW) Fix for DR settings not being saved the first time a fresh savegame was saved.(9/8)
 
 Added
 1) Support added for the Grazing Pastures Mod
@@ -70,7 +73,7 @@ Added
 14) New setting option for pallets that allows you to tell the game to never produce pallets from productions/animal husbandries. Note that distribution will still occur from the internal storage of that building, Pallets can still be spawned manually as needed (This is the only way to have pallets spawn if the setting is on). (2/7)
 15) Added a feature that opens the whole bunker silo when you press R on any part of the bunker. You no longer need to interact with the silage with a vehicle to get the bunker to fully open. (3/8)
 16) Added a new setting to set the refresh rate of the UI in case you still have issues with stuttering or freezing (4/8)
-17) (NEW) When advanced routing is activated in the settings (on by default), the Building UI's will only show inputs/outputs that are either active (Not Blocked) or have material in storage. If an input is Blocked AND is empty, that material will not be shown. Instead an extra line will be visible that shows "+ X Inputs that are blocked (see Advanced inputs for details)" (4/8)  
+17) When advanced routing is activated in the settings (on by default), the Building UI's will only show inputs/outputs that are either active (Not Blocked) or have material in storage. If an input is Blocked AND is empty, that material will not be shown. Instead an extra line will be visible that shows "+ X Inputs that are blocked (see Advanced inputs for details)" (4/8)  
 
 New Features
 1) Added advanced distribution input and output configuration options. Feature can be turned off in settings. If feature is turned off, or no advanced option is applied the system will work in the default mode as per the last patch. Advanced options include:
