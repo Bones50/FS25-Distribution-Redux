@@ -12,8 +12,8 @@ TO TEST THE WORKING (UNRELEASED) VERSION
 7) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
 NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
 
-V1.1.0.0 Release candidate Changelog (To Date)
-Changelog Last updated: 09/08/2026
+V1.1.0.0 Release Changelog
+Release Date: 10/08/2026
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -52,9 +52,9 @@ Fixed
 34) Fixed productions with remaining produced products on an inactive line not being able to distribute. (8/8)
 35) Fixed DR settings being saved globally instead of per savegame. (8/8)
 36) Help Guide Updated (8/8)
-37) (NEW) Fixed a mod icompatability that was stopping fields from growing (9/8)
-38) (NEW) Additional fix for productions not supplying to markets when the line was inactive even if there was still stock in the production (9/8)
-39) (NEW) Fix for DR settings not being saved the first time a fresh savegame was saved.(9/8)
+37) Fixed a mod icompatability that was stopping fields from growing (9/8)
+38) Additional fix for productions not supplying to markets when the line was inactive even if there was still stock in the production (9/8)
+39) Fix for DR settings not being saved the first time a fresh savegame was saved.(9/8)
 
 Added
 1) Support added for the Grazing Pastures Mod
