@@ -2,6 +2,8 @@
 Replaces Farming Simulator 25's standard distribution system with a smarter, demand-driven logistics network.
 Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled.
 
+If you need help, join the discord: https://discord.gg/nK5Q7KCbY
+
 TO TEST THE WORKING (UNRELEASED) VERSION
 1) Go to the "Code" Option at the top right and download zip
 2) Go to where the zip downloaded and unzip it.
