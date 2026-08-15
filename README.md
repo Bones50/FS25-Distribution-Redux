@@ -1,6 +1,8 @@
 # FS25-Distribution-Redux
 Replaces Farming Simulator 25's standard distribution system with a smarter, demand-driven logistics network.
-Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled.
+Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled!
+
+If you need help, join the discord: https://discord.gg/nK5Q7KCbY
 
 If you need help, join the discord: https://discord.gg/nK5Q7KCbY
 If you want to support my work buy me a coffee: https://ko-fi.com/bones13123
@@ -124,9 +126,9 @@ Fixed
 34) Fixed productions with remaining produced products on an inactive line not being able to distribute. (8/8)
 35) Fixed DR settings being saved globally instead of per savegame. (8/8)
 36) Help Guide Updated (8/8)
-37) (NEW) Fixed a mod icompatability that was stopping fields from growing (9/8)
-38) (NEW) Additional fix for productions not supplying to markets when the line was inactive even if there was still stock in the production (9/8)
-39) (NEW) Fix for DR settings not being saved the first time a fresh savegame was saved.(9/8)
+37) Fixed a mod icompatability that was stopping fields from growing (9/8)
+38) Additional fix for productions not supplying to markets when the line was inactive even if there was still stock in the production (9/8)
+39) Fix for DR settings not being saved the first time a fresh savegame was saved.(9/8)
 
 Added
 1) Support added for the Grazing Pastures Mod
