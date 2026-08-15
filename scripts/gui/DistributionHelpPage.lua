@@ -60,10 +60,15 @@ function DistributionHelpPage:selectTopic(index)
     if index == nil or T[index] == nil then return end
     self.currentTopic = index
     if DistributionHelpDialog ~= nil and DistributionHelpDialog.buildLines ~= nil then
-        self.lines = DistributionHelpDialog.buildLines(T[index].body, WRAP_COLS) or {}
+        -- translated per paragraph; falls back to the English body key by key
+        local body = (DistributionHelpDialog.localisedBody ~= nil)
+                     and DistributionHelpDialog.localisedBody(T[index]) or T[index].body
+        self.lines = DistributionHelpDialog.buildLines(body, WRAP_COLS) or {}
     end
     if self.bodyTitleElement ~= nil then
-        self.bodyTitleElement:setText((T[index].title or ""):upper())
+        local ttl = (DistributionHelpDialog.localisedTitle ~= nil)
+                    and DistributionHelpDialog.localisedTitle(T[index]) or (T[index].title or "")
+        self.bodyTitleElement:setText(ttl:upper())
     end
     if self.bodyList ~= nil then self.bodyList:reloadData() end
 end
@@ -101,7 +106,10 @@ function DistributionHelpPage:populateCellForItemInSection(list, section, index,
     if list == self.topicList then
         local t = topics()[index]
         local nameCell = cell:getAttribute("topicName")
-        if nameCell ~= nil and t ~= nil then nameCell:setText(t.title or "?") end
+        if nameCell ~= nil and t ~= nil then
+            nameCell:setText((DistributionHelpDialog.localisedTitle ~= nil)
+                             and DistributionHelpDialog.localisedTitle(t) or (t.title or "?"))
+        end
     else
         local row = self.lines[index]
         local lineCell = cell:getAttribute("bodyLine")

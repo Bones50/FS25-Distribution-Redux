@@ -92,8 +92,8 @@ function DistributionInputsDialog:refresh()
     self._refreshing = true
     if self.inputList ~= nil then self.inputList:reloadData() end
     if self.dialogTitleElement ~= nil and self.asset ~= nil then
-        local nm = (self.asset.getName ~= nil) and self.asset:getName() or "Building"
-        self.dialogTitleElement:setText("Advanced Inputs - " .. tostring(nm))
+        local nm = (self.asset.getName ~= nil) and self.asset:getName() or SmartDistribution.l10n("dr_label_building", "Building")
+        self.dialogTitleElement:setText(string.format(SmartDistribution.l10n("dr_inp_title", "Advanced Inputs - %s"), tostring(nm)))
     end
     if self.dialogTextElement ~= nil then
         if self.poolLiters ~= nil then
@@ -112,15 +112,18 @@ function DistributionInputsDialog:refresh()
             end
             local msg
             if capped > 0 then
-                msg = string.format("Pooled storage: %s shared by %d products, %d capped. Anything uncapped may use the whole pool.",
+                msg = string.format(SmartDistribution.l10n("dr_inp_pooledCapped",
+                    "Pooled storage: %s shared by %d products, %d capped. Anything uncapped may use the whole pool."),
                     fmtV(self.poolLiters), shared, capped)
             else
-                msg = string.format("Pooled storage: %s shared by %d products. Each may use all of it - set a max to reserve room for the others.",
+                msg = string.format(SmartDistribution.l10n("dr_inp_pooled",
+                    "Pooled storage: %s shared by %d products. Each may use all of it - set a max to reserve room for the others."),
                     fmtV(self.poolLiters), shared)
             end
             self.dialogTextElement:setText(msg)
         else
-            self.dialogTextElement:setText("Set each product's max, or block it. This building has individual per-product storage.")
+            self.dialogTextElement:setText(SmartDistribution.l10n("dr_inp_individual",
+                "Set each product's max, or block it. This building has individual per-product storage."))
         end
     end
     self:updateBlockLabel()
@@ -141,15 +144,16 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
     local r = self.rows[index]
     if r == nil then return end
     setc("name", r.readOnly and (r.name or "") or fillTypeTitle(r.ft))
-    setc("kind", r.readOnly and "Internal" or (r.pooled and "Pooled" or "Individual"))
+    setc("kind", r.readOnly and SmartDistribution.l10n("dr_type_internal", "Internal")
+        or (r.pooled and SmartDistribution.l10n("dr_type_pooled", "Pooled") or SmartDistribution.l10n("dr_type_individual", "Individual")))
     setc("held", fmtV(r.held))
     if r.readOnly then
         setc("cap", fmtV(r.maxLiters))   -- capacity, informational
         setc("avail", "-")
         setc("target", "-")
     elseif r.blocked then
-        setc("cap", "BLOCKED")
-        setc("avail", "0 L")                     -- a blocked product will accept nothing, which is the point
+        setc("cap", SmartDistribution.l10n("dr_type_blocked", "BLOCKED"))
+        setc("avail", fmtV(0))                   -- a blocked product will accept nothing, which is the point
         setc("target", "-")
     else
         -- MAX IN is the CAP: the percentage and the litres that percentage represents. AVAILABLE is what
@@ -161,7 +165,7 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
         if r.targetPct ~= nil then
             setc("target", string.format("%d%%  (%s)", r.targetPct, fmtV(r.targetLiters or 0)))
         else
-            setc("target", "Off")
+            setc("target", SmartDistribution.l10n("dr_label_off", "Off"))
         end
     end
     -- icon (hidden for the read-only internal row)
@@ -194,7 +198,7 @@ end
 function DistributionInputsDialog:updateBlockLabel()
     if self.blockButton == nil or self.blockButton.setText == nil then return end
     local r = self:selectedRow()
-    self.blockButton:setText((r ~= nil and r.blocked) and "Allow" or "Block")
+    self.blockButton:setText((r ~= nil and r.blocked) and SmartDistribution.l10n("dr_btn_allow", "Allow") or SmartDistribution.l10n("dr_btn_block", "Block"))
 end
 
 -- ---- actions (all routed through the MP-safe control event) ----------------
@@ -253,7 +257,7 @@ function DistributionInputsDialog:updateBlockAllLabel()
     if self.blockAllButton == nil or self.blockAllButton.setText == nil then return end
     local anyAllowed = false
     for _, r in ipairs(self.rows) do if not r.blocked then anyAllowed = true; break end end
-    self.blockAllButton:setText(anyAllowed and "Block All" or "Allow All")
+    self.blockAllButton:setText(anyAllowed and SmartDistribution.l10n("dr_btn_blockAll", "Block All") or SmartDistribution.l10n("dr_btn_allowAll", "Allow All"))
 end
 
 -- Max-in (cap %) stepper, now a WRAPPING ring: steps by CAP_STEP and loops 0 <-> max. For an individual

@@ -5,12 +5,12 @@
             <Bitmap profile="fs25_menuHeaderIconBg">
                 <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_animals"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="Distribution - Animal Husbandry"/>
+            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_husbandry"/>
         </GuiElement>
 
         <!-- left: husbandry list -->
         <Bitmap profile="SDList" position="0px -46px" size="370px 40px">
-            <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="HUSBANDRIES" />
+            <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="$l10n_dr_col_husbandries" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <SmoothList profile="SDList" id="assetList" position="0px -90px" size="370px 720px"
@@ -27,23 +27,23 @@
         <!-- timescale for every figure on this page, plus a pointer to the Overview tab, which carries the
              per-product breakdown these columns deliberately no longer repeat -->
         <Bitmap profile="SDList" position="390px -46px" size="1090px 40px">
-            <Text profile="SDRowCell" position="16px 0px" size="110px 40px" textSize="18px" text="Timescale"/>
+            <Text profile="SDRowCell" position="16px 0px" size="110px 40px" textSize="18px" text="$l10n_dr_lbl_timescale"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="130px 0px" size="380px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
             <Text profile="SDHeaderLeft" position="530px 0px" size="550px 40px" textSize="14px"
-                  text="Full breakdown + supply chains: Overview tab" />
+                  text="$l10n_dr_lbl_overviewPointer" />
         </Bitmap>
 
         <!-- right: incoming products (inputs / demand) -->
         <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="215px 40px" textSize="11px" text="INCOMING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="267px 0px" size="225px 40px" textSize="11px" text="HELD / MAX" />
-            <Text profile="SDHeaderLeft" position="500px 0px" size="110px 40px" textSize="11px" text="FREE STORAGE" />
-            <Text profile="SDHeaderLeft" position="618px 0px" size="110px 40px" textSize="11px" text="RECEIVED" />
-            <Text profile="SDHeaderLeft" position="736px 0px" size="110px 40px" textSize="11px" text="CONSUMED" />
-            <Text profile="SDHeaderLeft" position="854px 0px" size="236px 40px" textSize="11px" text="DISTRIBUTION" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="215px 40px" textSize="11px" text="$l10n_dr_col_incomingProducts" />
+            <Text profile="SDHeaderLeft" position="267px 0px" size="225px 40px" textSize="11px" text="$l10n_dr_col_heldSlashMax" />
+            <Text profile="SDHeaderLeft" position="500px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft" position="618px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_received" />
+            <Text profile="SDHeaderLeft" position="736px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_consumed" />
+            <Text profile="SDHeaderLeft" position="854px 0px" size="236px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
@@ -69,13 +69,13 @@
         <!-- outgoing products. DISTRIBUTED is everything that left: distributed + stored/moved + sold,
              with the sale value in brackets. -->
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="OUTGOING PRODUCTS" />
-            <Text profile="SDHeaderLeft" position="207px 0px" size="210px 40px" textSize="11px" text="HELD (MAX)" />
-            <Text profile="SDHeaderLeft" position="425px 0px" size="100px 40px" textSize="11px" text="FREE STORAGE" />
-            <Text profile="SDHeaderLeft" position="533px 0px" size="95px 40px"  textSize="11px" text="PRODUCED" />
-            <Text profile="SDHeaderLeft" position="636px 0px" size="115px 40px" textSize="11px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderLeft" position="759px 0px" size="215px 40px" textSize="11px" text="OUTPUT MODE" />
-            <Text profile="SDHeaderLeft" position="982px 0px" size="108px 40px" textSize="11px" text="STATUS" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
+            <Text profile="SDHeaderLeft" position="207px 0px" size="210px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
+            <Text profile="SDHeaderLeft" position="425px 0px" size="100px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft" position="533px 0px" size="95px 40px"  textSize="11px" text="$l10n_dr_col_produced" />
+            <Text profile="SDHeaderLeft" position="636px 0px" size="115px 40px" textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderLeft" position="759px 0px" size="215px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
+            <Text profile="SDHeaderLeft" position="982px 0px" size="108px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">

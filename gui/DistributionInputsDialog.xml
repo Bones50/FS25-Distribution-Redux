@@ -18,17 +18,17 @@
         <ThreePartBitmap profile="fs25_dialogBgBottom" />
 
         <GuiElement profile="fs25_dialogContentContainer">
-            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="Advanced Inputs" position="0px -30px" />
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_title_advancedInputs" position="0px -30px" />
             <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""                position="0px -78px" />
 
             <!-- single list: input products -->
             <Bitmap profile="SDList" position="40px -122px" size="1120px 34px">
-                <Text profile="SDHeaderLeft" position="12px 0px"  size="240px 34px"  text="INCOMING PRODUCT" />
-                <Text profile="SDHeaderLeft" position="296px 0px" size="90px 34px"   text="TYPE" />
-                <Text profile="SDHeaderLeft" position="392px 0px" size="150px 34px"  text="HELD" />
-                <Text profile="SDHeaderLeft" position="548px 0px" size="195px 34px"  text="MAX IN" />
-                <Text profile="SDHeaderLeft" position="749px 0px" size="150px 34px"  text="AVAILABLE" />
-                <Text profile="SDHeaderLeft" position="905px 0px" size="215px 34px"  text="FILL TARGET" />
+                <Text profile="SDHeaderLeft" position="12px 0px"  size="240px 34px"  text="$l10n_dr_col_incomingProduct" />
+                <Text profile="SDHeaderLeft" position="296px 0px" size="90px 34px"   text="$l10n_dr_col_type" />
+                <Text profile="SDHeaderLeft" position="392px 0px" size="150px 34px"  text="$l10n_dr_col_held" />
+                <Text profile="SDHeaderLeft" position="548px 0px" size="195px 34px"  text="$l10n_dr_col_maxIn" />
+                <Text profile="SDHeaderLeft" position="749px 0px" size="150px 34px"  text="$l10n_dr_col_available" />
+                <Text profile="SDHeaderLeft" position="905px 0px" size="215px 34px"  text="$l10n_dr_col_fillTarget" />
                 <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
             </Bitmap>
             <GuiElement profile="SDList" position="40px -160px" size="1120px 480px">
@@ -49,19 +49,19 @@
 
         <!-- action buttons -->
         <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
-            <Button profile="buttonOK"   text="- Max"   onClick="onCapDown"     id="capDownButton" inputActionName="MENU_EXTRA_1" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_maxDown"   onClick="onCapDown"     id="capDownButton" inputActionName="MENU_EXTRA_1" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="+ Max"   onClick="onCapUp"       id="capUpButton"   inputActionName="MENU_EXTRA_2" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_maxUp"   onClick="onCapUp"       id="capUpButton"   inputActionName="MENU_EXTRA_2" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="- Target" onClick="onTargetDown" id="targetDownButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_targetDown" onClick="onTargetDown" id="targetDownButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="+ Target" onClick="onTargetUp"   id="targetUpButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_targetUp" onClick="onTargetUp"   id="targetUpButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Block"   onClick="onToggleBlock" id="blockButton"   inputActionName="MENU_ACCEPT" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_block"   onClick="onToggleBlock" id="blockButton"   inputActionName="MENU_ACCEPT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Block All" onClick="onToggleAllBlock" id="blockAllButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll" onClick="onToggleAllBlock" id="blockAllButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonBack" text="Close"   onClick="onClickBack"   id="noButton" />
+            <Button profile="buttonBack" text="$l10n_dr_btn_close"   onClick="onClickBack"   id="noButton" />
         </BoxLayout>
     </GuiElement>
 </GUI>

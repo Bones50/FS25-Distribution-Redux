@@ -49,9 +49,9 @@ function DistributionMenu:setupPages()
     local function storageButtonsFor(getPage)
         return {
             back,
-            btn(InputAction.MENU_EXTRA_1, "Cycle Output", function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
-            btn(InputAction.MENU_EXTRA_2, "Advanced",     function() local p = getPage(); if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
-            btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = getPage(); if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
+            btn(InputAction.MENU_EXTRA_1, SmartDistribution.l10n("dr_btn_cycleOutput", "Cycle Output"), function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
+            btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_advanced", "Advanced"), function() local p = getPage(); if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+            btn(InputAction.MENU_CANCEL,  SmartDistribution.l10n("dr_btn_sellTiming", "Sell Timing"), function() local p = getPage(); if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
         }
     end
 
@@ -60,10 +60,10 @@ function DistributionMenu:setupPages()
     -- Timing shows only for sell-mode / Hold-Internal outputs; it shares no slot now that Advanced is one.
     local productionsButtons = {
         back,
-        btn(InputAction.MENU_EXTRA_1, "Cycle Output", function() local p = self.pageProductions; if p ~= nil then p:onCycleSelected() end end),
-        btn(InputAction.MENU_EXTRA_2, "Toggle Line",  function() local p = self.pageProductions; if p ~= nil and p.onToggleLine ~= nil then p:onToggleLine() end end),
-        btn(InputAction.MENU_ACCEPT,  "Advanced",     function() local p = self.pageProductions; if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
-        btn(InputAction.MENU_CANCEL,  "Sell Timing",  function() local p = self.pageProductions; if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
+        btn(InputAction.MENU_EXTRA_1, SmartDistribution.l10n("dr_btn_cycleOutput", "Cycle Output"), function() local p = self.pageProductions; if p ~= nil then p:onCycleSelected() end end),
+        btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_toggleLine", "Toggle Line"), function() local p = self.pageProductions; if p ~= nil and p.onToggleLine ~= nil then p:onToggleLine() end end),
+        btn(InputAction.MENU_ACCEPT,  SmartDistribution.l10n("dr_btn_advanced", "Advanced"), function() local p = self.pageProductions; if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+        btn(InputAction.MENU_CANCEL,  SmartDistribution.l10n("dr_btn_sellTiming", "Sell Timing"), function() local p = self.pageProductions; if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
     }
 
     -- a page shows only while its asset class is in the network (Settings toggles). nil/true -> show.
@@ -90,10 +90,10 @@ function DistributionMenu:setupPages()
         -- Refresh re-enumerates the network on demand. It is what makes the "Manual only" menu refresh rate
         -- usable on a large farm, and is a harmless no-op-ish extra at every other rate.
         { self.pageOverview,    "gui.icon_ingameMenu_statistics",
-            { back, btn(InputAction.MENU_EXTRA_1, "Show Settings",
+            { back, btn(InputAction.MENU_EXTRA_1, SmartDistribution.l10n("dr_btn_showSettings", "Show Settings"),
                 function() local p = self.pageOverview; if p ~= nil and p.onToggleSettingsView ~= nil then p:onToggleSettingsView() end end,
                 "viewToggle"),
-              btn(InputAction.MENU_EXTRA_2, "Refresh",
+              btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_refresh", "Refresh"),
                 function() local p = self.pageOverview; if p ~= nil and p.onRefresh ~= nil then p:onRefresh() end end) },
             always },
         { self.pageHelp,        "gui.icon_options_help2",               { back }, always },

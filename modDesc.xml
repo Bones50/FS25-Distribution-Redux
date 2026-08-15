@@ -3,7 +3,7 @@
      loads; 110 matches the current patch and silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>1.1.0.0</version>
+    <version>1.1.0.1</version>
 
     <title>
         <en>Distribution Redux</en>
@@ -99,14 +99,21 @@ v1.0.0.1
 
     <multiplayer supported="true"/>
 
-    <l10n>
-        <text name="input_DISTREDUX_OPEN_DIALOG">
-            <en>Configure distribution (nearest asset)</en>
-        </text>
-        <text name="input_DISTREDUX_OPEN_MANAGER">
-            <en>Open Distribution Redux menu</en>
-        </text>
-    </l10n>
+    <!-- All UI text lives in translations/translation_<lang>.xml, one file per language.
+         The game picks the file matching the player's language and falls back to
+         translation_en.xml for any key a translation does not carry, so a partial
+         translation is safe. Keys referenced as $l10n_<key> from gui/*.xml resolve
+         against THIS mod's namespace automatically: TextElement/MultiTextOptionElement
+         derive customEnvironment from the XML file's own path. From Lua, go through
+         SmartDistribution.l10n(key, englishFallback).
+
+         The labels for the two actions declared below were inline here as <en> blocks.
+         They now live in the translation files with everything else, so there is ONE
+         place to translate and no second convention to remember. Note the two forms
+         differ: an inline modDesc <l10n> block uses <text name="k"><en>...</en></text>,
+         while an external file is already language-specific and uses
+         <text name="k" text="..."/> inside <l10n><texts>. -->
+    <l10n filenamePrefix="translations/translation" />
 
     <actions>
         <action name="DISTREDUX_OPEN_DIALOG" category="BASE"/>

@@ -120,7 +120,7 @@ function DistributionAdvancedDialog:rebuildRows()
             for _, d in ipairs(self.rights) do
                 if not d.blocked and d.uid ~= nil
                    and SmartDistribution.moveToCreatesLoop(srcUid, ft, d.uid, edges) then
-                    d.statusLabel = "Active - Invalid"
+                    d.statusLabel = SmartDistribution.l10n("dr_adv_activeInvalid", "Active - Invalid")
                     d.status      = "INVALID"
                 end
             end
@@ -150,12 +150,13 @@ function DistributionAdvancedDialog:refresh()
     if self.demandList ~= nil then self.demandList:reloadData() end
     if self.rightList  ~= nil then self.rightList:reloadData() end
     if self.dialogTitleElement ~= nil and self.asset ~= nil then
-        local nm = (self.asset.getName ~= nil) and self.asset:getName() or "Building"
-        self.dialogTitleElement:setText("Advanced - " .. tostring(nm))
+        local nm = (self.asset.getName ~= nil) and self.asset:getName() or SmartDistribution.l10n("dr_label_building", "Building")
+        -- format string, not concatenation: word order round the building name differs by language
+        self.dialogTitleElement:setText(string.format(SmartDistribution.l10n("dr_adv_title", "Advanced - %s"), tostring(nm)))
     end
     if self.dialogTextElement ~= nil then
         local line = string.format("%s  (%s)", tostring(self.outName), tostring(self.modeName))
-        line = line .. "     Reserve: " .. self:reserveLabel()
+        line = line .. SmartDistribution.l10n("dr_adv_reserve", "     Reserve: ") .. self:reserveLabel()
         -- A transient notice (e.g. a refused loopback activation) is shown HERE, inside the dialog.
         -- g_currentMission:showBlinkingWarning draws behind an open menu, so it stays invisible until
         -- every window is closed -- useless for feedback on a button press.
@@ -209,7 +210,7 @@ end
 function DistributionAdvancedDialog:reserveLabel()
     local cur = self:currentReserve()
     if cur ~= nil and cur > 0 then return litres(cur) end
-    return "Off"
+    return SmartDistribution.l10n("dr_label_off", "Off")
 end
 
 function DistributionAdvancedDialog:onReserveDelta(dir)
@@ -218,7 +219,7 @@ function DistributionAdvancedDialog:onReserveDelta(dir)
     if uid == nil then return end
     local cap = self:reserveCapacity()
     if cap <= 0 then
-        self._notice = "No capacity to reserve against"
+        self._notice = SmartDistribution.l10n("dr_adv_noCapacity", "No capacity to reserve against")
         self:refresh()
         return
     end
@@ -293,9 +294,9 @@ function DistributionAdvancedDialog:onClickRightRow(element) end
 function DistributionAdvancedDialog:updateToggleLabel()
     if self.toggleButton == nil or self.toggleButton.setText == nil then return end
     local r = self:selectedRow()
-    local label = "Toggle"
+    local label = SmartDistribution.l10n("dr_btn_toggle", "Toggle")
     if r ~= nil then
-        label = r.blocked and "Activate" or "Block"
+        label = r.blocked and SmartDistribution.l10n("dr_btn_activate", "Activate") or SmartDistribution.l10n("dr_btn_block", "Block")
     end
     self.toggleButton:setText(label)
 end
@@ -357,7 +358,7 @@ function DistributionAdvancedDialog:onToggle()
     if r.blocked and self.isMoveTo and r.uid ~= nil
        and SmartDistribution.moveToCreatesLoop ~= nil
        and SmartDistribution.moveToCreatesLoop(srcUid, self.ft, r.uid) then
-        self._notice = string.format("Cannot activate %s - it would loop the product back here.", tostring(r.name))
+        self._notice = string.format(SmartDistribution.l10n("dr_adv_loopOne", "Cannot activate %s - it would loop the product back here."), tostring(r.name))
         self:refresh()
         return
     end
@@ -403,7 +404,7 @@ function DistributionAdvancedDialog:onToggleAll()
         end
     end
     if skipped > 0 then
-        self._notice = string.format("%d destination(s) left blocked - they would loop the product back here.", skipped)
+        self._notice = string.format(SmartDistribution.l10n("dr_adv_loopMany", "%d destination(s) left blocked - they would loop the product back here."), skipped)
     else
         self._notice = nil
     end
@@ -419,7 +420,7 @@ function DistributionAdvancedDialog:updateToggleAllLabel()
     if not anyActive then
         for _, r in ipairs(self.rights) do if not r.blocked then anyActive = true; break end end
     end
-    self.toggleAllButton:setText(anyActive and "Block All" or "Activate All")
+    self.toggleAllButton:setText(anyActive and SmartDistribution.l10n("dr_btn_blockAll", "Block All") or SmartDistribution.l10n("dr_btn_activateAll", "Activate All"))
 end
 
 function DistributionAdvancedDialog:onClear()

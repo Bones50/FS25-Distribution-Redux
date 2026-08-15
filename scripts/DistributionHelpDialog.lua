@@ -364,6 +364,61 @@ Pre-release.]]
 
 DistributionHelpDialog.TOPICS = TOPICS
 
+-- ---- localisation ----------------------------------------------------------
+-- The guide is translated PER PARAGRAPH, in translations/translation_<lang>.xml under
+-- dr_guide_<slug>_title and dr_guide_<slug>_<n>. TOPICS above stays the English source of
+-- truth AND the fallback, so a missing key, a partial translation or an absent language file
+-- all degrade to exactly the English guide the mod has always shipped.
+--
+-- THIS DOES NOT REOPEN 6.6. The guide is still never read from the filesystem by DR (io.open in
+-- the GIANTS sandbox TRUNCATED helpGuide.txt to zero bytes, twice over); the ENGINE loads the
+-- translation files and DR only ever asks g_i18n for a key.
+--
+-- KEYING must match scratchpad/gen_guide_l10n.py exactly:
+--   * slug comes from the English TITLE, so reordering topics costs nothing;
+--   * n counts NON-BLANK paragraphs only, so adding or removing a blank spacer -- much the
+--     commonest guide edit -- shifts no key at all.
+-- Inserting or deleting a real paragraph does shift the rest of that topic. That is the price of
+-- per-paragraph keys; it is contained to one topic, and the l10n checker fails loudly if TOPICS
+-- and translation_en.xml ever disagree, so it cannot ship unnoticed.
+function DistributionHelpDialog.topicSlug(title)
+    if type(title) ~= "string" then return "topic" end
+    local out, first = "", true
+    for word in title:gmatch("[A-Za-z0-9]+") do
+        if first then out, first = word:lower(), false
+        else out = out .. word:sub(1, 1):upper() .. word:sub(2) end
+    end
+    if out == "" then return "topic" end
+    return out
+end
+
+local function guideText(key, fallback)
+    if SmartDistribution == nil or SmartDistribution.l10n == nil then return fallback end
+    return SmartDistribution.l10n(key, fallback)
+end
+
+function DistributionHelpDialog.localisedTitle(topic)
+    if topic == nil or topic.title == nil then return "" end
+    return guideText("dr_guide_" .. DistributionHelpDialog.topicSlug(topic.title) .. "_title", topic.title)
+end
+
+-- The body with every non-blank paragraph replaced by its translation. Blank lines are STRUCTURE
+-- (buildLines turns them into spacer rows) and pass through untouched.
+function DistributionHelpDialog.localisedBody(topic)
+    if topic == nil or type(topic.body) ~= "string" then return "" end
+    local slug = DistributionHelpDialog.topicSlug(topic.title)
+    local out, n = {}, 0
+    for para in (topic.body .. "\n"):gmatch("(.-)\n") do
+        if para:match("^%s*$") ~= nil then
+            out[#out + 1] = para
+        else
+            n = n + 1
+            out[#out + 1] = guideText("dr_guide_" .. slug .. "_" .. tostring(n), para)
+        end
+    end
+    return table.concat(out, "\n")
+end
+
 -- ---- guide source ----------------------------------------------------------
 -- The TOPICS table above is the ONE AND ONLY source for the in-game guide. The mod does NOT read
 -- helpGuide.txt, and must not be made to: the runtime read DESTROYED it.
@@ -588,9 +643,9 @@ end
 function DistributionHelpDialog:selectTopic(index)
     if index == nil or TOPICS[index] == nil then return end
     self.currentTopic = index
-    self.lines = buildLines(TOPICS[index].body)
+    self.lines = buildLines(DistributionHelpDialog.localisedBody(TOPICS[index]))
     if self.bodyTitleElement ~= nil then
-        self.bodyTitleElement:setText((TOPICS[index].title or ""):upper())
+        self.bodyTitleElement:setText(DistributionHelpDialog.localisedTitle(TOPICS[index]):upper())
     end
     if self.bodyList ~= nil then self.bodyList:reloadData() end
 end
@@ -632,7 +687,7 @@ function DistributionHelpDialog:populateCellForItemInSection(list, section, inde
     if list == self.topicList then
         local topic = TOPICS[index]
         local nameCell = cell:getAttribute("topicName")
-        if nameCell ~= nil and topic ~= nil then nameCell:setText(topic.title or "?") end
+        if nameCell ~= nil and topic ~= nil then nameCell:setText(DistributionHelpDialog.localisedTitle(topic)) end
     else
         local row = self.lines[index]
         local lineCell = cell:getAttribute("bodyLine")

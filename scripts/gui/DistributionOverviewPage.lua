@@ -42,10 +42,21 @@ DistributionOverviewPage = {}
 local DistributionOverviewPage_mt = Class(DistributionOverviewPage, DistributionMenuPage)
 
 local PERIODS       = { "hour", "month", "year" }
-local PERIOD_LABELS = { "Hour", "Month", "Year" }
+local PERIOD_LABELS = { "Hour", "Month", "Year" }   -- English fallbacks, see localised() below
+local PERIOD_KEYS   = { "dr_period_hour", "dr_period_month", "dr_period_year" }
 local FILTER_LABELS = { "Nothing (show all)", "Building", "Product", "End product (full chain)" }
+local FILTER_KEYS   = { "dr_filter_nothing", "dr_filter_building", "dr_filter_product", "dr_filter_endProduct" }
 local FILTER_CHAIN  = 4   -- the chain mode's index, referenced in a few places below
 local GROUP_LABELS  = { "Off (one row per building)", "On (combine same building type)" }
+local GROUP_KEYS    = { "dr_group_off", "dr_group_on" }
+-- Resolved per call rather than baked into the tables above: l10n is not necessarily up when this
+-- chunk loads. Declared HERE, above every use (CLAUDE.md 5.44 / 5.57).
+local function localised(labels, keys)
+    if SmartDistribution == nil or SmartDistribution.l10n == nil then return labels end
+    local out = {}
+    for i, fb in ipairs(labels) do out[i] = SmartDistribution.l10n(keys[i], fb) end
+    return out
+end
 local REBUILD_SEC   = 2.0     -- how often the row set is re-enumerated while the tab is open
 
 -- ---- OPEN / SCROLL PROFILING ----------------------------------------------
@@ -126,7 +137,7 @@ local function withExpected(actual, expected)
     if expected == nil or expected < 0.5 then return flowV(actual) end
     -- an explicit "0" rather than fmt's dash: against a stated target, "produced nothing" is the point
     local a = math.floor((actual or 0) + 0.5)
-    return (a == 0 and "0 L" or fmtV(actual)) .. "  (" .. fmtV(expected) .. ")"
+    return (a == 0 and fmtV(0) or fmtV(actual)) .. "  (" .. fmtV(expected) .. ")"
 end
 
 -- "12,345 +2p  (50,000)" -- what is held, then how much room there is for it. For a product the building
@@ -151,7 +162,7 @@ local function withCapacity(row)
     -- "473 L (55,000 L) + 3,000 L (3p)". The capacity bracket belongs directly BESIDE the figure it
     -- qualifies -- trailing it after the pad part gave two bracketed groups in a row
     -- ("473 L + 3,000 L (3p)  (6,000)") which read as though the last one qualified the pallets.
-    local text = (h == 0) and "0 L" or fmtV(shown)
+    local text = (h == 0) and fmtV(0) or fmtV(shown)
     -- Match the building tabs exactly: an INPUT row reads "held / max (pct%)", an output "held (max)".
     -- A row that is both (a silo) takes the input form, because that is the side carrying a settable
     -- percentage -- the litres are identical either way, so the figures still agree with the OUTGOING list.
@@ -259,9 +270,9 @@ function DistributionOverviewPage:onGuiSetupFinished()
         opt:setTexts(texts)
         if opt.setState ~= nil then pcall(function() opt:setState(state) end) end
     end
-    initOption(self.periodOption,     PERIOD_LABELS, self.periodIndex)
-    initOption(self.filterModeOption, FILTER_LABELS, self.filterMode)
-    initOption(self.groupOption,      GROUP_LABELS,  self.grouped and 2 or 1)
+    initOption(self.periodOption,     localised(PERIOD_LABELS, PERIOD_KEYS), self.periodIndex)
+    initOption(self.filterModeOption, localised(FILTER_LABELS, FILTER_KEYS), self.filterMode)
+    initOption(self.groupOption,      localised(GROUP_LABELS, GROUP_KEYS),  self.grouped and 2 or 1)
     initOption(self.filterValueOption, { "-" }, 1)
     self._scrollMap = { { "statsSlider", "statsList", 14 } }   -- 626px / 42px pitch = 14 whole rows; bar shows past that
 end
@@ -576,7 +587,7 @@ function DistributionOverviewPage:populateCellForItemInSection(list, section, in
     end
     setc("assetName",       r.assetName or "?")
     -- "Wheat (In/Out)" -- what the product is to THIS building
-    setc("productName",     (r.product or "?") .. (r.role ~= nil and (" (" .. r.role .. ")") or ""))
+    setc("productName",     (r.product or "?") .. (r.role ~= nil and (" (" .. (SmartDistribution.roleDisplay(r.role) or r.role) .. ")") or ""))
     setc("receivedText",    flowV(r.received))
     setc("loadedText",      flowV(r.loaded))
     setc("consumedText",    withExpected(r.consumed, r.consumedExpected))
@@ -658,8 +669,17 @@ local CAP_FULL = 1.00
 
 -- Short status words. The building tabs have room for "Active (Receiving)"; a 140px column does not, and
 -- the header already says IN / OUT, so the qualifier carries no information here.
-local IN_WORD  = { ACTIVE = "Receiving", IDLE = "Idle", BLOCKED = "Blocked" }
-local OUT_WORD = { ACTIVE = "Sending",   IDLE = "Idle", BLOCKED = "Blocked" }
+-- Lazy lookup so the call sites (IN_WORD[st]) are untouched and resolution happens at display time.
+local IN_WORD  = setmetatable({}, { __index = function(_, k)
+    if k == "ACTIVE"  then return SmartDistribution.l10n("dr_statusShort_receiving", "Receiving") end
+    if k == "IDLE"    then return SmartDistribution.l10n("dr_statusShort_idle",      "Idle")      end
+    if k == "BLOCKED" then return SmartDistribution.l10n("dr_statusShort_blocked",   "Blocked")   end
+end })
+local OUT_WORD = setmetatable({}, { __index = function(_, k)
+    if k == "ACTIVE"  then return SmartDistribution.l10n("dr_statusShort_sending", "Sending") end
+    if k == "IDLE"    then return SmartDistribution.l10n("dr_statusShort_idle",    "Idle")    end
+    if k == "BLOCKED" then return SmartDistribution.l10n("dr_statusShort_blocked", "Blocked") end
+end })
 
 local function setCellColor(cell, name, rgba)
     local c = cell:getAttribute(name)
@@ -718,7 +738,8 @@ function DistributionOverviewPage:updateViewButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "viewToggle" then
-            b.text = self:settingsViewOn() and "Show Flows" or "Show Settings"
+            b.text = self:settingsViewOn() and SmartDistribution.l10n("dr_btn_showFlows", "Show Flows")
+                                            or SmartDistribution.l10n("dr_btn_showSettings", "Show Settings")
         end
         vis[#vis + 1] = b
     end
@@ -737,15 +758,16 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
         if c ~= nil and c.setText ~= nil then c:setText(text or "") end
     end
     setc("assetName",   r.assetName or "?")
-    setc("productName", (r.product or "?") .. (r.role ~= nil and (" (" .. r.role .. ")") or ""))
+    setc("productName", (r.product or "?") .. (r.role ~= nil and (" (" .. (SmartDistribution.roleDisplay(r.role) or r.role) .. ")") or ""))
 
     -- ---- input side
     if s.isIn then
         -- same wording as the Advanced Inputs dialog's own TYPE cell (Pooled / Individual), so the two
         -- screens describe a building's storage identically
-        setc("typeText", s.blocked and "BLOCKED" or (s.pooled and "Pooled" or "Individual"))
+        setc("typeText", s.blocked and SmartDistribution.l10n("dr_type_blocked", "BLOCKED")
+            or (s.pooled and SmartDistribution.l10n("dr_type_pooled", "Pooled") or SmartDistribution.l10n("dr_type_individual", "Individual")))
         setCellColor(cell, "typeText", s.blocked and col.BLOCKED or nil)
-        setc("maxInText", s.blocked and "0 L" or pctText(s.pct, s.maxL, s.explicit))
+        setc("maxInText", s.blocked and fmtV(0) or pctText(s.pct, s.maxL, s.explicit))
         -- held of the effective ceiling, with the fill % that drives the highlight
         local held = (type(s.inHeld) == "number") and fmtV(s.inHeld) or "-"
         if type(s.fillRatio) == "number" then
@@ -775,7 +797,9 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
         setc("outModeText", s.mode or "-")
         setc("reserveText", (type(s.reserve) == "number" and s.reserve > 0) and fmtV(s.reserve) or "-")
         setCellColor(cell, "reserveText", (type(s.reserve) == "number" and s.reserve > 0) and col.IDLE or nil)
-        setc("priorityText", ((s.ranked or 0) > 0) and string.format("Ranked (%d)", s.ranked) or "Distance")
+        setc("priorityText", ((s.ranked or 0) > 0)
+        and string.format(SmartDistribution.l10n("dr_priority_ranked", "Ranked (%d)"), s.ranked)
+        or SmartDistribution.l10n("dr_priority_distance", "Distance"))
         -- "3/5" active destinations. Red at 0 of some -- configured to send, nowhere left to send it, which
         -- is exactly the silent stall that is otherwise invisible on this page.
         local dt, da = s.destTotal, s.destActive

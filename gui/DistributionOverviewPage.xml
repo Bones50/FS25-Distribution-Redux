@@ -5,21 +5,21 @@
             <Bitmap profile="fs25_menuHeaderIconBg">
                 <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_statistics"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="Distribution - Overview"/>
+            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_overview"/>
         </GuiElement>
 
         <!-- Controls, two rows of two. Grey backing + explicit light text on each, because the base
              settings container renders white-on-white outside the settings frame.
              Row 1: what to filter by, and which one to show. Row 2: timescale and grouping. -->
         <Bitmap profile="SDList" position="0px -44px" size="700px 40px">
-            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="Filter by"/>
+            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_filterBy"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="550px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="filterModeOption" onClick="onFilterModeChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
         </Bitmap>
         <Bitmap profile="SDList" position="740px -44px" size="740px 40px">
-            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="Show"/>
+            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_show"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="590px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="filterValueOption" onClick="onFilterValueChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
@@ -27,14 +27,14 @@
         </Bitmap>
 
         <Bitmap profile="SDList" position="0px -88px" size="700px 40px">
-            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="Timescale"/>
+            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_timescale"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="550px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
         </Bitmap>
         <Bitmap profile="SDList" position="740px -88px" size="740px 40px">
-            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="Grouping"/>
+            <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_grouping"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="590px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="groupOption" onClick="onGroupChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
@@ -47,19 +47,19 @@
              RECEIVED / DISTRIBUTED are what Distribution Redux moved; LOADED / UNLOADED are what was put
              in or taken out by hand (player, helper, other mod). -->
         <Bitmap profile="SDList" id="flowHeaderRow" position="0px -140px" size="1480px 40px">
-            <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
-            <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
-            <Text profile="SDHeaderRight" position="406px 0px"  size="64px 40px"  textSize="11px" text="RECEIVED" />
-            <Text profile="SDHeaderRight" position="474px 0px"  size="54px 40px"  textSize="11px" text="LOADED" />
-            <Text profile="SDHeaderRight" position="532px 0px"  size="110px 40px" textSize="11px" text="CONSUMED (EXP.)" />
-            <Text profile="SDHeaderRight" position="646px 0px"  size="64px 40px"  textSize="11px" text="UNLOADED" />
-            <Text profile="SDHeaderRight" position="714px 0px"  size="220px 40px" textSize="11px" text="HELD (MAX)" />
-            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="FREE STORAGE" />
-            <Text profile="SDHeaderRight" position="1022px 0px" size="110px 40px" textSize="11px" text="PRODUCED (EXP.)" />
-            <Text profile="SDHeaderRight" position="1136px 0px" size="72px 40px"  textSize="11px" text="DISTRIBUTED" />
-            <Text profile="SDHeaderRight" position="1212px 0px" size="84px 40px"  textSize="11px" text="STORED/MOVED" />
-            <Text profile="SDHeaderRight" position="1300px 0px" size="118px 40px" textSize="11px" text="SOLD" />
-            <Text profile="SDHeaderRight" position="1422px 0px" size="58px 40px"  textSize="11px" text="DISTR. COST" />
+            <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="$l10n_dr_col_building" />
+            <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="$l10n_dr_col_product" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="64px 40px"  textSize="11px" text="$l10n_dr_col_received" />
+            <Text profile="SDHeaderRight" position="474px 0px"  size="54px 40px"  textSize="11px" text="$l10n_dr_col_loaded" />
+            <Text profile="SDHeaderRight" position="532px 0px"  size="110px 40px" textSize="11px" text="$l10n_dr_col_consumedExp" />
+            <Text profile="SDHeaderRight" position="646px 0px"  size="64px 40px"  textSize="11px" text="$l10n_dr_col_unloaded" />
+            <Text profile="SDHeaderRight" position="714px 0px"  size="220px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
+            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderRight" position="1022px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_producedExp" />
+            <Text profile="SDHeaderRight" position="1136px 0px" size="72px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderRight" position="1212px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_storedMoved" />
+            <Text profile="SDHeaderRight" position="1300px 0px" size="118px 40px" textSize="11px" text="$l10n_dr_col_sold" />
+            <Text profile="SDHeaderRight" position="1422px 0px" size="58px 40px"  textSize="11px" text="$l10n_dr_col_distrCost" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
@@ -72,21 +72,21 @@
              would mean px-to-normalised arithmetic on the live layout (declined for the same reason in 5.33).
              DEST is "active/total" routable destinations for the product's CURRENT mode. -->
         <Bitmap profile="SDList" id="settingsHeaderRow" position="0px -140px" size="1480px 40px" visible="false">
-            <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="BUILDING" />
-            <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="PRODUCT" />
-            <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="STORAGE TYPE" />
-            <Text profile="SDHeaderRight" position="488px 0px"  size="124px 40px" textSize="11px" text="MAX IN (% - L)" />
-            <Text profile="SDHeaderRight" position="616px 0px"  size="132px 40px" textSize="11px" text="HELD OF MAX" />
-            <Text profile="SDHeaderRight" position="752px 0px"  size="112px 40px" textSize="11px" text="FILL TARGET" />
-            <Text profile="SDHeaderRight" position="868px 0px"  size="80px 40px"  textSize="11px" text="IN STATUS" />
-            <Text profile="SDHeaderRight" position="952px 0px"  size="56px 40px"  textSize="11px" text="LINES" />
+            <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="$l10n_dr_col_building" />
+            <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="$l10n_dr_col_product" />
+            <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="$l10n_dr_col_storageType" />
+            <Text profile="SDHeaderRight" position="488px 0px"  size="124px 40px" textSize="11px" text="$l10n_dr_col_maxInPctL" />
+            <Text profile="SDHeaderRight" position="616px 0px"  size="132px 40px" textSize="11px" text="$l10n_dr_col_heldOfMax" />
+            <Text profile="SDHeaderRight" position="752px 0px"  size="112px 40px" textSize="11px" text="$l10n_dr_col_fillTarget" />
+            <Text profile="SDHeaderRight" position="868px 0px"  size="80px 40px"  textSize="11px" text="$l10n_dr_col_inStatus" />
+            <Text profile="SDHeaderRight" position="952px 0px"  size="56px 40px"  textSize="11px" text="$l10n_dr_col_lines" />
             <!-- OUT MODE carries the longest string on this header ("Distribute + Market Supply"), so it
                  takes 180px and the whole numeric band was re-pitched around it to still end at 1480. -->
-            <Text profile="SDHeaderRight" position="1012px 0px" size="172px 40px" textSize="11px" text="OUT MODE" />
-            <Text profile="SDHeaderRight" position="1188px 0px" size="80px 40px"  textSize="11px" text="RESERVE" />
-            <Text profile="SDHeaderRight" position="1272px 0px" size="80px 40px"  textSize="11px" text="PRIORITY" />
-            <Text profile="SDHeaderRight" position="1356px 0px" size="44px 40px"  textSize="11px" text="DEST" />
-            <Text profile="SDHeaderRight" position="1404px 0px" size="76px 40px"  textSize="11px" text="OUT STATUS" />
+            <Text profile="SDHeaderRight" position="1012px 0px" size="172px 40px" textSize="11px" text="$l10n_dr_col_outMode" />
+            <Text profile="SDHeaderRight" position="1188px 0px" size="80px 40px"  textSize="11px" text="$l10n_dr_col_reserve" />
+            <Text profile="SDHeaderRight" position="1272px 0px" size="80px 40px"  textSize="11px" text="$l10n_dr_col_priority" />
+            <Text profile="SDHeaderRight" position="1356px 0px" size="44px 40px"  textSize="11px" text="$l10n_dr_col_dest" />
+            <Text profile="SDHeaderRight" position="1404px 0px" size="76px 40px"  textSize="11px" text="$l10n_dr_col_outStatus" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 

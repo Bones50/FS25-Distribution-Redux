@@ -443,46 +443,62 @@ local function ppOf(placeable)
 end
 
 function DistributionSpawnEvent.emptyNew() return Event.new(DSE_mt) end
-function DistributionSpawnEvent.new(placeable, fillTypeIndex, count)
+-- `palletFilename` picks a pallet TYPE (nil = the spawner's own default) and `liters` is the total
+-- budget across the request, so the last pallet can be partial. Both are OPTIONAL on the wire: a bool
+-- guards each, which keeps an unchosen type and an unset budget at one bit rather than a string and a
+-- 32-bit number. Write and read must stay in the SAME ORDER -- an asymmetry here desyncs every event
+-- that follows it on the connection, not just this one.
+function DistributionSpawnEvent.new(placeable, fillTypeIndex, count, palletFilename, liters)
     local self = DistributionSpawnEvent.emptyNew()
     self.placeable = placeable
     self.fillTypeIndex = fillTypeIndex
     self.count = count or 1
+    self.palletFilename = palletFilename
+    self.liters = liters
     return self
 end
 function DistributionSpawnEvent:writeStream(streamId, connection)
     NetworkUtil.writeNodeObject(streamId, self.placeable)
     streamWriteUIntN(streamId, self.fillTypeIndex, FillTypeManager.SEND_NUM_BITS)
     streamWriteUIntN(streamId, self.count, DistributionSpawnEvent.COUNT_NUM_BITS)
+    local hasName = type(self.palletFilename) == "string" and self.palletFilename ~= ""
+    streamWriteBool(streamId, hasName)
+    if hasName then streamWriteString(streamId, self.palletFilename) end
+    local hasLiters = type(self.liters) == "number" and self.liters > 0
+    streamWriteBool(streamId, hasLiters)
+    if hasLiters then streamWriteFloat32(streamId, self.liters) end
 end
 function DistributionSpawnEvent:readStream(streamId, connection)
     self.placeable = NetworkUtil.readNodeObject(streamId)
     self.fillTypeIndex = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
     self.count = streamReadUIntN(streamId, DistributionSpawnEvent.COUNT_NUM_BITS)
+    if streamReadBool(streamId) then self.palletFilename = streamReadString(streamId) end
+    if streamReadBool(streamId) then self.liters = streamReadFloat32(streamId) end
     self:run(connection)
 end
 -- spawn from a production storage OR, when the placeable is a pallet-spawner husbandry (coop / sheep),
 -- from its internal pending buffer. Both run server-side and sync the pallet like any world object.
-local function serverSpawn(placeable, fillTypeIndex, count)
+local function serverSpawn(placeable, fillTypeIndex, count, palletFilename, liters)
     local pp = ppOf(placeable)
     if pp ~= nil then
-        if SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count) end
+        if SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count, palletFilename, liters) end
     elseif placeable ~= nil and placeable.spec_husbandryPallets ~= nil and SD.spawnPalletsFromHusbandry ~= nil then
-        SD.spawnPalletsFromHusbandry(placeable, fillTypeIndex, count)
+        SD.spawnPalletsFromHusbandry(placeable, fillTypeIndex, count, palletFilename, liters)
     end
 end
 function DistributionSpawnEvent:run(connection)
     if connection:getIsServer() then return end   -- only the server acts on this; ignore if a client somehow receives it
-    serverSpawn(self.placeable, self.fillTypeIndex, self.count)
+    serverSpawn(self.placeable, self.fillTypeIndex, self.count, self.palletFilename, self.liters)
 end
 -- Host/SP: spawn directly. Client: ask the server. Returns true if the request was issued/handled.
-function DistributionSpawnEvent.request(placeable, fillTypeIndex, count)
+function DistributionSpawnEvent.request(placeable, fillTypeIndex, count, palletFilename, liters)
     if placeable == nil or fillTypeIndex == nil then return false end
     if g_server ~= nil then
-        serverSpawn(placeable, fillTypeIndex, count)
+        serverSpawn(placeable, fillTypeIndex, count, palletFilename, liters)
         return true
     elseif g_client ~= nil then
-        g_client:getServerConnection():sendEvent(DistributionSpawnEvent.new(placeable, fillTypeIndex, count))
+        g_client:getServerConnection():sendEvent(
+            DistributionSpawnEvent.new(placeable, fillTypeIndex, count, palletFilename, liters))
         return true
     end
     return false
@@ -495,6 +511,21 @@ end
 local VLABEL = { [KEEP]="Hold", [DISTRIBUTE]="Distribute", [SELL]="Sell",
                  [DISTSELL]="Distribute + Sell", [DISTSTORE]="Distribute + Store", [STORE]="Store",
                  [TRANSFER]="Market Supply", [DISTMARKET]="Distribute + Market Supply", [HOLD_INTERNAL_V]="Hold Internal" }
+-- The v-modes are a SEPARATE enum from the asset MODE enum, but they name the same nine things,
+-- so they deliberately reuse the dr_mode_<assetModeId> keys: a translator writes "Distribute +
+-- Sell" once and both surfaces pick it up. VLABEL above stays the English fallback.
+-- Declared HERE, above its first use at productionOutputVModeName -- a `local function` used
+-- before its declaration parses clean and throws only when reached, which inside a GUI populate
+-- aborts the page mid-render and shows an empty list (CLAUDE.md 5.44 / 5.57).
+local VMODE_KEY = { [KEEP]="dr_mode_1", [DISTRIBUTE]="dr_mode_2", [SELL]="dr_mode_4",
+                    [DISTSELL]="dr_mode_3", [DISTSTORE]="dr_mode_5", [STORE]="dr_mode_6",
+                    [TRANSFER]="dr_mode_7", [DISTMARKET]="dr_mode_8", [HOLD_INTERNAL_V]="dr_mode_9" }
+local function vLabel(v)
+    local fb = VLABEL[v]
+    if fb == nil then return nil end
+    if SD ~= nil and SD.l10n ~= nil then return SD.l10n(VMODE_KEY[v], fb) end
+    return fb
+end
 -- Explicit cycle order (was a plain modulo): Hold -> [Hold Internal, pallet outputs only] -> Distribute ->
 -- Sell -> Distribute+Sell -> Distribute+Store -> Store -> [Market Supply, Distribute+Market] -> Hold.
 local function nextVirtual(v, hasMarket, hasPallets)
@@ -529,7 +560,7 @@ end
 
 -- exposed for DistributionSiloDialog (production assets): read + cycle the same mode.
 function SD.productionOutputVMode(pp, ft) return getV(pp, ft) end
-function SD.productionOutputVModeName(v) return VLABEL[v] or ("mode" .. tostring(v)) end
+function SD.productionOutputVModeName(v) return vLabel(v) or ("mode" .. tostring(v)) end
 function SD.cycleProductionOutputMode(pp, ft) return cycleVirtual(pp, ft) end
 
 -- set an output to a SPECIFIC virtual mode (not just the next one), applied
@@ -584,8 +615,8 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.populateCellFo
             local activity = cell:getAttribute("activity")
             if activity ~= nil then
                 local v  = getV(pp, ft)
-                local nm = VLABEL[v]   -- our mode label for every output (Hold / Distribute / Sell / ... / Store)
-                if v == KEEP and pp.palletSpawner ~= nil then nm = "Hold Pallets" end   -- palletisable output: plain Hold auto-spawns pallets
+                local nm = vLabel(v)   -- our mode label for every output (Hold / Distribute / Sell / ... / Store)
+                if v == KEEP and pp.palletSpawner ~= nil then nm = SD.l10n and SD.l10n("dr_mode_holdPallets", "Hold Pallets") or "Hold Pallets" end   -- palletisable output: plain Hold auto-spawns pallets
                 if nm ~= nil then activity:setText(nm) end
             end
         end
@@ -630,10 +661,10 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.updateMenuButt
         self.menuButtonInfo[#self.menuButtonInfo + 1] = {
             profile     = "buttonOk",
             inputAction = InputAction.ACTIVATE_OBJECT,
-            text        = "Spawn Pallets",
+            text        = (SD.l10n ~= nil) and SD.l10n("dr_title_spawnPallets", "Spawn Pallets") or "Spawn Pallets",
             callback    = function()
                 if SD.openSpawnDialog ~= nil then
-                    SD.openSpawnDialog(pl, ft, function(_, n) DistributionSpawnEvent.request(pl, ft, n) end)
+                    SD.openSpawnDialog(pl, ft, function(o, n, liters) DistributionSpawnEvent.request(pl, ft, n, o and o.filename or nil, liters) end)
                 end
             end,
         }

@@ -87,7 +87,27 @@ function DistributionSpawnDialog:maxForSelected()
     return o ~= nil and math.max(0, o.maxCount or 0) or 0
 end
 
--- (re)build the quantity stepper's list to 1..max for the selected type
+-- Live held stock for the selected source (production storage or a pen's internal buffer).
+function DistributionSpawnDialog:heldNow()
+    if self.pp ~= nil and self.pp.getFillLevel ~= nil then return self.pp:getFillLevel(self.ft) or 0 end
+    if self.husbandry ~= nil and SmartDistribution ~= nil and SmartDistribution.palletPendingLiters ~= nil then
+        return SmartDistribution.palletPendingLiters(self.husbandry, self.ft) or 0
+    end
+    return self.held or 0
+end
+
+-- LITRES the chosen count actually moves: n full pallets, CLAMPED to what is held. The clamp is what
+-- makes the top step a partial pallet rather than a full one -- maxCount already counts that remainder
+-- as a pallet (SmartDistribution.palletCountForLiters).
+function DistributionSpawnDialog:litersFor(n)
+    local o = self:option()
+    if o == nil or (o.capacity or 0) <= 0 then return 0 end
+    return math.min(n * o.capacity, self:heldNow())
+end
+
+-- (re)build the quantity stepper to 1..max for the selected type. Each entry reads "2 / 3 (2,000 L)":
+-- the count, the maximum, and the litres that count actually moves -- so an exact amount is visible
+-- while stepping, and the last step shows the true remainder instead of a full pallet's worth.
 function DistributionSpawnDialog:rebuildCountTexts()
     if self.countElement == nil then return end
     local maxN = self:maxForSelected()
@@ -95,7 +115,10 @@ function DistributionSpawnDialog:rebuildCountTexts()
     if maxN <= 0 then
         texts = { "0" }
     else
-        for i = 1, maxN do texts[i] = i .. (i == 1 and " pallet" or " pallets") end
+        local fmtStr = SmartDistribution.l10n("dr_spawn_count", "%d / %d  (%s)")
+        for i = 1, maxN do
+            texts[i] = string.format(fmtStr, i, maxN, fmtV(self:litersFor(i)))
+        end
     end
     self.countElement:setTexts(texts)
     self.count = math.max(1, math.min(self.count or 1, math.max(1, maxN)))
@@ -108,16 +131,12 @@ function DistributionSpawnDialog:refresh()
     local maxN = self:maxForSelected()
     local o = self:option()
     if self.dialogTextElement ~= nil then
-        local held
-        if self.pp ~= nil and self.pp.getFillLevel ~= nil then
-            held = self.pp:getFillLevel(self.ft)
-        elseif self.husbandry ~= nil and SmartDistribution ~= nil and SmartDistribution.palletPendingLiters ~= nil then
-            held = SmartDistribution.palletPendingLiters(self.husbandry, self.ft)
-        else
-            held = self.held
-        end
         local capTxt = (o ~= nil and o.capacity ~= nil) and fmtV(o.capacity) or "?"
-        self.dialogTextElement:setText(string.format("Held: %s    Pallet: %s    Max: %d", fmtV(held), capTxt, maxN))
+        -- "Spawning" is the exact total the current count moves; the last pallet is partial whenever
+        -- that total does not divide evenly by the pallet's capacity.
+        self.dialogTextElement:setText(string.format(
+            SmartDistribution.l10n("dr_spawn_info", "Held: %s    Pallet: %s    Max: %d    Spawning: %s"),
+            fmtV(self:heldNow()), capTxt, maxN, fmtV(self:litersFor(self.count or 0))))
     end
     if self.yesButton ~= nil and self.yesButton.setDisabled ~= nil then self.yesButton:setDisabled(maxN <= 0) end
 end
@@ -165,6 +184,7 @@ function DistributionSpawnDialog:onClickCount(state)
     elseif state < self.count then self.count = self.count - 1 end
     self.count = math.max(1, math.min(self.count, math.max(1, maxN)))
     el:setState(self.count, false)
+    self:refresh()
 end
 
 -- +10 / -10 buttons: one clamped step per press (shares the stepper's arm guard)
@@ -177,6 +197,7 @@ function DistributionSpawnDialog:onCountStep(delta)
     if self.countElement ~= nil and self.countElement.setState ~= nil then
         self.countElement:setState(math.min(self.count, math.max(1, maxN)), false)
     end
+    self:refresh()
 end
 function DistributionSpawnDialog:onCountMinus10() self:onCountStep(-10) end
 function DistributionSpawnDialog:onCountPlus10()  self:onCountStep( 10) end
@@ -185,7 +206,9 @@ function DistributionSpawnDialog:onCountPlus10()  self:onCountStep( 10) end
 function DistributionSpawnDialog:onClickOk()
     local o = self:option()
     if o ~= nil and self.count and self.count > 0 and self.onConfirm ~= nil then
-        self.onConfirm(o, self.count)
+        -- litres as well as count: the engine spends it as a BUDGET across the chain, so the final
+        -- pallet comes out partial rather than being topped up beyond what the player asked for.
+        self.onConfirm(o, self.count, self:litersFor(self.count))
     end
     self:close()
     return false

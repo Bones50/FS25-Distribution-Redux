@@ -1,147 +1,143 @@
 -- ============================================================================
 -- DistributionSettings.lua  (Distribution Redux)
--- Global settings screen. Injects rows into the in-game Settings page and
--- persists the global preset + dials PER PROFILE, separate from the per-asset,
--- per-savegame override file owned by SmartDistribution.lua.
+-- Global settings DATA + persistence. The settings SCREEN is
+-- gui/DistributionSettingsPage.xml + scripts/gui/DistributionSettingsPage.lua;
+-- this file owns the definitions and saves the global preset + dials PER PROFILE,
+-- separate from the per-asset, per-savegame override file owned by
+-- SmartDistribution.lua.
 --
--- The menu-injection mirrors the proven reference pattern
--- (PDNESettings.injectMenu): clone the multiVolumeVoiceBox option row on
--- pageSettings.gameSettingsLayout, point it at our controls target, add it to
--- controlsList. GUI can't be offline-tested; the save/load + apply logic is
--- harness-validated. Display strings are literal (no l10n dependency yet).
+-- (The header here used to describe injecting rows into the game's own options
+-- page, the PDNESettings.injectMenu pattern. No such injection function has
+-- existed for a long time -- DR has its own Settings tab.)
 -- ============================================================================
 
 DistributionSettings = {}
 DistributionControls = {}   -- separate callback target (reference-mod pattern)
 
 -- ---- setting definitions ---------------------------------------------------
--- Each: order, label, tooltip (literal text); default (index into values);
--- values (applied to the engine); strings (shown in the left/right selector).
+-- Each: order (display position); default (INDEX into values); values (applied to
+-- the engine); strings (the selector's value labels).
+--
+-- WHERE THE PLAYER-FACING TEXT LIVES, since it is deliberately not all here:
+--   * row TITLE + TOOLTIP  -> gui/DistributionSettingsPage.xml, as
+--                             $l10n_dr_set_<id> and $l10n_dr_set_<id>_tt.
+--     A setting needs a hand-authored row in that file or it silently does not
+--     appear at all (CLAUDE.md 5.41) -- adding one is still a two-file job.
+--   * value LABELS         -> translations/translation_<lang>.xml, as
+--                             dr_set_<id>_v1, _v2, ... resolved by convention in
+--                             DistributionSettingsPage:onGuiSetupFinished.
+--     `strings` below is the ENGLISH FALLBACK for those, and stays in step with
+--     `values` -- the two are index-parallel and that is what the save file and
+--     the multiplayer settings event carry.
+--
+-- There used to be `label` and `tooltip` fields here too. They were read by
+-- NOTHING (dead since the options-page injection was dropped), and had already
+-- drifted from the live XML wording on advancedRouting and palletSpawnMode -- two
+-- copies of every tooltip, one of them wrong and invisible. Removed with the l10n
+-- pass rather than translated twice.
 DistributionSettings.SETTINGS = {
     scope = {
         order   = 1,
-        label   = "Scope",
-        tooltip = "Range: every owned asset reaches farm-wide.  Proximity: assets only reach sources within the proximity radius below.",
         default = 1,                                            -- Range (farm-wide)
         values  = { "RANGE", "PROXIMITY" },
         strings = { "Range (farm-wide)", "Proximity (radius)" },
     },
     includeHusbandry = {
         order   = 1.3,
-        label   = "Animal Husbandry",
-        tooltip = "Include animal husbandry -- barns, coops, beehives, plus manure & slurry pits -- in the distribution network. Off removes them entirely: they are neither fed nor is their output (milk / manure / slurry / eggs / wool / honey) distributed or sold.",
         default = 1,                                            -- On
         values  = { true, false },
         strings = { "On", "Off" },
     },
     includeSilosSheds = {
         order   = 1.6,
-        label   = "Silos & Pallet Storage",
-        tooltip = "Include crop / material silos and pallet storage sheds in the distribution network. Off removes them: silos no longer feed productions, and pallet sheds neither receive nor release pallets. (Manure & slurry pits follow the Animal Husbandry setting.)",
         default = 1,                                            -- On
         values  = { true, false },
         strings = { "On", "Off" },
     },
     includeMarkets = {
         order   = 1.7,
-        label   = "Markets & Kiosks",
-        tooltip = "Include markets and kiosks in the distribution network. Off removes them: farm-owned products are no longer routed to them for selling, and the Markets tab is hidden.",
         default = 1,                                            -- On
+        values  = { true, false },
+        strings = { "On", "Off" },
+    },
+    -- Public map silos (Zielonka's Grain Pool East and the like): buildings nobody owns that still let a
+    -- farm store goods, via a per-farm storage inside them. OFF by default -- switching it on adds
+    -- buildings to the network that cost money to store in (the vanilla railroad silo charges
+    -- costsPerFillLevelAndDay), so it must be an explicit choice, never a surprise.
+    includeMapStorage = {
+        order   = 1.8,                                          -- with the other network toggles
+        default = 2,                                            -- Off
         values  = { true, false },
         strings = { "On", "Off" },
     },
     advancedRouting = {
         order   = 1.9,                                          -- with the network toggles, above the range/buffer dials
-        label   = "Advanced routing",
-        tooltip = "Master switch for Advanced Outputs (source-side blocking + priority + Move To) and Advanced Inputs (per-receiver input blocking + caps + fill targets). Off hides those buttons and reverts distribution to the default nearest-first, distance-based behaviour. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they are reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch.",
         default = 1,                                            -- On
         values  = { true, false },
         strings = { "On", "Off" },
     },
     radius = {
         order   = 2,
-        label   = "Proximity radius",
-        tooltip = "How far a consumer reaches for sources in Proximity mode.",
         default = 2,                                            -- 50 m
         values  = { 25, 50, 75, 100, 150, 200, 400 },
         strings = { "25 m", "50 m", "75 m", "100 m", "150 m", "200 m", "400 m" },
     },
     bufferHours = {
         order   = 3,
-        label   = "Consumer buffer",
-        tooltip = "Hours of feedstock topped up at each consumer per cycle.",
         default = 2,                                            -- 2 h
         values  = { 1, 2, 4, 8, 12, 24 },
         strings = { "1 hour", "2 hours", "4 hours", "8 hours", "12 hours", "24 hours" },
     },
     sellEnabled = {
         order   = 4,
-        label   = "Selling",
-        tooltip = "Global switch for all auto-selling (Sell / Distribute+Sell modes).",
         default = 1,                                            -- Enabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
     waterSupplyEnabled = {
         order   = 4.5,                                          -- sits between Selling and the cost settings
-        label   = "Auto-Water",
-        tooltip = "Automatically supply water to water-input productions and animal pastures (billed by distance to the nearest water source).",
         default = 1,                                            -- Enabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
     distCostEnabled = {
         order   = 5,
-        label   = "Distribution cost",
-        tooltip = "Charge a per-hour transport cost for each active distribution (scales with haul distance).",
         default = 1,                                            -- Enabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
     distCostBase = {
         order   = 6,
-        label   = "Cost rate",
-        tooltip = "Base transport cost per hour for a short haul (at or under the cost distance below).",
         default = 3,                                            -- $10/h
         values  = { 0, 5, 10, 20, 50 },
         strings = { "$0 /h", "$5 /h", "$10 /h", "$20 /h", "$50 /h" },
     },
     distCostThreshold = {
         order   = 7,
-        label   = "Cost distance",
-        tooltip = "Hauls at or under this distance pay the flat base rate; longer hauls scale up linearly.",
         default = 2,                                            -- 50 m
         values  = { 25, 50, 100, 200, 500 },
         strings = { "25 m", "50 m", "100 m", "200 m", "500 m" },
     },
     seasonalReserveEnabled = {
         order   = 8,
-        label   = "Seasonal harvest reserve",
-        tooltip = "Crops set to Distribute+Sell keep enough feedstock to feed production until the next harvest; only the surplus is sold.",
         default = 2,                                            -- Disabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
     seasonalFallbackMonths = {
         order   = 9,
-        label   = "Reserve months (until learned)",
-        tooltip = "Months of feedstock to hold for a crop before the mod has observed its real harvest window.",
         default = 3,                                            -- 13 months
         values  = { 6, 12, 13, 18, 24 },
         strings = { "6 months", "12 months", "13 months", "18 months", "24 months" },
     },
     bestPriceEnabled = {
         order   = 9.3,                                          -- groups with the selling / seasonal controls
-        label   = "Sell at best price",
-        tooltip = "Master switch: hold Sell / Distribute+Sell surplus until its best month before selling. Off: everything sells immediately.",
         default = 1,                                            -- Enabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
     bestPriceDefault = {
         order   = 9.6,
-        label   = "Default sell timing",
-        tooltip = "Default for any Sell / Distribute+Sell output and for every market product, until you set that building's own toggle. Markets you have already configured keep their setting.",
         default = 1,                                            -- Sell at best price
         values  = { true, false },
         strings = { "Sell at best price", "Sell immediately" },
@@ -151,8 +147,6 @@ DistributionSettings.SETTINGS = {
     -- the middle state is really "make pens behave like productions", and Never turns both off.
     palletSpawnMode = {
         order   = 9.8,
-        label   = "Pallet spawning",
-        tooltip = "Whole pallets: pens hold product internally and release a FULL pallet, like productions. Vanilla: a pallet appears at once and fills gradually. Never: nothing spawns pallets on its own - product stays internal and still distributes, stores and sells from there. You can always release one by hand with Spawn Pallets.",
         default = 2,                                            -- Whole pallets
         values  = { 0, 1, 2 },
         strings = { "Vanilla (fill gradually)", "Whole pallets only", "Never spawn pallets" },
@@ -170,16 +164,12 @@ DistributionSettings.SETTINGS = {
         -- struggling can turn their own menu down. Syncing it would let the server overwrite that choice.
         localOnly = true,
         order   = 9.9,
-        label   = "Menu refresh rate",
-        tooltip = "How often the open menu re-reads the farm. The Overview re-enumerates every building and product, so on a large farm a slower rate keeps the menu responsive. Manual only stops the background refresh entirely - the figures still update whenever you select something or press Refresh on the Overview.",
         default = 2,                                            -- Normal (2s)
         values  = { 0.5, 2, 10, -1 },
         strings = { "Live (0.5s)", "Normal (2s)", "Relaxed (10s)", "Manual only" },
     },
     debugEnabled = {
         order   = 10,
-        label   = "Debug logging",
-        tooltip = "Write detailed distribution activity to log.txt (moves, sales, stores, water top-ups and charges). Turn off for a quieter log.",
         default = 2,                                            -- Disabled
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
@@ -264,6 +254,7 @@ function DistributionSettings.apply()
     g.includeHusbandry  = DistributionSettings.includeHusbandry
     g.includeSilosSheds = DistributionSettings.includeSilosSheds
     g.includeMarkets    = DistributionSettings.includeMarkets
+    g.includeMapStorage = DistributionSettings.includeMapStorage
     g.advancedRoutingEnabled = DistributionSettings.advancedRouting
     -- Advanced routing OFF resets every advanced input/output override to default (not just ignores them):
     -- clear the source blocks / priority + receiver input blocks / caps / targets. Runs after loadOverrides
@@ -397,6 +388,7 @@ function DistributionSettings.save(missionInfo)
     setXMLBool(xml,   "distributionRedux.settings#includeHusbandry",  DistributionSettings.includeHusbandry)
     setXMLBool(xml,   "distributionRedux.settings#includeSilosSheds", DistributionSettings.includeSilosSheds)
     setXMLBool(xml,   "distributionRedux.settings#includeMarkets",    DistributionSettings.includeMarkets)
+    setXMLBool(xml,   "distributionRedux.settings#includeMapStorage", DistributionSettings.includeMapStorage)
     setXMLBool(xml,   "distributionRedux.settings#advancedRouting",   DistributionSettings.advancedRouting)
     setXMLInt(xml,    "distributionRedux.settings#radius",      DistributionSettings.radius)
     setXMLInt(xml,    "distributionRedux.settings#bufferHours", DistributionSettings.bufferHours)
@@ -435,6 +427,9 @@ local function readWorldSettings(xml)
 
     local incMarkets = getXMLBool(xml, "distributionRedux.settings#includeMarkets")
     if incMarkets ~= nil then DistributionSettings.includeMarkets = incMarkets end
+
+    local incMapStore = getXMLBool(xml, "distributionRedux.settings#includeMapStorage")
+    if incMapStore ~= nil then DistributionSettings.includeMapStorage = incMapStore end
 
     local advRouting = getXMLBool(xml, "distributionRedux.settings#advancedRouting")
     if advRouting ~= nil then DistributionSettings.advancedRouting = advRouting end

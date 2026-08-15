@@ -18,15 +18,15 @@
         <ThreePartBitmap profile="fs25_dialogBgBottom" />
 
         <GuiElement profile="fs25_dialogContentContainer">
-            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="Advanced" position="0px -30px" />
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_title_advanced" position="0px -30px" />
             <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""        position="0px -78px" />
 
             <!-- LEFT: demands -->
             <Bitmap profile="SDList" position="40px -122px" size="640px 34px">
-                <Text profile="SDHeaderLeft" position="12px 0px"  text="DEMANDS" />
-                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="DISTANCE" />
-                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="ORDER" />
-                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="STATUS" />
+                <Text profile="SDHeaderLeft" position="12px 0px"  text="$l10n_dr_col_demands" />
+                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="$l10n_dr_col_distance" />
+                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="$l10n_dr_col_order" />
+                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="$l10n_dr_col_status" />
                 <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
             </Bitmap>
             <GuiElement profile="SDList" position="40px -160px" size="640px 480px">
@@ -43,10 +43,10 @@
 
             <!-- RIGHT: storage or markets (header text set in Lua) -->
             <Bitmap profile="SDList" position="720px -122px" size="640px 34px">
-                <Text profile="SDHeaderLeft" position="12px 0px"  id="rightHeaderElement" text="STORAGE" />
-                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="DISTANCE" />
-                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="ORDER" />
-                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="STATUS" />
+                <Text profile="SDHeaderLeft" position="12px 0px"  id="rightHeaderElement" text="$l10n_dr_col_storage" />
+                <Text profile="SDHeaderLeft" position="330px 0px" size="110px 34px" text="$l10n_dr_col_distance" />
+                <Text profile="SDHeaderLeft" position="440px 0px" size="70px 34px"  text="$l10n_dr_col_order" />
+                <Text profile="SDHeaderLeft" position="520px 0px" size="200px 34px" text="$l10n_dr_col_status" />
                 <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
             </Bitmap>
             <GuiElement profile="SDList" position="720px -160px" size="640px 480px">
@@ -64,24 +64,24 @@
 
         <!-- action buttons -->
         <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
-            <Button profile="buttonOK"   text="Priority Up"   onClick="onMoveUp"    id="upButton"     inputActionName="MENU_EXTRA_1" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityUp"   onClick="onMoveUp"    id="upButton"     inputActionName="MENU_EXTRA_1" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Priority Down" onClick="onMoveDown"  id="downButton"   inputActionName="MENU_EXTRA_2" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityDown" onClick="onMoveDown"  id="downButton"   inputActionName="MENU_EXTRA_2" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Toggle"        onClick="onToggle"    id="toggleButton" inputActionName="MENU_ACCEPT" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_toggle"        onClick="onToggle"    id="toggleButton" inputActionName="MENU_ACCEPT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Clear"         onClick="onClear"     id="clearButton"  inputActionName="MENU_ACTIVATE" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_clear"         onClick="onClear"     id="clearButton"  inputActionName="MENU_ACTIVATE" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="Block All"     onClick="onToggleAll" id="toggleAllButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll"     onClick="onToggleAll" id="toggleAllButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <!-- Output reserve: how much of this product the building always keeps back. Deliberately no
                  inputActionName (mouse-only), like the all-toggle buttons: a 7th/8th bound action
                  scrambles the key glyphs on the others. -->
-            <Button profile="buttonOK"   text="- Reserve"     onClick="onReserveDown" id="reserveDownButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveDown"     onClick="onReserveDown" id="reserveDownButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="+ Reserve"     onClick="onReserveUp"   id="reserveUpButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveUp"     onClick="onReserveUp"   id="reserveUpButton" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonBack" text="Close"         onClick="onClickBack" id="noButton" />
+            <Button profile="buttonBack" text="$l10n_dr_btn_close"         onClick="onClickBack" id="noButton" />
         </BoxLayout>
     </GuiElement>
 </GUI>

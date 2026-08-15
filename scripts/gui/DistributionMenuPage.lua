@@ -132,13 +132,24 @@ end
 -- the Overview tab's. The windows are DR's own: a cycle is an hour, a month is 24 of them.
 -- Lives on the base page so all four share one implementation; pages without the widget just no-op.
 DistributionMenuPage.PERIODS       = { "hour", "month", "year" }
+-- English fallbacks. The live labels are built per call by periodLabels(), because l10n is
+-- not necessarily up when this chunk loads.
 DistributionMenuPage.PERIOD_LABELS = { "Cycle (hour)", "Month", "Year" }
+DistributionMenuPage.PERIOD_KEYS   = { "dr_period_hourLong", "dr_period_month", "dr_period_year" }
+function DistributionMenuPage.periodLabels()
+    if SmartDistribution == nil or SmartDistribution.l10n == nil then return DistributionMenuPage.PERIOD_LABELS end
+    local out = {}
+    for i, fb in ipairs(DistributionMenuPage.PERIOD_LABELS) do
+        out[i] = SmartDistribution.l10n(DistributionMenuPage.PERIOD_KEYS[i], fb)
+    end
+    return out
+end
 
 function DistributionMenuPage:initPeriodOption()
     self.periodIndex = self.periodIndex or 2          -- default Month: what these columns showed before
     local opt = self.periodOption
     if opt == nil or opt.setTexts == nil then return end
-    opt:setTexts(DistributionMenuPage.PERIOD_LABELS)
+    opt:setTexts(DistributionMenuPage.periodLabels())
     if opt.setState ~= nil then pcall(function() opt:setState(self.periodIndex) end) end
 end
 

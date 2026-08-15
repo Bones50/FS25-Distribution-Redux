@@ -12,7 +12,16 @@
 DistributionStoragePage = {}
 local DistributionStoragePage_mt = Class(DistributionStoragePage, DistributionMenuPage)
 
+-- English fallbacks; storageClassLabel resolves them through l10n at display time.
 local STORAGE_CLASSES = { SILO = "Silo", HUSBANDRY = "Barn", SHED = "Storage", HEAP = "Pit", MARKET = "Market" }
+local STORAGE_CLASS_KEYS = { SILO = "dr_class_silo", HUSBANDRY = "dr_class_barn", SHED = "dr_class_storage",
+                             HEAP = "dr_class_pit", MARKET = "dr_class_market" }
+local function storageClassLabel(cls)
+    local fb = STORAGE_CLASSES[cls]
+    if fb == nil then return nil end
+    if SmartDistribution == nil or SmartDistribution.l10n == nil then return fb end
+    return SmartDistribution.l10n(STORAGE_CLASS_KEYS[cls], fb)
+end
 
 -- The input list and the output/detail list each keep their own selected row, and FS25 draws the
 -- selection highlight on a row regardless of which list has focus -- so both look selected at once. Each
@@ -71,9 +80,12 @@ local function renderNoticeRow(cell, hidden, what)
     if n == nil then return end
     if n.setVisible ~= nil then n:setVisible(true) end
     if n.setText ~= nil then
-        local word = what
-        if hidden == 1 then word = word:sub(1, #word - 1) end        -- "1 input", not "1 inputs"
-        n:setText(string.format("+%d %s blocked (See Advanced Inputs)", hidden, word))
+        -- Whole-sentence singular/plural keys. The old form made the singular by deleting the final
+        -- "s" of "inputs", which is English-only and does not survive translation.
+        local key = (hidden == 1) and "dr_notice_blockedInput" or "dr_notice_blockedInputs"
+        local fb  = (hidden == 1) and "+%d input blocked (See Advanced Inputs)"
+                                   or "+%d inputs blocked (See Advanced Inputs)"
+        n:setText(string.format(SmartDistribution.l10n(key, fb), hidden))
     end
     local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
     local col = COL.IDLE or { 0.95, 0.65, 0.20, 1 }
@@ -287,7 +299,7 @@ local function setStatusCell(cell, placeable, ft)
     -- A product BLOCKED on the Advanced Inputs page is refused at the door, whatever the source-side link
     -- says, so it must read "Blocked" here too -- otherwise the main list still shows it as receiving.
     if uid ~= nil and SmartDistribution.isInputBlocked ~= nil and SmartDistribution.isInputBlocked(uid, ft) then
-        if c.setText ~= nil then c:setText("Blocked") end
+        if c.setText ~= nil then c:setText(SmartDistribution.l10n("dr_label_blocked", "Blocked")) end
         local bc = (SmartDistribution.LINK_COLOR or {}).BLOCKED
         if bc ~= nil and c.setTextColor ~= nil then c:setTextColor(bc[1], bc[2], bc[3], bc[4]) end
         return
@@ -436,7 +448,7 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         local origCell = cell:getAttribute("assetOrigName")
         if origCell ~= nil then origCell:setText(a.origName or "") end
         local typeCell = cell:getAttribute("assetType")
-        if typeCell ~= nil then typeCell:setText(STORAGE_CLASSES[a.class] or a.class or "") end
+        if typeCell ~= nil then typeCell:setText(storageClassLabel(a.class) or a.class or "") end
         if SmartDistribution.setAssetIcon ~= nil then SmartDistribution.setAssetIcon(cell, a.placeable) end
         return
     end
@@ -587,13 +599,13 @@ function DistributionStoragePage:updateSellTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if spawnReady then b.text = "Spawn Pallets"; vis[#vis + 1] = b
-            elseif label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end
+            if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
+            elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
         elseif b._role == "advanced" then
             if focus == "input" then
-                if showAdvancedIn then b.text = "Advanced Inputs"; vis[#vis + 1] = b end
+                if showAdvancedIn then b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b end
             else
-                if showAdvancedOut then b.text = "Advanced Outputs"; vis[#vis + 1] = b end
+                if showAdvancedOut then b.text = SmartDistribution.l10n("dr_btn_advancedOutputs", "Advanced Outputs"); vis[#vis + 1] = b end
             end
         else
             vis[#vis + 1] = b
@@ -671,17 +683,18 @@ function DistributionStoragePage:onSpawn(count)
             end)
         end
     end
-    if SmartDistribution.openSpawnDialog ~= nil and SmartDistribution.openSpawnDialog(asset, ft, function(_, n)
+    if SmartDistribution.openSpawnDialog ~= nil and SmartDistribution.openSpawnDialog(asset, ft, function(option, n, liters)
             if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
                 refreshHook()
-                DistributionSpawnEvent.request(asset, ft, n)
+                -- option carries the pallet TYPE the player picked; liters is the exact total requested
+                DistributionSpawnEvent.request(asset, ft, n, option ~= nil and option.filename or nil, liters)
             end
         end) then
         return
     end
     if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
         refreshHook()
-        DistributionSpawnEvent.request(asset, ft, count or 1)
+        DistributionSpawnEvent.request(asset, ft, count or 1)   -- fallback: default type, fill each pallet
     end
 end
 
@@ -972,7 +985,8 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then
         modeCell:setText((SmartDistribution.marketProductLabel ~= nil)
-            and SmartDistribution.marketProductLabel(self.selectedAsset, row.ft) or "Sell  -  Immediate")
+            and SmartDistribution.marketProductLabel(self.selectedAsset, row.ft)
+            or SmartDistribution.l10n("dr_market_immediate", "Sell  -  Immediate"))
     end
 end
 
@@ -1004,7 +1018,7 @@ function DistributionMarketsPage:updateTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end   -- hidden while the product is Held
+            if label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end   -- hidden while the product is Held
         elseif b._role == "advanced" then
             -- A market is the exact OPPOSITE of what this used to say ("sell endpoints (no inputs)"): its
             -- buffer never feeds the network back (5.7), so there is no outgoing routing to arrange, while
@@ -1016,7 +1030,7 @@ function DistributionMarketsPage:updateTimingButton()
             local hasIn = self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
                 and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
             if advOK and hasIn then
-                b.text = "Advanced Inputs"; vis[#vis + 1] = b
+                b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b
             end
         else
             vis[#vis + 1] = b

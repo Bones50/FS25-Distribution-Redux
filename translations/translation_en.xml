@@ -1,0 +1,721 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : English (source language)
+
+  NOTE TO EDITORS: an XML comment may not contain two hyphens in a row. It is a
+  parse error and the whole file is then ignored. Attribute VALUES below are fine
+  and several deliberately contain a double hyphen; keep them exactly as they are.
+
+  HOW TO ADD A LANGUAGE
+    1. Copy this file to translations/translation_<code>.xml
+       Codes FS25 uses: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Translate ONLY the text="..." values. Never change a name="..." key.
+    3. Open a pull request. You do not need to translate everything: any key you
+       leave out falls back to English, so a partial file is welcome.
+
+  RULES THAT MATTER
+    * Keys ending _tt are TOOLTIPS. They are long and wrap freely, so length is
+      not a problem there.
+    * Keys starting dr_col_ are TABLE COLUMN HEADERS in a fixed width cell. The
+      character budget is given in a comment above each block. A header that
+      overruns is CLIPPED, which has caused a real bug before: an output mode
+      reading "Distribute + S..." looked like plain Distribute and hid a building
+      that was selling everything. Prefer a short word or an accepted abbreviation.
+    * Keys starting dr_btn_ are BUTTONS sharing one footer bar. Keep them short.
+    * "L" is litres and "kL" kilolitres. Volumes are formatted in code, not here.
+    * Leave XML entities alone: &amp; is an ampersand, &quot; a double quote.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= keybindings (shown in Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Configure distribution (nearest asset)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Open Distribution Redux menu" />
+
+        <!-- ================= page + dialog titles ================= -->
+        <text name="dr_title_overview"        text="Distribution - Overview" />
+        <text name="dr_title_productions"     text="Distribution - Productions" />
+        <text name="dr_title_storage"         text="Distribution - Storage" />
+        <text name="dr_title_husbandry"       text="Distribution - Animal Husbandry" />
+        <text name="dr_title_markets"         text="Distribution - Markets" />
+        <text name="dr_title_help"            text="Distribution - Help" />
+        <text name="dr_title_settings"        text="Distribution - Settings" />
+        <text name="dr_title_advanced"        text="Advanced" />
+        <text name="dr_title_advancedInputs"  text="Advanced Inputs" />
+        <text name="dr_title_spawnPallets"    text="Spawn Pallets" />
+
+        <!-- ================= building-list headers (left column, ~40 chars) ================= -->
+        <text name="dr_col_buildings"     text="BUILDINGS" />
+        <text name="dr_col_husbandries"   text="HUSBANDRIES" />
+        <text name="dr_col_markets"       text="MARKETS" />
+        <text name="dr_col_productions"   text="PRODUCTIONS" />
+
+        <!-- ================= selector labels above the tables ================= -->
+        <text name="dr_lbl_timescale"        text="Timescale" />
+        <text name="dr_lbl_filterBy"         text="Filter by" />
+        <text name="dr_lbl_show"             text="Show" />
+        <text name="dr_lbl_grouping"         text="Grouping" />
+        <text name="dr_lbl_overviewPointer"  text="Full breakdown + supply chains: Overview tab" />
+
+        <!-- ================= Overview: FLOW view column headers =================
+             Budget roughly 10 to 16 characters each; these sit at 11px in narrow
+             cells. "(EXP.)" is short for "expected", the recipe's target figure. -->
+        <text name="dr_col_building"      text="BUILDING" />
+        <text name="dr_col_product"       text="PRODUCT" />
+        <text name="dr_col_received"      text="RECEIVED" />
+        <text name="dr_col_loaded"        text="LOADED" />
+        <text name="dr_col_consumedExp"   text="CONSUMED (EXP.)" />
+        <text name="dr_col_unloaded"      text="UNLOADED" />
+        <text name="dr_col_heldMax"       text="HELD (MAX)" />
+        <text name="dr_col_freeStorage"   text="FREE STORAGE" />
+        <text name="dr_col_producedExp"   text="PRODUCED (EXP.)" />
+        <text name="dr_col_distributed"   text="DISTRIBUTED" />
+        <text name="dr_col_storedMoved"   text="STORED/MOVED" />
+        <text name="dr_col_sold"          text="SOLD" />
+        <text name="dr_col_distrCost"     text="DISTR. COST" />
+
+        <!-- ================= Overview: SETTINGS view column headers =================
+             Same budget as above. DEST means "active of total destinations" and is
+             the narrowest cell on the page, about 6 characters. Abbreviate freely. -->
+        <text name="dr_col_storageType"   text="STORAGE TYPE" />
+        <text name="dr_col_maxInPctL"     text="MAX IN (% - L)" />
+        <text name="dr_col_heldOfMax"     text="HELD OF MAX" />
+        <text name="dr_col_inStatus"      text="IN STATUS" />
+        <text name="dr_col_lines"         text="LINES" />
+        <text name="dr_col_outMode"       text="OUT MODE" />
+        <text name="dr_col_reserve"       text="RESERVE" />
+        <text name="dr_col_priority"      text="PRIORITY" />
+        <text name="dr_col_dest"          text="DEST" />
+        <text name="dr_col_outStatus"     text="OUT STATUS" />
+
+        <!-- ================= building-tab table headers =================
+             Shared by Silos / Animal Husbandry / Markets / Productions. -->
+        <text name="dr_col_incomingProducts"  text="INCOMING PRODUCTS" />
+        <text name="dr_col_incomingMaterials" text="INCOMING MATERIALS" />
+        <text name="dr_col_outgoingProducts"  text="OUTGOING PRODUCTS" />
+        <text name="dr_col_heldSlashMax"      text="HELD / MAX" />
+        <text name="dr_col_distribution"      text="DISTRIBUTION" />
+        <text name="dr_col_consumed"          text="CONSUMED" />
+        <text name="dr_col_produced"          text="PRODUCED" />
+        <text name="dr_col_outputMode"        text="OUTPUT MODE" />
+        <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_productionLines"   text="PRODUCTION LINES" />
+        <!-- "/mo" = per month. The figure is the line's monthly target. -->
+        <text name="dr_col_targetMo"          text="TARGET /mo" />
+
+        <!-- ================= Advanced Outputs dialog ================= -->
+        <text name="dr_col_demands"   text="DEMANDS" />
+        <text name="dr_col_storage"   text="STORAGE" />
+        <text name="dr_col_distance"  text="DISTANCE" />
+        <text name="dr_col_order"     text="ORDER" />
+
+        <!-- ================= Advanced Inputs dialog ================= -->
+        <text name="dr_col_incomingProduct" text="INCOMING PRODUCT" />
+        <text name="dr_col_type"            text="TYPE" />
+        <text name="dr_col_held"            text="HELD" />
+        <text name="dr_col_maxIn"           text="MAX IN" />
+        <text name="dr_col_available"       text="AVAILABLE" />
+        <text name="dr_col_fillTarget"      text="FILL TARGET" />
+
+        <!-- ================= buttons =================
+             These share one footer bar, so every extra character squeezes its
+             neighbours. Aim for the length of the English or shorter. -->
+        <text name="dr_btn_priorityUp"    text="Priority Up" />
+        <text name="dr_btn_priorityDown"  text="Priority Down" />
+        <text name="dr_btn_toggle"        text="Toggle" />
+        <text name="dr_btn_clear"         text="Clear" />
+        <text name="dr_btn_blockAll"      text="Block All" />
+        <text name="dr_btn_reserveDown"   text="- Reserve" />
+        <text name="dr_btn_reserveUp"     text="+ Reserve" />
+        <text name="dr_btn_maxDown"       text="- Max" />
+        <text name="dr_btn_maxUp"         text="+ Max" />
+        <text name="dr_btn_targetDown"    text="- Target" />
+        <text name="dr_btn_targetUp"      text="+ Target" />
+        <text name="dr_btn_block"         text="Block" />
+        <text name="dr_btn_spawn"         text="Spawn" />
+        <text name="dr_btn_cancel"        text="Cancel" />
+        <text name="dr_btn_close"         text="Close" />
+
+        <!-- ================= FOOTER BUTTONS (set from Lua) =================
+             Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
+             FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
+        <text name="dr_btn_cycleOutput"      text="Cycle Output" />
+        <text name="dr_btn_advanced"         text="Advanced" />
+        <text name="dr_btn_sellTiming"       text="Sell Timing" />
+        <text name="dr_btn_sellTimingValue"  text="Sell Timing: %s" />
+        <text name="dr_btn_toggleLine"       text="Toggle Line" />
+        <text name="dr_btn_showSettings"     text="Show Settings" />
+        <text name="dr_btn_showFlows"        text="Show Flows" />
+        <text name="dr_btn_refresh"          text="Refresh" />
+        <text name="dr_btn_advancedOutputs"  text="Advanced Outputs" />
+        <text name="dr_btn_activate"         text="Activate" />
+        <text name="dr_btn_activateAll"      text="Activate All" />
+        <text name="dr_btn_allow"            text="Allow" />
+        <text name="dr_btn_allowAll"         text="Allow All" />
+
+        <!-- ================= TIMESCALE SELECTOR =================
+             One in-game hour is one distribution cycle, which is why the building tabs spell it
+             out; the Overview's column is narrower and just says "Hour". -->
+        <text name="dr_period_hourLong" text="Cycle (hour)" />
+        <text name="dr_period_hour"     text="Hour" />
+        <text name="dr_period_month"    text="Month" />
+        <text name="dr_period_year"     text="Year" />
+
+        <!-- ================= OVERVIEW SELECTORS =================
+             "End product (full chain)" shows every building feeding one finished product, back
+             through the whole supply chain. Grouping collapses buildings of the same type into
+             one summed row, labelled e.g. "Bakery x2". -->
+        <text name="dr_filter_nothing"    text="Nothing (show all)" />
+        <text name="dr_filter_building"   text="Building" />
+        <text name="dr_filter_product"    text="Product" />
+        <text name="dr_filter_endProduct" text="End product (full chain)" />
+        <text name="dr_group_off"         text="Off (one row per building)" />
+        <text name="dr_group_on"          text="On (combine same building type)" />
+
+        <!-- ================= OVERVIEW SHORT STATUS =================
+             The same three states as dr_status_* above, but the Overview's column is 140px and
+             its header already says IN or OUT, so the qualifier is dropped. Keep these SHORT. -->
+        <text name="dr_statusShort_receiving" text="Receiving" />
+        <text name="dr_statusShort_sending"   text="Sending" />
+        <text name="dr_statusShort_idle"      text="Idle" />
+        <text name="dr_statusShort_blocked"   text="Blocked" />
+
+        <!-- ================= STORAGE TYPE =================
+             Pooled: one tank shared by several products. Individual: a separate tank per
+             product. Shown in the Advanced Inputs dialog and the Overview settings view, which
+             deliberately use identical wording. -->
+        <text name="dr_type_pooled"     text="Pooled" />
+        <text name="dr_type_individual" text="Individual" />
+        <text name="dr_type_internal"   text="Internal" />
+        <text name="dr_type_blocked"    text="BLOCKED" />
+
+        <!-- ================= OUTPUT PRIORITY =================
+             "Distance" is the default: nearest consumer first. "Ranked (n)" means the player
+             has ordered n destinations by hand in Advanced Outputs. -->
+        <text name="dr_priority_ranked"   text="Ranked (%d)" />
+        <text name="dr_priority_distance" text="Distance" />
+
+        <!-- ================= BUILDING KIND =================
+             The right-hand column of the building list on the Silos tab. Very narrow. -->
+        <text name="dr_class_silo"    text="Silo" />
+        <text name="dr_class_barn"    text="Barn" />
+        <text name="dr_class_storage" text="Storage" />
+        <text name="dr_class_pit"     text="Pit" />
+        <text name="dr_class_market"  text="Market" />
+
+        <!-- ================= NOTICES AND SMALL LABELS =================
+             The blocked notice is the last row of a building's input list when Advanced routing
+             has hidden products the building is not holding. SEPARATE singular and plural keys:
+             English used to make the singular by deleting the final "s", which does not survive
+             translation. If your language needs no distinction, give both the same text. -->
+        <text name="dr_notice_blockedInput"  text="+%d input blocked (See Advanced Inputs)" />
+        <text name="dr_notice_blockedInputs" text="+%d inputs blocked (See Advanced Inputs)" />
+        <text name="dr_label_off"      text="Off" />
+        <text name="dr_label_blocked"  text="Blocked" />
+        <text name="dr_label_building" text="Building" />
+        <!-- Fallback name for a production line the game does not name itself; %d is its number. -->
+        <text name="dr_label_line"     text="Line %d" />
+
+        <!-- ================= ADVANCED OUTPUTS DIALOG =================
+             %s in the title is the building name. "Active - Invalid" marks a destination that
+             is switched on but would send the product in a circle back to where it started. -->
+        <text name="dr_adv_title"         text="Advanced - %s" />
+        <text name="dr_adv_activeInvalid" text="Active - Invalid" />
+        <text name="dr_adv_reserve"       text="     Reserve: " />
+        <text name="dr_adv_noCapacity"    text="No capacity to reserve against" />
+        <text name="dr_adv_loopOne"       text="Cannot activate %s - it would loop the product back here." />
+        <text name="dr_adv_loopMany"      text="%d destination(s) left blocked - they would loop the product back here." />
+
+        <!-- ================= ADVANCED INPUTS DIALOG =================
+             Subtitle, one of three depending on the building's storage. %s is the pool's total
+             capacity; the %d are how many products share it and how many have a max set. -->
+        <text name="dr_inp_title"        text="Advanced Inputs - %s" />
+        <text name="dr_inp_pooledCapped" text="Pooled storage: %s shared by %d products, %d capped. Anything uncapped may use the whole pool." />
+        <text name="dr_inp_pooled"       text="Pooled storage: %s shared by %d products. Each may use all of it - set a max to reserve room for the others." />
+        <text name="dr_inp_individual"   text="Set each product's max, or block it. This building has individual per-product storage." />
+
+        <!-- ================= SPAWN PALLETS DIALOG =================
+             Quantity word beside the stepper, and the summary line above it. -->
+        <text name="dr_spawn_info"    text="Held: %s    Pallet: %s    Max: %d    Spawning: %s" />
+        <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
+             name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Pallet" />
+        <!-- Quantity stepper: chosen count, maximum, and the exact litres that count moves.
+             Reads "2 / 3  (2,000 L)". Keep all three placeholders and their order. -->
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= OUTPUT MODES =================
+             What a building does with a product. Shown in the OUTPUT MODE / OUT MODE column
+             on every building tab and on the Overview, and cycled with the "Cycle Output"
+             button. The widest column that holds these fits about 39 characters at the
+             current text size, and "Distribute + Market Supply" is the longest English one.
+
+             The compound modes read "first half + second half" and the ORDER IS MEANINGFUL:
+             the first action always happens first, and product is never sold or shipped to a
+             market until it has been offered to consumers at least once. Keep that sense.
+
+             The numbers are the internal mode ids. Do not renumber them; they are what the
+             save file stores. -->
+        <text name="dr_mode_0"   text="Inherit" />
+        <text name="dr_mode_1"   text="Hold" />
+        <text name="dr_mode_2"   text="Distribute" />
+        <text name="dr_mode_3"   text="Distribute + Sell" />
+        <text name="dr_mode_4"   text="Sell" />
+        <text name="dr_mode_5"   text="Distribute + Store" />
+        <text name="dr_mode_6"   text="Store" />
+        <text name="dr_mode_7"   text="Market Supply" />
+        <text name="dr_mode_8"   text="Distribute + Market Supply" />
+        <text name="dr_mode_9"   text="Hold Internal" />
+        <text name="dr_mode_10"  text="Move To" />
+        <text name="dr_mode_11"  text="Distribute + Move To" />
+        <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
+             the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
+             and spawns nothing. The distinction is the whole point, so keep them distinct. -->
+        <text name="dr_mode_holdPallets" text="Hold Pallets" />
+
+        <!-- ================= LINK STATUS =================
+             The STATUS column. Three states: product actually moved on the last hourly pass,
+             the link is live but nothing needed to move, or it is blocked in Advanced routing.
+             A receiver RECEIVES and a source SENDS, which is the only difference between the
+             two sets. Narrow column, about 20 characters. -->
+        <text name="dr_status_in_ACTIVE"   text="Active (Receiving)" />
+        <text name="dr_status_in_IDLE"     text="Active (Idle)" />
+        <text name="dr_status_in_BLOCKED"  text="Blocked" />
+        <text name="dr_status_out_ACTIVE"  text="Active (Sending)" />
+        <text name="dr_status_out_IDLE"    text="Active (Idle)" />
+        <text name="dr_status_out_BLOCKED" text="Blocked" />
+
+        <!-- ================= PRODUCT ROLE =================
+             Tagged after a product name on the Overview, e.g. "Flour (In)". A building can
+             both receive and supply the same product (a silo), which is what (In/Out) means.
+             VERY tight: it sits inside the product-name cell, so 3 to 7 characters. -->
+        <text name="dr_role_in"    text="In" />
+        <text name="dr_role_out"   text="Out" />
+        <text name="dr_role_inout" text="In/Out" />
+
+        <!-- ================= SELL TIMING =================
+             "Best price" holds the product until its best month before selling; "Immediate"
+             sells as soon as it is available. The dr_market_* forms appear in the Markets
+             tab's OUTPUT MODE column, where Hold means the market stocks the product and
+             sells nothing until told to. -->
+        <text name="dr_timing_bestPrice" text="Best price" />
+        <text name="dr_timing_immediate" text="Immediate" />
+        <text name="dr_market_hold"      text="Hold" />
+        <text name="dr_market_best"      text="Sell  -  Best price" />
+        <text name="dr_market_immediate" text="Sell  -  Immediate" />
+
+        <!-- ================= UNITS =================
+             Volumes read in litres below 1,000 and in kilolitres above it, so 1,001 L shows as
+             "1.001 kL". These are appended to a formatted number and INCLUDE their leading
+             space. Keep the space, and keep them short. -->
+        <text name="dr_unit_litre"      text=" L" />
+        <text name="dr_unit_kilolitre"  text=" kL" />
+
+        <!-- ================= MONEY NOTIFICATIONS =================
+             The on-screen finance popup when DR sells or charges for haulage. Each is a label
+             followed by a money figure, so keep any trailing space and punctuation. -->
+        <text name="dr_money_biogas"    text="Biogas income: " />
+        <text name="dr_money_sales"     text="Product sales: " />
+        <text name="dr_money_distCost"  text="Distribution costs: -" />
+
+        <!-- ================= MISC ENGINE LABELS ================= -->
+        <!-- Stands in for the map's water where there is no physical tank to name. -->
+        <text name="dr_label_waterSource"      text="Water source" />
+
+        <!-- ================= SETTINGS =================
+             One block per setting: the row title, its tooltip (_tt), then the
+             selector's values (_v1, _v2, ...) IN ORDER. The order is meaningful,
+             because _v1 is the first option the left/right arrows land on and the
+             INDEX is what the save file stores. Translate each value in place;
+             never reorder them, and never drop one. -->
+
+        <text name="dr_set_scope"     text="Scope" />
+        <text name="dr_set_scope_tt"  text="Range: every owned asset reaches farm-wide.  Proximity: assets only reach sources within the proximity radius below." />
+        <text name="dr_set_scope_v1"  text="Range (farm-wide)" />
+        <text name="dr_set_scope_v2"  text="Proximity (radius)" />
+
+        <text name="dr_set_includeHusbandry"     text="Animal Husbandry" />
+        <text name="dr_set_includeHusbandry_tt"  text="Include animal husbandry -- barns, coops, beehives, plus manure &amp; slurry pits -- in the distribution network. Off removes them entirely: they are neither fed nor is their output (milk / manure / slurry / eggs / wool / honey) distributed or sold." />
+        <text name="dr_set_includeHusbandry_v1"  text="On" />
+        <text name="dr_set_includeHusbandry_v2"  text="Off" />
+
+        <text name="dr_set_includeSilosSheds"     text="Silos &amp; Pallet Storage" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Include crop / material silos and pallet storage sheds in the distribution network. Off removes them: silos no longer feed productions, and pallet sheds neither receive nor release pallets. (Manure &amp; slurry pits follow the Animal Husbandry setting.)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="On" />
+        <text name="dr_set_includeSilosSheds_v2"  text="Off" />
+
+        <text name="dr_set_includeMarkets"     text="Markets &amp; Kiosks" />
+        <text name="dr_set_includeMarkets_tt"  text="Include markets and kiosks in the distribution network. Off removes them: farm-owned products are no longer routed to them for selling, and the Markets tab is hidden." />
+        <text name="dr_set_includeMarkets_v1"  text="On" />
+        <text name="dr_set_includeMarkets_v2"  text="Off" />
+
+        <text name="dr_set_includeMapStorage"     text="Public map storage" />
+        <text name="dr_set_includeMapStorage_tt"  text="Include map storage buildings you do not own but can still store goods in, such as a railway grain pool. Off by default: these buildings normally charge rent for every litre held, so they are added to the network only if you ask. When on, they appear as storage buildings with every product set to Hold, and move nothing until you set them up." />
+        <text name="dr_set_includeMapStorage_v1"  text="On" />
+        <text name="dr_set_includeMapStorage_v2"  text="Off" />
+
+        <text name="dr_set_advancedRouting"     text="Advanced routing" />
+        <text name="dr_set_advancedRouting_tt"  text="Master switch for Advanced Outputs (source-side blocking / priority / Move To) and Advanced Inputs (input blocking / caps / fill targets). Off hides those buttons and reverts to the default nearest-first, distance-based distribution. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch." />
+        <text name="dr_set_advancedRouting_v1"  text="On" />
+        <text name="dr_set_advancedRouting_v2"  text="Off" />
+
+        <text name="dr_set_radius"     text="Proximity radius" />
+        <text name="dr_set_radius_tt"  text="How far a consumer reaches for sources in Proximity mode." />
+        <text name="dr_set_radius_v1"  text="25 m" />
+        <text name="dr_set_radius_v2"  text="50 m" />
+        <text name="dr_set_radius_v3"  text="75 m" />
+        <text name="dr_set_radius_v4"  text="100 m" />
+        <text name="dr_set_radius_v5"  text="150 m" />
+        <text name="dr_set_radius_v6"  text="200 m" />
+        <text name="dr_set_radius_v7"  text="400 m" />
+
+        <text name="dr_set_bufferHours"     text="Consumer buffer" />
+        <text name="dr_set_bufferHours_tt"  text="Hours of feedstock topped up at each consumer per cycle." />
+        <text name="dr_set_bufferHours_v1"  text="1 hour" />
+        <text name="dr_set_bufferHours_v2"  text="2 hours" />
+        <text name="dr_set_bufferHours_v3"  text="4 hours" />
+        <text name="dr_set_bufferHours_v4"  text="8 hours" />
+        <text name="dr_set_bufferHours_v5"  text="12 hours" />
+        <text name="dr_set_bufferHours_v6"  text="24 hours" />
+
+        <text name="dr_set_sellEnabled"     text="Selling" />
+        <text name="dr_set_sellEnabled_tt"  text="Global switch for all auto-selling (Sell / Distribute+Sell modes)." />
+        <text name="dr_set_sellEnabled_v1"  text="Enabled" />
+        <text name="dr_set_sellEnabled_v2"  text="Disabled" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Auto-Water" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Automatically supply water to water-input productions and animal pastures (billed by distance to the nearest water source)." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Enabled" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Disabled" />
+
+        <text name="dr_set_distCostEnabled"     text="Distribution cost" />
+        <text name="dr_set_distCostEnabled_tt"  text="Charge a per-hour transport cost for each active distribution (scales with haul distance)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Enabled" />
+        <text name="dr_set_distCostEnabled_v2"  text="Disabled" />
+
+        <!-- The $ figures below are game currency per hour. The player's own currency
+             symbol is not substituted here, so translate the "/h" part only. -->
+        <text name="dr_set_distCostBase"     text="Cost rate" />
+        <text name="dr_set_distCostBase_tt"  text="Base transport cost per hour for a short haul (at or under the cost distance below)." />
+        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
+        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
+        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
+        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
+        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+
+        <text name="dr_set_distCostThreshold"     text="Cost distance" />
+        <text name="dr_set_distCostThreshold_tt"  text="Hauls at or under this distance pay the flat base rate; longer hauls scale up linearly." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 m" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 m" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 m" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 m" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Seasonal harvest reserve" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Crops set to Distribute+Sell keep enough feedstock to feed production until the next harvest; only the surplus is sold." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Enabled" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Disabled" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Reserve months (until learned)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="Months of feedstock to hold for a crop before the mod has observed its real harvest window." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 months" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 months" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 months" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 months" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 months" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Sell at best price" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Master switch: hold Sell / Distribute+Sell surplus until its best month before selling. Off: everything sells immediately." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Enabled" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Disabled" />
+
+        <text name="dr_set_bestPriceDefault"     text="Default sell timing" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Default for any Sell / Distribute+Sell output and for every market product, until you set that building's own toggle. Markets you have already configured keep their setting." />
+        <text name="dr_set_bestPriceDefault_v1"  text="Sell at best price" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Sell immediately" />
+
+        <text name="dr_set_palletSpawnMode"     text="Pallet spawning" />
+        <text name="dr_set_palletSpawnMode_tt"  text="Whole pallets: pens hold product internally and release a FULL pallet, like productions. Vanilla: a pallet appears at once and fills gradually. Never: nothing spawns pallets on its own, product stays internal and still distributes, stores and sells from there. You can always release one by hand with Spawn Pallets. Never applies to your pens and productions only - beehives keep spawning as normal (they have no internal buffer to sell from), and shops you buy pallets from are never affected." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fill gradually)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Whole pallets only" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Never spawn pallets" />
+
+        <text name="dr_set_menuRefresh"     text="Menu refresh rate" />
+        <text name="dr_set_menuRefresh_tt"  text="How often the open menu re-reads the farm. The Overview re-enumerates every building and product, so on a large farm a slower rate keeps the menu responsive. Manual only stops the background refresh entirely - the figures still update whenever you select something or press Refresh on the Overview." />
+        <text name="dr_set_menuRefresh_v1"  text="Live (0.5s)" />
+        <text name="dr_set_menuRefresh_v2"  text="Normal (2s)" />
+        <text name="dr_set_menuRefresh_v3"  text="Relaxed (10s)" />
+        <text name="dr_set_menuRefresh_v4"  text="Manual only" />
+
+        <text name="dr_set_debugEnabled"     text="Debug logging" />
+        <text name="dr_set_debugEnabled_tt"  text="Write detailed distribution activity to log.txt (moves, sales, stores, water top-ups and charges). Turn off for a quieter log." />
+        <text name="dr_set_debugEnabled_v1"  text="Enabled" />
+        <text name="dr_set_debugEnabled_v2"  text="Disabled" />
+
+
+        <!-- ============ USER GUIDE (generated: gen_guide_l10n.py) ============
+             11 topics, one key per non-blank paragraph. Markers at the start of a
+             value are STRUCTURE, not words, and must be kept exactly as they are:
+               "## "   a heading
+               "### "  a sub heading
+               "- "    a bullet in a list
+             Everything after the marker is ordinary prose. A key you leave out falls
+             back to English, so a topic can be translated a paragraph at a time.
+             DO NOT reorder or renumber these; the numbers are positions in the guide. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Getting Started" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux completely replaces the base game's distribution system. No extra placeables are needed. It works with all default buildings, and with building mods that follow the standard GIANTS schema for their building type. This is very complicated mod and it can be easy to inadvertently create issues/blockages. Please review the entire help guide prior to use." />
+        <text name="dr_guide_gettingStarted_2" text="## Accessing the UI" />
+        <text name="dr_guide_gettingStarted_3" text="Backslash key: open the Distribution Redux menu - a full-screen window with a tab for every kind of building, plus this guide and the settings." />
+        <text name="dr_guide_gettingStarted_4" text="Left-bracket key: while on foot, look at a building's loading or unloading point to open the menu straight to that building's page. The prompt only appears when you are looking at one of your own buildings that is part of the network." />
+        <text name="dr_guide_gettingStarted_5" text="Both keys can be rebound under Options - Controls." />
+        <text name="dr_guide_gettingStarted_6" text="## The Idea" />
+        <text name="dr_guide_gettingStarted_7" text="Open the menu, pick the building you care about, and set each product to Hold, Distribute, Sell, and so on. That is the whole loop - everything else is detail." />
+        <text name="dr_guide_gettingStarted_8" text="## What it does differently to base game" />
+        <text name="dr_guide_gettingStarted_9" text="- Allows any building that stores, produces, feeds or sells to participate in the distribution." />
+        <text name="dr_guide_gettingStarted_10" text="- Will deliver only what the demand needs rather than trying to fill to capacity" />
+        <text name="dr_guide_gettingStarted_11" text="- Charges for distribution based on distance" />
+        <text name="dr_guide_gettingStarted_12" text="- Allows you to Sell Immediately or wait until best price is reached" />
+        <text name="dr_guide_gettingStarted_13" text="- Allows a seasonal reserve to be held for seasonal crops to ensure productions can continue, only selling the un-needed portion of the harvest" />
+        <text name="dr_guide_gettingStarted_14" text="- Auto-watering will pull water from any storage or the nearest water source (e.g. lake) to supply demand" />
+        <text name="dr_guide_gettingStarted_15" text="- Allows you to override the default distribution mechanism to prioritise demands, Block specific Inputs and Outputs, Set Output Reserves, and Set Input demand targets" />
+        <text name="dr_guide_gettingStarted_16" text="## What it does each cycle" />
+        <text name="dr_guide_gettingStarted_17" text="- Allocate - Build a demand list from every consumer: production inputs, animal food, feeding-robot bunkers, straw, husbandry water. Then match sources to demand nearest-first, honouring per-product blocks, priorities and input caps." />
+        <text name="dr_guide_gettingStarted_18" text="- Move the remainder - Store leftovers in available storage buildings, Move Stock to available markets, then Move stock between storages, honouring per-product blocks, priorities and input caps." />
+        <text name="dr_guide_gettingStarted_19" text="- Charge - Distance-based haulage billing, plus the vanilla per-hour production running costs (which are otherwise lost because DR suppresses the base hourly pass)." />
+        <text name="dr_guide_gettingStarted_20" text="- Sell / Market Supply - Sell surplus, sell out of market buffers, then sell direct outputs (e.g. electricity, methane), honouring any seasonal harvest, and sell immediate vs sell at best price rules." />
+        <text name="dr_guide_gettingStarted_21" text="- Account - Record Production and husbandry throughput, calculate manual load/unload deltas, emit the money summary." />
+
+        <text name="dr_guide_theMenu_title" text="The Menu" />
+        <text name="dr_guide_theMenu_1" text="The backslash key opens the consolidated menu. Down the left side are tabs." />
+        <text name="dr_guide_theMenu_2" text="## Tabs" />
+        <text name="dr_guide_theMenu_3" text="- Productions - factories and production points." />
+        <text name="dr_guide_theMenu_4" text="- Silos - bulk silos and pallet / bale storage sheds, plus manure and slurry pits." />
+        <text name="dr_guide_theMenu_5" text="- Animal Husbandry - barns, coops, pens and beehives." />
+        <text name="dr_guide_theMenu_6" text="- Markets - the kiosks and markets you have placed on the map." />
+        <text name="dr_guide_theMenu_7" text="- Overview - detailed figures for every building and every product in one table." />
+        <text name="dr_guide_theMenu_8" text="- User Guide - this guide." />
+        <text name="dr_guide_theMenu_9" text="- Settings - the global options." />
+        <text name="dr_guide_theMenu_10" text="Each building tab is a two-pane page: your buildings listed on the left, and the selected building's incoming products, production lines and outgoing products on the right. Exactly which of those three lists appear depends on what the building does." />
+        <text name="dr_guide_theMenu_11" text="## Timescale" />
+        <text name="dr_guide_theMenu_12" text="Every building tab, and the Overview tab, has a Timescale selector at the top offering Hour, Month and Year. It rescopes the flow figures on that page - what was received, consumed, produced, distributed and sold in that window." />
+        <text name="dr_guide_theMenu_13" text="A Distribution Redux &quot;month&quot; is 24 hourly passes, so Month means roughly the last in-game day regardless of how many real days you have set per period. Held is never rescoped: it is a stock, not a flow, so it always shows what is in the building right now." />
+        <text name="dr_guide_theMenu_14" text="Year data builds up over time. There was no year-scale record before this feature existed, so on an older save the Year column starts empty and fills as each in-game month completes." />
+        <text name="dr_guide_theMenu_15" text="## Hidden tabs" />
+        <text name="dr_guide_theMenu_16" text="The Silos, Animal Husbandry and Markets tabs only appear when that group is switched on in Settings. Switch a group off and its buildings leave the distribution network entirely and its tab disappears. Turn the group back on to get both back." />
+
+        <text name="dr_guide_buildingPages_title" text="Building Pages" />
+        <text name="dr_guide_buildingPages_1" text="The Productions, Silos, Markets and Animal Husbandry tabs share one layout: pick a building on the left, then configure its products on the right. Tables and Column sets differ slightly by building type, because not every building consumes or produces." />
+        <text name="dr_guide_buildingPages_2" text="## Table Contents" />
+        <text name="dr_guide_buildingPages_3" text="### Incoming products" />
+        <text name="dr_guide_buildingPages_4" text="- PRODUCT - the name and icon." />
+        <text name="dr_guide_buildingPages_5" text="- HELD/MAX - how much of it is in the building now, the Max amount that could be stored and the max set amount in Brackets as a percentage." />
+        <text name="dr_guide_buildingPages_6" text="- FREE STORAGE - How much more of this product the building can hold, taking into account the max set amount (%) and remaining space." />
+        <text name="dr_guide_buildingPages_7" text="- RECIEVED - how much of the product Distribution Redux delivered to this building in the selected timescale." />
+        <text name="dr_guide_buildingPages_8" text="- CONSUMED - how much of the product the building used in the selected timescale. Productions and Animal Husbandry only." />
+        <text name="dr_guide_buildingPages_9" text="- STATUS - Active (Recieving) or Active (Idle), based on activity in the last cycle, or Blocked." />
+        <text name="dr_guide_buildingPages_10" text="### Production lines (Productions only)" />
+        <text name="dr_guide_buildingPages_11" text="- PRODUCTION LINES - the product the line makes, with its inputs in brackets." />
+        <text name="dr_guide_buildingPages_12" text="- STATUS - Running, Idle (switched on but missing inputs), or Off." />
+        <text name="dr_guide_buildingPages_13" text="- TARGET /mo - how much that line is expected to produce per month if all inputs are provided." />
+        <text name="dr_guide_buildingPages_14" text="### Outgoing products" />
+        <text name="dr_guide_buildingPages_15" text="- PRODUCT - the name and icon." />
+        <text name="dr_guide_buildingPages_16" text="- HELD (MAX) - how much of this product is in the building now, with capacity in brackets." />
+        <text name="dr_guide_buildingPages_17" text="- FREE STORAGE - How much more of this product the building can hold" />
+        <text name="dr_guide_buildingPages_18" text="- PRODUCED - how much was produced in the selected timescale. Productions and Animal Husbandry only." />
+        <text name="dr_guide_buildingPages_19" text="- DISTRIBUTED - everything that left: distributed, stored, moved and sold combined, with the sale value in brackets when any of it sold." />
+        <text name="dr_guide_buildingPages_20" text="- OUTPUT MODE - the mode this output is currently set to." />
+        <text name="dr_guide_buildingPages_21" text="- STATUS - Active (Sending) or Active (Idle), based on activity in the last cycle, or Blocked." />
+        <text name="dr_guide_buildingPages_22" text="## NOTE" />
+        <text name="dr_guide_buildingPages_23" text="- If a building can have both internal storage and pallets, the display will show the internal amount and then the amount stored in Pallets on the buildings pallet spawner" />
+        <text name="dr_guide_buildingPages_24" text="- The Selected timeframe will only show material that has been moved in that timeframe, if you have only just activated the production and are showing Annual, you will only see what's moved since you activated it." />
+        <text name="dr_guide_buildingPages_25" text="- More details on what is going where is available on the overview tab " />
+        <text name="dr_guide_buildingPages_26" text="- Volumes switch unit at 1,000 litres. Up to 999 L they read in litres; from 1,000 L up they read in kilolitres with any extraneous zeros dropped, so 1,001 L shows as 1.001 kL, 123,123 L as 123.123 kL, and 600,000 L simply as 600 kL. Three decimals is exactly one litre, so nothing is lost in the change of unit." />
+        <text name="dr_guide_buildingPages_27" text="- To see if a change has taken effect (ie idle or running), you will need to go through one cycle (1 hour) before the UI column refreshes. If you have a chain of distributions, you may have to cycle through a number of hours until all steps refresh. " />
+        <text name="dr_guide_buildingPages_28" text="## Changing settings" />
+        <text name="dr_guide_buildingPages_29" text="- To turn a production line on or off, select the line and press Toggle Line." />
+        <text name="dr_guide_buildingPages_30" text="- To change what happens to an output, select it and press Cycle Output." />
+        <text name="dr_guide_buildingPages_31" text="- Advanced opens the per-product routing controls (see Advanced Inputs and Outputs)." />
+        <text name="dr_guide_buildingPages_32" text="- Sell Timing appears for an output in a selling mode." />
+        <text name="dr_guide_buildingPages_33" text="Changing a production output or toggling a production line here is the same setting as the vanilla production screen's output toggle, so either place updates the other - and the vanilla screen shows the mod's mode names too." />
+
+        <text name="dr_guide_outputModes_title" text="Output Modes" />
+        <text name="dr_guide_outputModes_1" text="## Which modes each building type offers" />
+        <text name="dr_guide_outputModes_2" text="- Productions - Distribute, Store, Hold Pallets, Hold Internal, Sell, Market Supply." />
+        <text name="dr_guide_outputModes_3" text="- Silos and storage - Distribute, Move To, Hold, Sell, Market Supply." />
+        <text name="dr_guide_outputModes_4" text="- Animal Husbandry - Distribute, Store, Hold Pallets, Hold Internal, Sell, Market Supply." />
+        <text name="dr_guide_outputModes_5" text="- Markets - Sell or Hold only." />
+        <text name="dr_guide_outputModes_6" text="Not every mode is offered all the time. If a mode has no possible end point it is hidden rather than shown as a dead end. E.g. with no market placed, or no market that accepts the product, Market Supply does not appear in the list." />
+        <text name="dr_guide_outputModes_7" text="## The modes" />
+        <text name="dr_guide_outputModes_8" text="- Distribute - feed nearby productions and animals that need this product, nearest source first, up to what their recipes call for. Surplus stays put." />
+        <text name="dr_guide_outputModes_9" text="- Store - move the output into any storage building that accepts it, nearest first, spilling to the next when one fills. Productions and Animal Husbandry." />
+        <text name="dr_guide_outputModes_10" text="- Move To - move product from one storage building to another that accepts it. Storage buildings only. See the warning below." />
+        <text name="dr_guide_outputModes_11" text="- Hold Internal - keep the output as bulk inside the building; no pallets spawn on their own and you spawn them yourself on demand (see Pallet Spawning)." />
+        <text name="dr_guide_outputModes_12" text="- Hold Pallets - keep the output where it is, as pallets, and let it accumulate." />
+        <text name="dr_guide_outputModes_13" text="- Sell - sell the product, either immediately or at the best price (see Sell Timing)." />
+        <text name="dr_guide_outputModes_14" text="- Market Supply - transfer the output to a market or kiosk you have placed, where it sells at a premium." />
+        <text name="dr_guide_outputModes_15" text="## Combined modes" />
+        <text name="dr_guide_outputModes_16" text="- Distribute + Sell - feed all demand first, then sell what is left." />
+        <text name="dr_guide_outputModes_17" text="- Distribute + Store - feed demand first, then move the surplus into your storage instead of selling it. Productions and Animal Husbandry only." />
+        <text name="dr_guide_outputModes_18" text="- Distribute + Move To - feed demand first, then move the surplus to your chosen storage. Storage buildings only." />
+        <text name="dr_guide_outputModes_19" text="- Distribute + Market Supply - feed demand first, then transfer the surplus to your market or kiosk." />
+        <text name="dr_guide_outputModes_20" text="In every combined mode the first half genuinely happens first. Nothing is sold, stored or shipped to a market until consumers have been offered it." />
+        <text name="dr_guide_outputModes_21" text="Move To is only offered if advanced routing is activated (See Advanced Routing)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Advanced Routing &amp; Rules" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Advanced Routing" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Advanced routing lets you control every individual input and output of every building. It is switched on by default and can be turned off in Settings." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Advanced Inputs" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Select any incoming product and press Advanced Inputs." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Block / Allow - stop this building from ever receiving that product." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Block All / Allow All - flip every input at once." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Max In - the most of that product the building may hold. This matters for pooled storage, where several products share one tank. A pool is first come, first served: by default every product may use all of it, exactly as the base game behaves. That means a busy product can fill a silo and leave little room for the others - so set Max In on that product to cap it and hold space back for the rest. Caps are independent and do not have to add up to 100 percent; anything you leave alone stays unlimited." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Target - a fill target for that product. Instead of delivering only what the next cycle needs, the network works towards this level and then holds it - in effect an input reserve." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Advanced Outputs" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Select the outgoing product you want to adjust and press Advanced Outputs." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Block / Allow - never send this output to that destination." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Prioritise - rank the demands and storage options for this output. This overrides the default nearest-first-then-spill behaviour." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Reserve (+/-) - keep this many litres in the building at all times. Nothing - distributing, selling, storing, moving or market supply - may take the product below this figure." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### &quot;Move To&quot; Output Mode" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- This mode is only available as an output mode when Advanced Routing is turned on and the building is type: Storage" />
+        <text name="dr_guide_advancedRoutingRules_16" text="- This mode allows you to move the materials in that storage to another storage that supports it" />
+        <text name="dr_guide_advancedRoutingRules_17" text="- By default when you activate this every possible destination is blocked to avoid accidental creation of product loops" />
+        <text name="dr_guide_advancedRoutingRules_18" text="- To Active this, select any output, and press Advanced Outputs. You will see a list of supporting destinations on the right (All Blocked) and you can allow buildings as needed. All other advanced output functions are also available for this Move (Prioritise, Reserve etc)." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- By Default move to will try to fill the building as much as possible in each cycle. You can set a &quot;Max In&quot; on the receiving buildings inputs to ensure you have space to move multiple products (rather than just completely filling the silo with the first product)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Before switching Advanced routing off" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Every advanced setting you have made is erased, not merely ignored - all blocks, priorities, reserves, Max In values and targets. Turning Advanced routing back on later gives you a clean slate, so you will need to set it all up again." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Advanced Rules" />
+        <text name="dr_guide_advancedRoutingRules_23" text="These advanced rules apply whether or not Advanced Routing is on, seasonal harvest reserve and AutWater can be turned on/off in settings if desired." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Sell Modes" />
+        <text name="dr_guide_advancedRoutingRules_25" text="For any output in a selling mode you can choose to sell immediately or to wait for the best price. Waiting means the product accumulates in the building until the peak arrives, so make sure there is room for it." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Seasonal harvest reserve" />
+        <text name="dr_guide_advancedRoutingRules_27" text="Switched OFF by default. When you turn it on, an output that is an annual harvest crop will keep roughly a year's worth back to feed your own productions and sell only the surplus. Grass and other crops that regrow through the year keep three months instead. Until the mod has seen a crop harvested it does not know when the next harvest is due, so it falls back to the Reserve months setting." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### AutoWater" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Water is supplied automatically to any building that needs it, from the nearest water source, while Auto-Water is on. If there is no placed water source, the system will source it from the nearest body of water (note that if the nearest body of water is distant the distribution cost will be high)" />
+
+        <text name="dr_guide_overviewTab_title" text="Overview Tab" />
+        <text name="dr_guide_overviewTab_1" text="The Overview tab puts the entire network in one table: every enrolled building, and every product going into or out of it. It is the place to look when you want to know what is actually happening rather than what a single building is set to." />
+        <text name="dr_guide_overviewTab_2" text="Each product is tagged (In), (Out) or (In/Out) so you can see at a glance which side of the building it sits on. Silos and sheds are In/Out for everything, since they both receive and supply." />
+        <text name="dr_guide_overviewTab_3" text="## The four selectors" />
+        <text name="dr_guide_overviewTab_4" text="- Filter by - Nothing (show all), Building, Product, or End product (full chain)." />
+        <text name="dr_guide_overviewTab_5" text="- Show - picks which building or product the filter applies to." />
+        <text name="dr_guide_overviewTab_6" text="- Timescale - Hour, Month or Year, as on the building tabs." />
+        <text name="dr_guide_overviewTab_7" text="- Grouping - Off shows one row per building; On combines buildings of the same type into a single summed row, labelled for example &quot;Bakery x2&quot;." />
+        <text name="dr_guide_overviewTab_8" text="End product (full chain) is the most useful of these. Pick a finished product such as cake and the table shows every building and every intermediate product that feeds it, ordered from the finished item back down the chain. It is the quickest way to find the bottleneck or the oversupply in a production line." />
+        <text name="dr_guide_overviewTab_9" text="## The columns" />
+        <text name="dr_guide_overviewTab_10" text="- RECEIVED - delivered to this building by Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- LOADED - put into this building by anything that is NOT Distribution Redux: you with a trailer, a bale, an AI helper, another mod." />
+        <text name="dr_guide_overviewTab_12" text="- CONSUMED (EXP.) - used up, with the expected figure in brackets." />
+        <text name="dr_guide_overviewTab_13" text="- UNLOADED - taken out of this building by anything that is not Distribution Redux, including a pallet you drive away." />
+        <text name="dr_guide_overviewTab_14" text="- HELD (CAP) - what is in the building right now, with capacity. Never rescoped by Timescale." />
+        <text name="dr_guide_overviewTab_15" text="- PRODUCED (EXP.) - made by this building, with the expected figure in brackets." />
+        <text name="dr_guide_overviewTab_16" text="- DISTRIBUTED - delivered out to consumers." />
+        <text name="dr_guide_overviewTab_17" text="- STORED/MOVED - sent to storage, or moved to another store." />
+        <text name="dr_guide_overviewTab_18" text="- SOLD - sold, whether directly or through a market." />
+        <text name="dr_guide_overviewTab_19" text="- DISTR. COST - what the haulage for this building's deliveries cost. Charged to the sending building only, so the column adds up to the money actually spent rather than counting each delivery twice." />
+        <text name="dr_guide_overviewTab_20" text="## The expected figures and their colours" />
+        <text name="dr_guide_overviewTab_21" text="CONSUMED and PRODUCED carry the expected amount in brackets, worked out from the recipes of the production lines that are switched on. The figure is coloured green when it is at or very near target, orange when it is slightly short, and red when it is well short. Only productions have a recipe, so animal husbandry and silo rows show a plain figure with no target rather than an invented one." />
+        <text name="dr_guide_overviewTab_22" text="A red PRODUCED figure is the fastest way to spot a starved line." />
+        <text name="dr_guide_overviewTab_23" text="## Show Settings" />
+        <text name="dr_guide_overviewTab_24" text="At the bottom of the page you have a button to switch between Show Flows and Show Settings. If you have a production line blocked you can quickly switch to the Show Settings page to see what setting might be blocking it." />
+        <text name="dr_guide_overviewTab_25" text="Double-Clicking on a line in either view will take you directly to that buildings page." />
+
+        <text name="dr_guide_palletManagement_title" text="Pallet Management" />
+        <text name="dr_guide_palletManagement_1" text="Many outputs are delivered on pallets - boards, planks, vegetables in crates, eggs, wool and so on. To ensure Distribution Redux operates as expected, how pallets work has been completely rewritten " />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux will take into account both product held internally in the building as well as any pallet that is on the buildings pallet spawner for both informational displays AND Output Modes. Distribution will always pull from the pallet spawner first and then the internal Storage. If the pallet spawner is blocked product will accumulate in the buildings own internal storage and distribute from there. A pallet removed from the spawner manually is immediately removed from the buildings total." />
+        <text name="dr_guide_palletManagement_3" text="Buildings without a proper pallet pad in their model - some modded spawners, and a few beehives - fall back to a simple nearest-building rule instead." />
+        <text name="dr_guide_palletManagement_4" text="## Spawning by hand" />
+        <text name="dr_guide_palletManagement_5" text="- Set the output to Hold Internal. Once it holds at least one full pallet's worth, a Spawn Pallets button appears, both on the Productions tab and on the base-game production screen. Press it to open the spawn window." />
+        <text name="dr_guide_palletManagement_6" text="- Type - the pallet type. If the output supports only one it is shown for reference; if it supports several, use the arrows to choose." />
+        <text name="dr_guide_palletManagement_7" text="- Quantity - how many to spawn. The arrows step by one, the -10 / +10 buttons jump in tens, and the total is capped by the stock you hold." />
+        <text name="dr_guide_palletManagement_8" text="- Spawn drops that many filled pallets at the building's pallet point and removes the matching stock. Cancel closes without spawning." />
+        <text name="dr_guide_palletManagement_9" text="The button only appears for an output on Hold Internal holding at least one full pallet's worth - below that there is nothing to spawn. The building must also have a pallet spawn point in its model, which most palletising buildings do. In multiplayer the host performs the spawn, so the pallets appear for everybody." />
+        <text name="dr_guide_palletManagement_10" text="## Pallets from animal pens" />
+        <text name="dr_guide_palletManagement_11" text="In the default game animal pens spawn a pallet and load it with what is in the internal storage every hour regardless of whether there is enough for a full pallet or not (unlike productions). To keep everything consistent by default animal husbandries have been changed to operate the same as productions. This can be changed in the settings to revert back to base game mode, but this may impact on distribution and distribution tracking data (Not Recommended)" />
+        <text name="dr_guide_palletManagement_12" text="There is also an option in the same setting to never spawn pallets. This will prevent pallets from ever spawning and just utilise the buildings internal storage to distribute." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Other Changes to Base Game Mechanics" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Bunker Silos" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- When opening a bunker silo, you now only need to hit R and the mod will remove the entire cover off the silo (no more partial covers that can't be removed)" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- Bunker Silos expect you to create the output by loading material in, covering it, waiting for it to ferment, then uncovering it. As such Distribution Redux only shows the output table and options, and will only show stock once the material is uncovered." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Manure Heaps and Slurry pits" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Manure Heaps and slurry pits can now be placed anywhere on the map, and DO NOT auto-attach to an animal husbandry. To move material from an animal husbandry to these objects, place it, and on the barn select &quot;Store&quot; as the output mode. Manure and slurry will move to those buildings just like any other output." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Silo Extensions" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Silo Extensions have been extensively rewritten and now operate differently to base game. Silo Extension can now only be placed within 50m of an existing silo, heap or pit and ONLY add storage space to that buidling." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Markets Manual Tipping" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- You can still manually tip/drop off products at your own markets/stalls. Rather than just sell immediately as in base game these products will respect the output mode set on the market. " />
+
+        <text name="dr_guide_settings_title" text="Settings" />
+        <text name="dr_guide_settings_1" text="Global settings live on the Settings tab. They are saved with your SaveGame and synced in multiplayer by the host. Per-building choices always override these globals for that building." />
+        <text name="dr_guide_settings_2" text="## The options" />
+        <text name="dr_guide_settings_3" text="- Listed in the order they appear on the tab." />
+        <text name="dr_guide_settings_4" text="- Scope - Range (whole farm) or Proximity (within a radius)." />
+        <text name="dr_guide_settings_5" text="- Animal Husbandry - include or exclude barns, coops, pens and beehives." />
+        <text name="dr_guide_settings_6" text="- Silos &amp; Pallet Storage - include or exclude bulk silos, pallet and bale sheds, and manure and slurry pits." />
+        <text name="dr_guide_settings_7" text="- Markets &amp; Kiosks - include or exclude your markets and kiosks." />
+        <text name="dr_guide_settings_8" text="- Advanced routing - master switch for Advanced Inputs and Advanced Outputs. Off also removes Move To and erases every advanced setting (see Advanced Inputs and Outputs)." />
+        <text name="dr_guide_settings_9" text="- Proximity radius - how far a source reaches in Proximity scope. Default 50 m." />
+        <text name="dr_guide_settings_10" text="- Consumer buffer - hours of feedstock topped up at each consumer per cycle. Default 2." />
+        <text name="dr_guide_settings_11" text="- Selling - master on / off for all selling. Off means nothing is ever sold, whatever individual outputs are set to." />
+        <text name="dr_guide_settings_12" text="- Auto-Water - automatically supply water to buildings that consume it." />
+        <text name="dr_guide_settings_13" text="- Distribution cost - whether haulage is charged at all." />
+        <text name="dr_guide_settings_14" text="- Cost rate - the base charge per link per hour. Default 10." />
+        <text name="dr_guide_settings_15" text="- Cost distance - the distance increment the rate is multiplied by. Default 50 m." />
+        <text name="dr_guide_settings_16" text="- Seasonal harvest reserve - keep enough feedstock to last until the next harvest, selling only the surplus. Off by default." />
+        <text name="dr_guide_settings_17" text="- Reserve months (until learned) - how many months to hold back before the mod has learned a crop's harvest window. Default 13." />
+        <text name="dr_guide_settings_18" text="- Sell at best price - master on / off for best-price selling. Off means everything sells immediately." />
+        <text name="dr_guide_settings_19" text="- Default sell timing - what a new output uses when you have not set it: wait for the peak, or sell immediately." />
+        <text name="dr_guide_settings_20" text="- Pallet Spawning - Three options, default game (Spawn partial pallets), Spawn full pallets only (DEFAULT) and Never Spawn Pallets." />
+        <text name="dr_guide_settings_21" text="- Menu Refresh Rate - Can be adjusted if you are experiencing lag or stuttering on the UI. Manual will activate a refresh button you can use to refresh the UI." />
+        <text name="dr_guide_settings_22" text="- Debug logging - write detailed activity to log.txt. Leave off for a quieter log." />
+
+        <text name="dr_guide_support_title" text="Support" />
+        <text name="dr_guide_support_1" text="## Troubleshooting" />
+        <text name="dr_guide_support_2" text="- A building is not showing up. Check Scope and the group toggles. Proximity only reaches within the radius, and a building whose group is switched off is removed from the network and its tab hidden." />
+        <text name="dr_guide_support_3" text="- Nothing is being delivered. Make sure the source is set to a Distribute mode rather than Hold, the consumer's production line is switched on, and the two are within reach for the current scope." />
+        <text name="dr_guide_support_4" text="- A Move To output is not moving anything. Move To starts with every destination blocked. Open Advanced Outputs and activate the destination you want. If a destination shows &quot;Active - Invalid&quot; in red, activating it would create a loop." />
+        <text name="dr_guide_support_5" text="- Something arrived but did not sell this hour. That is intended. Product that has just arrived waits one pass so consumers get first refusal." />
+        <text name="dr_guide_support_6" text="- An animal pen is holding its eggs or wool. With &quot;Whole pallets from pens&quot; on, a pen accumulates until it has a full pallet before releasing one. Consumers can still draw on the stock while it fills; selling and storing wait for the pallet." />
+        <text name="dr_guide_support_7" text="- A factory is not getting water. Water is supplied automatically while Auto-Water is on; if a water-input plant looks starved, confirm the setting." />
+        <text name="dr_guide_support_8" text="- No prompt at a building. The left-bracket prompt only shows for buildings that are part of the network. If you excluded that group in Settings, the prompt is gone by design." />
+        <text name="dr_guide_support_9" text="- The mod is not behaving as expected. Do not run this alongside other distribution-overhaul mods - they hook the same system and will fight. The mod works with base-game buildings and with modded buildings that follow the standard GIANTS schema; some modded buildings may behave differently and may impact this mod." />
+        <text name="dr_guide_support_10" text="## Guides and overviews" />
+        <text name="dr_guide_support_11" text="Overviews and guides are on my YouTube channel, @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Bug reporting" />
+        <text name="dr_guide_support_13" text="Bugs, feature requests and mod compatibility requests can be raised as a ticket on my GitHub repository:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Changelog" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Numerous Bug Fixes (see GitHub for full details)." />
+        <text name="dr_guide_changelog_3" text="2. Numerous QoL Additions (see GitHub for full details)." />
+        <text name="dr_guide_changelog_4" text="3. Compatibility added for many mods, and the code strengthened to improve mod compatibility overall (see GitHub for full details)." />
+        <text name="dr_guide_changelog_5" text="4. Added an Overview tab that allows you to see all distribution activity, and distribution settings, for all buildings in one place (includes filters, and can be set to show all sources and productions contributing to a specific end product)" />
+        <text name="dr_guide_changelog_6" text="5. Added Advanced Input and Output management (block, prioritise, reserve stock, fill target, max in)." />
+        <text name="dr_guide_changelog_7" text="6. Added the ability to move and sort product between storages (i.e. Silos, Pallet Stores etc) " />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Renaming buildings - every building in the distribution network can now be given a custom name from the base-game construction menu. The game only allows this on some buildings by default; Distribution Redux enables it for all of its buildings (silos, sheds, pits and markets included). The mod then uses your name everywhere in this menu, with the original building name shown underneath it as a reference, so a farm with eight identical greenhouses is finally readable." />
+        <text name="dr_guide_changelog_10" text="2. Manure Heap / Slurry Pit product fix - each was listing the other's product as an output. The Manure Heap now shows only Manure, and the Slurry Pit only Slurry." />
+        <text name="dr_guide_changelog_11" text="3. Manure Heap / Slurry Pit incoming fix - neither showed an incoming product. They now list what actually flows into them (manure and slurry respectively)." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. UI improvements and a consistency pass, including scroll bars, repositioned tables, and the value of products sold added to the sold column." />
+        <text name="dr_guide_changelog_14" text="2. Added Markets and Kiosks to the distribution system - all buildings now have a Market Supply option to route their output to a market you have placed. Items sold through your market get a 20% price bonus, although selling in bulk reduces the price you get, just like the base game." />
+        <text name="dr_guide_changelog_15" text="3. Sell at Best Price fix - with no pricing history the system sold earlier than expected. It now falls back to the in-game price graph until it has gathered enough of its own data." />
+        <text name="dr_guide_changelog_16" text="4. Added Hold Internal mode and manual pallet spawning - palletisable outputs can be kept as bulk stock instead of auto-spawning pallets, then spawned by hand through a spawn window where you pick the pallet type and quantity. Available from both the Productions tab and the base-game production screen." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Added the ability to specify whether goods should sell immediately or once they hit best price." />
+        <text name="dr_guide_changelog_19" text="2. Completely rebuilt UI that breaks out distribution types and consolidates the settings and help guide into the menu." />
+        <text name="dr_guide_changelog_20" text="3. Fixes to silo extensions so they work in a consistent manner. An extension must now be placed within the vicinity of a matching silo type; all distribution is managed in the primary silo and the extension simply adds storage to it." />
+        <text name="dr_guide_changelog_21" text="4. Pallet and bale sheds now display all active pallets in the network so they can be pre-configured before items arrive. Added a reserve function that sells pallets (least valuable first) to keep space free for the next cycle - bypassed if another pallet shed has space, in which case pallets are moved there instead." />
+        <text name="dr_guide_changelog_22" text="5. Pallet shed interaction fixed: look at the loading-point icon in-game to open that building's distribution page directly." />
+        <text name="dr_guide_changelog_23" text="6. Fixed a small amount of output being left in the source after distribution (a timing issue)." />
+        <text name="dr_guide_changelog_24" text="7. Biogas plant fixed: methane and electrical charge sales now take game difficulty into account, and digestate now properly registers as Biogas Plant income on the finance sheet." />
+        <text name="dr_guide_changelog_25" text="8. Settings reworked to be more granular: you can now include or exclude silos / pallet sheds, and include or exclude animal husbandry buildings. Productions always register and participate in distribution, just like the base game." />
+        <text name="dr_guide_changelog_26" text="9. Change in mode titles: Hold now holds items in the building (used to be &quot;Stored&quot;); Store moves items offsite when storage is available." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Pre-release." />
+
+        <!-- ============ end USER GUIDE ============ -->
+    </texts>
+</l10n>

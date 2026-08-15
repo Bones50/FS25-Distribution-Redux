@@ -45,7 +45,23 @@ function DistributionSettingsPage:onGuiSetupFinished()
         local element = self.settingElements[id] or self[id]
         if element ~= nil and element.setTexts ~= nil then
             self.settingElements[id] = element
-            element:setTexts(def.strings)
+            -- Value labels come from l10n by CONVENTION: entry N of def.strings is key
+            -- "dr_set_<id>_vN". Convention rather than a parallel array of keys so the two
+            -- can never drift apart -- a misaligned array would relabel options silently,
+            -- and the option ORDER is load-bearing (it indexes def.values, and the INDEX is
+            -- what the save file and the multiplayer settings event carry, not the label).
+            -- def.strings stays the English fallback, so with no translation installed this
+            -- produces byte-identical text to before.
+            -- The row's TITLE and TOOLTIP are not set here: they live in the XML as
+            -- $l10n_dr_set_<id> / _tt and the engine resolves them at load.
+            local labels = def.strings
+            if SmartDistribution ~= nil and SmartDistribution.l10n ~= nil then
+                labels = {}
+                for i = 1, #def.strings do
+                    labels[i] = SmartDistribution.l10n(string.format("dr_set_%s_v%d", id, i), def.strings[i])
+                end
+            end
+            element:setTexts(labels)
             if DistributionSettings._optionById ~= nil then
                 DistributionSettings._optionById[id] = element
             end

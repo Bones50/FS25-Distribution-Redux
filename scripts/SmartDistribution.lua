@@ -31,6 +31,151 @@
 SmartDistribution = {}
 SmartDistribution.MOD_NAME = g_currentModName
 
+-- ---- localisation ----------------------------------------------------------
+-- THE one place a player-facing string becomes text from Lua. `key` names an entry
+-- in translations/translation_<lang>.xml; `fallback` is the English literal that was
+-- hardcoded before l10n existed.
+--
+-- FALLBACK IS THE POINT, not politeness. A missing key, a partial translation, a
+-- language file that fails to parse, or an l10n system that is not up yet all
+-- degrade to exactly the string the mod shipped with before -- never to a raw key
+-- on screen. That is what makes it safe to translate incrementally.
+--
+-- A FIELD, never a `local function`: the main chunk sits at the 200-local ceiling
+-- and one more local is a fatal compile error (CLAUDE.md 1.1).
+--
+-- The SECOND ARGUMENT is the mod's own l10n namespace and is not optional. GUI XML
+-- does not need it -- TextElement/MultiTextOptionElement derive customEnvironment
+-- from the XML file's own path, so $l10n_ in gui/*.xml resolves here automatically
+-- -- but a Lua caller carries no such context and would otherwise look the key up
+-- in the BASE GAME's table, miss, and silently fall back for every string.
+--
+-- Declared HERE, at the top of the file, deliberately: it is called from other
+-- files during GUI setup, and anything that resolves a name at load time must not
+-- depend on a local declared further down (the trap in CLAUDE.md 5.44 / 5.57,
+-- which luac -p does not catch).
+function SmartDistribution.l10n(key, fallback)
+    if key == nil then return fallback end
+    if g_i18n ~= nil and g_i18n.hasText ~= nil and g_i18n.getText ~= nil then
+        local ok, has = pcall(g_i18n.hasText, g_i18n, key, SmartDistribution.MOD_NAME)
+        if ok and has then
+            local ok2, text = pcall(g_i18n.getText, g_i18n, key, SmartDistribution.MOD_NAME)
+            -- "" is a real miss, not a translation choosing to say nothing.
+            if ok2 and text ~= nil and text ~= "" then return text end
+        end
+    end
+    return fallback
+end
+
+-- ---- resolution-aware layout widening (CLAUDE.md 6.15) ---------------------
+-- On a display wider than 16:9 the game lays the menu out in a 16:9 box: every
+-- HORIZONTAL px is multiplied by g_aspectScaleX ((16/9)/screenAspect, measured
+-- 0.7442 on 3440x1440), while g_aspectScaleY is 1. That is why a 24x24px icon
+-- renders square -- and it is also why a third of the width goes unused.
+--
+-- This widens DR's DESIGN units by the reciprocal, so the layout fills the screen
+-- AFTER the engine's scaling. The scaling itself is left alone deliberately: defeat
+-- it and every icon stretches into an ellipse.
+--
+-- SAFE FOR 16:9 BY CONSTRUCTION: there g_aspectScaleX is exactly 1, so the factor is
+-- 1 and every number is untouched. The >= 1 test also covers 16:10 and anything
+-- NARROWER than 16:9, where the reciprocal would SHRINK the tables.
+--
+-- The knob is a DIRECT TARGET rather than a multiplier, because a multiplier could not be
+-- reasoned about without doing this arithmetic by hand every time:
+--   the widest table is 1480 of a 1920px design, so it occupies 1480/1920 = 0.771 of the
+--   screen on 16:9, and THAT is what a 16:9 player sees. Setting the target to 0.771 here
+--   reproduces 16:9 proportions exactly; anything higher uses width a 16:9 screen has not got.
+-- TUNING, measured on a 3440x1440 rather than predicted -- the content is centred, but NOT on
+-- the page centre as first assumed, so the usable ceiling is lower than the arithmetic suggests:
+--   0.771  reproduces 16:9 exactly. Correct, and visibly leaves width unused on an ultrawide.
+--   0.840  current. Comfortably clear of the tab strip on both sides.
+--   0.900  TOO FAR (tested): the building thumbnails butt against the tab strip with no margin.
+-- Raise in small steps and look; do not trust the centre-of-page model to predict the collision.
+-- Set to 0 to switch the feature off entirely.
+SmartDistribution.LAYOUT_TARGET_WIDTH = 0.84   -- fraction of SCREEN width the widest table takes
+SmartDistribution.LAYOUT_DESIGN_WIDTH = 1480   -- widest table in DR's GUI XML, in design px
+SmartDistribution._layoutScaling = false   -- true ONLY while DR's own PAGE files are loading
+
+-- Elements whose WIDTH must NOT be widened, because their proportions are the point.
+-- Widening these is the one way this feature can look obviously broken: a fill icon
+-- would render 43x32 instead of 32x32. Add to these lists if anything looks stretched.
+SmartDistribution.LAYOUT_KEEP_ASPECT_NAMES = {
+    assetIcon = true, fillIcon = true, productIcon = true,   -- DR's own images
+}
+SmartDistribution.LAYOUT_KEEP_ASPECT_PROFILES = {
+    fs25_menuHeaderIcon = true, fs25_menuHeaderIconBg = true, -- the tab header badge
+    fs25_multiTextOptionLeft = true, fs25_multiTextOptionRight = true, -- selector arrows
+}
+
+function SmartDistribution.layoutScaleX()
+    local target = SmartDistribution.LAYOUT_TARGET_WIDTH or 0
+    if target <= 0 then return 1 end
+    local a = g_aspectScaleX
+    if type(a) ~= "number" or a <= 0 or a >= 1 then return 1 end
+    local refW = (type(g_referenceScreenWidth) == "number" and g_referenceScreenWidth > 0)
+                 and g_referenceScreenWidth or 1920
+    -- what the widest table occupies TODAY, as a fraction of screen width
+    local base = ((SmartDistribution.LAYOUT_DESIGN_WIDTH or 1480) / refW) * a
+    if base <= 0 then return 1 end
+    return math.max(1, target / base)
+end
+
+-- Hooks the two points where a px string BECOMES a number, so anchors are computed from
+-- widened values from the start. That is what avoids re-laying-out after the fact:
+-- updateAbsolutePosition derives everything from anchorDeltas, and updateAnchorDeltas'
+-- body is stripped from the shipped source (CLAUDE.md 8.1), so mutating sizes afterwards
+-- is guesswork. Both hooks are no-ops unless _layoutScaling is set, so base-game and
+-- other mods' GUIs are never touched.
+function SmartDistribution.installLayoutWidening()
+    if SmartDistribution._layoutHooked then return end
+    if GuiUtils == nil or GuiElement == nil then return end
+    SmartDistribution._layoutHooked = true
+
+    -- POSITION (also margin / hotspot / textOffset): x is every ODD index. Always safe to
+    -- scale -- moving an element cannot distort it, so icons move with the layout as they should.
+    local origScreen = GuiUtils.getNormalizedScreenValues
+    GuiUtils.getNormalizedScreenValues = function(...)
+        local v = origScreen(...)
+        if SmartDistribution._layoutScaling and type(v) == "table" then
+            local f = SmartDistribution.layoutScaleX()
+            if f > 1 then
+                for i = 1, #v, 2 do
+                    if type(v[i]) == "number" then v[i] = v[i] * f end
+                end
+            end
+        end
+        return v
+    end
+
+    -- SIZE. Hooked at resolveSizeString rather than at GuiUtils.getNormalizedValue because
+    -- only here is the ELEMENT in hand, and the decision is per element: text cells and
+    -- layout boxes widen, images must not. textSize is untouched either way -- it resolves
+    -- through getNormalizedYValue, a different function.
+    local origResolve = GuiElement.resolveSizeString
+    GuiElement.resolveSizeString = function(self, ...)
+        origResolve(self, ...)
+        if not SmartDistribution._layoutScaling then return end
+        local f = SmartDistribution.layoutScaleX()
+        if f <= 1 then return end
+        if self.name ~= nil and SmartDistribution.LAYOUT_KEEP_ASPECT_NAMES[self.name] then return end
+        if self.profile ~= nil and SmartDistribution.LAYOUT_KEEP_ASPECT_PROFILES[self.profile] then return end
+        -- A PERCENTAGE width is resolved FROM THE PARENT, which this has already widened --
+        -- scaling it again would compound down the tree (a 100% cell inside a 100% row inside
+        -- a widened list would come out 1.34^3). Only literal px widths are scaled.
+        local xStr = self.widthStr
+        if xStr == nil and type(self.sizeStr) == "string" then
+            local sp = self.sizeStr:find(" ")
+            xStr = (sp ~= nil) and self.sizeStr:sub(1, sp - 1) or self.sizeStr
+        end
+        if type(xStr) == "string" and xStr:find("%%") ~= nil then return end
+        if type(self.size) == "table" and type(self.size[1]) == "number" then
+            self.size[1] = self.size[1] * f
+            if self.updateAnchorDeltas ~= nil then self:updateAnchorDeltas() end
+        end
+    end
+end
+
 local INF = math.huge
 
 -- ---- enums -----------------------------------------------------------------
@@ -1288,7 +1433,12 @@ local function getRawStorages(p, ft)
     if heapStore ~= nil then result[#result + 1] = heapStore end
     for _, s in ipairs(parentPitExtensionStorages(p)) do result[#result + 1] = s end  -- folded manure-heap extensions
     if p.spec_silo ~= nil and p.spec_silo.storages ~= nil then
-        for _, s in ipairs(p.spec_silo.storages) do result[#result+1] = s end
+        -- A perFarm silo holds ONE STORAGE PER FARM (see usableStorage); take only this farm's, or every
+        -- figure would be summed across all of them. No-op on an ordinary silo.
+        local mine = SmartDistribution._playerFarmId()
+        for _, s in ipairs(p.spec_silo.storages) do
+            if SmartDistribution.usableStorage(p, s, mine) then result[#result+1] = s end
+        end
     end
     for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
@@ -1304,7 +1454,11 @@ end
 local function getAllStorages(p)
     local result = {}
     if p.spec_silo ~= nil and p.spec_silo.storages ~= nil then
-        for _, s in ipairs(p.spec_silo.storages) do result[#result+1] = s end
+        -- see getRawStorages: a perFarm silo's other farms' storages are not ours to read or write
+        local mine = SmartDistribution._playerFarmId()
+        for _, s in ipairs(p.spec_silo.storages) do
+            if SmartDistribution.usableStorage(p, s, mine) then result[#result+1] = s end
+        end
     end
     for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
@@ -1658,6 +1812,11 @@ local function resolveMode(p, ft)
     local uid = getUid(p)
     local a = uid ~= nil and S.assets[uid] or nil
     if a ~= nil and a[ft] ~= nil and a[ft] ~= MODE.INHERIT then return a[ft] end
+    -- PUBLIC MAP STORAGE DEFAULTS TO HOLD, not to the global default. Storing in one COSTS money
+    -- (costsPerFillLevelAndDay), so turning the setting on must never start moving product into a
+    -- building the player is charged rent for -- it appears in the network, inert, until configured.
+    -- An explicit per-product choice above still wins, so a configured silo behaves normally.
+    if SmartDistribution.isMapStorage ~= nil and SmartDistribution.isMapStorage(p) then return MODE.HOLD end
     return classField(getAssetClass(p), "mode") or S.global.mode
 end
 
@@ -1717,7 +1876,7 @@ function SmartDistribution._seedMoveToBlocks(placeable, ft, mode)
         -- the player never approved the moment it had room again -- defeating the loop-safe default this
         -- whole function exists to provide. See storeToTargetPossible.
         if tp ~= placeable and tp.rootNode ~= nil and isEnrolled(tp)
-           and SmartDistribution._ownerFarmId(tp) == myFarm
+           and SmartDistribution._farmCanUse(tp, myFarm)
            and SmartDistribution.storeToTargetPossible(form, tp, ft) then
             local du = getUid(tp)
             if du ~= nil then SmartDistribution.setDestBlocked(srcUid, ft, du, true) end
@@ -1826,7 +1985,10 @@ end
 function SmartDistribution.sellTimingLabel(placeable, ft, mode)
     mode = mode or resolveMode(placeable, ft)
     if mode ~= MODE.SELL and mode ~= MODE.DISTRIBUTE_SELL then return nil end
-    return SmartDistribution.resolveBestPrice(placeable, ft, mode) and "Best price" or "Immediate"
+    if SmartDistribution.resolveBestPrice(placeable, ft, mode) then
+        return SmartDistribution.l10n("dr_timing_bestPrice", "Best price")
+    end
+    return SmartDistribution.l10n("dr_timing_immediate", "Immediate")
 end
 
 -- UI helper: flip a sell output between best-price and immediate (writes an explicit
@@ -2167,7 +2329,8 @@ local WATER_SOURCE_PROXY = {
     setFillLevel = function(_, level, ft) end,
 }
 -- stand-in source placeable for open water / fallback (billing + ledger only)
-local AMBIENT_WATER_PLACEABLE = { uniqueId = "sd_ambient_water", getName = function() return "Water source" end }
+local AMBIENT_WATER_PLACEABLE = { uniqueId = "sd_ambient_water",
+    getName = function() return SmartDistribution.l10n("dr_label_waterSource", "Water source") end }
 
 -- open-water search tuning
 local OPEN_WATER_MAX  = 225      -- metres: how far out to look for open water
@@ -2288,8 +2451,7 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
     for _, p in ipairs(ps.placeables) do
         if p ~= consumerPlaceable and p.rootNode ~= nil and canSourceDistribute(p, ft)
            and not SmartDistribution.isProductionInputOnly(p, ft) then
-            local pFarm = p.ownerFarmId
-            if pFarm == nil or farmId == nil or pFarm == farmId then
+            if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
                 local d2 = dx*dx + dz*dz
@@ -2512,12 +2674,12 @@ function SmartDistribution.formatVolume(v)
     local sign = (v < 0 and n > 0) and "-" or ""
     local s, unit
     if n < 1000 then
-        s, unit = tostring(n), " L"
+        s, unit = tostring(n), SmartDistribution.l10n("dr_unit_litre", " L")
     else
         s = string.format("%.3f", n / 1000)
         s = s:gsub("0+$", "")                                     -- drop extraneous zeros: 600.000 -> 600.
         s = s:gsub("%.$", "")                                     -- ...and the bare point it can leave
-        unit = " kL"
+        unit = SmartDistribution.l10n("dr_unit_kilolitre", " kL")
     end
     -- thousands separators on the integer part (1,234.567 kL); the decimals must not be grouped
     local int, freq = s:match("^(%d+)"), nil
@@ -2616,9 +2778,9 @@ SmartDistribution.COST_NOTIFY_COLOUR = { 1.0, 0.5, 0.0, 1.0 }   -- orange, for t
 
 function SmartDistribution.emitSummary(acc)
     if acc == nil then return end
-    if acc.biogas ~= 0 then SmartDistribution.notify("Biogas income: "     .. fmtMoney(acc.biogas)) end
-    if acc.sales  ~= 0 then SmartDistribution.notify("Product sales: "     .. fmtMoney(acc.sales))  end
-    if acc.cost   ~= 0 then SmartDistribution.notify("Distribution costs: -" .. fmtMoney(math.abs(acc.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
+    if acc.biogas ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_biogas", "Biogas income: ") .. fmtMoney(acc.biogas)) end
+    if acc.sales  ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_sales", "Product sales: ") .. fmtMoney(acc.sales))  end
+    if acc.cost   ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_distCost", "Distribution costs: -") .. fmtMoney(math.abs(acc.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
     if DistributionMoneyNotifyEvent ~= nil and DistributionMoneyNotifyEvent.broadcast ~= nil then
         DistributionMoneyNotifyEvent.broadcast(acc.biogas, acc.sales, acc.cost)   -- MP: mirror the summary to clients
     end
@@ -3375,8 +3537,7 @@ local function gatherSinks(sourcePlaceable, ft, x, z, farmId, srcReach)
     local r2 = S.global.radius * S.global.radius
     for _, p in ipairs(ps.placeables) do
         if p ~= sourcePlaceable and p.rootNode ~= nil then
-            local pFarm = p.ownerFarmId
-            if pFarm == nil or farmId == nil or pFarm == farmId then
+            if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
                 local d2 = dx*dx + dz*dz
@@ -3431,8 +3592,7 @@ function SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, srcReach)
     local r2 = S.global.radius * S.global.radius
     for _, p in ipairs(ps.placeables) do
         if p ~= asset and p.rootNode ~= nil then
-            local pFarm = p.ownerFarmId
-            if pFarm == nil or farmId == nil or pFarm == farmId then
+            if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
                 if srcReach == REACH.FARM_WIDE or (dx * dx + dz * dz) <= r2 then
@@ -3465,8 +3625,7 @@ local function gatherShedSinks(sourcePlaceable, ft, x, z, farmId, srcReach)
     local r2 = S.global.radius * S.global.radius
     for _, p in ipairs(ps.placeables) do
         if p ~= sourcePlaceable and p.rootNode ~= nil and isPalletShedSink(p, ft) then
-            local pFarm = p.ownerFarmId
-            if pFarm == nil or farmId == nil or pFarm == farmId then
+            if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
                 local d2 = dx*dx + dz*dz
@@ -3589,7 +3748,7 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
         if tp ~= p and tp.rootNode ~= nil and isEnrolled(tp)
-           and SmartDistribution._ownerFarmId(tp) == myFarm
+           and SmartDistribution._farmCanUse(tp, myFarm)
            and SmartDistribution.storeToTargetValid(form, tp, ft) then
             local du = getUid(tp)
             if du ~= nil and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
@@ -5483,7 +5642,7 @@ function SmartDistribution.networkPalletBaleFillTypes()
     local farmId = (g_currentMission.getFarmId ~= nil) and g_currentMission:getFarmId() or nil
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil and isEnrolled(p) then
-            local owned = (p.getOwnerFarmId == nil) or (farmId == nil) or (p:getOwnerFarmId() == farmId)
+            local owned = SmartDistribution._farmCanUse(p, farmId)
             if owned then
                 local pp = getProductionPoint(p)
                 if pp ~= nil then
@@ -6013,7 +6172,7 @@ function SmartDistribution._storeToPalletAmount(p, ft, farmId, bill)
     local ordered = {}
     for _, si in ipairs(cands) do
         local du = si.placeable ~= nil and getUid(si.placeable) or nil
-        if du ~= nil and SmartDistribution._ownerFarmId(si.placeable) == myFarm
+        if du ~= nil and SmartDistribution._farmCanUse(si.placeable, myFarm)
            and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
             si.rank = SmartDistribution.destRank(srcUid, ft, du)
             ordered[#ordered + 1] = si
@@ -7043,7 +7202,9 @@ end
 -- spawn callback passes (target, pallet, fillUnitIndex, fillTypeIndex); we locate the unit + fill it.)
 -- `isNew` says the spawner CREATED this pallet rather than handing back one already on the pad
 -- (PALLET_ALREADY_PRESENT, which the 5.39 redirect makes possible here). It gates the delete below.
-function SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew)
+-- `limit` (optional) caps what goes into THIS pallet, so a chain spawning an exact litre amount ends
+-- with a partial pallet instead of a full one. nil = fill it.
+function SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew, limit)
     if pp == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
     local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or 1
     local unit
@@ -7057,6 +7218,7 @@ function SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew)
     local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
     local avail  = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
     local amount = math.min(cap > 0 and cap or avail, avail)
+    if type(limit) == "number" and limit >= 0 then amount = math.min(amount, limit) end
     local added  = 0
     if amount > 0 then
         added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
@@ -7092,24 +7254,39 @@ end
 -- Spawn up to `count` filled pallets of `ft` from a production's held stock, SERIALLY: each pallet fills
 -- from + debits the storage in its load callback, then the next spawns -- so two pallets never draw the
 -- same litres. Stops early when the stock runs out. Uses the production's own base-game palletSpawner.
-function SmartDistribution.spawnPalletsFromProduction(pp, ft, count)
+-- `filename` (optional) picks a specific pallet TYPE; nil keeps the spawner's own default.
+-- `liters` (optional) is a TOTAL budget across the whole chain: each pallet takes at most its own
+-- capacity, so the last one comes out PARTIAL when the budget does not divide evenly. nil means "fill
+-- every pallet", the previous behaviour.
+function SmartDistribution.spawnPalletsFromProduction(pp, ft, count, filename, liters)
     if pp == nil or pp.palletSpawner == nil or ft == nil then return 0 end
     count = math.max(1, math.min(math.floor(count or 1), 50))
     local farmId = (pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId()) or 1
+    local budget = (type(liters) == "number" and liters > 0) and liters or nil
+    local useOwn = (filename ~= nil) and not SmartDistribution._isDefaultPalletType(pp.palletSpawner, ft, filename)
     local function spawnNext(remaining)
         if remaining <= 0 then return end
+        if budget ~= nil and budget <= 0 then return end
         if pp.getFillLevel ~= nil and (pp:getFillLevel(ft) or 0) <= 0 then return end
         -- player-driven (Spawn Pallets), so it bypasses the "never spawn" refusal -- see the husbandry twin
         local bypass = SmartDistribution._palletHookBypass
         SmartDistribution._palletHookBypass = true
+        local function onSpawned(_, pallet, statusCode)
+            -- status matters since 5.39: the redirect can hand back an EXISTING pallet, which must
+            -- never be deleted as "unfillable" when it is simply already full
+            local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
+            local put = SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew, budget)
+            if budget ~= nil then budget = budget - (put or 0) end
+            spawnNext(remaining - 1)
+        end
         pcall(function()
-            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet, statusCode)
-                -- status matters since 5.39: the redirect can hand back an EXISTING pallet, which must
-                -- never be deleted as "unfillable" when it is simply already full
-                local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
-                SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew)
-                spawnNext(remaining - 1)
-            end, pp)
+            -- A CHOSEN type goes through DR's own enqueue: spawnPallet would silently substitute the
+            -- spawner's default, and getOrSpawnPallet could top up a pallet of a DIFFERENT type already
+            -- on the pad, which is worse than wrong -- it would put the product in the wrong container.
+            if useOwn and SmartDistribution._enqueuePalletOfType(pp.palletSpawner, farmId, ft, filename, onSpawned, pp) then
+                return
+            end
+            pp.palletSpawner:spawnPallet(farmId, ft, onSpawned, pp)
         end)
         SmartDistribution._palletHookBypass = bypass
     end
@@ -7120,12 +7297,11 @@ end
 -- Read a pallet's per-unit capacity (litres) from its XML, cached by filename. Returns nil if unknown.
 -- Works off any PalletSpawner instance (productions use pp.palletSpawner; a husbandry uses its per-fill-type
 -- spec.fillTypeIndexToPalletSpawner[ft]), so both spawn paths share one capacity reader.
-function SmartDistribution._palletCapacityFromSpawner(spawner, ft)
-    if spawner == nil or ft == nil then return nil end
-    local map = spawner.fillTypeIdToPallet
-    local entry = map ~= nil and map[ft] or nil
-    local filename = entry ~= nil and entry.filename or nil
-    if filename == nil or filename == "nope" then return nil end
+-- Per-unit capacity of a pallet XML, cached by FILENAME. Reading it costs an XMLFile.load, and the type
+-- list below asks for one per candidate -- with a mod like Liftable Pallets & Bales declaring a pallet for
+-- 100 fill types that is the difference between opening the dialog instantly and stuttering.
+function SmartDistribution._palletCapacityByFilename(filename)
+    if type(filename) ~= "string" or filename == "" or filename == "nope" then return nil end
     SmartDistribution._palletCapCache = SmartDistribution._palletCapCache or {}
     local cached = SmartDistribution._palletCapCache[filename]
     if cached ~= nil then return cached or nil end                    -- false is cached "known bad"
@@ -7139,6 +7315,110 @@ function SmartDistribution._palletCapacityFromSpawner(spawner, ft)
     end)
     SmartDistribution._palletCapCache[filename] = cap or false
     return cap
+end
+
+-- Placement dimensions, also cached by filename. getPlaceAsync needs these, so a pallet definition DR
+-- builds itself must carry them exactly as PalletSpawner:loadPalletFromFilename does.
+function SmartDistribution._palletSizeByFilename(filename)
+    if type(filename) ~= "string" or filename == "" then return nil end
+    SmartDistribution._palletSizeCache = SmartDistribution._palletSizeCache or {}
+    local cached = SmartDistribution._palletSizeCache[filename]
+    if cached ~= nil then return cached or nil end
+    local size
+    pcall(function()
+        if StoreItemUtil ~= nil and StoreItemUtil.getSizeValues ~= nil then
+            size = StoreItemUtil.getSizeValues(filename, "vehicle", 0, {})
+        end
+    end)
+    SmartDistribution._palletSizeCache[filename] = size or false
+    return size
+end
+
+function SmartDistribution._palletCapacityFromSpawner(spawner, ft)
+    if spawner == nil or ft == nil then return nil end
+    local map = spawner.fillTypeIdToPallet
+    local entry = map ~= nil and map[ft] or nil
+    return SmartDistribution._palletCapacityByFilename(entry ~= nil and entry.filename or nil)
+end
+
+-- ---- pallet TYPES available for a fill type --------------------------------
+-- FS25 registers a fill type's pallet in TWO places, and reading only the first is why DR has always
+-- offered exactly one type:
+--   * fillType.pallets   -- a map of customEnvironment -> pallet filename. The base game's own entry is
+--                           keyed "VANILLA"; every mod that declares <fillType><pallet filename=".."/>
+--                           adds its own. This is the list players actually want to choose from.
+--   * spawner.fillTypeIdToPallet[ft] -- ONE pallet per fill type, last loaded wins, which a PLACEABLE's
+--                           own <pallets><pallet> block can override. Included when it differs, so a
+--                           building that specifies its own pallet still offers it.
+-- Mirrors how FS25_ProductionStorageControl builds the same list.
+--
+-- Returns a list of { filename, capacity, env, name }, deduped by filename and ordered deterministically
+-- (VANILLA first, then by environment) so the dropdown does not reshuffle under the player.
+-- A FIELD, not a local (1.1).
+function SmartDistribution.palletTypesFor(spawner, ft)
+    local out = {}
+    if ft == nil or g_fillTypeManager == nil then return out end
+    local fillType = g_fillTypeManager.indexToFillType ~= nil and g_fillTypeManager.indexToFillType[ft] or nil
+    if fillType == nil then return out end
+
+    local seen = {}
+    local function add(filename, env)
+        if type(filename) ~= "string" or filename == "" or seen[filename] then return end
+        local cap = SmartDistribution._palletCapacityByFilename(filename)
+        if cap == nil or cap <= 0 then return end          -- unreadable or zero-capacity: not offerable
+        seen[filename] = true
+        out[#out + 1] = { filename = filename, capacity = cap, env = env or "VANILLA" }
+    end
+
+    -- sdPallets is DR's own registry, captured as the fill types loaded (DistributionLimits.lua). It is
+    -- the ONLY place the alternatives survive: the engine overwrites fillType.palletFilename with
+    -- whichever declaration loaded last, so by now the others are gone from every other field.
+    if type(fillType.sdPallets) == "table" then
+        for env, filename in pairs(fillType.sdPallets) do add(filename, env) end
+    end
+    -- Production Storage Control builds the identical map under `pallets`. Read it too when present:
+    -- free redundancy if DR's own hook ever installs too late to see a declaration.
+    if type(fillType.pallets) == "table" then
+        for env, filename in pairs(fillType.pallets) do add(filename, env) end
+    end
+    add(fillType.palletFilename, "VANILLA")                 -- last resort: the surviving winner
+    local map = spawner ~= nil and spawner.fillTypeIdToPallet or nil
+    local entry = map ~= nil and map[ft] or nil
+    if entry ~= nil then add(entry.filename, "BUILDING") end
+
+    table.sort(out, function(a, b)
+        local av = (a.env == "VANILLA") and 0 or 1
+        local bv = (b.env == "VANILLA") and 0 or 1
+        if av ~= bv then return av < bv end
+        if a.env ~= b.env then return tostring(a.env) < tostring(b.env) end
+        return tostring(a.filename) < tostring(b.filename)
+    end)
+    return out
+end
+
+-- Display name for one pallet type: capacity, plus the mod it came from when that is not the base game.
+-- Two mods can declare the same capacity, so the source is what actually distinguishes them.
+function SmartDistribution.palletTypeName(t)
+    if t == nil then return "?" end
+    local volStr = SmartDistribution.formatVolume(t.capacity or 0)
+    local base = SmartDistribution.l10n("dr_spawn_palletType", "Pallet") .. " - " .. volStr
+    if t.env == nil or t.env == "VANILLA" or t.env == "BUILDING" then return base end
+    local title = t.env
+    if g_modManager ~= nil and g_modManager.getModByName ~= nil then
+        local ok, mod = pcall(g_modManager.getModByName, g_modManager, t.env)
+        if ok and mod ~= nil and mod.title ~= nil and mod.title ~= "" then title = mod.title end
+    end
+    return base .. " (" .. tostring(title) .. ")"
+end
+
+-- How many pallets of `capacity` it takes to move `held` litres: the full ones, plus ONE PARTIAL for any
+-- remainder. This is the PSC rule, and it is what lets an exact litre amount be spawned rather than only
+-- whole pallets.
+function SmartDistribution.palletCountForLiters(held, capacity)
+    if type(held) ~= "number" or type(capacity) ~= "number" or capacity <= 0 or held <= 0 then return 0 end
+    local n = math.floor(held / capacity)
+    if (held - n * capacity) >= 1 then n = n + 1 end
+    return n
 end
 function SmartDistribution.palletCapacityFor(pp, ft)
     if pp == nil then return nil end
@@ -7160,14 +7440,17 @@ end
 -- Build the list of spawn options for a production output. v1: the single pallet type the production's
 -- spawner uses; bale sizes and tree species will be appended here later. Each option is
 -- { kind, name, fillType, capacity, maxCount } where maxCount is capped by held litres / unit capacity.
+-- ONE OPTION PER AVAILABLE PALLET TYPE (was: the single type the spawner happened to hold).
+-- maxCount uses palletCountForLiters, so the LAST pallet may be partial -- that is what makes an exact
+-- litre amount spawnable instead of only whole pallets.
 function SmartDistribution.getSpawnOptions(pp, ft)
     local opts = {}
     if pp == nil or ft == nil then return opts end
     local held = (pp.getFillLevel ~= nil and pp:getFillLevel(ft)) or 0
-    local cap = SmartDistribution.palletCapacityFor(pp, ft)
-    if cap ~= nil and cap > 0 then
-        local volStr = (g_i18n ~= nil and g_i18n.formatVolume ~= nil) and g_i18n:formatVolume(cap, 0) or (tostring(math.floor(cap)) .. " l")
-        opts[#opts + 1] = { kind = "pallet", name = "Pallet - " .. volStr, fillType = ft, capacity = cap, maxCount = math.floor(held / cap) }
+    for _, t in ipairs(SmartDistribution.palletTypesFor(pp.palletSpawner, ft)) do
+        opts[#opts + 1] = { kind = "pallet", name = SmartDistribution.palletTypeName(t), fillType = ft,
+                            capacity = t.capacity, filename = t.filename,
+                            maxCount = SmartDistribution.palletCountForLiters(held, t.capacity) }
     end
     return opts
 end
@@ -7195,7 +7478,10 @@ end
 -- `isNew` says the spawner CREATED this pallet (RESULT_SUCCESS) rather than handing back an
 -- existing one it found on the pad (PALLET_ALREADY_PRESENT). It gates the delete below and
 -- nothing else -- see there for why that distinction is load-bearing.
-function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew)
+-- `limit` (optional) caps what goes into THIS pallet so an exact-litre request ends with a partial one.
+-- NOTE it does not weaken the delete-on-empty guard below: that fires on `added <= 0` -- NOTHING went in
+-- -- which a partial fill never is. A partial pallet is a legitimate result; an empty one never is.
+function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew, limit)
     local hs = p ~= nil and p.spec_husbandryPallets or nil
     if hs == nil or ft == nil or type(pallet) ~= "table" or pallet.addFillUnitFillLevel == nil then return 0 end
     if type(hs.pendingLiters) ~= "table" then return 0 end
@@ -7211,6 +7497,7 @@ function SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew)
     local cap    = (pallet.getFillUnitCapacity ~= nil and pallet:getFillUnitCapacity(unit)) or 0
     local avail  = hs.pendingLiters[ft] or 0
     local amount = math.min(cap > 0 and cap or avail, avail)
+    if type(limit) == "number" and limit >= 0 then amount = math.min(amount, limit) end
     local added  = 0
     if amount > 0 then
         added = pallet:addFillUnitFillLevel(farmId, unit, amount, ft, ToolType and ToolType.UNDEFINED or nil) or 0
@@ -7247,15 +7534,21 @@ end
 -- releaseForDemand, which is gone: demand is now served straight from the queue (drawFromQueue) and never
 -- by materialising a part-filled pallet. So every caller -- the UI button, whole-pallet spawning -- holds to
 -- the same rule, and a pallet DR releases is always a full one.
-function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count)
+function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count, filename, liters)
     local hs = p ~= nil and p.spec_husbandryPallets or nil
     if hs == nil or ft == nil or type(hs.pendingLiters) ~= "table" then return 0 end
     local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
     if spawner == nil or spawner.spawnPallet == nil then return 0 end
     count = math.max(1, math.min(math.floor(count or 1), 50))
     local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId or 1
-    local cap = SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
-    local floorL = (cap > 0 and cap or 1)
+    local budget = (type(liters) == "number" and liters > 0) and liters or nil
+    local useOwn = (filename ~= nil) and not SmartDistribution._isDefaultPalletType(spawner, ft, filename)
+    local cap = SmartDistribution._palletCapacityByFilename(filename)
+                or SmartDistribution.palletCapacityForHusbandry(p, ft) or 0
+    -- With an explicit litre budget the LAST pallet is meant to be partial, so the "wait for a full
+    -- pallet's worth" floor must not veto it -- that floor exists for the automatic release
+    -- (spawnWholePallets), not for a player asking for an exact amount.
+    local floorL = (budget ~= nil) and 1 or (cap > 0 and cap or 1)
     -- getOrSpawnPallet, NOT spawnPallet: it hands back a partly-filled pallet already standing on the
     -- pad rather than adding a second one beside it. A pen's VANILLA path always used it; DR's own
     -- release did not, so with "Whole pallets from pens" on -- where DR is the only thing spawning --
@@ -7264,18 +7557,26 @@ function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count)
     -- The status is now passed through: `isNew` gates the delete-on-unfillable inside the fill helper.
     local function spawnNext(remaining)
         if remaining <= 0 then return end
+        if budget ~= nil and budget <= 0 then return end
         if (hs.pendingLiters[ft] or 0) < floorL then return end
         -- Bypass the "never spawn" refusal: every caller of this is either the player's own Spawn
         -- Pallets button or spawnWholePallets, which is itself gated on the setting. Set across the
         -- CALL only -- the refusal decision is taken inside it, while the callback runs later (async).
         local bypass = SmartDistribution._palletHookBypass
         SmartDistribution._palletHookBypass = true
+        local function onSpawned(_, pallet, statusCode)
+            local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
+            local put = SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew, budget)
+            if budget ~= nil then budget = budget - (put or 0) end
+            spawnNext(remaining - 1)
+        end
         pcall(function()
-            spawner:getOrSpawnPallet(farmId, ft, function(_, pallet, statusCode)
-                local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
-                SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew)
-                spawnNext(remaining - 1)
-            end, p)
+            -- A chosen type must NOT go through getOrSpawnPallet: that tops up whatever pallet is
+            -- already on the pad, which may be a different type entirely.
+            if useOwn and SmartDistribution._enqueuePalletOfType(spawner, farmId, ft, filename, onSpawned, p) then
+                return
+            end
+            spawner:getOrSpawnPallet(farmId, ft, onSpawned, p)
         end)
         SmartDistribution._palletHookBypass = bypass
     end
@@ -7464,16 +7765,61 @@ end
 
 -- Spawn options for a pallet-spawner husbandry output: the single pallet type its spawner uses, maxCount
 -- capped by internally-held (pending) litres / unit capacity. Mirrors getSpawnOptions (production side).
+-- Husbandry twin of getSpawnOptions; source is the pen's internal buffer rather than a production storage.
 function SmartDistribution.getSpawnOptionsHusbandry(p, ft)
     local opts = {}
     if p == nil or ft == nil then return opts end
     local held = SmartDistribution.palletPendingLiters(p, ft)
-    local cap  = SmartDistribution.palletCapacityForHusbandry(p, ft)
-    if cap ~= nil and cap > 0 then
-        local volStr = (g_i18n ~= nil and g_i18n.formatVolume ~= nil) and g_i18n:formatVolume(cap, 0) or (tostring(math.floor(cap)) .. " l")
-        opts[#opts + 1] = { kind = "pallet", name = "Pallet - " .. volStr, fillType = ft, capacity = cap, maxCount = math.floor(held / cap) }
+    local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
+    for _, t in ipairs(SmartDistribution.palletTypesFor(spawner, ft)) do
+        opts[#opts + 1] = { kind = "pallet", name = SmartDistribution.palletTypeName(t), fillType = ft,
+                            capacity = t.capacity, filename = t.filename,
+                            maxCount = SmartDistribution.palletCountForLiters(held, t.capacity) }
     end
     return opts
+end
+
+-- ---- spawning a CHOSEN pallet type -----------------------------------------
+-- PalletSpawner:spawnPallet can only ever spawn fillTypeIdToPallet[ft] -- one pallet per fill type. To
+-- honour the player's choice DR enqueues its own pallet definition instead, which is exactly what
+-- spawnPallet does internally (`table.insert(self.spawnQueue, {pallet=..., fillType=...})` then
+-- `addUpdateable`). Same approach FS25_ProductionStorageControl takes.
+--
+-- The global pallet-cap check is REPLICATED here rather than skipped: spawnPallet opens with
+-- slotSystem:getCanAddLimitedObjects and reports PALLET_LIMITED_REACHED through the callback, and a
+-- caller's bookkeeping unwinds through that callback. Bypassing it would let DR exceed the game's own
+-- pallet limit.
+function SmartDistribution._enqueuePalletOfType(spawner, farmId, ft, filename, callback, target)
+    if spawner == nil or type(spawner.spawnQueue) ~= "table" or filename == nil then return false end
+    local cap  = SmartDistribution._palletCapacityByFilename(filename)
+    local size = SmartDistribution._palletSizeByFilename(filename)
+    if cap == nil or cap <= 0 or size == nil then return false end
+    local ss = g_currentMission ~= nil and g_currentMission.slotSystem or nil
+    if ss ~= nil and ss.getCanAddLimitedObjects ~= nil and SlotSystem ~= nil then
+        local ok, can = pcall(ss.getCanAddLimitedObjects, ss, SlotSystem.LIMITED_OBJECT_PALLET, 1)
+        if ok and can == false then
+            if type(callback) == "function" then
+                callback(target, nil, (PalletSpawner ~= nil and PalletSpawner.PALLET_LIMITED_REACHED) or 0, ft)
+            end
+            return true                                   -- handled: refused, but the callback ran
+        end
+    end
+    spawner.spawnQueue[#spawner.spawnQueue + 1] = {
+        pallet = { filename = filename, capacity = cap, size = size },
+        fillType = ft, farmId = farmId, callback = callback, callbackTarget = target,
+    }
+    if g_currentMission ~= nil and g_currentMission.addUpdateable ~= nil then
+        pcall(g_currentMission.addUpdateable, g_currentMission, spawner)
+    end
+    return true
+end
+
+-- Is `filename` the type this spawner would have produced anyway?
+function SmartDistribution._isDefaultPalletType(spawner, ft, filename)
+    if filename == nil then return true end
+    local map = spawner ~= nil and spawner.fillTypeIdToPallet or nil
+    local entry = map ~= nil and map[ft] or nil
+    return entry ~= nil and entry.filename == filename
 end
 
 -- Is a manual "Spawn Pallets" action meaningful for (asset, ft)? Requires Hold Internal AND at least one
@@ -8651,12 +8997,19 @@ local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribut
 -- anything false/nil -> the plain name. The middle case is a building that emits pallets but has pallet
 -- spawning switched off, where holding is necessarily internal and "Hold Pallets" would name the one
 -- thing it cannot do. Callers passing a bare boolean keep the old two-state behaviour.
+-- MODE_NAMES stays as the ENGLISH FALLBACK and keeps its "is this a real mode" role; the
+-- translation is looked up per call, so the language is resolved at DISPLAY time rather than
+-- at file load (l10n may not be up when this chunk runs). Keys are dr_mode_<id> off the
+-- numeric mode, which is what the save file stores -- the LABEL is never a key anywhere
+-- (audited: modeName's result is only ever displayed, never compared or indexed).
 function SmartDistribution.modeName(m, palletizable)
     if m == MODE.HOLD then
-        if palletizable == "internal" then return "Hold Internal" end
-        if palletizable then return "Hold Pallets" end
+        if palletizable == "internal" then return SmartDistribution.l10n("dr_mode_9", "Hold Internal") end
+        if palletizable then return SmartDistribution.l10n("dr_mode_holdPallets", "Hold Pallets") end
     end
-    return MODE_NAMES[m] or ("mode" .. tostring(m))
+    local fallback = MODE_NAMES[m]
+    if fallback == nil then return "mode" .. tostring(m) end
+    return SmartDistribution.l10n("dr_mode_" .. tostring(m), fallback)
 end
 
 -- Is THIS fill type one the building emits as pallets? Per fill type, not per building: a chicken coop
@@ -8981,7 +9334,7 @@ function SmartDistribution.hasStoreToEndpoint(asset, ft)
     if ps == nil then return false end
     for _, p in ipairs(ps.placeables) do
         if p ~= asset and p.rootNode ~= nil and isEnrolled(p)
-           and SmartDistribution._ownerFarmId(p) == myFarm
+           and SmartDistribution._farmCanUse(p, myFarm)
            -- STRUCTURAL, not room-based (storeToTargetPossible): "is Move To meaningful at all", not "is
            -- there space this instant". A pallet shed that was momentarily full used to make Move To look
            -- impossible, so the mode ring skipped it and the player could not even select it.
@@ -9198,8 +9551,29 @@ function SmartDistribution.installPalletSpawnerHook()
     -- Bypassed for DR's OWN spawns so the player's Spawn Pallets button still works in every mode.
     local function refuse(farmId, ft, callback, target)
         if SmartDistribution.palletSpawnAllowed() or SmartDistribution._palletHookBypass then return false end
+        local kind, placeable = SmartDistribution.palletHookKind(target)
+        -- SCOPED TO WHAT DR ACTUALLY MANAGES. `PalletSpawner` is a GLOBAL class and this hook sits on it,
+        -- so an unscoped refusal answers for EVERY pallet spawned anywhere in the world by anyone.
+        --
+        -- REPORTED IN GAME 2026-08-15: with "Pallet spawning" set to Never, buying pallets at a
+        -- non-owned pallet shop FROZE the game ("stuck at Buying Pallets"). Confirmed from the shipped
+        -- source: PlaceablePalletBuyingStation creates its own PalletSpawner, so DR was refusing the
+        -- shop's delivery and the purchase could never complete. That station is not a DR building, is
+        -- not on anyone's farm, and the setting was never about it.
+        --
+        -- BEEHIVES ARE EXCLUDED TOO, and this half was latent rather than reported. 5.20 already states
+        -- the suppression is "restricted to spec_husbandryPallets ... a beehive still spawns the vanilla
+        -- way and is untouched by all of this" -- but this gate caught them anyway. Worse, it would have
+        -- STRANDED the honey: releasableLiters returns 0 for anything without spec_husbandryPallets, so a
+        -- beehive has no bulk release path at all. Refusing its spawn leaves the product with nowhere to
+        -- go, for ever. A pen and a production both have that path, which is exactly why Never works for
+        -- them and cannot work for a beehive.
+        --
+        -- An UNKNOWN kind (a modded spawner this cannot classify) passes through and keeps spawning. That
+        -- is the safe direction: the setting silently not applying to one modded building is a feature
+        -- gap, whereas refusing a caller whose bookkeeping DR does not understand is how this froze.
+        if kind ~= "PEN" and kind ~= "PRODUCTION" then return false end
         if SmartDistribution._palletHookLog then
-            local kind, placeable = SmartDistribution.palletHookKind(target)
             print(string.format("[SmartDistribution] palletHook REFUSED (spawning off)  %s [%s] %s",
                 kind, tostring(fillTypeName(ft)), placeableName(placeable)))
         end
@@ -10790,7 +11164,7 @@ local function findNearestOwned(matchFn)
     local best, bestScore = nil, math.huge
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil and matchFn(p) then
-            local owned = (p.getOwnerFarmId == nil) or (farmId == nil) or (p:getOwnerFarmId() == farmId)
+            local owned = SmartDistribution._farmCanUse(p, farmId)
             if owned then
                 -- consider EVERY loading/unloading node; the player may stand at any
                 -- of them, so the asset is "the one you mean" when you are near + looking
@@ -10912,9 +11286,9 @@ function SmartDistribution.marketProductLabel(market, ft)
     -- what an unconfigured product actually does
     local m = (market == nil) and SmartDistribution.marketDefaultMode()
               or SmartDistribution.marketSellMode(getUid(market), ft)
-    if m == SmartDistribution.MARKET_HOLD then return "Hold" end
-    if m == SmartDistribution.MARKET_BEST then return "Sell  -  Best price" end
-    return "Sell  -  Immediate"
+    if m == SmartDistribution.MARKET_HOLD then return SmartDistribution.l10n("dr_market_hold", "Hold") end
+    if m == SmartDistribution.MARKET_BEST then return SmartDistribution.l10n("dr_market_best", "Sell  -  Best price") end
+    return SmartDistribution.l10n("dr_market_immediate", "Sell  -  Immediate")
 end
 -- current per-(market, ft) sell mode (0/1/2), taking the market placeable.
 function SmartDistribution.marketModeOf(market, ft)
@@ -10926,7 +11300,10 @@ function SmartDistribution.marketSellTypeLabel(market, ft)
     if market == nil or ft == nil then return nil end
     local m = SmartDistribution.marketSellMode(getUid(market), ft)
     if m == SmartDistribution.MARKET_HOLD then return nil end
-    return (m == SmartDistribution.MARKET_BEST) and "Best price" or "Immediate"
+    if m == SmartDistribution.MARKET_BEST then
+        return SmartDistribution.l10n("dr_timing_bestPrice", "Best price")
+    end
+    return SmartDistribution.l10n("dr_timing_immediate", "Immediate")
 end
 -- "Change output": toggle the selected product between Sell and Hold.
 -- Coming OFF Hold lands on the player's chosen DEFAULT, not a hardcoded Immediate. The old form could
@@ -11821,7 +12198,7 @@ function SmartDistribution.networkFillTypes(farmId)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return out end
     for _, p in ipairs(ps.placeables) do
-        if p.ownerFarmId == farmId and isEnrolled(p) and not SmartDistribution.isMarket(p) then
+        if SmartDistribution._farmCanUse(p, farmId) and isEnrolled(p) and not SmartDistribution.isMarket(p) then
             local cls = getAssetClass(p)
             if cls == "PRODUCTION" then
                 -- outputs of every ENABLED production line (shown even while a line is idle / waiting for input)
@@ -11894,8 +12271,10 @@ function SmartDistribution.enumerateConfigurableAssets()
         if p.rootNode ~= nil then
             local cls = getAssetClass(p)
             if cls == "SILO" or cls == "HUSBANDRY" or cls == "PRODUCTION" or cls == "SHED" or cls == "HEAP" or cls == "MARKET" then
-                local owned = (p.getOwnerFarmId == nil) or (farmId == nil) or (p:getOwnerFarmId() == farmId)
-                if owned then
+                -- ownership PLUS public map storage. This is the enumerator the four building tabs
+                -- actually call -- enrolledAssets is a different list -- so gating only that one left
+                -- the feature invisible in the UI however correct the engine side was.
+                if SmartDistribution._farmCanUse(p, farmId) then
                     out[#out + 1] = { placeable = p, name = placeableName(p), class = cls,
                                       origName = SmartDistribution.placeableRenamedFrom(p) }
                 end
@@ -11926,6 +12305,12 @@ function SmartDistribution.registerMenuGui()
         return
     end
     local dir = SmartDistribution.modDir or ""
+    -- Widen the layout on a display wider than 16:9 (6.15). The flag is set around THIS block
+    -- only, so the hooks are inert for every other GUI in the game; it is cleared after the
+    -- pcall so a load error cannot leave it stuck on and silently widen the base-game menus.
+    SmartDistribution.installLayoutWidening()
+    local widenF = SmartDistribution.layoutScaleX()
+    SmartDistribution._layoutScaling = (widenF > 1)
     local ok, err = pcall(function()
         g_gui:loadProfiles(dir .. "gui/DistributionSiloProfiles.xml")
         local function loadPage(cls, guiName, xml)
@@ -11940,8 +12325,16 @@ function SmartDistribution.registerMenuGui()
         loadPage(DistributionProductionsPage, "distributionProductionsPage", "gui/DistributionProductionsPage.xml")
         loadPage(DistributionOverviewPage,    "distributionOverviewPage",    "gui/DistributionOverviewPage.xml")
         loadPage(DistributionHelpPage,        "distributionHelpPage",        "gui/DistributionHelpPage.xml")
+        -- DistributionMenu.xml is pure CHROME -- the left tab strip, the footer button bar and the
+        -- background -- and carries no DR table layout at all. Widening it stretched the tab icons
+        -- (reported: the strip itself grew by exactly the widen factor) and wasted screen width on a
+        -- sidebar that has a fixed job. Excluded wholesale, which is both simpler and more correct
+        -- than blacklisting each icon profile inside it.
+        SmartDistribution._layoutScaling = false
         SmartDistribution._menu = DistributionMenu.new()
         g_gui:loadGui(dir .. "gui/DistributionMenu.xml", "DistributionMenu", SmartDistribution._menu)
+        -- ...but the DIALOGS are DR content and do want the extra width.
+        SmartDistribution._layoutScaling = (widenF > 1)
         if DistributionSpawnDialog ~= nil then
             SmartDistribution._spawnDialog = DistributionSpawnDialog.new()
             g_gui:loadGui(dir .. "gui/DistributionSpawnDialog.xml", "DistributionSpawnDialog", SmartDistribution._spawnDialog)
@@ -11955,9 +12348,17 @@ function SmartDistribution.registerMenuGui()
             g_gui:loadGui(dir .. "gui/DistributionInputsDialog.xml", "DistributionInputsDialog", SmartDistribution._inputsDialog)
         end
     end)
+    SmartDistribution._layoutScaling = false
     if ok then
         SmartDistribution._menuRegistered = true
         log("consolidated menu registered")
+        if widenF > 1 then
+            print(string.format("[SmartDistribution] layout widened x%.3f for a %.2f:1 display (g_aspectScaleX=%.4f); widest table %.3f -> %.3f of screen width",
+                widenF, (type(g_screenWidth) == "number" and type(g_screenHeight) == "number" and g_screenHeight > 0)
+                        and (g_screenWidth / g_screenHeight) or 0, g_aspectScaleX or 1,
+                ((SmartDistribution.LAYOUT_DESIGN_WIDTH or 1480) / 1920) * (g_aspectScaleX or 1),
+                SmartDistribution.LAYOUT_TARGET_WIDTH or 0))
+        end
     else
         log("registerMenuGui error: %s", tostring(err))
     end
@@ -13286,7 +13687,7 @@ function SmartDistribution.shedSinkFor(p, ft, farmId)
     local cands = {}
     for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, resolveReach(p))) do
         local du = sh.placeable ~= nil and getUid(sh.placeable) or nil
-        if du ~= nil and SmartDistribution._ownerFarmId(sh.placeable) == myFarm
+        if du ~= nil and SmartDistribution._farmCanUse(sh.placeable, myFarm)
            and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
             sh.rank = SmartDistribution.destRank(srcUid, ft, du)
             cands[#cands + 1] = sh
@@ -13885,6 +14286,33 @@ function SmartDistribution._computePooledInputCapacity(p)
         -- exposed products: only those the building supports itself
         local fts = {}
         for ft in pairs(storageFillTypes(s)) do if ownFts[ft] then fts[#fts + 1] = ft end end
+        -- TWO DIFFERENT QUESTIONS, and conflating them cost an extension's whole capacity.
+        --
+        -- "Is this storage a POOL?" genuinely needs 2+ products sharing one tank -- that is what pooled
+        -- MEANS, and a single-product tank must never create a pool where none existed.
+        -- "May this storage FOLD ITS LITRES into a pool that already exists?" only needs it to share ONE
+        -- product with that pool. An extension adds SPACE, not products (5.54b), so demanding two from it
+        -- was asking the wrong question of the wrong storage.
+        --
+        -- REPORTED 2026-08-15 (slurry pit): the extension raised the OUTPUT capacity but not the INPUT
+        -- capacity, and DR then behaved as though the extra space did not exist. A Slurry Pit is a
+        -- spec_silo, so it comes down this branch; its own tank holds LIQUIDMANURE + DIGESTATE and forms
+        -- the pool, while the extension holds LIQUIDMANURE alone -- one product -- and was skipped.
+        -- assetCapacity (the output side) has no such gate, which is exactly why the two disagreed.
+        --
+        -- NOT COSMETIC: inputHeldLevel falls through to assetHeld, which DOES sum the extension. So held
+        -- counted space that capacity did not, the fill percentage ran past 100%, and inputAcceptableLiters
+        -- then refused to deliver into the extension at all.
+        --
+        -- GENERAL, not slurry-specific: it hit manure pits and any SINGLE-crop silo extension too. A
+        -- multi-crop extension overlaps on 2+ products and always worked, which is why 5.29b looked
+        -- complete. Verified by simulation across all five shapes (extpool.lua, scratchpad): the fixed
+        -- input figure now equals the output figure in every case, and the two already-working cases are
+        -- unchanged.
+        -- Written as an explicit two-phase walk below rather than one gate, because a single gate is
+        -- ORDER-DEPENDENT: a one-product storage met BEFORE the pool-forming one would still be dropped.
+        -- getAllStorages returns silo extensions before the heap, so a manure pit carrying a slurry-type
+        -- siloExtension would have hit exactly that.
         if #fts >= 2 then
             -- CAPACITY IS STATIC -- read it as such. This used to compute `sum of all levels + free`,
             -- which is arithmetically the same thing ONLY while every litre counted is in this storage
@@ -13904,21 +14332,31 @@ function SmartDistribution._computePooledInputCapacity(p)
             -- figures for one quantity and must not disagree (5.27 / 5.28). Output read 600,000 correctly
             -- throughout this whole investigation; input is now on that basis too.
             local cap = storageCapacity(s, fts[1]) or 0
-            if cap > 0 and cap < INF then
-                if pool == nil then
-                    pool = { liters = cap, fts = fts, kind = "BULK", storage = s, _set = {} }
-                    for _, ft in ipairs(fts) do pool._set[ft] = true end
-                else
-                    local shares = false
-                    for _, ft in ipairs(fts) do if pool._set[ft] then shares = true; break end end
-                    if shares then
-                        pool.liters = pool.liters + cap   -- SPACE folds in; the product list does not grow
-                    end
-                end
+            if cap > 0 and cap < INF and pool == nil then
+                pool = { liters = cap, fts = fts, kind = "BULK", storage = s, _set = {}, _seen = { [s] = true } }
+                for _, ft in ipairs(fts) do pool._set[ft] = true end
             end
         end
     end
-    if pool ~= nil then pool._set = nil end
+    -- PHASE 2: fold the LITRES of every other storage that shares a product with the pool. One shared
+    -- product is enough -- an extension adds space, not products -- and the pool's fts list is NOT
+    -- widened, so a folded storage can never put a new row on the building's input list (5.54b).
+    if pool ~= nil then
+        for _, s in ipairs(getAllStorages(p)) do
+            if not pool._seen[s] then
+                local shares, first = false, nil
+                for ft in pairs(storageFillTypes(s)) do
+                    if ownFts[ft] and pool._set[ft] then shares = true; first = ft; break end
+                end
+                if shares then
+                    pool._seen[s] = true
+                    local cap = storageCapacity(s, first) or 0
+                    if cap > 0 and cap < INF then pool.liters = pool.liters + cap end
+                end
+            end
+        end
+        pool._set, pool._seen = nil, nil
+    end
     return pool
 end
 
@@ -14608,10 +15046,77 @@ function SmartDistribution._playerFarmId()
 end
 
 -- Owner farm id of a placeable (getOwnerFarmId method or the field), or nil.
+-- HONEST: this always reports the REAL owner. Whether a farm may USE the building is a separate
+-- question -- see _farmCanUse below -- because a public map silo is usable without being owned.
 function SmartDistribution._ownerFarmId(p)
     if p == nil then return nil end
     if p.getOwnerFarmId ~= nil then local ok, f = pcall(p.getOwnerFarmId, p); if ok and f ~= nil then return f end end
     return p.ownerFarmId
+end
+
+-- ---- public map storage ("Grain Pool East") ---------------------------------
+-- Some map buildings are owned by nobody yet let any farm store goods in them, by holding a SEPARATE
+-- STORAGE PER FARM (PlaceableSilo: `<storages perFarm="true">` creates FarmManager.MAX_NUM_FARMS storage
+-- sets in multiplayer, one per farm, each tagged storage.ownerFarmId; in singleplayer it creates exactly
+-- one). Zielonka's railroadStorageSilo01 is the vanilla example, and it charges rent
+-- (costsPerFillLevelAndDay) for the privilege.
+--
+-- Behind the "Public map storage" setting, OFF by default: it costs money to store there, so it must be
+-- an explicit choice.
+--
+-- QUALIFIER, deliberately narrow (silos only, by the author's call):
+--   * has a silo spec with storages -- it is real storage DR can read and write;
+--   * is NOT a selling station -- the decisive safety test. A sell point also accepts tipping, and
+--     routing product into one would SELL it rather than store it. No selling station, no risk.
+--   * is not owned by anyone (or is owned by another farm) -- an owned silo is already in the network
+--     through the ordinary path and must not be double-counted here.
+function SmartDistribution.isMapStorage(p)
+    if p == nil or p.spec_silo == nil then return false end
+    if type(p.spec_silo.storages) ~= "table" or #p.spec_silo.storages == 0 then return false end
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then return false end
+    if p.spec_sellingStation ~= nil then return false end
+    local S_ = SmartDistribution.settings
+    local on = S_ ~= nil and S_.global ~= nil and S_.global.includeMapStorage
+    if not on then return false end
+    local owner = SmartDistribution._realFarmId(SmartDistribution._ownerFarmId(p))
+    return owner == nil                                     -- unowned: the public case
+end
+
+-- May `farmId` use this building for routing? Ownership normally, PLUS public map storage, which any
+-- farm may use precisely because it is nobody's.
+--
+-- A single seam rather than relaxing each ownership test in place: the gates are written three different
+-- ways (`pFarm == farmId`, `of == myFarm`, `_ownerFarmId(p) == myFarm`) across a dozen sites, and
+-- rewriting each by hand is how one gets missed. It is also DEDICATED-SERVER SAFE, where "the player's
+-- farm" does not exist (5.47) -- this asks whether a specific farm may use the building, never who is
+-- looking at the screen.
+function SmartDistribution._farmCanUse(p, farmId)
+    if farmId == nil then return true end                   -- unknown farm: fail open, as the gates always have
+    local of = SmartDistribution._ownerFarmId(p)
+    if of == nil or of == farmId then return true end
+    return SmartDistribution.isMapStorage(p)
+end
+
+-- The storages of `p` that `farmId` may actually use. For a perFarm silo that is ONE of the set --
+-- the rest belong to other farms.
+--
+-- THIS IS THE MULTIPLAYER CORRECTNESS HALF, and it would not have shown up in testing: singleplayer
+-- creates exactly one storage set, so every figure looks right, while on a server spec_silo.storages
+-- holds one storage PER FARM. Without this filter DR would sum every farm's stock into capacity and
+-- held, and Store / Move To could write into another farm's storage.
+function SmartDistribution.usableStorage(p, storage, farmId)
+    if storage == nil then return false end
+    if p == nil or p.spec_silo == nil then return true end
+    -- ONLY a silo that actually DECLARES perFarm storages is scoped. An ordinary silo is left completely
+    -- alone, which is not tidiness -- it is required for correctness on a multiplayer CLIENT:
+    -- PlaceableSilo:setOwnerFarmId stamps an ordinary silo's storages with the owning farm, but only
+    -- `if self.isServer`. On a client those can still read the load-time id (1), so filtering them
+    -- against the player's farm would hide EVERY storage on that player's own silos and DR would do
+    -- nothing at all for them. storagePerFarm is the exact flag the base game itself branches on.
+    if p.spec_silo.storagePerFarm ~= true then return true end
+    local sf = SmartDistribution._realFarmId(storage.ownerFarmId)
+    if sf == nil or farmId == nil then return true end      -- untagged or unknown farm: fail open
+    return sf == farmId
 end
 
 function SmartDistribution._ftTitle(ft)
@@ -14662,9 +15167,10 @@ function SmartDistribution.enrolledAssets()
     if ps == nil then return out end
     local myFarm = SmartDistribution._playerFarmId()
     for _, p in ipairs(ps.placeables) do
-        -- owned by the player only (strict: unowned / other-farm placeables are excluded)
+        -- owned by the player, PLUS public map storage when that setting is on (_farmCanUse)
+        -- owned by the player, PLUS public map storage when that setting is on (_farmCanUse)
         if p.rootNode ~= nil and isEnrolled(p)
-           and (myFarm == nil or SmartDistribution._ownerFarmId(p) == myFarm) then
+           and SmartDistribution._farmCanUse(p, myFarm) then
             local prod = SmartDistribution.assetProducts(p)
             if #prod.inputs > 0 or #prod.outputs > 0 then
                 out[#out + 1] = {
@@ -14721,7 +15227,7 @@ function SmartDistribution._computeSourcesFor(consumerUid, ft)
             local of = SmartDistribution._ownerFarmId(p)
             local u = getUid(p)
             -- same farm-scoping the engine uses: neutral (nil owner) allowed, other farms excluded
-            if u ~= consumerUid and (myFarm == nil or of == nil or of == myFarm)
+            if u ~= consumerUid and SmartDistribution._farmCanUse(p, myFarm)
                and SmartDistribution.canProvide(p, ft) then
                 out[#out + 1] = {
                     uid = u, name = placeableName(p), icon = SmartDistribution.assetIconFile(p),
@@ -14841,7 +15347,7 @@ function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores
         for _, p in ipairs(ps ~= nil and ps.placeables or {}) do
             if p ~= asset and p.rootNode ~= nil then
                 local en = isEnrolled(p)
-                local sameFarm = SmartDistribution._ownerFarmId(p) == myFarm
+                local sameFarm = SmartDistribution._farmCanUse(p, myFarm)
                 local valid = SmartDistribution.storeToTargetValid ~= nil and SmartDistribution.storeToTargetValid(form, p, ft)
                 if SmartDistribution._storeToDebug and (getAssetClass(p) == "SHED" or getAssetClass(p) == "SILO" or getAssetClass(p) == "HEAP") then
                     SmartDistribution.log("advstore:   cand %s cls=%s enrolled=%s sameFarm=%s valid=%s",
@@ -14910,11 +15416,37 @@ end
 -- ---- output link status (source side; mirror of inputLinkStatus) ------------
 -- Same three states + colours as the input side, but ACTIVE reads "Sending" (a source sends; a receiver
 -- receives), so outgoing rows use OUT_LINK_LABEL.
-SmartDistribution.OUT_LINK_LABEL = {
+-- Display text for a product's role tag. THE TAG ITSELF IS NEVER TRANSLATED: "In" / "Out" /
+-- "In/Out" are an internal enum, used as keys in ROLE_ORDER / CHAIN_ROLE_ORDER (row sorting)
+-- and compared directly at five sites in DistributionStats + DistributionOverviewPage. Translating
+-- roleLabel's result would silently break the sort order and the settings view's in/out split --
+-- the exact "translated string used as a key" trap. So the tag stays English and only the moment
+-- it is written into a cell goes through here.
+function SmartDistribution.roleDisplay(tag)
+    if tag == nil then return nil end
+    if tag == "In"     then return SmartDistribution.l10n("dr_role_in",    "In")     end
+    if tag == "Out"    then return SmartDistribution.l10n("dr_role_out",   "Out")    end
+    if tag == "In/Out" then return SmartDistribution.l10n("dr_role_inout", "In/Out") end
+    return tag
+end
+
+-- Resolved through a METATABLE rather than by translating the table's contents, so the eleven
+-- call sites that read TABLE[status] need no change and the lookup happens at DISPLAY time --
+-- l10n is not necessarily up when this chunk loads. An unknown key returns nil exactly as a
+-- plain table would, so every `... or ""` guard downstream still behaves.
+-- Fallbacks are a FIELD, not a local: the main chunk is at the 200-local ceiling (1.1).
+SmartDistribution.OUT_LINK_FALLBACK = {
     ACTIVE  = "Active (Sending)",
     IDLE    = "Active (Idle)",
     BLOCKED = "Blocked",
 }
+SmartDistribution.OUT_LINK_LABEL = setmetatable({}, {
+    __index = function(_, k)
+        local fb = SmartDistribution.OUT_LINK_FALLBACK[k]
+        if fb == nil then return nil end
+        return SmartDistribution.l10n("dr_status_out_" .. tostring(k), fb)
+    end,
+})
 
 -- The destinations relevant to (asset, ft)'s CURRENT mode -- demands for a distribute mode, stores for a
 -- store / Move To mode, markets for a market mode (combined for combo modes) -- each carrying a .blocked
@@ -15026,11 +15558,19 @@ end
 -- Category-agnostic on purpose: silos, storages, productions, animal pens and markets all resolve the
 -- same way, and each category page just gates on whether it supports inputs at all.
 SmartDistribution.LINK = { ACTIVE = "ACTIVE", IDLE = "IDLE", BLOCKED = "BLOCKED" }
-SmartDistribution.LINK_LABEL = {
+-- Same lazy-lookup pattern as OUT_LINK_LABEL above; see the note there.
+SmartDistribution.LINK_FALLBACK = {
     ACTIVE  = "Active (Receiving)",   -- product actually moved last pass
     IDLE    = "Active (Idle)",        -- link live, nothing needed to move
-    BLOCKED = "Blocked",              -- player-blocked (future feature)
+    BLOCKED = "Blocked",              -- player-blocked
 }
+SmartDistribution.LINK_LABEL = setmetatable({}, {
+    __index = function(_, k)
+        local fb = SmartDistribution.LINK_FALLBACK[k]
+        if fb == nil then return nil end
+        return SmartDistribution.l10n("dr_status_in_" .. tostring(k), fb)
+    end,
+})
 -- status colours (shared, so every category page reads identically): green = feeding, orange = live but
 -- nothing moving, red = blocked by the player.
 SmartDistribution.LINK_COLOR = {
@@ -15203,7 +15743,7 @@ function SmartDistribution.hasAnySink(sourceUid, ft, sourceFarmId)
         if p.rootNode ~= nil and isEnrolled(p) then
             local of = SmartDistribution._ownerFarmId(p)
             local u = getUid(p)
-            if u ~= sourceUid and (myFarm == nil or of == nil or of == myFarm) then
+            if u ~= sourceUid and SmartDistribution._farmCanUse(p, myFarm) then
                 if (SmartDistribution.canAccept(p, ft, true)) then return true end
             end
         end
@@ -15230,7 +15770,7 @@ function SmartDistribution.sinksFor(sourceUid, ft, sourceFarmId)
         if p.rootNode ~= nil and isEnrolled(p) then
             local of = SmartDistribution._ownerFarmId(p)
             local u = getUid(p)
-            if u ~= sourceUid and (myFarm == nil or of == nil or of == myFarm) then
+            if u ~= sourceUid and SmartDistribution._farmCanUse(p, myFarm) then
                 local supports, active = SmartDistribution.canAccept(p, ft)
                 if supports then
                     out[#out + 1] = {

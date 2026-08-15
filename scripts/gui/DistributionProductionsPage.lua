@@ -78,9 +78,11 @@ local function renderNoticeRow(cell, hidden, what)
     if n == nil then return end
     if n.setVisible ~= nil then n:setVisible(true) end
     if n.setText ~= nil then
-        local word = what
-        if hidden == 1 then word = word:sub(1, #word - 1) end
-        n:setText(string.format("+%d %s blocked (See Advanced Inputs)", hidden, word))
+        -- see the twin in DistributionStoragePage: whole-sentence singular/plural keys
+        local key = (hidden == 1) and "dr_notice_blockedInput" or "dr_notice_blockedInputs"
+        local fb  = (hidden == 1) and "+%d input blocked (See Advanced Inputs)"
+                                   or "+%d inputs blocked (See Advanced Inputs)"
+        n:setText(string.format(SmartDistribution.l10n(key, fb), hidden))
     end
     local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
     local col = COL.IDLE or { 0.95, 0.65, 0.20, 1 }
@@ -239,7 +241,7 @@ local function setStatusCell(cell, placeable, ft)
     -- A product BLOCKED on the Advanced Inputs page is refused at the door, whatever the source-side link
     -- says, so it must read "Blocked" here too -- otherwise the main list still shows it as receiving.
     if uid ~= nil and SmartDistribution.isInputBlocked ~= nil and SmartDistribution.isInputBlocked(uid, ft) then
-        if c.setText ~= nil then c:setText("Blocked") end
+        if c.setText ~= nil then c:setText(SmartDistribution.l10n("dr_label_blocked", "Blocked")) end
         local bc = (SmartDistribution.LINK_COLOR or {}).BLOCKED
         if bc ~= nil and c.setTextColor ~= nil then c:setTextColor(bc[1], bc[2], bc[3], bc[4]) end
         return
@@ -383,7 +385,7 @@ function DistributionProductionsPage:buildSections()
         local outStr = table.concat(outNames, " + ")
         local inStr  = table.concat(inNames, " + ")
         local label  = outStr
-        if label == "" then label = line.name or ("Line " .. tostring(#self.lines + 1)) end
+        if label == "" then label = line.name or string.format(SmartDistribution.l10n("dr_label_line", "Line %d"), #self.lines + 1) end
         if inStr ~= "" then label = label .. " (" .. inStr .. ")" end
         -- representative monthly production = first output's per-month amount
         local perMonth = 0
@@ -681,13 +683,13 @@ function DistributionProductionsPage:updateSellTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if spawnReady then b.text = "Spawn Pallets"; vis[#vis + 1] = b
-            elseif label ~= nil then b.text = "Sell Timing: " .. label; vis[#vis + 1] = b end
+            if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
+            elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
         elseif b._role == "advanced" then
             if focus == "input" then
-                if showAdvancedIn then b.text = "Advanced Inputs"; vis[#vis + 1] = b end
+                if showAdvancedIn then b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b end
             else
-                if showAdvancedOut then b.text = "Advanced Outputs"; vis[#vis + 1] = b end
+                if showAdvancedOut then b.text = SmartDistribution.l10n("dr_btn_advancedOutputs", "Advanced Outputs"); vis[#vis + 1] = b end
             end
         else
             vis[#vis + 1] = b
@@ -776,10 +778,11 @@ function DistributionProductionsPage:onSpawn(count)
     if o == nil or o.ft == nil or self.selectedAsset == nil then return end
     local page, asset, ft = self, self.selectedAsset, o.ft
     -- open the pop-up; its confirm callback issues the (MP-safe) spawn request for the chosen count
-    if SmartDistribution.openSpawnDialog ~= nil and SmartDistribution.openSpawnDialog(asset, ft, function(option, n)
+    if SmartDistribution.openSpawnDialog ~= nil and SmartDistribution.openSpawnDialog(asset, ft, function(option, n, liters)
             if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
                 SmartDistribution._spawnCompleteCb = function() pcall(function() page:refreshSections() end) end
-                DistributionSpawnEvent.request(asset, ft, n)
+                -- option carries the pallet TYPE the player picked; liters is the exact total requested
+                DistributionSpawnEvent.request(asset, ft, n, option ~= nil and option.filename or nil, liters)
             end
         end) then
         return
@@ -787,7 +790,7 @@ function DistributionProductionsPage:onSpawn(count)
     -- fallback (dialog unavailable): spawn one directly
     if DistributionSpawnEvent ~= nil and DistributionSpawnEvent.request ~= nil then
         SmartDistribution._spawnCompleteCb = function() pcall(function() page:refreshSections() end) end
-        DistributionSpawnEvent.request(asset, ft, count or 1)
+        DistributionSpawnEvent.request(asset, ft, count or 1)   -- fallback: default type, fill each pallet
     end
 end
 
