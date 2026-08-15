@@ -3,8 +3,6 @@ Replaces Farming Simulator 25's standard distribution system with a smarter, dem
 Distribution Redux automatically moves resources between productions, animal husbandries, silos, and storages based on actual demand. It prioritises the nearest available source, supports automatic feed, straw, and water distribution, and gives you full control over how each output is handled!
 
 If you need help, join the discord: https://discord.gg/nK5Q7KCbY
-
-If you need help, join the discord: https://discord.gg/nK5Q7KCbY
 If you want to support my work buy me a coffee: https://ko-fi.com/bones13123
 
 TO USE THE CURRENT GITHUB RELEASED VERSION
@@ -28,7 +26,7 @@ Distribution Redux uses the standard Farming Simulator localisation system, so a
 pull request against one file and needs no Lua or XML knowledge beyond copy-and-edit.
 
 How to add a language
-1) Copy translations/translation_en.xml to translations/translation_<code>.xml.
+1) Copy translations/translation_en.xml to translations/translation_xx.xml.
    Codes FS25 uses: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no pl pt ro ru sv tr uk vi
 2) Translate ONLY the text="..." values. Never change a name="..." key - that is what the mod looks up.
 3) Open a pull request.
@@ -61,7 +59,7 @@ so they have their own built-in per-language form and cannot use translation key
         <de><![CDATA[ ...German... ]]></de>
     </description>
 
-If you want the store page in your language too, add an <xx> block there alongside the existing ones,
+If you want the store page in your language too, add an xx block there alongside the existing ones,
 where xx is the same code you used for your translation file. Optional - the UI and the User Guide are
 fully translated by your translation file on its own.
 
@@ -85,7 +83,6 @@ Added
 2) (NEW) DR UI will now resize to match you screen resolution rather than leaving deadspace on the screen. 15/8
 3) (NEW) Added the ability to select the pallet type and spawn partial pallets througthe pallet spawner. 15/8
 4) (NEW) Added a setting allowing map storages to be used in the distribution network (NOTE: Default off) 15/8
-
 
 V1.1.0.0 Release
 
