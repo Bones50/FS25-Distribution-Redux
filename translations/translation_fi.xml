@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Finnish (fi)
+
+  Osittainen käännös. Käyttöoppaan tekstiavaimet (dr_guide_*) on jätetty pois
+  tässä vaiheessa ja palautuvat automaattisesti englanniksi peliin asti, kunnes
+  ne käännetään. Käyttöliittymä ja asetukset on käännetty kokonaan.
+
+  Sarake- ja painikeotsikkojen pituudet on pyritty pitämään lähdetiedoston
+  merkkibudjettien sisällä, mutta koska suomi on usein englantia pidempi kieli,
+  osa niistä kannattaa tarkistaa visuaalisesti pelissä ennen pull requestia
+  (erityisesti dr_col_ ja dr_btn_ -avaimet).
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= keybindings (shown in Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Määritä jakelu (lähin kohde)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Avaa Distribution Redux -valikko" />
+
+        <!-- ================= page + dialog titles ================= -->
+        <text name="dr_title_overview"        text="Jakelu - Yleiskatsaus" />
+        <text name="dr_title_productions"     text="Jakelu - Tuotannot" />
+        <text name="dr_title_storage"         text="Jakelu - Varastot" />
+        <text name="dr_title_husbandry"       text="Jakelu - Eläintenhoito" />
+        <text name="dr_title_markets"         text="Jakelu - Markkinat" />
+        <text name="dr_title_help"            text="Jakelu - Ohje" />
+        <text name="dr_title_settings"        text="Jakelu - Asetukset" />
+        <text name="dr_title_advanced"        text="Lisäasetukset" />
+        <text name="dr_title_advancedInputs"  text="Lisäasetukset: Tulot" />
+        <text name="dr_title_spawnPallets"    text="Luo lavoja" />
+
+        <!-- ================= building-list headers (left column, ~40 chars) ================= -->
+        <text name="dr_col_buildings"     text="RAKENNUKSET" />
+        <text name="dr_col_husbandries"   text="ELÄINSUOJAT" />
+        <text name="dr_col_markets"       text="MARKKINAT" />
+        <text name="dr_col_productions"   text="TUOTANNOT" />
+
+        <!-- ================= selector labels above the tables ================= -->
+        <text name="dr_lbl_timescale"        text="Aikaväli" />
+        <text name="dr_lbl_filterBy"         text="Suodata" />
+        <text name="dr_lbl_show"             text="Näytä" />
+        <text name="dr_lbl_grouping"         text="Ryhmittely" />
+        <text name="dr_lbl_overviewPointer"  text="Täydellinen erittely + toimitusketjut: Yleiskatsaus-välilehti" />
+
+        <!-- ================= Overview: FLOW view column headers ================= -->
+        <text name="dr_col_building"      text="RAKENNUS" />
+        <text name="dr_col_product"       text="TUOTE" />
+        <text name="dr_col_received"      text="SAAPUNUT" />
+        <text name="dr_col_loaded"        text="LASTATTU" />
+        <text name="dr_col_consumedExp"   text="KULUTUS (ODOT.)" />
+        <text name="dr_col_unloaded"      text="PURETTU" />
+        <text name="dr_col_heldMax"       text="MÄÄRÄ (MAX)" />
+        <text name="dr_col_freeStorage"   text="VAPAA TILA" />
+        <text name="dr_col_producedExp"   text="TUOTOS (ODOT.)" />
+        <text name="dr_col_distributed"   text="JAETTU" />
+        <text name="dr_col_storedMoved"   text="VARASTO/SIIRTO" />
+        <text name="dr_col_sold"          text="MYYTY" />
+        <text name="dr_col_distrCost"     text="JAKELUKULU" />
+
+        <!-- ================= Overview: SETTINGS view column headers ================= -->
+        <text name="dr_col_storageType"   text="VARASTOTYYPPI" />
+        <text name="dr_col_maxInPctL"     text="MAX TULO (% - L)" />
+        <text name="dr_col_heldOfMax"     text="MÄÄRÄ / MAX" />
+        <text name="dr_col_inStatus"      text="TILA (TULO)" />
+        <text name="dr_col_lines"         text="LINJAT" />
+        <text name="dr_col_outMode"       text="LÄHTÖTAPA" />
+        <text name="dr_col_reserve"       text="VARAUS" />
+        <text name="dr_col_priority"      text="PRIORITEETTI" />
+        <text name="dr_col_dest"          text="KOHDE" />
+        <text name="dr_col_outStatus"     text="TILA (LÄHTÖ)" />
+
+        <!-- ================= building-tab table headers ================= -->
+        <text name="dr_col_incomingProducts"  text="SAAPUVAT TUOTTEET" />
+        <text name="dr_col_incomingMaterials" text="SAAPUVAT MATERIAALIT" />
+        <text name="dr_col_outgoingProducts"  text="LÄHTEVÄT TUOTTEET" />
+        <text name="dr_col_heldSlashMax"      text="MÄÄRÄ / MAX" />
+        <text name="dr_col_distribution"      text="JAKELU" />
+        <text name="dr_col_consumed"          text="KULUTETTU" />
+        <text name="dr_col_produced"          text="TUOTETTU" />
+        <text name="dr_col_outputMode"        text="LÄHTÖTAPA" />
+        <text name="dr_col_status"            text="TILA" />
+        <text name="dr_col_productionLines"   text="TUOTANTOLINJAT" />
+        <text name="dr_col_targetMo"          text="TAVOITE /kk" />
+
+        <!-- ================= Advanced Outputs dialog ================= -->
+        <text name="dr_col_demands"   text="TARPEET" />
+        <text name="dr_col_storage"   text="VARASTO" />
+        <text name="dr_col_distance"  text="ETÄISYYS" />
+        <text name="dr_col_order"     text="JÄRJESTYS" />
+
+        <!-- ================= Advanced Inputs dialog ================= -->
+        <text name="dr_col_incomingProduct" text="SAAPUVA TUOTE" />
+        <text name="dr_col_type"            text="TYYPPI" />
+        <text name="dr_col_held"            text="MÄÄRÄ" />
+        <text name="dr_col_maxIn"           text="MAX SISÄÄN" />
+        <text name="dr_col_available"       text="SAATAVILLA" />
+        <text name="dr_col_fillTarget"      text="TÄYTTÖTAVOITE" />
+
+        <!-- ================= buttons ================= -->
+        <text name="dr_btn_priorityUp"    text="Priorit. ylös" />
+        <text name="dr_btn_priorityDown"  text="Priorit. alas" />
+        <text name="dr_btn_toggle"        text="Vaihda" />
+        <text name="dr_btn_clear"         text="Tyhjennä" />
+        <text name="dr_btn_blockAll"      text="Estä kaikki" />
+        <text name="dr_btn_reserveDown"   text="- Varaus" />
+        <text name="dr_btn_reserveUp"     text="+ Varaus" />
+        <text name="dr_btn_maxDown"       text="- Max" />
+        <text name="dr_btn_maxUp"         text="+ Max" />
+        <text name="dr_btn_targetDown"    text="- Tavoite" />
+        <text name="dr_btn_targetUp"      text="+ Tavoite" />
+        <text name="dr_btn_block"         text="Estä" />
+        <text name="dr_btn_spawn"         text="Luo" />
+        <text name="dr_btn_cancel"        text="Peruuta" />
+        <text name="dr_btn_close"         text="Sulje" />
+
+        <!-- ================= FOOTER BUTTONS (set from Lua) ================= -->
+        <text name="dr_btn_cycleOutput"      text="Vaihda tila" />
+        <text name="dr_btn_advanced"         text="Lisäasetukset" />
+        <text name="dr_btn_sellTiming"       text="Myyntiajoitus" />
+        <text name="dr_btn_sellTimingValue"  text="Myyntiajoitus: %s" />
+        <text name="dr_btn_toggleLine"       text="Vaihda linja" />
+        <text name="dr_btn_showSettings"     text="Näytä asetukset" />
+        <text name="dr_btn_showFlows"        text="Näytä virrat" />
+        <text name="dr_btn_refresh"          text="Päivitä" />
+        <text name="dr_btn_advancedOutputs"  text="Lisäas.: Lähdöt" />
+        <text name="dr_btn_activate"         text="Aktivoi" />
+        <text name="dr_btn_activateAll"      text="Aktivoi kaikki" />
+        <text name="dr_btn_allow"            text="Salli" />
+        <text name="dr_btn_allowAll"         text="Salli kaikki" />
+
+        <!-- ================= TIMESCALE SELECTOR ================= -->
+        <text name="dr_period_hourLong" text="Jakso (tunti)" />
+        <text name="dr_period_hour"     text="Tunti" />
+        <text name="dr_period_month"    text="Kuukausi" />
+        <text name="dr_period_year"     text="Vuosi" />
+
+        <!-- ================= OVERVIEW SELECTORS ================= -->
+        <text name="dr_filter_nothing"    text="Ei mitään (näytä kaikki)" />
+        <text name="dr_filter_building"   text="Rakennus" />
+        <text name="dr_filter_product"    text="Tuote" />
+        <text name="dr_filter_endProduct" text="Lopputuote (koko ketju)" />
+        <text name="dr_group_off"         text="Pois (yksi rivi / rakennus)" />
+        <text name="dr_group_on"          text="Päällä (yhdistä samat rakennustyypit)" />
+
+        <!-- ================= OVERVIEW SHORT STATUS ================= -->
+        <text name="dr_statusShort_receiving" text="Vastaanotto" />
+        <text name="dr_statusShort_sending"   text="Lähetys" />
+        <text name="dr_statusShort_idle"      text="Jouten" />
+        <text name="dr_statusShort_blocked"   text="Estetty" />
+
+        <!-- ================= STORAGE TYPE ================= -->
+        <text name="dr_type_pooled"     text="Yhteinen" />
+        <text name="dr_type_individual" text="Erillinen" />
+        <text name="dr_type_internal"   text="Sisäinen" />
+        <text name="dr_type_blocked"    text="ESTETTY" />
+
+        <!-- ================= OUTPUT PRIORITY ================= -->
+        <text name="dr_priority_ranked"   text="Järjestetty (%d)" />
+        <text name="dr_priority_distance" text="Etäisyys" />
+
+        <!-- ================= BUILDING KIND ================= -->
+        <text name="dr_class_silo"    text="Siilo" />
+        <text name="dr_class_barn"    text="Navetta" />
+        <text name="dr_class_storage" text="Varasto" />
+        <text name="dr_class_pit"     text="Kuoppa" />
+        <text name="dr_class_market"  text="Markkina" />
+
+        <!-- ================= NOTICES AND SMALL LABELS ================= -->
+        <text name="dr_notice_blockedInput"  text="+%d tulo estetty (katso Lisäasetukset: Tulot)" />
+        <text name="dr_notice_blockedInputs" text="+%d tuloa estetty (katso Lisäasetukset: Tulot)" />
+        <text name="dr_label_off"      text="Pois" />
+        <text name="dr_label_blocked"  text="Estetty" />
+        <text name="dr_label_building" text="Rakennus" />
+        <text name="dr_label_line"     text="Linja %d" />
+
+        <!-- ================= ADVANCED OUTPUTS DIALOG ================= -->
+        <text name="dr_adv_title"         text="Lisäasetukset - %s" />
+        <text name="dr_adv_activeInvalid" text="Aktiivinen - Virheellinen" />
+        <text name="dr_adv_reserve"       text="     Varaus: " />
+        <text name="dr_adv_noCapacity"    text="Ei kapasiteettia varattavaksi" />
+        <text name="dr_adv_loopOne"       text="Kohdetta %s ei voi aktivoida - tuote palaisi silmukkana takaisin tänne." />
+        <text name="dr_adv_loopMany"      text="%d kohdetta jätetty estetyksi - ne veisivät tuotteen silmukkana takaisin tänne." />
+
+        <!-- ================= ADVANCED INPUTS DIALOG ================= -->
+        <text name="dr_inp_title"        text="Lisäasetukset: Tulot - %s" />
+        <text name="dr_inp_pooledCapped" text="Yhteisvarasto: %s jaettu %d tuotteen kesken, %d rajoitettu. Rajoittamattomat tuotteet voivat käyttää koko varaston." />
+        <text name="dr_inp_pooled"       text="Yhteisvarasto: %s jaettu %d tuotteen kesken. Kukin voi käyttää sen kokonaan - aseta yläraja varataksesi tilaa muille." />
+        <text name="dr_inp_individual"   text="Aseta kunkin tuotteen yläraja tai estä se. Tällä rakennuksella on erillinen varasto jokaiselle tuotteelle." />
+
+        <!-- ================= SPAWN PALLETS DIALOG ================= -->
+        <text name="dr_spawn_info"    text="Varastossa: %s    Lava: %s    Max: %d    Luodaan: %s" />
+        <text name="dr_spawn_palletType" text="Lava" />
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= OUTPUT MODES ================= -->
+        <text name="dr_mode_0"   text="Peritty" />
+        <text name="dr_mode_1"   text="Pidä" />
+        <text name="dr_mode_2"   text="Jaa" />
+        <text name="dr_mode_3"   text="Jaa + Myy" />
+        <text name="dr_mode_4"   text="Myy" />
+        <text name="dr_mode_5"   text="Jaa + Varastoi" />
+        <text name="dr_mode_6"   text="Varastoi" />
+        <text name="dr_mode_7"   text="Markkinoille" />
+        <text name="dr_mode_8"   text="Jaa + Markkinoille" />
+        <text name="dr_mode_9"   text="Pidä sisäisesti" />
+        <text name="dr_mode_10"  text="Siirrä" />
+        <text name="dr_mode_11"  text="Jaa + Siirrä" />
+        <text name="dr_mode_holdPallets" text="Pidä lavoilla" />
+
+        <!-- ================= LINK STATUS ================= -->
+        <text name="dr_status_in_ACTIVE"   text="Aktiivinen (saapuu)" />
+        <text name="dr_status_in_IDLE"     text="Aktiivinen (jouten)" />
+        <text name="dr_status_in_BLOCKED"  text="Estetty" />
+        <text name="dr_status_out_ACTIVE"  text="Aktiivinen (lähtee)" />
+        <text name="dr_status_out_IDLE"    text="Aktiivinen (jouten)" />
+        <text name="dr_status_out_BLOCKED" text="Estetty" />
+
+        <!-- ================= PRODUCT ROLE ================= -->
+        <text name="dr_role_in"    text="Tulo" />
+        <text name="dr_role_out"   text="Lähtö" />
+        <text name="dr_role_inout" text="T/L" />
+
+        <!-- ================= SELL TIMING ================= -->
+        <text name="dr_timing_bestPrice" text="Paras hinta" />
+        <text name="dr_timing_immediate" text="Välitön" />
+        <text name="dr_market_hold"      text="Pidä" />
+        <text name="dr_market_best"      text="Myy  -  Paras hinta" />
+        <text name="dr_market_immediate" text="Myy  -  Välitön" />
+
+        <!-- ================= UNITS ================= -->
+        <text name="dr_unit_litre"      text=" l" />
+        <text name="dr_unit_kilolitre"  text=" kl" />
+
+        <!-- ================= MONEY NOTIFICATIONS ================= -->
+        <text name="dr_money_biogas"    text="Biokaasutulot: " />
+        <text name="dr_money_sales"     text="Tuotemyynti: " />
+        <text name="dr_money_distCost"  text="Jakelukulut: -" />
+
+        <!-- ================= MISC ENGINE LABELS ================= -->
+        <text name="dr_label_waterSource"      text="Vesilähde" />
+
+        <!-- ================= SETTINGS ================= -->
+
+        <text name="dr_set_scope"     text="Laajuus" />
+        <text name="dr_set_scope_tt"  text="Laajuus: jokainen omistamasi kohde ulottuu koko tilan alueelle.  Läheisyys: kohteet tavoittavat lähteitä vain alla olevan läheisyyssäteen sisällä." />
+        <text name="dr_set_scope_v1"  text="Laajuus (koko tila)" />
+        <text name="dr_set_scope_v2"  text="Läheisyys (säde)" />
+
+        <text name="dr_set_includeHusbandry"     text="Eläintenhoito" />
+        <text name="dr_set_includeHusbandry_tt"  text="Sisällytä eläintenhoito (navetat, kanalat, mehiläispesät sekä lanta- ja lietekuopat) jakeluverkkoon. Pois-asetus poistaa ne kokonaan: niitä ei ruokita, eikä niiden tuotantoa (maito / lanta / liete / munat / villa / hunaja) jaeta tai myydä." />
+        <text name="dr_set_includeHusbandry_v1"  text="Päällä" />
+        <text name="dr_set_includeHusbandry_v2"  text="Pois" />
+
+        <text name="dr_set_includeSilosSheds"     text="Siilot ja lavavarastot" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Sisällytä sato- ja materiaalisiilot sekä lavavarastot jakeluverkkoon. Pois-asetus poistaa ne: siilot eivät enää syötä tuotantoja, eivätkä lavavarastot vastaanota tai luovuta lavoja. (Lanta- ja lietekuopat noudattavat Eläintenhoito-asetusta.)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="Päällä" />
+        <text name="dr_set_includeSilosSheds_v2"  text="Pois" />
+
+        <text name="dr_set_includeMarkets"     text="Markkinat ja kioskit" />
+        <text name="dr_set_includeMarkets_tt"  text="Sisällytä markkinat ja kioskit jakeluverkkoon. Pois-asetus poistaa ne: tilan omistamia tuotteita ei enää reititetä niihin myytäväksi, ja Markkinat-välilehti piilotetaan." />
+        <text name="dr_set_includeMarkets_v1"  text="Päällä" />
+        <text name="dr_set_includeMarkets_v2"  text="Pois" />
+
+        <text name="dr_set_includeMapStorage"     text="Kartan julkiset varastot" />
+        <text name="dr_set_includeMapStorage_tt"  text="Sisällytä kartan varastorakennukset, joita et omista mutta joihin voit silti varastoida tavaraa, kuten rautatien viljapooli. Oletuksena pois päältä: nämä rakennukset veloittavat yleensä vuokraa jokaisesta säilytetystä litrasta, joten ne lisätään verkkoon vain pyydettäessä. Päällä ollessaan ne näkyvät varastorakennuksina, joiden jokainen tuote on asetettu Pidä-tilaan, eivätkä ne siirrä mitään ennen kuin määrität ne." />
+        <text name="dr_set_includeMapStorage_v1"  text="Päällä" />
+        <text name="dr_set_includeMapStorage_v2"  text="Pois" />
+
+        <text name="dr_set_advancedRouting"     text="Lisäreititys" />
+        <text name="dr_set_advancedRouting_tt"  text="Pääkytkin toiminnoille Lisäasetukset: Lähdöt (lähteen esto / prioriteetti / Siirrä) ja Lisäasetukset: Tulot (tulon esto / ylärajat / täyttötavoitteet). Pois-asetus piilottaa nämä painikkeet ja palaa oletusarvoiseen, etäisyyteen perustuvaan lähin-ensin-jakeluun. VAROITUS: tämän kytkeminen POIS PÄÄLTÄ TYHJENTÄÄ kaikki olemassa olevat lisäasetukset (jokaisen eston, prioriteetin, Siirrä-kohteen, tulorajan ja täyttötavoitteen) - ne palautuvat oletuksiin eivätkä palaudu, vaikka kytkisit toiminnon takaisin päälle; joudut määrittämään ne uudelleen alusta." />
+        <text name="dr_set_advancedRouting_v1"  text="Päällä" />
+        <text name="dr_set_advancedRouting_v2"  text="Pois" />
+
+        <text name="dr_set_radius"     text="Läheisyyssäde" />
+        <text name="dr_set_radius_tt"  text="Kuinka kauas kuluttaja ulottuu lähteisiin Läheisyys-tilassa." />
+        <text name="dr_set_radius_v1"  text="25 m" />
+        <text name="dr_set_radius_v2"  text="50 m" />
+        <text name="dr_set_radius_v3"  text="75 m" />
+        <text name="dr_set_radius_v4"  text="100 m" />
+        <text name="dr_set_radius_v5"  text="150 m" />
+        <text name="dr_set_radius_v6"  text="200 m" />
+        <text name="dr_set_radius_v7"  text="400 m" />
+
+        <text name="dr_set_bufferHours"     text="Kuluttajan puskuri" />
+        <text name="dr_set_bufferHours_tt"  text="Kuinka monen tunnin rehuvarasto täydennetään kullekin kuluttajalle jaksoa kohden." />
+        <text name="dr_set_bufferHours_v1"  text="1 tunti" />
+        <text name="dr_set_bufferHours_v2"  text="2 tuntia" />
+        <text name="dr_set_bufferHours_v3"  text="4 tuntia" />
+        <text name="dr_set_bufferHours_v4"  text="8 tuntia" />
+        <text name="dr_set_bufferHours_v5"  text="12 tuntia" />
+        <text name="dr_set_bufferHours_v6"  text="24 tuntia" />
+
+        <text name="dr_set_sellEnabled"     text="Myynti" />
+        <text name="dr_set_sellEnabled_tt"  text="Yleiskytkin kaikelle automyynnille (Myy / Jaa+Myy -tilat)." />
+        <text name="dr_set_sellEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_sellEnabled_v2"  text="Pois käytöstä" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Automaattivesi" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Toimittaa automaattisesti vettä vettä tarvitseville tuotannoille ja eläinten laitumille (veloitus lähimmän vesilähteen etäisyyden mukaan)." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Pois käytöstä" />
+
+        <text name="dr_set_distCostEnabled"     text="Jakelukulu" />
+        <text name="dr_set_distCostEnabled_tt"  text="Veloittaa tuntikohtaisen kuljetuskulun jokaisesta aktiivisesta jakelusta (kasvaa kuljetusmatkan mukaan)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_distCostEnabled_v2"  text="Pois käytöstä" />
+
+        <text name="dr_set_distCostBase"     text="Kuluhinta" />
+        <text name="dr_set_distCostBase_tt"  text="Peruskuljetuskulu tunnissa lyhyelle matkalle (alla olevan kulumatkan sisällä tai sen alle)." />
+        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
+        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
+        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
+        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
+        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+
+        <text name="dr_set_distCostThreshold"     text="Kulumatka" />
+        <text name="dr_set_distCostThreshold_tt"  text="Tätä etäisyyttä lyhyemmät tai yhtä pitkät kuljetukset maksavat tasan perushinnan; pidemmät kuljetukset kasvavat lineaarisesti." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 m" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 m" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 m" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 m" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Kausisadon varaus" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Jaa+Myy-tilaan asetetut kasvit pitävät riittävästi rehua tuotannon syöttämiseksi seuraavaan satoon asti; vain ylijäämä myydään." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Pois käytöstä" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Varauskuukaudet (kunnes opittu)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="Kuinka monen kuukauden rehuvarasto pidetään kasville, ennen kuin modi on havainnut sen todellisen sadonkorjuuajan." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 kuukautta" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 kuukautta" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 kuukautta" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 kuukautta" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 kuukautta" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Myy parhaaseen hintaan" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Pääkytkin: pitää Myy / Jaa+Myy -ylijäämän odottamassa parasta kuukautta ennen myyntiä. Pois: kaikki myydään välittömästi." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Pois käytöstä" />
+
+        <text name="dr_set_bestPriceDefault"     text="Oletusmyyntiajoitus" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Oletus kaikille Myy / Jaa+Myy -lähdöille ja jokaiselle markkinatuotteelle, kunnes asetat rakennuksen oman kytkimen. Jo määritetyt markkinat säilyttävät oman asetuksensa." />
+        <text name="dr_set_bestPriceDefault_v1"  text="Myy parhaaseen hintaan" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Myy välittömästi" />
+
+        <text name="dr_set_palletSpawnMode"     text="Lavojen luonti" />
+        <text name="dr_set_palletSpawnMode_tt"  text="Kokonaiset lavat: karsinat pitävät tuotteen sisäisesti ja vapauttavat TÄYDEN lavan, kuten tuotannot. Peruspeli: lava ilmestyy heti ja täyttyy vähitellen. Ei koskaan: mikään ei luo lavoja itsestään, tuote pysyy sisäisenä ja silti jaetaan, varastoidaan ja myydään sieltä. Voit aina vapauttaa lavan käsin Luo lavoja -toiminnolla. Ei koskaan koskee vain karsinoita ja tuotantoja - mehiläispesät jatkavat lavojen luontia normaalisti (niillä ei ole sisäistä puskuria, josta myydä), eikä se vaikuta kauppoihin, joista ostat lavoja." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Peruspeli (täyttyy vähitellen)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Vain kokonaiset lavat" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Älä koskaan luo lavoja" />
+
+        <text name="dr_set_menuRefresh"     text="Valikon päivitysnopeus" />
+        <text name="dr_set_menuRefresh_tt"  text="Kuinka usein avoin valikko lukee tilan tiedot uudelleen. Yleiskatsaus käy läpi jokaisen rakennuksen ja tuotteen uudelleen, joten suurella tilalla hitaampi nopeus pitää valikon sujuvana. Vain manuaalinen pysäyttää taustapäivityksen kokonaan - luvut päivittyvät silti aina, kun valitset jotain tai painat Päivitä Yleiskatsauksessa." />
+        <text name="dr_set_menuRefresh_v1"  text="Reaaliaikainen (0,5s)" />
+        <text name="dr_set_menuRefresh_v2"  text="Normaali (2s)" />
+        <text name="dr_set_menuRefresh_v3"  text="Rento (10s)" />
+        <text name="dr_set_menuRefresh_v4"  text="Vain manuaalinen" />
+
+        <text name="dr_set_debugEnabled"     text="Vianetsintäloki" />
+        <text name="dr_set_debugEnabled_tt"  text="Kirjoittaa yksityiskohtaisen jakelutoiminnan log.txt-tiedostoon (siirrot, myynnit, varastoinnit, vesitäydennykset ja veloitukset). Kytke pois hiljaisempaa lokia varten." />
+        <text name="dr_set_debugEnabled_v1"  text="Käytössä" />
+        <text name="dr_set_debugEnabled_v2"  text="Pois käytöstä" />
+
+        <!-- ============ USER GUIDE ============
+             Ei vielä käännetty tässä versiossa: dr_guide_* -avaimet palautuvat
+             automaattisesti englanniksi, kunnes käyttöopas käännetään erikseen. -->
+
+    </texts>
+</l10n>
