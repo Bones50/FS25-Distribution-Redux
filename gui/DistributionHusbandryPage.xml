@@ -32,8 +32,12 @@
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
-            <Text profile="SDHeaderLeft" position="530px 0px" size="550px 40px" textSize="14px"
+            <Text profile="SDHeaderLeft" position="530px 0px" size="330px 40px" textSize="14px"
                   text="$l10n_dr_lbl_overviewPointer" />
+            <!-- Key hint for the in-row mode arrows. Z is read raw by the page (no footer entry and no
+                 rebindable action), so this line is the ONLY thing that tells a player it exists. -->
+            <Text profile="SDHeaderLeft" position="870px 0px" size="210px 40px" textSize="12px"
+                  text="$l10n_dr_lbl_modeKeys" />
         </Bitmap>
 
         <!-- right: incoming products (inputs / demand) -->
@@ -71,10 +75,12 @@
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
             <Text profile="SDHeaderLeft" position="207px 0px" size="210px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
-            <Text profile="SDHeaderLeft" position="425px 0px" size="100px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="533px 0px" size="95px 40px"  textSize="11px" text="$l10n_dr_col_produced" />
-            <Text profile="SDHeaderLeft" position="636px 0px" size="115px 40px" textSize="11px" text="$l10n_dr_col_distributed" />
-            <Text profile="SDHeaderLeft" position="759px 0px" size="215px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
+            <!-- the three flow columns each gave up width (100->84, 95->79, 115->87) to fund the in-row
+                 mode arrows; the MODE cell keeps its full 215px of text, so nothing truncates. -->
+            <Text profile="SDHeaderLeft" position="425px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft" position="517px 0px" size="79px 40px"  textSize="11px" text="$l10n_dr_col_produced" />
+            <Text profile="SDHeaderLeft" position="604px 0px" size="87px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderLeft" position="699px 0px" size="275px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
             <Text profile="SDHeaderLeft" position="982px 0px" size="108px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
@@ -89,11 +95,15 @@
                     <!-- HELD sits next to the product and takes the widest slot: it is the only cell that
                          carries three figures ("473 L (150,000 L) + 3,000 L (3p)") and it was truncating. -->
                     <Text profile="SDRowCell" position="207px 0px" size="210px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="425px 0px" size="100px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="533px 0px" size="95px 42px"  textSize="12px" name="prodText" />
-                    <Text profile="SDRowCell" position="636px 0px" size="115px 42px" textSize="12px" name="distText" />
-                    <!-- mode AND its sell timing share this cell ("Distribute + Sell - Sell Immediately") -->
-                    <Text profile="SDRowCell" position="759px 0px" size="215px 42px" textSize="12px" name="modeText" />
+                    <Text profile="SDRowCell" position="425px 0px" size="84px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="517px 0px" size="79px 42px" textSize="12px" name="prodText" />
+                    <Text profile="SDRowCell" position="604px 0px" size="87px 42px" textSize="12px" name="distText" />
+                    <!-- mode AND its sell timing share this cell ("Distribute + Sell - Sell Immediately"),
+                         with arrows either side to step it both ways in place. See the Silos page for why
+                         a click on an arrow does not also re-select the row. -->
+                    <Button profile="fs25_multiTextOptionLeft"  position="699px 0px" name="modePrev" onClick="onModePrev" />
+                    <Text   profile="SDRowCell"       position="729px 0px" size="215px 42px" textSize="12px" name="modeText" />
+                    <Button profile="SDRowArrowRight" position="948px 0px" name="modeNext" onClick="onModeNext" />
                     <Text profile="SDRowCell" position="982px 0px" size="108px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>

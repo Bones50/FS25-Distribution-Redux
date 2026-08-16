@@ -2605,11 +2605,25 @@ local function resetCycleMoney()
     cycleMoney = { sales = 0, biogas = 0, cost = 0, any = false, ff = SmartDistribution._fastForward == true }
 end
 
-local function tallyMoney(delta, mt)
+-- `category` names DR's own summary bucket EXPLICITLY ("cost" / "biogas"); nil keeps the
+-- historic behaviour of inferring it from the MoneyType.
+--
+-- THE EXPLICIT ARGUMENT EXISTS BECAUSE THE INFERENCE IS FRAGILE, and it broke twice while
+-- the finance-line question was being investigated (2026-08-16). This function decided
+-- "is it a cost" by testing mt == PROPERTY_MAINTENANCE, so the moment chargeDistribution
+-- booked haulage anywhere else -- and it has now moved to OTHER -- an unrecognised type
+-- fell through to the final `else` and the hourly popup reported the charge as INCOME.
+-- Inferring a DR-side category from a base-game money type couples two things that have
+-- no reason to stay in step; a caller that knows what it is spending should just say so.
+local function tallyMoney(delta, mt, category)
     if cycleMoney == nil then resetCycleMoney() end
     local PM = (MoneyType ~= nil) and MoneyType.PROPERTY_MAINTENANCE or nil
     local BG = (MoneyType ~= nil) and MoneyType.INCOME_BGA or nil
-    if PM ~= nil and mt == PM then
+    if category == "cost" then
+        cycleMoney.cost = cycleMoney.cost + delta            -- costs arrive as negative deltas
+    elseif category == "biogas" then
+        cycleMoney.biogas = cycleMoney.biogas + delta
+    elseif PM ~= nil and mt == PM then
         cycleMoney.cost = cycleMoney.cost + delta            -- costs arrive as negative deltas
     elseif BG ~= nil and mt == BG then
         cycleMoney.biogas = cycleMoney.biogas + delta        -- biogas plant grid income (electricity / methane)
@@ -2622,11 +2636,11 @@ end
 
 -- single money chokepoint. Money is applied immediately every (accelerated) hour so the
 -- balance always tracks play -- but SILENTLY; the once-per-cycle summary is the only popup.
-local function applyMoney(delta, farmId, mt)
+local function applyMoney(delta, farmId, mt, category)
     if delta == nil or delta == 0 or farmId == nil then return end
     if g_currentMission ~= nil and g_currentMission.addMoney ~= nil then
         g_currentMission:addMoney(delta, farmId, mt, true, false)   -- addChange=true (books stay exact), forceShowChange=false (no per-sale popup)
-        tallyMoney(delta, mt)
+        tallyMoney(delta, mt, category)   -- `category` optional; nil = infer from mt, the historic path
     end
 end
 SmartDistribution._applyMoney = applyMoney   -- exposed for harness + ProductionDistributeSell biogas surplus
@@ -2846,14 +2860,31 @@ local function chargeDistribution(bill)
             end
         end
     end
-    local mt = MoneyType ~= nil and (MoneyType.PROPERTY_MAINTENANCE or MoneyType.OTHER) or nil
+    -- HAULAGE IS BOOKED TO **OTHER**, NOT PROPERTY_MAINTENANCE (changed 2026-08-16).
+    --
+    -- It used to go to PROPERTY_MAINTENANCE, which is specific and WRONG -- distribution
+    -- haulage is not building upkeep, and booking it there quietly inflated a line the
+    -- player reads as the cost of owning their buildings. OTHER is vaguer but honest, and
+    -- it is a real persisted bucket (<other> in farms.xml), so the money stays visible on
+    -- the finance screen instead of being mislabelled.
+    --
+    -- A DEDICATED "Distribution Costs" LINE ITEM IS NOT AVAILABLE, and this is the fallback
+    -- from having tried it: MoneyType.register accepts a brand-new statistic name without
+    -- complaint, but the finance stats only accumulate into the base game's fixed bucket
+    -- set, so money booked to a novel bucket leaves the player's balance and is recorded
+    -- NOWHERE. Measured, not assumed -- $344.26 charged, balance fell by exactly that plus
+    -- base costs, farms.xml gained no element and no row appeared on the screen. See the
+    -- probe at the file tail; do not re-attempt this without reading it first.
+    local mt = MoneyType ~= nil and (MoneyType.OTHER or MoneyType.PROPERTY_MAINTENANCE) or nil
     for farmId, pf in pairs(perFarm) do
         if farmId ~= nil and pf.cost > 0 then
             if SmartDistribution.dryRun then
                 log("[dry-run] would charge farm %s $%.2f distribution cost (%d link(s))",
                     tostring(farmId), pf.cost, pf.links)
             else
-                applyMoney(-pf.cost, farmId, mt)   -- batched across sleep, settled at wake
+                -- "cost" is passed EXPLICITLY: the per-cycle summary must classify this as a
+                -- cost regardless of which MoneyType it is booked to (see tallyMoney).
+                applyMoney(-pf.cost, farmId, mt, "cost")   -- batched across sleep, settled at wake
                 log("charged farm %s $%.2f distribution cost (%d link(s))", tostring(farmId), pf.cost, pf.links)
             end
         end
@@ -7133,7 +7164,15 @@ SmartDistribution.loadOverrides = loadOverrides                  -- exposed so t
 local function installPersistence()
     if Mission00 ~= nil and Mission00.loadMission00Finished ~= nil then
         Mission00.loadMission00Finished = Utils.appendedFunction(
-            Mission00.loadMission00Finished, function(...) pcall(loadOverrides) end)
+            Mission00.loadMission00Finished, function(...)
+                pcall(loadOverrides)
+                -- THE PLACEMENT-DEFAULTS LATCH, and it must be raised HERE, after loadOverrides.
+                -- Every placeable in the savegame has already finalized by this point, so anything
+                -- that finalizes from now on is genuinely new. Raising it any earlier would stamp
+                -- defaults over the whole existing farm on load, which is the one outcome this
+                -- feature must never produce.
+                SmartDistribution._worldLoaded = true
+            end)
         print("[SmartDistribution persist] load hook attached (Mission00.loadMission00Finished)")
     else
         print("[SmartDistribution persist] LOAD HOOK NOT ATTACHED -- Mission00.loadMission00Finished missing")
@@ -10044,6 +10083,47 @@ function SmartDistribution.cycleNextForAsset(asset, m, ft)   -- store-aware + pa
     end
     return nxt
 end
+-- The VALID modes for this (building, product), in ring order -- i.e. exactly what stepping forward
+-- would visit, collected instead of walked.
+--
+-- DERIVED FROM THE FORWARD RING ON PURPOSE. A hand-written reverse table would be a second source of
+-- truth for "what order do modes come in", free to drift from cycleNext the next time a mode is added;
+-- this cannot, because it IS cycleNext. Cost is one full lap of a <=12 entry ring, and it is called on
+-- a CLICK, never from populate -- modeHasEndpoint scans placeableSystem, which is precisely the shape
+-- 5.46 / 5.52 exist to keep off the menu's hot path.
+function SmartDistribution.validModeRing(asset, ft)
+    local out = {}
+    if asset == nil or ft == nil then return out end
+    local step = function(cur)
+        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
+                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed())
+    end
+    local m, seen = MODE.DISTRIBUTE, {}
+    for _ = 1, 14 do                                           -- ring is <=12; the cap is a backstop
+        if seen[m] then break end
+        seen[m] = true
+        if SmartDistribution.modeHasEndpoint(asset, ft, m) then out[#out + 1] = m end
+        m = step(m)
+    end
+    return out
+end
+
+-- One step BACKWARD, the mirror of cycleNextForAsset.
+-- If the current mode is not in the ring at all -- which 5.48 makes possible and legitimate, since a
+-- player's mode is never rewritten when its endpoint disappears -- fall back to the last valid entry
+-- rather than refusing to move, so the arrow is never dead.
+function SmartDistribution.cyclePrevForAsset(asset, m, ft)
+    local ring = SmartDistribution.validModeRing(asset, ft)
+    local n = #ring
+    if n == 0 then return m end
+    for i = 1, n do
+        if ring[i] == m then
+            return ring[i > 1 and (i - 1) or n]                -- wraps to the end
+        end
+    end
+    return ring[n]
+end
+
 SmartDistribution.siloFillTypes  = siloFillTypes
 SmartDistribution.assetFillTypes = assetConfigFillTypes        -- allocator view (sheds: stored only)
 
@@ -10765,6 +10845,13 @@ function SmartDistribution.cycleProductionOutput(p, ft)
     local pp = getProductionPoint(p)
     if pp == nil or ft == nil or SmartDistribution.cycleProductionOutputMode == nil then return false end
     return SmartDistribution.cycleProductionOutputMode(pp, ft)
+end
+
+-- ...and one step the other way, for the in-row left arrow on the Productions tab.
+function SmartDistribution.cycleProductionOutputBack(p, ft)
+    local pp = getProductionPoint(p)
+    if pp == nil or ft == nil or SmartDistribution.cycleProductionOutputModeBack == nil then return false end
+    return SmartDistribution.cycleProductionOutputModeBack(pp, ft)
 end
 
 -- ============================================================================
@@ -12877,10 +12964,162 @@ SmartDistribution.husbandryOutputFillTypes = husbandryOutputFillTypes
 -- help list like every other binding. We toggle the action event's text visibility +
 -- active state on the id stashed by installInteraction; a context re-registration
 -- (vehicle enter/exit, etc.) hands us a fresh id, so we re-assert on the next tick.
+-- ============================================================================
+--  PLACEMENT DEFAULTS -- the defaultOutputMode / defaultInputMode settings
+--
+--  These stamp an EXPLICIT per-product choice onto a building at the moment it is PLACED, and do
+--  nothing else, ever. They are deliberately NOT resolver defaults, and the difference is the entire
+--  requirement:
+--    * changing either setting must never disturb a building that already exists;
+--    * loading an existing savegame under a new version must change nothing whatsoever.
+--  Both fall out of stamping rather than resolving -- there is no code path here by which an existing
+--  building is ever revisited. It is also why defaultOutputMode is NOT wired to `S.global.mode`: every
+--  unconfigured building in the world resolves through that (see resolveMode), so pointing the setting
+--  at it would rewrite the whole farm the moment it was flipped. S.global.mode stays MODE.DISTRIBUTE.
+--
+--  TELLING A NEW BUILDING FROM A LOADED ONE is the only hard part, because both arrive through
+--  onFinalizePlacement. `_worldLoaded` is the latch: raised at the END of the
+--  Mission00.loadMission00Finished hook (i.e. after loadOverrides), and every placeable in a savegame
+--  finalizes BEFORE that fires. So during a load the queue is never filled and nothing is stamped.
+--  A consequence worth knowing: the map's own PREPLACED buildings on a brand-new game are not stamped
+--  either -- they load the same way. Only what the player puts down afterwards is.
+--
+--  DEFERRED BY ONE TICK, DELIBERATELY. The stamp needs the building's fill types, and at finalize time
+--  a modded production point's spec_* may not be populated yet -- the load-order hazard that
+--  _uncachedProductionPoint exists for (5.29 / 5.54). Reading it a moment too early would stamp an
+--  empty or partial product list, which is unrecoverable because the building then looks "already
+--  stamped". So the placeable is queued and handled on the next proximityWatcher tick.
+--
+--  SERVER-ONLY, replicated through the EXISTING events (DistributionModeEvent via applyAssetMode,
+--  DistributionControlEvent INPUT_BLOCK). A client must never stamp -- placeables stream in on join and
+--  it would write its own copies over server state, the 5.49 failure shape. No new event type is
+--  introduced and ACT_NUM_BITS is untouched.
+-- ============================================================================
+SmartDistribution._worldLoaded = false
+SmartDistribution._stampQueue  = nil
+
+-- Called from the placement hook. Cheap and allocation-free until something is actually placed.
+function SmartDistribution.queuePlacementStamp(p)
+    if p == nil or not SmartDistribution._worldLoaded then return end
+    -- SERVER ONLY. NOTE this is deliberately NOT `S.master` -- that flag is initialised true and is
+    -- never set false anywhere, so it means "the mod is active", not "I am the server". Using it here
+    -- would let every CLIENT stamp its own copies as placeables stream in on join.
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    local g = S.global or {}
+    -- Nothing to do at the defaults, so do not even queue: with the output setting on Distribute an
+    -- unstamped product already resolves to Distribute through S.global.mode, and with the input
+    -- setting on Accept all an absent block already means "not blocked". Writing explicit entries for
+    -- either would be behaviourally identical and would only bloat the savegame.
+    local wantHold  = (g.defaultOutputMode == 1)
+    local wantBlock = (g.defaultInputMode == 1)
+    if not wantHold and not wantBlock then return end
+    SmartDistribution._stampQueue = SmartDistribution._stampQueue or {}
+    SmartDistribution._stampQueue[#SmartDistribution._stampQueue + 1] = p
+end
+
+-- Stamp ONE building. Safe to call twice: every write is guarded on the product being unconfigured,
+-- so a queued placeable that somehow arrives here again cannot overwrite a choice the player has
+-- since made.
+function SmartDistribution.stampPlacementDefaults(p)
+    if p == nil then return end
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end   -- see queuePlacementStamp
+    local uid = getUid(p)
+    if uid == nil then return end
+    local g = S.global or {}
+    local modes, blocks = 0, 0
+
+    if g.defaultOutputMode == 1 then
+        -- MODE.HOLD, never MODE.HOLD_INTERNAL. One value covers every building because the LABEL
+        -- adapts (holdLabelFlag): "Hold Pallets" on a pallet output, "Hold Internal" once pallet
+        -- spawning is Never, plain "Hold" otherwise. Stamping HOLD_INTERNAL to get that third label
+        -- would pin the building to a mode cycleNext DROPS from the ring in Never mode -- the player
+        -- could cycle away from it but never back.
+        local fts = SmartDistribution.assetMenuFillTypes(p)
+        for ft in pairs(fts or {}) do
+            if SmartDistribution.getAssetMode(uid, ft) == MODE.INHERIT then
+                SmartDistribution.applyAssetMode(p, ft, MODE.HOLD)   -- sets + replicates
+                modes = modes + 1
+            end
+        end
+    end
+
+    -- INPUTS. Only stamped while Advanced routing is ON, and that is not a limitation being papered
+    -- over -- it is the honest behaviour. isInputBlocked returns false without it and
+    -- clearAdvancedControl EMPTIES the whole input-block table whenever the switch goes off, so blocks
+    -- written with Advanced off are guaranteed to be wiped at the next apply(). Writing them anyway
+    -- would leave state that silently evaporates. The tooltip says so.
+    if g.defaultInputMode == 1 and SmartDistribution.advancedEnabled() then
+        local ins = SmartDistribution.receiverInputFillTypes(p)
+        for ft in pairs(ins or {}) do
+            if not SmartDistribution.isInputBlocked(uid, ft) then
+                if DistributionControlEvent ~= nil and DistributionControlEvent.send ~= nil then
+                    -- send() applies locally AND broadcasts, so this is the whole job in one call
+                    DistributionControlEvent.send(DistributionControlEvent.ACT.INPUT_BLOCK, uid, ft, "", 0, true)
+                else
+                    SmartDistribution.setInputBlocked(uid, ft, true)   -- singleplayer fallback
+                end
+                blocks = blocks + 1
+            end
+        end
+    end
+
+    -- A PRODUCTION caches its v-mode in VTAB, and a DERIVED entry cached before this stamp would keep
+    -- showing the old default (5.50). Dropping the provisional entries makes it re-derive and pick the
+    -- explicit mode up; an entry the player set explicitly is untouched by this call, which is the
+    -- distinction VSEED exists for.
+    if modes > 0 and SmartDistribution.invalidateSeededVModes ~= nil then
+        pcall(SmartDistribution.invalidateSeededVModes)
+    end
+
+    if (modes > 0 or blocks > 0) then
+        log("placement defaults stamped on %s: %d output mode(s), %d input block(s)",
+            tostring(placeableName(p)), modes, blocks)
+    end
+end
+
+-- Hooks the GENERIC Placeable class, so every building kind is covered by one append -- silos, pens,
+-- productions, sheds and anything modded alike. Appended (never overwritten), and the queue call is
+-- itself latch-gated and server-gated, so during a load and on a client this costs one nil test.
+--
+-- IT IS `finalizePlacement`, NOT `onFinalizePlacement`, and the difference is not cosmetic.
+-- `onFinalizePlacement` is a SPECIALIZATION EVENT: Placeable.lua registers it with
+-- SpecializationUtil.registerEvent and RAISES it (line 754), so it exists on spec tables like
+-- PlaceableHusbandry but is nil on the base Placeable class. Hooking it there installs nothing --
+-- which is exactly what happened on the first build, and is why the husbandry patch further up this
+-- file reaches for PlaceableHusbandry.onFinalizePlacement first and only falls back to Placeable
+-- (a fallback that, on this evidence, has never actually run).
+-- `Placeable:finalizePlacement()` is the real base method and runs for EVERY placeable, on a
+-- savegame load as well as a fresh placement -- the latch is what separates those two.
+-- Appending puts us after both raised events, so every specialization is initialised by then.
+function SmartDistribution.installPlacementDefaults()
+    if Placeable == nil or Placeable.finalizePlacement == nil then
+        print("[SmartDistribution] placement defaults NOT installed -- Placeable.finalizePlacement missing")
+        return
+    end
+    Placeable.finalizePlacement = Utils.appendedFunction(
+        Placeable.finalizePlacement,
+        function(self) pcall(SmartDistribution.queuePlacementStamp, self) end)
+    -- print, not log(): log() is debug-gated and silent in a release build, so a SUCCESSFUL install
+    -- left no trace at all. Only the failure was visible, which is half a diagnostic.
+    print("[SmartDistribution] placement defaults hook installed (Placeable.finalizePlacement)")
+end
+
+-- Drained from proximityWatcher:update, one tick after placement.
+function SmartDistribution.flushPlacementStamps()
+    local q = SmartDistribution._stampQueue
+    if q == nil then return end
+    SmartDistribution._stampQueue = nil
+    for _, p in ipairs(q) do pcall(SmartDistribution.stampPlacementDefaults, p) end
+end
+
 local proximityWatcher = { acc = 0, target = nil, lastNear = nil, lastEid = nil }
 
 function proximityWatcher:update(dt)
     SmartDistribution.flushPendingSummary()      -- emit the slept-through summary the moment fast-forward stops
+    -- One tick after a building was placed, stamp its default output mode / input blocks. Deferred to
+    -- here (rather than done inside onFinalizePlacement) so the building's specs are fully populated
+    -- before its fill types are read -- see the header above stampPlacementDefaults.
+    if SmartDistribution._stampQueue ~= nil then SmartDistribution.flushPlacementStamps() end
     -- Run an hourly pass deferred from onHourChanged (normal play). We wait one update
     -- tick first, so the engine's hour-change processing -- including producers depositing
     -- this hour's batch in a listener that runs after ours -- has completed; the store pass
@@ -13981,7 +14220,164 @@ installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
 installProximityWatcher()
+SmartDistribution.installPlacementDefaults()   -- defaultOutputMode / defaultInputMode, stamped on placement
 installMenu()
+
+-- ============================================================================
+--  TEMPORARY PROBE (2026-08-16) -- "can distribution cost be its own line item on
+--  the base game's finance screen?"  REMOVE the flag, this function, its call, the
+--  two dr_finance_* l10n keys and the two TEMPORARY branches in tallyMoney /
+--  chargeDistribution once the answer is recorded.
+--
+--  THIS CANNOT BE ANSWERED BY READING. MoneyType.lua, the Farm finance-stats layer
+--  and the finances GUI frame are all stripped or packed in the SDK source (8.1 --
+--  InGameMenuStatisticsFrame.lua measures 97% blank), and per that rule an absence
+--  there proves nothing. The only hard evidence available is the savegame, and
+--  farms.xml shows finances persisted as a FIXED set of named buckets:
+--      <propertyMaintenance> <productionCosts> ... <other>
+--  matching the finance screen's rows one-for-one, "Other" included. But that is
+--  equally consistent with "closed enum" and with "whatever the base game happens
+--  to have registered", because nothing installed registers a custom one. Which of
+--  those two it is, is the entire question.
+--
+--  What IS certain: MoneyType.register(statisticName, titleKey, modName) is real
+--  and mod-facing -- GIANTS' own internal Precision Farming mod calls it with a mod
+--  namespace (EnvironmentalScore.lua:42), and a registered type carries an .id that
+--  the base game streams as a UInt16 (FillTriggerVehicle.lua:99).
+--
+--  THE EXPERIMENT, one save away from an answer:
+--    1. dump a KNOWN money type, so a registered one can be compared field by field;
+--    2. register a type naming a BRAND-NEW bucket ("distributionCost");
+--    3. register a control into the known-good "other" bucket -- dump only, never
+--       charged -- which is the pattern the base game itself uses (FillTrigger.lua:16);
+--    4. route DR's real haulage bill through (2), then save and read farms.xml.
+--
+--  READING THE RESULT:
+--    <distributionCost> appears in farms.xml -> new buckets ARE supported; a real
+--        line item is reachable and cheap. Done.
+--    the money lands in <other> instead      -> the bucket name fell back. Whether a
+--        new ROW is still reachable then depends on whether the screen renders per
+--        TYPE or per BUCKET -- look for a "Distribution Costs" row on the finances
+--        screen to tell which. The two registrations are titled differently so that
+--        row names its own origin without needing the log.
+--    register returns nil or throws          -> closed set, answered before saving.
+--
+--  RISK, and why it wants a scratch save: the CHARGE is not new money -- it is the
+--  same haulage bill DR has always raised, merely booked elsewhere. The REGISTRATION
+--  is the new thing, and an unknown bucket is what could disturb a save. Back the
+--  savegame up first. MONEY_PROBE = false disables all of it and restores the
+--  shipped behaviour exactly.
+--
+--  MP: ids are assigned in registration order. This runs unconditionally at file
+--  scope on server and client alike, so both ends assign the same id.
+--
+--  A FIELD, never a local -- the main chunk is at the 200-local ceiling (1.1).
+-- ============================================================================
+--  ANSWERED 2026-08-16, and the answer is NO -- flag left false, evidence kept.
+--
+--  register() ACCEPTED a brand-new statistic verbatim (id=40, statistic=distributionCost,
+--  customEnv=FS25_Distribution_Redux) -- it neither validated nor coerced the name -- and
+--  addMoney through that type ran clean, no error, over 5 charges totalling $344.26.
+--
+--  But the SAVE is where it fell apart. farms.xml gained no <distributionCost> element,
+--  <other> stayed 0.000000, <propertyMaintenance> was unchanged -- while the balance fell
+--  by exactly DR's $344.26 plus the base game's own costs. So the money left the player's
+--  account and was booked to NOTHING. The finance stats accumulate into a fixed set of
+--  buckets; a type naming a bucket outside that set is accepted at registration and then
+--  silently dropped at accounting time. No new row appeared on the finances screen either
+--  (author confirmed in game), for either the new-bucket type or the 'other' control.
+--
+--  So MoneyType.register buys a TITLE for money-change popups, not a finance line item.
+--  Routing DR's haulage through a novel bucket is strictly WORSE than the shipped
+--  behaviour: the cost vanishes from the player's books instead of merely being labelled
+--  as someone else's. Hence false, and hence chargeDistribution's fallback is the real path.
+SmartDistribution.MONEY_PROBE = false
+
+function SmartDistribution.probeMoneyType()
+    if not SmartDistribution.MONEY_PROBE then return end
+    -- print, not log(): log() is gated on `debug`, which is false in a release build,
+    -- and a probe the author must first be talked through enabling produces no data.
+    local function dump(s) print("[SmartDistribution moneyProbe] " .. tostring(s)) end
+
+    if MoneyType == nil then
+        dump("[VERIFY] MoneyType global is nil at mod load -- nothing registered, DR unchanged")
+        return
+    end
+
+    -- Field-by-field dump. The point is COMPARISON: whatever fields a base type
+    -- carries (statistic name, title, id) are the fields a registered one must also
+    -- carry, and any it lacks is the thing that will misbehave.
+    local function describe(label, v)
+        if v == nil then dump(label .. " = nil") return end
+        if type(v) ~= "table" then
+            dump(label .. " = " .. tostring(v) .. " (" .. type(v) .. ")")
+            return
+        end
+        local parts = {}
+        for k, val in pairs(v) do
+            local tv = type(val)
+            local shown = (tv == "table" or tv == "function") and ("<" .. tv .. ">") or tostring(val)
+            parts[#parts + 1] = tostring(k) .. "=" .. shown
+        end
+        table.sort(parts)
+        dump(label .. " { " .. table.concat(parts, ", ") .. " }  hasMeta=" .. tostring(getmetatable(v) ~= nil))
+    end
+
+    describe("known PROPERTY_MAINTENANCE", MoneyType.PROPERTY_MAINTENANCE)
+    describe("known OTHER", MoneyType.OTHER)
+
+    -- Full key list, tagged by value type. Re-read this AFTER the registrations below
+    -- to see whether registering added a named constant to the table or only returned one.
+    local keys = {}
+    for k, v in pairs(MoneyType) do
+        if type(v) ~= "function" then keys[#keys + 1] = tostring(k) .. "(" .. type(v) .. ")" end
+    end
+    table.sort(keys)
+    dump("MoneyType keys BEFORE: " .. table.concat(keys, ", "))
+
+    if type(MoneyType.register) ~= "function" then
+        dump("[VERIFY] MoneyType.register is not a function -- cannot register, DR unchanged")
+        return
+    end
+
+    -- (2) THE experiment: a statistic bucket the base game has never heard of.
+    local ok, res = pcall(MoneyType.register, "distributionCost",
+                          "dr_finance_distributionCost", SmartDistribution.MOD_NAME)
+    if ok and res ~= nil then
+        SmartDistribution._distMoneyType = res
+        describe("REGISTERED new bucket 'distributionCost'", res)
+        dump("-> DR haulage is now booked to this type. Play an hour, SAVE, then grep")
+        dump("   savegame<N>/farms.xml for <distributionCost>. Absent means it fell back.")
+    else
+        dump("[VERIFY] register('distributionCost') FAILED: ok=" .. tostring(ok) .. " result=" .. tostring(res))
+        dump("-> a brand-new bucket is refused; the set is closed. DR keeps its shipped money type.")
+    end
+
+    -- (3) Control, dump-only and never charged. If this succeeds where (2) failed,
+    --     it is the STATISTIC NAME being validated rather than registration itself --
+    --     which is exactly the distinction that decides whether a new row is reachable.
+    --     Titled differently from (2) so that if the finances screen renders per TYPE,
+    --     the row on screen says which of the two produced it.
+    local ok2, res2 = pcall(MoneyType.register, "other",
+                            "dr_finance_distributionCostCtl", SmartDistribution.MOD_NAME)
+    if ok2 and res2 ~= nil then
+        describe("CONTROL registered into 'other'", res2)
+    else
+        dump("CONTROL register('other') also failed: ok=" .. tostring(ok2) .. " result=" .. tostring(res2))
+    end
+
+    local keys2 = {}
+    for k, v in pairs(MoneyType) do
+        if type(v) ~= "function" then keys2[#keys2 + 1] = tostring(k) .. "(" .. type(v) .. ")" end
+    end
+    table.sort(keys2)
+    if table.concat(keys2, ", ") ~= table.concat(keys, ", ") then
+        dump("MoneyType keys AFTER:  " .. table.concat(keys2, ", "))
+    else
+        dump("MoneyType key list unchanged by registration (types are returned, not named)")
+    end
+end
+SmartDistribution.probeMoneyType()
 
 -- ---- cross-mod API publish -------------------------------------------------
 -- FS25 loads each mod's scripts in its OWN script environment, so a bare top-level

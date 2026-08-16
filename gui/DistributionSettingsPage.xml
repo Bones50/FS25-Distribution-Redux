@@ -53,6 +53,20 @@
             </Bitmap>
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="defaultOutputMode">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="$l10n_dr_set_defaultOutputMode_tt"/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="$l10n_dr_set_defaultOutputMode"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="defaultInputMode">
+                    <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="$l10n_dr_set_defaultInputMode_tt"/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" text="$l10n_dr_set_defaultInputMode"/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="radius">
                     <Text profile="fs25_multiTextOptionTooltip" name="ignore" text="$l10n_dr_set_radius_tt"/>
                 </MultiTextOption>

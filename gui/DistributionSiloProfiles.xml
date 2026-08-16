@@ -118,6 +118,46 @@
         <defaultProfileText value="fs25_multiTextOptionText" />
         <defaultProfileBgThreePart value="fs25_multiTextOptionBg" />
     </Profile>
+    <!-- IN-ROW MODE ARROWS: TEXT-GLYPH STANDBY, currently UNUSED.
+         The output tables use the base game's fs25_multiTextOptionLeft / Right directly, untouched,
+         so they carry the stock arrow art.
+
+         Keep this as the fallback. The first attempt DID extend those profiles but also overrode their
+         size (26px square) and their anchoring, and the arrows rendered as garbled blocks in the rows:
+         re-sized, they sample the UI atlas wrongly. The profiles file is packed inside dataS.gar so the
+         slice geometry cannot be read to correct it, and the shipped Lua names no left/right arrow slice
+         to borrow (only gui.fastforward_arrow). If the stock art turns out not to work standalone at all
+         (note SDStep10Button below, the only other standalone use, replaces the image rather than
+         inheriting it) switch the three page XMLs back to this profile and give each button
+         text="&lt;" / text="&gt;". A glyph has no UVs to get wrong and scales with textSize.
+
+         The image is zeroed in all three states, the same way SDBodyItem above suppresses its
+         background, so nothing can draw behind the glyph. ONE profile serves both sides: they differ
+         only by the character passed at the use site. -->
+    <!-- RIGHT arrow only. The LEFT one is used stock and places correctly from a plain position; the
+         right one placed from the same kind of position rendered nowhere at all, which is what a
+         right-edge anchor does when it is fed a left-edge coordinate. The stepper's two arrows sit at
+         opposite ends of their parent, so they are anchored to opposite edges.
+
+         ONLY the anchoring is overridden, deliberately. Overriding the SIZE is what produced the
+         garbled arrows in the first attempt, so that is left alone here; anchoring moves an element
+         without changing how its image is sampled. anchorStretchingYLeft is what SDRowCell uses, i.e.
+         the anchoring every other cell in these rows is positioned by. -->
+    <Profile name="SDRowArrowRight" extends="fs25_multiTextOptionRight" with="anchorStretchingYLeft" />
+
+    <Profile name="SDRowArrow" extends="baseReference" with="anchorStretchingYLeft">
+        <size value="26px 26px" />
+        <textBold value="true" />
+        <textSize value="18px" />
+        <textAlignment value="center" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainHighlight" />
+        <textSelectedColor value="$preset_fs25_colorMainHighlight" />
+        <imageColor value="0 0 0 0" />
+        <imageSelectedColor value="0 0 0 0" />
+        <imageFocusedColor value="0 0 0 0" />
+    </Profile>
     <!-- +10 / -10 quantity buttons for the spawn pop-up. Uses the base-game button image, but with DR's
          own palette + property set (distinct from any other mod's stepper profile). -->
     <Profile name="SDStep10Button" extends="fs25_multiTextOptionLeft" with="anchorBottomCenter">

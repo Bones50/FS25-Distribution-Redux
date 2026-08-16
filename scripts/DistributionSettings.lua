@@ -142,6 +142,33 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "Sell at best price", "Sell immediately" },
     },
+    -- ---- DEFAULTS STAMPED ON NEWLY PLACED BUILDINGS -------------------------------------------------
+    -- BOTH of these apply ONLY to a building placed AFTER the world has finished loading, and ONLY at the
+    -- moment it is placed. They are NOT resolver defaults: changing one NEVER touches a building that
+    -- already exists, and loading an old savegame with a new version changes nothing. That is the whole
+    -- requirement, and it is why neither of these is wired to S.global.mode -- see stampPlacementDefaults
+    -- in SmartDistribution.lua, which is the only thing that reads them.
+    --
+    -- Hold is stored as plain MODE.HOLD, never HOLD_INTERNAL. One value covers every case because the
+    -- LABEL adapts: "Hold Pallets" on a pallet output, "Hold Internal" once pallet spawning is Never,
+    -- "Hold" otherwise (holdLabelFlag). Stamping HOLD_INTERNAL instead would pin a building to a mode
+    -- cycleNext REMOVES from the ring in Never mode -- selectable, but impossible to return to.
+    defaultOutputMode = {
+        order   = 1.92,                                         -- beside advancedRouting, above the dials
+        default = 1,                                            -- Distribute (today's behaviour)
+        values  = { 0, 1 },                                     -- 0 = Distribute, 1 = Hold
+        strings = { "Distribute", "Hold" },
+    },
+    -- Block all only BITES while Advanced routing is on: isInputBlocked returns false without it, and
+    -- clearAdvancedControl wipes every input block when that switch goes off. Said plainly in the tooltip
+    -- rather than worked around -- making blocks survive with Advanced off would leave a player unable to
+    -- see or clear them, since the Advanced Inputs dialog is the only UI for it.
+    defaultInputMode = {
+        order   = 1.94,
+        default = 1,                                            -- Accept all (today's behaviour)
+        values  = { 0, 1 },                                     -- 0 = accept all, 1 = block all
+        strings = { "Accept all", "Block all" },
+    },
     -- Replaces the old fullPalletSpawn on/off (migrated on load, see loadSettings). One axis with three
     -- states rather than two switches: productions already behave the "whole pallet" way natively, so
     -- the middle state is really "make pens behave like productions", and Never turns both off.
@@ -273,6 +300,11 @@ function DistributionSettings.apply()
     g.seasonalFallbackMonths = DistributionSettings.seasonalFallbackMonths
     g.bestPriceEnabled = DistributionSettings.bestPriceEnabled
     g.bestPriceDefault = DistributionSettings.bestPriceDefault
+    -- Read ONLY by stampPlacementDefaults, at the moment a building is placed. Deliberately NOT fed into
+    -- anything the resolver consults: g.mode stays MODE.DISTRIBUTE permanently, so a building that was
+    -- never stamped keeps resolving exactly as it always did, whatever these are set to.
+    g.defaultOutputMode = DistributionSettings.defaultOutputMode
+    g.defaultInputMode  = DistributionSettings.defaultInputMode
     -- One setting, two engine flags. fullPalletSpawn means "the pen's vanilla auto-spawn is suppressed",
     -- which is true for BOTH "whole pallets" and "never" -- only Vanilla lets the base game trickle-fill.
     -- Every existing 5.20 code path reads fullPalletSpawn and keeps working untouched; palletSpawnMode is
@@ -401,6 +433,8 @@ function DistributionSettings.save(missionInfo)
     setXMLInt(xml,    "distributionRedux.settings#seasonalFallbackMonths", DistributionSettings.seasonalFallbackMonths)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceEnabled", DistributionSettings.bestPriceEnabled)
     setXMLBool(xml,   "distributionRedux.settings#bestPriceDefault", DistributionSettings.bestPriceDefault)
+    setXMLInt(xml,    "distributionRedux.settings#defaultOutputMode", DistributionSettings.defaultOutputMode)
+    setXMLInt(xml,    "distributionRedux.settings#defaultInputMode",  DistributionSettings.defaultInputMode)
     setXMLInt(xml,    "distributionRedux.settings#palletSpawnMode", DistributionSettings.palletSpawnMode)
     -- menuRefresh is NOT written here: it is localOnly, so it belongs to the machine rather than to the
     -- world, and lives in the profile file via saveLocal(). Writing it per-savegame would make one
@@ -467,6 +501,15 @@ local function readWorldSettings(xml)
 
     local bpDefault = getXMLBool(xml, "distributionRedux.settings#bestPriceDefault")
     if bpDefault ~= nil then DistributionSettings.bestPriceDefault = bpDefault end
+
+    -- Absent in a file written before these existed, which is exactly right: they then keep their
+    -- defaults (Distribute / Accept all), and since neither is a resolver default, an upgraded save
+    -- behaves identically to how it did before the upgrade.
+    local defOut = getXMLInt(xml, "distributionRedux.settings#defaultOutputMode")
+    if defOut ~= nil and isAllowed("defaultOutputMode", defOut) then DistributionSettings.defaultOutputMode = defOut end
+
+    local defIn = getXMLInt(xml, "distributionRedux.settings#defaultInputMode")
+    if defIn ~= nil and isAllowed("defaultInputMode", defIn) then DistributionSettings.defaultInputMode = defIn end
 
     -- palletSpawnMode replaced the fullPalletSpawn on/off. Read the new key first; fall back to
     -- MIGRATING the old boolean so an existing settings file keeps the behaviour it had (true was

@@ -33,6 +33,16 @@
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Configure distribution (nearest asset)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Open Distribution Redux menu" />
 
+        <!-- ================= TEMPORARY: money-type probe =================
+             Titles handed to MoneyType.register. If the base finances screen renders a
+             row per registered TYPE, one of these is what that row will read; if it
+             renders per persisted BUCKET, neither appears and the money shows under an
+             existing row instead. The two are worded differently ON PURPOSE so the log
+             is not needed to tell which registration produced a row.
+             DELETE BOTH when the probe goes.                                          -->
+        <text name="dr_finance_distributionCost"    text="Distribution Costs" />
+        <text name="dr_finance_distributionCostCtl" text="Distribution Costs (control)" />
+
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview"        text="Distribution - Overview" />
         <text name="dr_title_productions"     text="Distribution - Productions" />
@@ -56,6 +66,7 @@
         <text name="dr_lbl_filterBy"         text="Filter by" />
         <text name="dr_lbl_show"             text="Show" />
         <text name="dr_lbl_grouping"         text="Grouping" />
+        <text name="dr_lbl_modeKeys" text="X / Z: cycle selected output mode" />
         <text name="dr_lbl_overviewPointer"  text="Full breakdown + supply chains: Overview tab" />
 
         <!-- ================= Overview: FLOW view column headers =================
@@ -359,6 +370,16 @@
         <text name="dr_set_advancedRouting_tt"  text="Master switch for Advanced Outputs (source-side blocking / priority / Move To) and Advanced Inputs (input blocking / caps / fill targets). Off hides those buttons and reverts to the default nearest-first, distance-based distribution. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch." />
         <text name="dr_set_advancedRouting_v1"  text="On" />
         <text name="dr_set_advancedRouting_v2"  text="Off" />
+
+        <text name="dr_set_defaultOutputMode"     text="New building output mode" />
+        <text name="dr_set_defaultOutputMode_tt"  text="The output mode given to a building at the moment you PLACE it. Distribute is the normal behaviour. Hold means a newly placed building keeps everything it makes until you set it otherwise, so nothing leaves a building you have not configured yet. On a building that makes pallets this shows as 'Hold Pallets', or as 'Hold Internal' when Pallet spawning is set to never. This ONLY affects buildings placed from now on: existing buildings are never changed, and changing this setting does not touch anything already built." />
+        <text name="dr_set_defaultOutputMode_v1"  text="Distribute" />
+        <text name="dr_set_defaultOutputMode_v2"  text="Hold" />
+
+        <text name="dr_set_defaultInputMode"     text="New building input mode" />
+        <text name="dr_set_defaultInputMode_tt"  text="Whether a newly PLACED building accepts deliveries. Accept all is the normal behaviour. Block all blocks every input on the new building, so nothing is delivered to it until you allow products in from Advanced Inputs. NOTE: Block all only works while Advanced routing is On, because input blocking is part of Advanced routing and is cleared whenever you switch it off. This ONLY affects buildings placed from now on: existing buildings are never changed." />
+        <text name="dr_set_defaultInputMode_v1"  text="Accept all" />
+        <text name="dr_set_defaultInputMode_v2"  text="Block all" />
 
         <text name="dr_set_radius"     text="Proximity radius" />
         <text name="dr_set_radius_tt"  text="How far a consumer reaches for sources in Proximity mode." />

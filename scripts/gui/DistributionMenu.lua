@@ -46,6 +46,9 @@ function DistributionMenu:setupPages()
     -- NOTE: there is deliberately no "Cycle All": endpoints are per (building, product), so one product
     -- can have a valid market/consumer while another does not, and a single building-wide mode could not
     -- honour both. Cycling the selected output only is unambiguous.
+    -- THE FOOTER IS DELIBERATELY UNCHANGED. A "cycle backward" entry was added here and then removed on
+    -- request: the footer is full, and the backward step is handled by a raw key on the page instead
+    -- (see DistributionStoragePage:keyEvent), with an on-page hint naming both keys.
     local function storageButtonsFor(getPage)
         return {
             back,
@@ -117,6 +120,64 @@ function DistributionMenu:setupPages()
 end
 
 -- Close the menu (no unsaved-changes prompt: settings apply live).
+-- Z steps the SELECTED output's mode BACKWARD (X steps it forward via the existing footer action).
+--
+-- HANDLED HERE, AT THE MENU, and that is the fix for the first attempt doing nothing. Gui:keyEvent
+-- dispatches to g_gui.currentListener and to currentListener.target only -- it does not walk down to a
+-- frame itself -- so a keyEvent override on the PAGE class is not reliably reached. This screen IS the
+-- currentListener, so it always is. TabbedMenu tracks the live page as self.currentPage.
+--
+-- The page-level overrides are KEPT as well and cannot double-step: the superclass call below
+-- propagates down the element tree first, and if a page handled the key it returns true, so this
+-- returns early without acting again.
+--
+-- MODE_KEYS_ENABLED is how the Markets page opts out -- its MODE column is the market timing enum,
+-- not the asset mode ring.
+-- Is a MEANINGFUL modifier held (ctrl / alt / shift / meta), as opposed to a lock bit?
+--
+-- MEASURED, and it is why the first two attempts at this key did nothing: the guard was
+-- `modifier == 0`, but a menu key press arrives with **modifier = 4096** permanently set -- a lock
+-- bit (Num Lock), not a held key. `x` arrives with the same 4096 and only works because its input
+-- action never looks at modifiers. So the test has to be on the bits that MATTER, not on the whole
+-- value being zero.
+--
+-- The mask is assembled from whichever constants this build actually defines: only MOD_LCTRL and
+-- MOD_LMETA appear anywhere in the shipped source, so the rest are plausible but unconfirmed names
+-- (8.1) and a nil must not break the test. If none resolve, the mask is 0 and this reports "no
+-- modifier", which fails toward the key WORKING rather than being silently dead again.
+local MOD_NAMES = { "MOD_LCTRL", "MOD_RCTRL", "MOD_LALT", "MOD_RALT",
+                    "MOD_LSHIFT", "MOD_RSHIFT", "MOD_LMETA", "MOD_RMETA" }
+
+local function realModifierHeld(modifier)
+    if modifier == nil or modifier == 0 then return false end
+    if Input == nil or bit32 == nil then return false end
+    local mask = 0
+    for i = 1, #MOD_NAMES do
+        local v = Input[MOD_NAMES[i]]
+        if type(v) == "number" then mask = bit32.bor(mask, v) end
+    end
+    if mask == 0 then return false end
+    return bit32.band(modifier, mask) > 0
+end
+
+-- THE KEY IS CLAIMED BEFORE THE SUPERCLASS RUNS, and that ordering is the fix for the previous
+-- attempt. It used to defer to the superclass first and bail on `if used`, so anything in the element
+-- tree that swallowed the key (a focused SmoothList handles its own key navigation) silently
+-- pre-empted this. Acting first also guarantees no double-step: the page-level keyEvent overrides can
+-- no longer see Z, because this returns before propagation.
+function DistributionMenu:keyEvent(unicode, sym, modifier, isDown, eventUsed)
+    if isDown and Input ~= nil and Input.KEY_z ~= nil and sym == Input.KEY_z
+       and not realModifierHeld(modifier) then                         -- never swallow Ctrl+Z etc.
+        local p = self.currentPage
+        if p ~= nil and p.MODE_KEYS_ENABLED ~= false and p.onCycleSelectedBack ~= nil then
+            p:onCycleSelectedBack()
+            return true
+        end
+    end
+
+    return DistributionMenu:superClass().keyEvent(self, unicode, sym, modifier, isDown, eventUsed)
+end
+
 function DistributionMenu:onClickBack()
     if g_gui ~= nil then
         g_gui:changeScreen(nil)

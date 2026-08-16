@@ -75,14 +75,17 @@ Changelog Last updated: 09/08/2026
 V1.1.0.1 Release Candidate
 
 Fixed
-1) (NEW) Fixed Extensions only adding storage to the Output Section of the UI and blocking incoming material from filling to capacity. 15/8
-2) (NEW) Fixed Never spawn pallets setting from stopping pallets being bought at stores. 15/8
+1) Fixed Extensions only adding storage to the Output Section of the UI and blocking incoming material from filling to capacity. 15/8
+2) Fixed Never spawn pallets setting from stopping pallets being bought at stores. 15/8
+3) (NEW) Distirbution costs moved to the "Other" category on the finance page to hopefully make it easier to see. 16/8
 
 Added
-1) (NEW) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
-2) (NEW) DR UI will now resize to match you screen resolution rather than leaving deadspace on the screen. 15/8
-3) (NEW) Added the ability to select the pallet type and spawn partial pallets througthe pallet spawner. 15/8
-4) (NEW) Added a setting allowing map storages to be used in the distribution network (NOTE: Default off) 15/8
+1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
+2) DR UI will now resize to match you screen resolution rather than leaving deadspace on the screen. 15/8
+3) Added the ability to select the pallet type and spawn partial pallets througthe pallet spawner. 15/8
+4) Added a setting allowing map storages to be used in the distribution network (NOTE: Default off) 15/8
+5) (NEW) Added 2 new settings to the settings page allowing you to set the default input & output modes for new buildings (either Hold or Distribute for outputs, and either block all or allow all for inputs) 16/8
+6) (NEW) Added arrow keys to the outputs to make changing modes easier. Can now go backwards or forwards through the options. If you have a specific output selected you can also use "Z" and "X" keys to scroll backwards and forwards for the selected output. 16/8 
 
 V1.1.0.0 Release
 

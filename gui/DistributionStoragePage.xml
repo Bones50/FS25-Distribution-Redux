@@ -32,8 +32,12 @@
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
-            <Text profile="SDHeaderLeft" position="530px 0px" size="550px 40px" textSize="14px"
+            <Text profile="SDHeaderLeft" position="530px 0px" size="330px 40px" textSize="14px"
                   text="$l10n_dr_lbl_overviewPointer" />
+            <!-- Key hint for the in-row mode arrows. Z is read raw by the page (no footer entry and no
+                 rebindable action), so this line is the ONLY thing that tells a player it exists. -->
+            <Text profile="SDHeaderLeft" position="870px 0px" size="210px 40px" textSize="12px"
+                  text="$l10n_dr_lbl_modeKeys" />
         </Bitmap>
 
         <!-- right: INCOMING PRODUCTS (inputs). Same products the building can hold, with the Animal
@@ -70,9 +74,13 @@
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="185px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
             <Text profile="SDHeaderLeft" position="237px 0px" size="220px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
-            <Text profile="SDHeaderLeft" position="465px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="583px 0px" size="130px 40px" textSize="11px" text="$l10n_dr_col_distributed" />
-            <Text profile="SDHeaderLeft" position="721px 0px" size="235px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
+            <!-- FREE STORAGE and DISTRIBUTED each gave up width (110 to 84, 130 to 96) to fund the
+                 in-row mode arrows. They carry a single short figure; the MODE cell keeps its full
+                 235px of text, so the 5.55 truncation fix ("Distribute + S..." reading as plain
+                 Distribute) is not reopened. The 60px comes out of the flow columns, never the mode. -->
+            <Text profile="SDHeaderLeft" position="465px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft" position="557px 0px" size="96px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderLeft" position="661px 0px" size="295px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
             <Text profile="SDHeaderLeft" position="964px 0px" size="126px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
@@ -86,13 +94,23 @@
                     <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell" position="44px 0px"  size="185px 42px" textSize="12px" name="fillName" />
                     <Text profile="SDRowCell" position="237px 0px" size="220px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="465px 0px" size="110px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="583px 0px" size="130px 42px" textSize="12px" name="distText" />
+                    <Text profile="SDRowCell" position="465px 0px" size="84px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="557px 0px" size="96px 42px" textSize="12px" name="distText" />
                     <!-- MODE carries the mode AND its sell timing ("Distribute + Sell - Sell Immediately"),
                          so it needs real room: at 180px/14px text it truncated to "Distribute + S...", which
                          reads as plain Distribute and hid a silo that was actually selling everything it
-                         received. 235px at 12px is ~39 characters, clear of that string. -->
-                    <Text profile="SDRowCell" position="721px 0px" size="235px 42px" textSize="12px" name="modeText" />
+                         received. 235px at 12px is ~39 characters, clear of that string, and the arrows
+                         either side were funded from the flow columns rather than from this.
+
+                         THE ARROWS STEP THE MODE BOTH WAYS, IN PLACE. A click on one is consumed by the
+                         button, and SmoothList only treats a click as row-selection when no child used it
+                         (SmoothListElement:mouseEvent calls its superclass FIRST and gates its own
+                         handling on `not eventUsed`), so pressing an arrow does not also re-select the
+                         row. They are hidden on the "+N blocked" notice row. Cells are RECYCLED, so that
+                         has to be done actively on every populate or the notice row inherits them. -->
+                    <Button profile="fs25_multiTextOptionLeft"  position="661px 0px" name="modePrev" onClick="onModePrev" />
+                    <Text   profile="SDRowCell"       position="691px 0px" size="235px 42px" textSize="12px" name="modeText" />
+                    <Button profile="SDRowArrowRight" position="930px 0px" name="modeNext" onClick="onModeNext" />
                     <Text profile="SDRowCell" position="964px 0px" size="126px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>

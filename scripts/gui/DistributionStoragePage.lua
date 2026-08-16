@@ -98,6 +98,44 @@ local function hideNoticeRow(cell)
     if n ~= nil and n.setVisible ~= nil then n:setVisible(false) end
 end
 
+-- ---- in-row mode arrows ----------------------------------------------------------------------
+-- A module-level constant, not a literal in the loop: this runs per row per populate, which is the
+-- throttled hot path 5.46 / 5.52 exist to keep cheap, and a table literal there allocates every call.
+local MODE_ARROWS = { "modePrev", "modeNext" }
+
+-- Bind the arrows on ONE row, and show or hide them.
+--
+-- THE FILL TYPE IS STASHED ON THE BUTTON ITSELF, and that is forced rather than chosen: the onClick
+-- callback is SHARED by every cloned row, because ButtonElement:copyAttributes copies one function
+-- REFERENCE into all of them. So whatever populate leaves on the element is the handler's only way to
+-- know which product it is acting on.
+-- Deliberately the ft and NOT the row index: these lists re-enumerate on a timer, so an index captured
+-- at populate can point at a different product by the time it is clicked -- the same reason the
+-- Overview matches double-clicks on uid|ft identity rather than list position (5.37).
+local function setModeArrows(cell, ft)
+    for i = 1, #MODE_ARROWS do
+        local b = cell:getAttribute(MODE_ARROWS[i])
+        if b ~= nil then
+            b.sdFillType = ft
+            -- Cells are RECYCLED, so a row with no mode to cycle (the "+N blocked" notice) must hide
+            -- these actively or it inherits the arrows of whichever product row last used the slot.
+            if b.setVisible ~= nil then b:setVisible(ft ~= nil) end
+        end
+    end
+end
+
+-- ButtonElement's onClick raise site sits in the STRIPPED part of the base source (8.1), so the exact
+-- argument list is not readable. DR's own MultiTextOption handler is declared (state, element), which
+-- proves the element IS passed but not in which position for a plain Button -- so find it by looking
+-- for the argument carrying our stashed field instead of assuming an index.
+local function clickedArrow(...)
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if type(v) == "table" and v.sdFillType ~= nil then return v end
+    end
+    return nil
+end
+
 -- "<liters>  (<money>)" for the SOLD /mo column; money omitted when zero/unknown (e.g. MP clients)
 local function soldWithMoney(liters, money)
     local base = fmtV(liters)
@@ -458,6 +496,7 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     if row == nil then return end
     if row.notice ~= nil then
         renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        setModeArrows(cell, nil)                       -- notice row has no mode: hide the arrows
         return
     end
     hideNoticeRow(cell)
@@ -498,6 +537,11 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
     setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held))
     setc("distText", outTotalText(self:windowStats(row.ft)))
+    -- Arrows are shown for every real output row WITHOUT asking whether the mode can actually be
+    -- stepped. Answering that means validModeRing -> modeHasEndpoint, i.e. a placeableSystem scan per
+    -- row per refresh -- exactly the cost 5.46 / 5.52 removed from this path. A building with only one
+    -- valid mode simply does nothing when clicked, which is cheaper than being told so.
+    setModeArrows(cell, row.ft)
 
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil then
@@ -621,6 +665,69 @@ function DistributionStoragePage:onAdvancedContextual()
     else
         if self.onAdvanced ~= nil then self:onAdvanced() end
     end
+end
+
+-- In-row arrows: step this product's mode one place either way, without touching the selection.
+-- Shares applyMode with the footer "Cycle Output" so all three routes behave identically (same MP
+-- replication, same refresh, same sell-timing button update).
+function DistributionStoragePage:onModePrev(...) self:stepRowMode(-1, ...) end
+function DistributionStoragePage:onModeNext(...) self:stepRowMode( 1, ...) end
+
+function DistributionStoragePage:stepRowMode(dir, ...)
+    local el = clickedArrow(...)
+    local ft = (el ~= nil) and el.sdFillType or nil
+    if ft == nil or self.selectedAsset == nil then return end
+    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, ft)
+    local nxt
+    if dir < 0 then
+        nxt = (SmartDistribution.cyclePrevForAsset ~= nil)
+              and SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, ft) or cur
+    else
+        nxt = (SmartDistribution.cycleNextForAsset ~= nil)
+              and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, ft)
+              or SmartDistribution.cycleNext(cur)
+    end
+    if nxt == nil or nxt == cur then return end
+    SmartDistribution.applyAssetMode(self.selectedAsset, ft, nxt)
+    -- Silos use detailList; Animal Husbandry has separate input/output lists. Reload whichever this
+    -- page actually has, rather than making each subclass override this the way onCycleSelected has to.
+    if self.detailList ~= nil then self.detailList:reloadData() end
+    if self.outputList ~= nil then self.outputList:reloadData() end
+    self:updateSellTimingButton()
+end
+
+-- ---- Z = step the selected output mode BACKWARD ------------------------------------------------
+-- A RAW KEY, not an input action, and that is a deliberate trade.
+--
+-- The game defines only two spare menu actions (MENU_EXTRA_1 = x, EXTRA_2 = c) and both are already
+-- used here; ACCEPT / ACTIVATE / BACK / CANCEL / PAGE_PREV / PAGE_NEXT are all taken too. A custom
+-- DR action would work but only shows up usefully as another FOOTER button, and the footer is
+-- deliberately not growing. So the key is read directly instead.
+--
+-- The cost, stated plainly: Z is HARDCODED and cannot be rebound in Options > Controls. The on-page
+-- hint (dr_lbl_modeKeys) is what tells the player, since there is no footer glyph to do it.
+--
+-- THE HANDLER ITSELF LIVES ON THE MENU (DistributionMenu:keyEvent), not here, and this page carries
+-- only the action it calls (onCycleSelectedBack) plus the opt-out flag below. A page-level keyEvent
+-- was tried first and removed: Gui:keyEvent dispatches to g_gui.currentListener and its target, so
+-- reaching a frame that way is not something to rely on. See the menu for the modifier trap that
+-- actually kept this key dead (a permanently-set 4096 lock bit vs. a `modifier == 0` guard).
+DistributionStoragePage.MODE_KEYS_ENABLED = true
+
+
+-- The exact mirror of onCycleSelected below, acting on the SELECTED row rather than a clicked arrow,
+-- so the key and the in-row arrows always agree.
+function DistributionStoragePage:onCycleSelectedBack()
+    local row = self:selectedDetailRow()
+    if row == nil or self.selectedAsset == nil then return end
+    if SmartDistribution.cyclePrevForAsset == nil then return end
+    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft)
+    local nxt = SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, row.ft)
+    if nxt == nil or nxt == cur then return end
+    SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt)
+    if self.detailList ~= nil then self.detailList:reloadData() end
+    if self.outputList ~= nil then self.outputList:reloadData() end
+    self:updateSellTimingButton()
 end
 
 function DistributionStoragePage:onCycleSelected()
@@ -828,8 +935,9 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         setStatusCell(cell, self.selectedAsset, row.ft)
     elseif list == self.outputList then
         local row = self.outputRows[index]; if row == nil then return end
-        if row.notice ~= nil then renderNoticeRow(cell, row.notice, "outputs"); return end
+        if row.notice ~= nil then renderNoticeRow(cell, row.notice, "outputs"); setModeArrows(cell, nil); return end
         hideNoticeRow(cell)
+        setModeArrows(cell, row.ft)                    -- in-row mode arrows, as on the Silos tab
         applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
         setIcon(row.ft); setc("fillName", row.name)
         local e = self:windowStats(row.ft)
@@ -915,6 +1023,10 @@ end
 -- Immediate / Best-price timing toggle (footer "Timing").
 DistributionMarketsPage = {}
 local DistributionMarketsPage_mt = Class(DistributionMarketsPage, DistributionStoragePage)
+-- NO mode keys here. A market's MODE column is the market TIMING enum with its own toggle, not the
+-- asset mode ring, so Z would write a meaningless asset mode over it. This is the same reason the
+-- Markets XML carries no in-row arrows.
+DistributionMarketsPage.MODE_KEYS_ENABLED = false
 function DistributionMarketsPage.new(target, custom_mt)
     local self = DistributionStoragePage.new(target, custom_mt or DistributionMarketsPage_mt)
     self.pageName = "DISTREDUX_MARKETS"

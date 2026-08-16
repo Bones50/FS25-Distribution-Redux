@@ -540,7 +540,22 @@ local function nextVirtual(v, hasMarket, hasPallets)
     if v == DISTMARKET      then return KEEP end
     return KEEP
 end
-local function cycleVirtual(pp, ft)
+-- One step BACKWARD through the ring nextVirtual defines, for the in-row left arrow.
+-- DERIVED BY WALKING FORWARD and keeping the predecessor, rather than written out in reverse: a second
+-- hand-maintained order would be free to drift from nextVirtual the next time a mode is added, and this
+-- cannot, because it IS nextVirtual. The ring is at most 9 entries, and this runs on a click.
+local function prevVirtual(v, hasMarket, hasPallets)
+    local cur = KEEP
+    for _ = 1, 12 do                                     -- ring is <=9; the cap is a backstop
+        local nxt = nextVirtual(cur, hasMarket, hasPallets)
+        if nxt == v then return cur end
+        cur = nxt
+        if cur == KEEP then break end                    -- full lap without finding v: leave it alone
+    end
+    return v
+end
+
+local function cycleVirtual(pp, ft, back)
     local pl = placeableOf(pp)
     -- market modes only when a market can actually take THIS product (a market that doesn't accept, say,
     -- slurry is not an endpoint for it), not merely when some market is in range.
@@ -550,7 +565,9 @@ local function cycleVirtual(pp, ft)
     -- both simply keep the product internally once nothing can spawn).
     local hasPallets = pp.palletSpawner ~= nil
                        and (SD.palletSpawnAllowed == nil or SD.palletSpawnAllowed())
-    local nv = nextVirtual(getV(pp, ft), hasMarket, hasPallets)
+    local cur = getV(pp, ft)
+    local nv = back and prevVirtual(cur, hasMarket, hasPallets)
+                     or nextVirtual(cur, hasMarket, hasPallets)
     applyVLocal(pp, ft, nv)                              -- apply on this machine immediately
     if isMP() then                                      -- and sync the rest of the session
         ProductionOutputModeEvent.sendEvent(placeableOf(pp), ft, nv)
@@ -562,6 +579,7 @@ end
 function SD.productionOutputVMode(pp, ft) return getV(pp, ft) end
 function SD.productionOutputVModeName(v) return vLabel(v) or ("mode" .. tostring(v)) end
 function SD.cycleProductionOutputMode(pp, ft) return cycleVirtual(pp, ft) end
+function SD.cycleProductionOutputModeBack(pp, ft) return cycleVirtual(pp, ft, true) end
 
 -- set an output to a SPECIFIC virtual mode (not just the next one), applied
 -- locally and synced in MP. Backs "cycle all"-style unify operations.

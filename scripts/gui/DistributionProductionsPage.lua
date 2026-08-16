@@ -94,6 +94,32 @@ local function hideNoticeRow(cell)
     if n ~= nil and n.setVisible ~= nil then n:setVisible(false) end
 end
 
+-- ---- in-row mode arrows ------------------------------------------------------------------------
+-- Own copies of the StoragePage helpers, which is the established pattern for this file (CLAUDE.md 4):
+-- the two pages already duplicate setStatusCell / inputMaxLiters / percentText. Change both together.
+-- See DistributionStoragePage for the full reasoning -- in short, the onClick callback is SHARED by
+-- every cloned row, so the product has to be stashed on the element populate is holding, and the
+-- arrows must be hidden ACTIVELY on the notice row because SmoothList recycles cells.
+local MODE_ARROWS = { "modePrev", "modeNext" }
+
+local function setModeArrows(cell, ft)
+    for i = 1, #MODE_ARROWS do
+        local b = cell:getAttribute(MODE_ARROWS[i])
+        if b ~= nil then
+            b.sdFillType = ft
+            if b.setVisible ~= nil then b:setVisible(ft ~= nil) end
+        end
+    end
+end
+
+local function clickedArrow(...)
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if type(v) == "table" and v.sdFillType ~= nil then return v end
+    end
+    return nil
+end
+
 -- Drop blocked-and-empty products from an already-built row list and append the count as a final row.
 -- Takes the RECORDS (not bare fill types) because this page carries held / capacity / flow on each.
 local function filterBlockedRows(asset, rows)
@@ -561,8 +587,9 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     -- outputList
     local o = self.outputs[index]
     if o == nil then return end
-    if o.notice ~= nil then renderNoticeRow(cell, o.notice, "outputs"); return end
+    if o.notice ~= nil then renderNoticeRow(cell, o.notice, "outputs"); setModeArrows(cell, nil); return end
     hideNoticeRow(cell)
+    setModeArrows(cell, o.ft)                          -- in-row mode arrows
     applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
     setc("name", o.name)
     setc("produced", fmtV(o.produced))
@@ -730,6 +757,36 @@ end
 -- Standard footer: "Cycle Output" cycles the selected output's mode (matches the other tabs).
 function DistributionProductionsPage:onCycleSelected()
     self:onCycleOutput()
+end
+
+
+-- The same step the other way, on the selected output.
+function DistributionProductionsPage:onCycleSelectedBack()
+    local o = self:selectedOutput()
+    if o == nil or o.ft == nil or self.selectedAsset == nil then return end
+    if SmartDistribution.cycleProductionOutputBack == nil then return end
+    SmartDistribution.cycleProductionOutputBack(self.selectedAsset, o.ft)
+    self:refreshSections()
+end
+
+-- In-row arrows: step this output's v-mode either way without touching the selection. A production
+-- runs on the VIRTUAL mode ring (ProductionDistributeSell), not the asset MODE enum, so this cannot
+-- share the StoragePage implementation -- only the arrow plumbing is common.
+function DistributionProductionsPage:onModePrev(...) self:stepRowMode(-1, ...) end
+function DistributionProductionsPage:onModeNext(...) self:stepRowMode( 1, ...) end
+
+function DistributionProductionsPage:stepRowMode(dir, ...)
+    local el = clickedArrow(...)
+    local ft = (el ~= nil) and el.sdFillType or nil
+    if ft == nil or self.selectedAsset == nil then return end
+    if dir < 0 then
+        if SmartDistribution.cycleProductionOutputBack == nil then return end
+        SmartDistribution.cycleProductionOutputBack(self.selectedAsset, ft)
+    else
+        if SmartDistribution.cycleProductionOutput == nil then return end
+        SmartDistribution.cycleProductionOutput(self.selectedAsset, ft)
+    end
+    self:refreshSections()
 end
 
 
