@@ -85,7 +85,9 @@ Added
 3) Added the ability to select the pallet type and spawn partial pallets througthe pallet spawner. 15/8
 4) Added a setting allowing map storages to be used in the distribution network (NOTE: Default off) 15/8
 5) (NEW) Added 2 new settings to the settings page allowing you to set the default input & output modes for new buildings (either Hold or Distribute for outputs, and either block all or allow all for inputs) 16/8
-6) (NEW) Added arrow keys to the outputs to make changing modes easier. Can now go backwards or forwards through the options. If you have a specific output selected you can also use "Z" and "X" keys to scroll backwards and forwards for the selected output. 16/8 
+6) (NEW) Added arrow keys to the outputs to make changing modes easier. Can now go backwards or forwards through the options. If you have a specific output selected you can also use "Z" and "X" keys to scroll backwards and forwards for the selected output. 16/8
+7) (NEW) Added Full Chinese Translation 16/8
+8) (NEW) Added Finnish Translation (All Except User Guide) 16/8
 
 V1.1.0.0 Release
 
