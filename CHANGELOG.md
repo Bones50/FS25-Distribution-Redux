@@ -2,7 +2,7 @@
 
 Changelog Last updated: 09/08/2026
 
-**1.1.0.1 Release Candidate
+<h2><b>1.1.0.1 Release Candidate</b></h2>
 
 Fixed
 1) Fixed Extensions only adding storage to the Output Section of the UI and blocking incoming material from filling to capacity. 15/8
@@ -19,7 +19,7 @@ Added
 7) (NEW) Added Full Chinese Translation 16/8
 8) (NEW) Added Finnish Translation (All Except User Guide) 16/8
 
-**V1.1.0.0 Release
+<h2><b>V1.1.0.0 Release</b></h2>
 
 Fixed
 1) Corrected some broken calculations caused by how pallets work on the Building information screens. 
@@ -101,12 +101,12 @@ Notes
 2) Due to the changes in how options are made available per product (See added 2) the cycle all outputs button had to go. I might see if i can find an elegant way to re-add it in future (don't hold your breathe though :)
 3) By Default setting a storage output set to Move To does nothing unless you specify where you want it to move to in the advanced settings. This is to avoid the system automatically creating infinite loops when the options is selected. If you have something set to move to, but nothing is moving check the advanced output settings.
 
-**v1.0.0.2 - Released
+<h2><b>v1.0.0.2 - Released</b></h2>
 1) Buildings can now be renamed: all buildings in the distribution network can be given a custom name from the base-game construction menu (silos, sheds and pits included, which the game does not normally allow). Distribution Redux uses that name throughout its menu, with the original building name shown beneath it as a reference.
 2) Fixed the Manure Heap and Slurry Pit listing each other's product: the Manure Heap now shows only Manure and the Slurry Pit only Slurry.
 3) Fixed the Manure Heap and Slurry Pit showing no incoming product; they now list what actually flows into them.
 
-**v1.0.0.1 - Released
+<h2><b>v1.0.0.1 - Released</b></h2>
 1) UI fixes and consistency edits.
 2) Added Markets and Kiosks to the distribution system.
 3) Fixed the sell-at-best-price logic that could sell too early on the first pass.

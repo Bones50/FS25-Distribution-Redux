@@ -5,13 +5,13 @@ Distribution Redux automatically moves resources between productions, animal hus
 If you need help, join the discord: https://discord.gg/nK5Q7KCbY
 If you want to support my work buy me a coffee: https://ko-fi.com/bones13123
 
-** TO USE THE CURRENT GITHUB RELEASED VERSION
+<h2><b>TO USE THE CURRENT GITHUB RELEASED VERSION</b></h2>
 1) Go to releases in gituhub
 2) Download the latest release (zip)
 3) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
 NOTE: If modhub has not yet been updated to the latest release, when in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
 
-** TO TEST THE CURRENT GITHUB WORKING (UNRELEASED) VERSION
+<h2><b>TO TEST THE CURRENT GITHUB WORKING (UNRELEASED) VERSION</b></h2>
 1) Go to the "Code" Option at the top right and download zip
 2) Go to where the zip downloaded and unzip it.
 3) Navigate through the folders until you get to the folder with 3 files and 3 folders in it.
@@ -21,7 +21,8 @@ NOTE: If modhub has not yet been updated to the latest release, when in game the
 7) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
 NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.
 
-** TRANSLATIONS - CONTRIBUTIONS WELCOME
+<h2><b>TRANSLATIONS - CONTRIBUTIONS WELCOME</b></h2>
+
 Distribution Redux uses the standard Farming Simulator localisation system, so a translation is a
 pull request against one file and needs no Lua or XML knowledge beyond copy-and-edit.
 
