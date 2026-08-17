@@ -94,48 +94,48 @@ v1.0.0.1
 - Manuelles Erzeugen von Paletten aus dem gehaltenen Bestand eines "Hold Internal"-Ausgangs - ein Dialog erlaubt die Auswahl von Palettentyp und Anzahl (durch den Bestand begrenzt), verfügbar im Distribution-Redux-Menü und im Produktionsbildschirm des Grundspiels.
 ]]></de>
         <fr><![CDATA[
-         Distribution Redux
-Remplace le système de distribution standard de Farming Simulator 25 par un réseau logistique plus intelligent, basé sur la demande.
-Distribution Redux déplace automatiquement les ressources entre les productions, les élevages, les silos et les stockages en fonction de la demande réelle. Il priorise la source disponible la plus proche, prend en charge la distribution automatique d’aliments, de paille et d’eau, et vous offre un contrôle total sur la gestion de chaque sortie.
+Distribution Redux
+Remplace le système de distribution standard de Farming Simulator 25 par un réseau logistique plus intelligent, piloté par la demande.
+Distribution Redux déplace automatiquement les ressources entre les productions, les élevages, les silos et les bâtiments de stockage en fonction de la demande réelle. Il privilégie la source disponible la plus proche, prend en charge la distribution automatique de l’alimentation animale, de la paille et de l’eau, et vous offre un contrôle total sur la gestion de chaque sortie.
 
 Fonctionnalités
 
 * Aucun objet plaçable supplémentaire requis
-* Fonctionne avec les productions, stockages, silos et élevages existants
-* Distribution basée sur la demande réelle de consommation
-* Approvisionnement automatique en aliments, paille et eau
-* Plusieurs modes de sortie : Conserver, Distribuer, Vendre, Stocker et combinaisons
+* Fonctionne avec les productions, bâtiments de stockage, silos et élevages existants
+* Distribution pilotée par la demande et basée sur la consommation réelle
+* Approvisionnement automatique en aliments pour animaux, paille et eau
+* Plusieurs modes de sortie : Conserver, Distribuer, Vendre, Stocker et combinaisons de ces modes
 * Mode Conserver (interne) : conserve les produits en vrac dans une production et génère des palettes à la demande
-* Distribution basée sur la proximité ou sur l’ensemble de l’exploitation
+* Distribution basée sur la proximité ou à l’échelle de toute l’exploitation
 * Configuration par bâtiment et par produit
-* Prise en charge du multijoueur
+* Compatible avec le multijoueur
 
 Compatibilité
-Conçu pour le jeu de base et compatible avec la plupart des mods standard. Certains bâtiments personnalisés peuvent nécessiter un support supplémentaire.
+Conçu pour le jeu de base et compatible avec la plupart des mods standards. Certains bâtiments personnalisés peuvent nécessiter une prise en charge supplémentaire.
 
-Retours/Problèmes : https://github.com/Bones50/FS25-Distribution-Redux
+Commentaires et signalement de problèmes : https://github.com/Bones50/FS25-Distribution-Redux
 
-Journal des modifications
+Historique des versions
 
 v1.1.0.0
-1. Plus de 39 corrections de bogues (voir le README GitHub pour tous les détails).
-2. Plus de 17 améliorations de confort de jeu (QoL) (voir le README GitHub pour tous les détails).
-3. Compatibilité ajoutée pour de nombreux mods, et code renforcé pour améliorer la compatibilité globale des mods (voir le README GitHub pour tous les détails).
-4. Ajout d’un onglet Aperçu permettant de voir toute l’activité de distribution et les paramètres de distribution pour tous les bâtiments en un seul endroit (inclut des filtres et peut être configuré pour afficher toutes les sources et productions contribuant à un produit final spécifique).
-5. Ajout de la gestion avancée des entrées et sorties (bloquer, prioriser, réserve de stock, cible de remplissage, max in) pour tous les bâtiments.
-6. Ajout de la possibilité de déplacer et de trier les produits entre les stockages (par ex. silos, entrepôts de palettes, etc.).
+1. Plus de 39 corrections de bugs (voir le README GitHub pour tous les détails).
+2. Plus de 17 améliorations du confort de jeu (voir le README GitHub pour tous les détails).
+3. Compatibilité ajoutée avec de nombreux mods et code renforcé afin d’améliorer globalement la compatibilité avec les mods (voir le README GitHub pour tous les détails).
+4. Ajout d’un onglet Aperçu permettant de consulter toute l’activité de distribution ainsi que les paramètres de distribution de tous les bâtiments depuis un seul endroit. Il comprend des filtres et peut afficher toutes les sources et productions contribuant à l’obtention d’un produit final donné.
+5. Ajout d’une gestion avancée des entrées et des sorties pour tous les bâtiments : bloquer, donner la priorité, réserver un stock, remplir une quantité cible et définir une quantité maximale en entrée.
+6. Ajout de la possibilité de déplacer et de trier les produits entre les bâtiments de stockage, comme les silos et les entrepôts de palettes.
 
 v1.0.0.2
-- Les bâtiments peuvent désormais être renommés : tous les bâtiments du réseau de distribution peuvent recevoir un nom personnalisé depuis le menu de construction du jeu de base (silos, hangars et fosses inclus, que le jeu n’autorise normalement pas). Distribution Redux utilise ce nom partout dans son menu, avec le nom d’origine du bâtiment affiché en dessous pour référence.
-- Correction du Tas de fumier et de la Fosse à lisier listant les produits de l’autre : le Tas de fumier n’affiche désormais que le Fumier et la Fosse à lisier uniquement le Lisier.
-- Correction du Tas de fumier et de la Fosse à lisier n’affichant aucun produit entrant ; ils listent désormais ce qui y pénètre réellement.
+- Les bâtiments peuvent désormais être renommés : tous les bâtiments du réseau de distribution peuvent recevoir un nom personnalisé depuis le menu de construction du jeu de base, y compris les silos, hangars et fosses, que le jeu ne permet normalement pas de renommer. Distribution Redux utilise ce nom dans l’ensemble de ses menus, tandis que le nom original du bâtiment est affiché en dessous comme référence.
+- Correction de l’affichage réciproque des produits du tas de fumier et de la fosse à lisier : le tas de fumier affiche désormais uniquement le fumier et la fosse à lisier uniquement le lisier.
+- Correction de l’absence de produit entrant pour le tas de fumier et la fosse à lisier : ils affichent désormais les produits qui y sont réellement acheminés.
 
 v1.0.0.1
-- Corrections de l’interface utilisateur et harmonisation.
-- Ajout des Marchés et Kiosques au système de distribution.
-- Correction de la logique de vente au meilleur prix qui pouvait vendre trop tôt lors du premier passage.
-- Ajout du mode de sortie Conserver (interne) : conserve les produits en vrac d’une production dans le bâtiment au lieu de générer automatiquement des palettes.
-- Ajout de la génération manuelle de palettes depuis le stock conservé d’une sortie en mode Conserver (interne) : une fenêtre contextuelle vous permet de choisir le type et la quantité de palettes (limités par le stock disponible), disponible depuis le menu Distribution Redux et l’écran de production du jeu de base.
+- Corrections de l’interface et améliorations de la cohérence.
+- Ajout des marchés et des kiosques au système de distribution.
+- Correction de la logique de vente au meilleur prix, qui pouvait vendre les produits trop tôt lors du premier cycle.
+- Ajout du mode de sortie Conserver (interne) : conserve le produit en vrac d’une production dans le bâtiment au lieu de générer automatiquement des palettes.
+- Ajout de la génération manuelle de palettes à partir du stock conservé par une sortie en mode Conserver (interne) : une fenêtre permet de sélectionner le type et la quantité de palettes, dans la limite du stock disponible. Cette fonction est accessible depuis le menu Distribution Redux et depuis l’écran de production du jeu de base.
 ]]></fr>
     </description>
 
