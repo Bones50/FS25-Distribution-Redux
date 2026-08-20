@@ -1,0 +1,745 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Svenska (översättning)
+
+  OBS! En XML-kommentar får inte innehålla två bindestreck i rad. Det är ett
+  parse-fel och hela filen ignoreras då. Attributvärden nedan är ok och flera
+  innehåller medvetet dubbla bindestreck; lämna dem exakt som de är.
+
+  HUR DU LÄGGER TILL ETT SPRÅK
+    1. Kopiera denna fil till translations/translation_<kod>.xml
+       Koder som FS25 använder: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Översätt ENDAST text="..."-värdena. Ändra aldrig en name="..."-nyckel.
+    3. Öppna en pull request. Du behöver inte översätta allt: varje nyckel du
+       utelämnar faller tillbaka på engelska, så en partiell fil är välkommen.
+
+  VIKTIGA REGLER
+    * Nycklar som slutar på _tt är VERKTYGSTEXTER. De är långa och bryter fritt,
+      så längd är inget problem där.
+    * Nycklar som börjar med dr_col_ är TABELLKOLUMNERS RUBRIKER i celler med fast
+      bredd. Teckenbudgeten anges i en kommentar ovanför varje block. En rubrik som
+      blir för lång KLIPPAS, vilket har orsakat en riktig bugg tidigare: ett utmatningsläge
+      som visade "Distribuera + S..." såg ut som vanlig Distribuera och gömde en byggnad
+      som sålde allt. Föredra ett kort ord eller en vedertagen förkortning.
+    * Nycklar som börjar med dr_btn_ är KNAPPAR som delar samma sidfot. Håll dem korta.
+    * "L" är liter och "kL" kiloliter. Volymer formateras i koden, inte här.
+    * Lämna XML-entiteter ifred: &amp; är ett &-tecken, &quot; är ett citattecken.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= tangentbindningar (visas i Alternativ > Kontroller) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Konfigurera distribution (närmaste byggnad)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Öppna Distribution Redux-menyn" />
+
+        <!-- ================= TILLFÄLLIGT: penga-prob =================
+             Titlar som skickas till MoneyType.register. Om grundspelets finansskärm
+             visar en rad per registrerad TYPE, är det en av dessa som raden visar;
+             om den visar per sparad BUCKET, visas ingen av dem och pengarna hamnar
+             under en befintlig rad istället. De två är formulerade olika MED AVSIKT
+             så att loggen inte behövs för att se vilken registrering som gav en rad.
+             TA BORT BÅDA när proben tas bort.                                   -->
+        <text name="dr_finance_distributionCost"    text="Distributionskostnader" />
+        <text name="dr_finance_distributionCostCtl" text="Distributionskostnader (kontroll)" />
+
+        <!-- ================= sid- och dialogtitlar ================= -->
+        <text name="dr_title_overview"        text="Distribution - Översikt" />
+        <text name="dr_title_productions"     text="Distribution - Produktioner" />
+        <text name="dr_title_storage"         text="Distribution - Förvaring" />
+        <text name="dr_title_husbandry"       text="Distribution - Djurhållning" />
+        <text name="dr_title_markets"         text="Distribution - Marknader" />
+        <text name="dr_title_help"            text="Distribution - Hjälp" />
+        <text name="dr_title_settings"        text="Distribution - Inställningar" />
+        <text name="dr_title_advanced"        text="Avancerat" />
+        <text name="dr_title_advancedInputs"  text="Avancerade inmatningar" />
+        <text name="dr_title_spawnPallets"    text="Skapa pallar" />
+
+        <!-- ================= byggnadslistans rubriker (vänster kolumn, ~40 tecken) ================= -->
+        <text name="dr_col_buildings"     text="BYGGNADER" />
+        <text name="dr_col_husbandries"   text="DJURHÅLLNINGAR" />
+        <text name="dr_col_markets"       text="MARKNADER" />
+        <text name="dr_col_productions"   text="PRODUKTIONER" />
+
+        <!-- ================= väljaretiketter ovanför tabellerna ================= -->
+        <text name="dr_lbl_timescale"        text="Tidsskala" />
+        <text name="dr_lbl_filterBy"         text="Filtrera efter" />
+        <text name="dr_lbl_show"             text="Visa" />
+        <text name="dr_lbl_grouping"         text="Gruppering" />
+        <text name="dr_lbl_modeKeys" text="X / Z: växla valt utmatningsläge" />
+        <text name="dr_lbl_overviewPointer"  text="Fullständig uppdelning + leveranskedjor: fliken Översikt" />
+
+        <!-- ================= Översikt: FLÖDE-vy kolumnrubriker =================
+             Budget ungefär 10 till 16 tecken vardera; dessa sitter i 11px i smala
+             celler. "(FÖRV.)" är förkortning för "förväntad", receptets målsiffra. -->
+        <text name="dr_col_building"      text="BYGGNAD" />
+        <text name="dr_col_product"       text="PRODUKT" />
+        <text name="dr_col_received"      text="MOTTAGET" />
+        <text name="dr_col_loaded"        text="LASTAT" />
+        <text name="dr_col_consumedExp"   text="FÖRBRUKAT (FÖRV.)" />
+        <text name="dr_col_unloaded"      text="URLASSAT" />
+        <text name="dr_col_heldMax"       text="INNEHAV (MAX)" />
+        <text name="dr_col_freeStorage"   text="LEDIG LAGRING" />
+        <text name="dr_col_producedExp"   text="PRODUCERAT (FÖRV.)" />
+        <text name="dr_col_distributed"   text="DISTRIBUERAT" />
+        <text name="dr_col_storedMoved"   text="LAGRAT/FLYTTAT" />
+        <text name="dr_col_sold"          text="SÅLT" />
+        <text name="dr_col_distrCost"     text="DISTR.KOSTN." />
+
+        <!-- ================= Översikt: INSTÄLLNINGAR-vy kolumnrubriker =================
+             Samma budget som ovan. DEST betyder "aktiva av totala destinationer" och är
+             den smalaste cellen på sidan, cirka 6 tecken. Förkorta fritt. -->
+        <text name="dr_col_storageType"   text="LAGRINGSTYP" />
+        <text name="dr_col_maxInPctL"     text="MAX IN (% - L)" />
+        <text name="dr_col_heldOfMax"     text="INNEHAV AV MAX" />
+        <text name="dr_col_inStatus"      text="IN-STATUS" />
+        <text name="dr_col_lines"         text="LINJER" />
+        <text name="dr_col_outMode"       text="UT-LÄGE" />
+        <text name="dr_col_reserve"       text="RESERV" />
+        <text name="dr_col_priority"      text="PRIORITET" />
+        <text name="dr_col_dest"          text="DEST" />
+        <text name="dr_col_outStatus"     text="UT-STATUS" />
+
+        <!-- ================= byggnadsflikarnas tabellrubriker =================
+             Delas av Silor / Djurhållning / Marknader / Produktioner. -->
+        <text name="dr_col_incomingProducts"  text="INKOMMANDE PRODUKTER" />
+        <text name="dr_col_incomingMaterials" text="INKOMMANDE MATERIAL" />
+        <text name="dr_col_outgoingProducts"  text="UTGÅENDE PRODUKTER" />
+        <text name="dr_col_heldSlashMax"      text="INNEHAV / MAX" />
+        <text name="dr_col_distribution"      text="DISTRIBUTION" />
+        <text name="dr_col_consumed"          text="FÖRBRUKAT" />
+        <text name="dr_col_produced"          text="PRODUCERAT" />
+        <text name="dr_col_outputMode"        text="UTMATNINGSLÄGE" />
+        <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
+        <!-- "/mo" = per månad. Siffran är linjens månatliga mål. -->
+        <text name="dr_col_targetMo"          text="MÅL /mån" />
+
+        <!-- ================= Avancerade utmatningar-dialog ================= -->
+        <text name="dr_col_demands"   text="EFTERFRÅGAN" />
+        <text name="dr_col_storage"   text="LAGRING" />
+        <text name="dr_col_distance"  text="AVSTÅND" />
+        <text name="dr_col_order"     text="ORDNING" />
+
+        <!-- ================= Avancerade inmatningar-dialog ================= -->
+        <text name="dr_col_incomingProduct" text="INKOMMANDE PRODUKT" />
+        <text name="dr_col_type"            text="TYP" />
+        <text name="dr_col_held"            text="INNEHAV" />
+        <text name="dr_col_maxIn"           text="MAX IN" />
+        <text name="dr_col_available"       text="TILLGÄNGLIGT" />
+        <text name="dr_col_fillTarget"      text="FYLLNADSMÅL" />
+
+        <!-- ================= knappar =================
+             Dessa delar samma sidfot, så varje extra tecken tränger grannarna.
+             Sikta på samma längd som engelskan eller kortare. -->
+        <text name="dr_btn_priorityUp"    text="Prioritet upp" />
+        <text name="dr_btn_priorityDown"  text="Prioritet ner" />
+        <text name="dr_btn_toggle"        text="Växla" />
+        <text name="dr_btn_clear"         text="Rensa" />
+        <text name="dr_btn_blockAll"      text="Blockera alla" />
+        <text name="dr_btn_reserveDown"   text="- Reserv" />
+        <text name="dr_btn_reserveUp"     text="+ Reserv" />
+        <text name="dr_btn_maxDown"       text="- Max" />
+        <text name="dr_btn_maxUp"         text="+ Max" />
+        <text name="dr_btn_targetDown"    text="- Mål" />
+        <text name="dr_btn_targetUp"      text="+ Mål" />
+        <text name="dr_btn_block"         text="Blockera" />
+        <text name="dr_btn_spawn"         text="Skapa" />
+        <text name="dr_btn_cancel"        text="Avbryt" />
+        <text name="dr_btn_close"         text="Stäng" />
+
+        <!-- ================= SIDFOTSKNAPPAR (sätts från Lua) =================
+             Samma sidfot som dr_btn_-nycklarna ovan, samma längdbegränsning. Sell Timing är en
+             FORMAT-sträng: %s är aktuell tidpunkt ("Bästa pris" / "Omedelbart"). -->
+        <text name="dr_btn_cycleOutput"      text="Växla utmatning" />
+        <text name="dr_btn_advanced"         text="Avancerat" />
+        <text name="dr_btn_sellTiming"       text="Säljtidpunkt" />
+        <text name="dr_btn_sellTimingValue"  text="Sälj vid: %s" />
+        <text name="dr_btn_toggleLine"       text="Växla linje" />
+        <text name="dr_btn_showSettings"     text="Visa inställningar" />
+        <text name="dr_btn_showFlows"        text="Visa flöden" />
+        <text name="dr_btn_refresh"          text="Uppdatera" />
+        <text name="dr_btn_advancedOutputs"  text="Avancerade utmatningar" />
+        <text name="dr_btn_activate"         text="Aktivera" />
+        <text name="dr_btn_activateAll"      text="Aktivera alla" />
+        <text name="dr_btn_allow"            text="Tillåt" />
+        <text name="dr_btn_allowAll"         text="Tillåt alla" />
+
+        <!-- ================= TIDSSKALEVÄLJARE =================
+             En speltimme är en distributionscykel, vilket är varför byggnadsflikarna
+             stavar ut det; Översikten har en smalare kolumn och säger bara "Timme". -->
+        <text name="dr_period_hourLong" text="Cykel (timme)" />
+        <text name="dr_period_hour"     text="Timme" />
+        <text name="dr_period_month"    text="Månad" />
+        <text name="dr_period_year"     text="År" />
+
+        <!-- ================= ÖVERSIKTENS VÄLJARE =================
+             "Slutprodukt (hela kedjan)" visar varje byggnad som matar en färdig produkt,
+             bakåt genom hela leveranskedjan. Gruppering slår ihop byggnader av samma typ
+             till en summerad rad, t.ex. "Bageri x2". -->
+        <text name="dr_filter_nothing"    text="Inget (visa alla)" />
+        <text name="dr_filter_building"   text="Byggnad" />
+        <text name="dr_filter_product"    text="Produkt" />
+        <text name="dr_filter_endProduct" text="Slutprodukt (hela kedjan)" />
+        <text name="dr_group_off"         text="Av (en rad per byggnad)" />
+        <text name="dr_group_on"          text="På (kombinera samma byggnadstyp)" />
+
+        <!-- ================= ÖVERSIKTENS KORTA STATUS =================
+             Samma tre tillstånd som dr_status_* ovan, men Översiktens kolumn är 140px och
+             dess rubrik säger redan IN eller UT, så kvalificeringen tas bort. Håll dessa KORTA. -->
+        <text name="dr_statusShort_receiving" text="Mottar" />
+        <text name="dr_statusShort_sending"   text="Skickar" />
+        <text name="dr_statusShort_idle"      text="Väntar" />
+        <text name="dr_statusShort_blocked"   text="Blockerad" />
+
+        <!-- ================= LAGRINGSTYP =================
+             Samlad: en tank delas av flera produkter. Individuell: en separat tank per
+             produkt. Visas i dialogen Avancerade inmatningar och i Översiktens
+             inställningsvy, som medvetet använder identisk formulering. -->
+        <text name="dr_type_pooled"     text="Samlad" />
+        <text name="dr_type_individual" text="Individuell" />
+        <text name="dr_type_internal"   text="Intern" />
+        <text name="dr_type_blocked"    text="BLOCKERAD" />
+
+        <!-- ================= UTMATNINGSPRIORITET =================
+             "Avstånd" är standard: närmaste konsument först. "Rankad (n)" betyder att
+             spelaren har ordnat n destinationer manuellt i Avancerade utmatningar. -->
+        <text name="dr_priority_ranked"   text="Rankad (%d)" />
+        <text name="dr_priority_distance" text="Avstånd" />
+
+        <!-- ================= BYGGNADSTYP =================
+             Den högra kolumnen i byggnadslistan på fliken Silor. Mycket smal. -->
+        <text name="dr_class_silo"    text="Silo" />
+        <text name="dr_class_barn"    text="Ladugård" />
+        <text name="dr_class_storage" text="Förvaring" />
+        <text name="dr_class_pit"     text="Grop" />
+        <text name="dr_class_market"  text="Marknad" />
+
+        <!-- ================= MEDDELANDEN OCH SMÅ ETIKETTER =================
+             Blockerat-meddelandet är den sista raden i en byggnads inmatningslista när
+             Avancerad routing har gömt produkter som byggnaden inte innehar. SEPARATA
+             singular- och pluralnycklar: engelskan brukade bilda singular genom att ta
+             bort sista "s", vilket inte fungerar i översättning. Om ditt språk inte
+             behöver någon skillnad, ge båda samma text. -->
+        <text name="dr_notice_blockedInput"  text="+%d inmatning blockerad (se Avancerade inmatningar)" />
+        <text name="dr_notice_blockedInputs" text="+%d inmatningar blockerade (se Avancerade inmatningar)" />
+        <text name="dr_label_off"      text="Av" />
+        <text name="dr_label_blocked"  text="Blockerad" />
+        <text name="dr_label_building" text="Byggnad" />
+        <!-- Reservnamn för en produktionslinje som spelet inte namnger själv; %d är dess nummer. -->
+        <text name="dr_label_line"     text="Linje %d" />
+
+        <!-- ================= DIALOGEN AVANCERADE UTMATNINGAR =================
+             %s i titeln är byggnadens namn. "Aktiv - Ogiltig" markerar en destination som
+             är påslagen men skulle skicka produkten i en cirkel tillbaka dit den kom ifrån. -->
+        <text name="dr_adv_title"         text="Avancerat - %s" />
+        <text name="dr_adv_activeInvalid" text="Aktiv - Ogiltig" />
+        <text name="dr_adv_reserve"       text="     Reserv: " />
+        <text name="dr_adv_noCapacity"    text="Ingen kapacitet att reservera mot" />
+        <text name="dr_adv_loopOne"       text="Kan inte aktivera %s - det skulle skicka produkten i en cirkel tillbaka hit." />
+        <text name="dr_adv_loopMany"      text="%d destination(er) förblev blockerade - de skulle skicka produkten i en cirkel tillbaka hit." />
+
+        <!-- ================= DIALOGEN AVANCERADE INMATNINGAR =================
+             Underrubrik, en av tre beroende på byggnadens lagringstyp. %s är poolens totala
+             kapacitet; %d är hur många produkter som delar den och hur många som har ett max. -->
+        <text name="dr_inp_title"        text="Avancerade inmatningar - %s" />
+        <text name="dr_inp_pooledCapped" text="Samlad lagring: %s delas av %d produkter, %d har tak. Allt utan tak kan använda hela poolen." />
+        <text name="dr_inp_pooled"       text="Samlad lagring: %s delas av %d produkter. Var och en kan använda allt - sätt ett max för att reservera plats åt de andra." />
+        <text name="dr_inp_individual"   text="Sätt varje produkts max, eller blockera den. Denna byggnad har individuell lagring per produkt." />
+
+        <!-- ================= DIALOGEN SKAPA PALLAR =================
+             Kvantitetsord bredvid stegaren och sammanfattningsraden ovanför. -->
+        <text name="dr_spawn_info"    text="Innehav: %s    Pall: %s    Max: %d    Skapar: %s" />
+        <!-- Namn på en PALLTYP i rullgardinen; kapaciteten och, för en moddad pall, moddens
+             namn läggs till i koden, t.ex. "Pall - 1 000 L (Lyftbara pallar och balar)". -->
+        <text name="dr_spawn_palletType" text="Pall" />
+        <!-- Kvantitetsstegare: valt antal, maximum och de exakta litrarna som antalet motsvarar.
+             Läser "2 / 3  (2 000 L)". Behåll alla tre platshållare och deras ordning. -->
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= UTMATNINGSLÄGEN =================
+             Vad en byggnad gör med en produkt. Visas i kolumnen UTMATNINGSLÄGE / UT-LÄGE
+             på varje byggnadsflik och i Översikten, och växlas med knappen "Växla utmatning".
+             Den bredaste kolumnen som rymmer dessa passar cirka 39 tecken vid nuvarande
+             textstorlek, och "Distribuera + Marknadsförsörjning" är den längsta engelska.
+
+             Sammansatta lägen läses "första halvan + andra halvan" och ORDNINGEN ÄR VIKTIG:
+             den första åtgärden sker alltid först, och produkt säljs eller skickas aldrig
+             till en marknad förrän den har erbjudits till konsumenter minst en gång. Behåll
+             den meningen.
+
+             Siffrorna är de interna läges-id:na. Ändra inte numreringen; det är vad
+             sparfilen lagrar. -->
+        <text name="dr_mode_0"   text="Ärv" />
+        <text name="dr_mode_1"   text="Håll" />
+        <text name="dr_mode_2"   text="Distribuera" />
+        <text name="dr_mode_3"   text="Distribuera + Sälj" />
+        <text name="dr_mode_4"   text="Sälj" />
+        <text name="dr_mode_5"   text="Distribuera + Lagra" />
+        <text name="dr_mode_6"   text="Lagra" />
+        <text name="dr_mode_7"   text="Marknadsförsörjning" />
+        <text name="dr_mode_8"   text="Distribuera + Marknadsförsörjning" />
+        <text name="dr_mode_9"   text="Håll internt" />
+        <text name="dr_mode_10"  text="Flytta till" />
+        <text name="dr_mode_11"  text="Distribuera + Flytta till" />
+        <!-- Vanligt "Håll" på en byggnad som ger PALLAR: produkten hålls som pallar på
+             pallplattan, till skillnad från "Håll internt" som behåller den som bulkmaterial
+             inne i byggnaden och inte skapar något. Skillnaden är hela poängen, så håll dem åtskilda. -->
+        <text name="dr_mode_holdPallets" text="Håll pallar" />
+
+        <!-- ================= LÄNKSTATUS =================
+             STATUS-kolumnen. Tre tillstånd: produkt flyttades faktiskt vid senaste timpassen,
+             länken är aktiv men inget behövde flyttas, eller så är den blockerad i Avancerad
+             routing. En mottagare MOTTAR och en källa SKICKAR, vilket är den enda skillnaden
+             mellan de två uppsättningarna. Smal kolumn, cirka 20 tecken. -->
+        <text name="dr_status_in_ACTIVE"   text="Aktiv (Mottar)" />
+        <text name="dr_status_in_IDLE"     text="Aktiv (Väntar)" />
+        <text name="dr_status_in_BLOCKED"  text="Blockerad" />
+        <text name="dr_status_out_ACTIVE"  text="Aktiv (Skickar)" />
+        <text name="dr_status_out_IDLE"    text="Aktiv (Väntar)" />
+        <text name="dr_status_out_BLOCKED" text="Blockerad" />
+
+        <!-- ================= PRODUKTROLL =================
+             Taggad efter ett produktnamn i Översikten, t.ex. "Mjöl (In)". En byggnad kan
+             både ta emot och leverera samma produkt (en silo), vilket är vad (In/Ut) betyder.
+             MYCKET trångt: den sitter inuti produktnamnscellen, så 3 till 7 tecken. -->
+        <text name="dr_role_in"    text="In" />
+        <text name="dr_role_out"   text="Ut" />
+        <text name="dr_role_inout" text="In/Ut" />
+
+        <!-- ================= SÄLJTIDPUNKT =================
+             "Bästa pris" håller produkten till dess bästa månad innan försäljning;
+             "Omedelbart" säljer så snart den är tillgänglig. dr_market_*-formerna
+             visas i fliken Marknaders kolumn UTMATNINGSLÄGE, där Håll betyder att
+             marknaden lagrar produkten och säljer inget förrän den blir tillsagd. -->
+        <text name="dr_timing_bestPrice" text="Bästa pris" />
+        <text name="dr_timing_immediate" text="Omedelbart" />
+        <text name="dr_market_hold"      text="Håll" />
+        <text name="dr_market_best"      text="Sälj  -  Bästa pris" />
+        <text name="dr_market_immediate" text="Sälj  -  Omedelbart" />
+
+        <!-- ================= ENHETER =================
+             Volymer visas i liter under 1 000 och i kiloliter över det, så 1 001 L visas som
+             "1.001 kL". Dessa läggs till ett formaterat tal och INKLUDERAR sitt inledande
+             mellanslag. Behåll mellanslaget och håll dem korta. -->
+        <text name="dr_unit_litre"      text=" L" />
+        <text name="dr_unit_kilolitre"  text=" kL" />
+
+        <!-- ================= PENGAMEDDELANDEN =================
+             Popupen på skärmen när DR säljer eller tar betalt för transport. Varje är en
+             etikett följd av en penningbelopp, så behåll eventuellt efterföljande mellanslag
+             och skiljetecken. -->
+        <text name="dr_money_biogas"    text="Biogasintäkter: " />
+        <text name="dr_money_sales"     text="Produktförsäljning: " />
+        <text name="dr_money_distCost"  text="Distributionskostnader: -" />
+
+        <!-- ================= DIV MOTORETIKETTER ================= -->
+        <!-- Står för kartans vatten där det inte finns någon fysisk tank att namnge. -->
+        <text name="dr_label_waterSource"      text="Vattenkälla" />
+
+        <!-- ================= INSTÄLLNINGAR =================
+             Ett block per inställning: radtiteln, dess verktygstext (_tt), sedan
+             väljarens värden (_v1, _v2, ...) I ORDNING. Ordningen är viktig,
+             eftersom _v1 är det första alternativet vänster-/högerpilarna landar på och
+             INDEX är vad sparfilen lagrar. Översätt varje värde på plats;
+             ändra aldrig ordningen och ta aldrig bort något. -->
+
+        <text name="dr_set_scope"     text="Omfattning" />
+        <text name="dr_set_scope_tt"  text="Räckvidd: varje ägd byggnad når över hela gården.  Närhet: byggnader når endast källor inom närhetsradien nedan." />
+        <text name="dr_set_scope_v1"  text="Räckvidd (hela gården)" />
+        <text name="dr_set_scope_v2"  text="Närhet (radie)" />
+
+        <text name="dr_set_includeHusbandry"     text="Djurhållning" />
+        <text name="dr_set_includeHusbandry_tt"  text="Inkludera djurhållning -- ladugårdar, hönshus, bikupor, samt gödsel- &amp; urinbrunnar -- i distributionsnätverket. Av tar bort dem helt: de varken utfodras eller distribueras/säljs deras produkter (mjölk / gödsel / urin / ägg / ull / honung)." />
+        <text name="dr_set_includeHusbandry_v1"  text="På" />
+        <text name="dr_set_includeHusbandry_v2"  text="Av" />
+
+        <text name="dr_set_includeSilosSheds"     text="Silor &amp; Pallförvaring" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Inkludera spannmåls-/material-silor och pall- och balförråd i distributionsnätverket. Av tar bort dem: silor matar inte längre produktioner, och pallförråd varken tar emot eller släpper pallar. (Gödsel- &amp; urinbrunnar följer inställningen för djurhållning.)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="På" />
+        <text name="dr_set_includeSilosSheds_v2"  text="Av" />
+
+        <text name="dr_set_includeMarkets"     text="Marknader &amp; Kiosker" />
+        <text name="dr_set_includeMarkets_tt"  text="Inkludera marknader och kiosker i distributionsnätverket. Av tar bort dem: gårdens produkter skickas inte längre dit för försäljning, och fliken Marknader döljs." />
+        <text name="dr_set_includeMarkets_v1"  text="På" />
+        <text name="dr_set_includeMarkets_v2"  text="Av" />
+
+        <text name="dr_set_includeMapStorage"     text="Offentlig kartförvaring" />
+        <text name="dr_set_includeMapStorage_tt"  text="Inkludera förvaringsbyggnader på kartan som du inte äger men ändå kan lagra varor i, t.ex. en järnvägsgrossist för spannmål. Av som standard: dessa byggnader tar normalt ut hyra för varje liter som lagras, så de läggs till i nätverket endast om du ber om det. När de är på, visas de som förvaringsbyggnader med varje produkt inställd på Håll, och flyttar inget förrän du konfigurerar dem." />
+        <text name="dr_set_includeMapStorage_v1"  text="På" />
+        <text name="dr_set_includeMapStorage_v2"  text="Av" />
+
+        <text name="dr_set_advancedRouting"     text="Avancerad routing" />
+        <text name="dr_set_advancedRouting_tt"  text="Huvudströmbrytare för Avancerade utmatningar (källsidans blockering / prioritet / Flytta till) och Avancerade inmatningar (inmatningsblockering / tak / fyllnadsmål). Av döljer dessa knappar och återgår till standarddistributionen närmast-först baserad på avstånd. VARNING: att stänga AV detta RENSAR ALLA befintliga avancerade inställningar (varje blockering, prioritet, Flytta till, inmatningstak och fyllnadsmål) -- de återställs till standard och KOMMER INTE TILLBAKA om du slår på det igen; du måste ställa in dem från början." />
+        <text name="dr_set_advancedRouting_v1"  text="På" />
+        <text name="dr_set_advancedRouting_v2"  text="Av" />
+
+        <text name="dr_set_defaultOutputMode"     text="Utmatningsläge för nya byggnader" />
+        <text name="dr_set_defaultOutputMode_tt"  text="Det utmatningsläge som ges till en byggnad när du PLACERAR den. Distribuera är normalt beteende. Håll innebär att en nyligen placerad byggnad behåller allt den producerar tills du ändrar det, så inget lämnar en byggnad som du inte har konfigurerat än. På en byggnad som gör pallar visas detta som 'Håll pallar', eller som 'Håll internt' när Pally skapande är inställt på aldrig. Detta påverkar ENDAST byggnader som placeras från och med nu: befintliga byggnader ändras aldrig, och att ändra denna inställning påverkar inte redan byggda." />
+        <text name="dr_set_defaultOutputMode_v1"  text="Distribuera" />
+        <text name="dr_set_defaultOutputMode_v2"  text="Håll" />
+
+        <text name="dr_set_defaultInputMode"     text="Inmatningsläge för nya byggnader" />
+        <text name="dr_set_defaultInputMode_tt"  text="Huruvida en nyligen PLACERAD byggnad tar emot leveranser. Acceptera alla är normalt beteende. Blockera alla blockerar varje inmatning på den nya byggnaden, så inget levereras till den förrän du tillåter produkter via Avancerade inmatningar. OBS: Blockera alla fungerar bara medan Avancerad routing är på, eftersom inmatningsblockering är en del av Avancerad routing och rensas när du stänger av den. Detta påverkar ENDAST byggnader som placeras från och med nu: befintliga byggnader ändras aldrig." />
+        <text name="dr_set_defaultInputMode_v1"  text="Acceptera alla" />
+        <text name="dr_set_defaultInputMode_v2"  text="Blockera alla" />
+
+        <text name="dr_set_radius"     text="Närhetsradie" />
+        <text name="dr_set_radius_tt"  text="Hur långt en konsument når efter källor i närhetsläge." />
+        <text name="dr_set_radius_v1"  text="25 m" />
+        <text name="dr_set_radius_v2"  text="50 m" />
+        <text name="dr_set_radius_v3"  text="75 m" />
+        <text name="dr_set_radius_v4"  text="100 m" />
+        <text name="dr_set_radius_v5"  text="150 m" />
+        <text name="dr_set_radius_v6"  text="200 m" />
+        <text name="dr_set_radius_v7"  text="400 m" />
+
+        <text name="dr_set_bufferHours"     text="Konsumentbuffert" />
+        <text name="dr_set_bufferHours_tt"  text="Timmar av råmaterial som fylls på hos varje konsument per cykel." />
+        <text name="dr_set_bufferHours_v1"  text="1 timme" />
+        <text name="dr_set_bufferHours_v2"  text="2 timmar" />
+        <text name="dr_set_bufferHours_v3"  text="4 timmar" />
+        <text name="dr_set_bufferHours_v4"  text="8 timmar" />
+        <text name="dr_set_bufferHours_v5"  text="12 timmar" />
+        <text name="dr_set_bufferHours_v6"  text="24 timmar" />
+
+        <text name="dr_set_sellEnabled"     text="Försäljning" />
+        <text name="dr_set_sellEnabled_tt"  text="Global strömbrytare för all automatförsäljning (Sälj / Distribuera+Sälj-lägen)." />
+        <text name="dr_set_sellEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_sellEnabled_v2"  text="Inaktiverad" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Auto-Vatten" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Förse automatiskt vatten till produktioner och djurfållor som behöver vatten (faktureras baserat på avstånd till närmaste vattenkälla)." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Inaktiverad" />
+
+        <text name="dr_set_distCostEnabled"     text="Distributionskostnad" />
+        <text name="dr_set_distCostEnabled_tt"  text="Ta ut en transportkostnad per timme för varje aktiv distribution (skalas med transportavstånd)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_distCostEnabled_v2"  text="Inaktiverad" />
+
+        <!-- Beloppen nedan är spelvaluta per timme. Spelarens egen valutasymbol
+             ersätts inte här, så översätt endast "/h"-delen. -->
+        <text name="dr_set_distCostBase"     text="Kostnadstakt" />
+        <text name="dr_set_distCostBase_tt"  text="Bas transportkostnad per timme för en kort transport (vid eller under kostnadsavståndet nedan)." />
+        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
+        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
+        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
+        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
+        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+
+        <text name="dr_set_distCostThreshold"     text="Kostnadsavstånd" />
+        <text name="dr_set_distCostThreshold_tt"  text="Transporter på eller under detta avstånd betalar den fasta bastakten; längre transporter skalas linjärt uppåt." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 m" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 m" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 m" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 m" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Säsongsreserv för skörd" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Grödor inställda på Distribuera+Sälj behåller tillräckligt med råmaterial för att mata produktionen till nästa skörd; endast överskottet säljs." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Inaktiverad" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Reservmånader (tills inlärd)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="Månader av råmaterial att hålla för en gröda innan modden har observerat dess verkliga skördefönster." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 månader" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 månader" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 månader" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 månader" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 månader" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Sälj till bästa pris" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Huvudströmbrytare: håll Sälj / Distribuera+Sälj-överskott till dess bästa månad innan försäljning. Av: allt säljs omedelbart." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Inaktiverad" />
+
+        <text name="dr_set_bestPriceDefault"     text="Standard säljtidpunkt" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Standard för alla Sälj / Distribuera+Sälj-utmatningar och för varje marknadsprodukt, tills du ställer in den byggnadens egen växling. Marknader du redan har konfigurerat behåller sin inställning." />
+        <text name="dr_set_bestPriceDefault_v1"  text="Sälj till bästa pris" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Sälj omedelbart" />
+
+        <text name="dr_set_palletSpawnMode"     text="Pallskapande" />
+        <text name="dr_set_palletSpawnMode_tt"  text="Hela pallar: fällor håller produkt internt och släpper en HEL pall, som produktioner. Vanilla: en pall dyker upp direkt och fylls gradvis. Aldrig: inget skapar pallar automatiskt, produkten förblir intern och distribueras, lagras och säljs därifrån. Du kan alltid släppa en manuellt med Skapa pallar. Aldrig gäller endast dina fällor och produktioner - bikupor fortsätter skapa som vanligt (de har ingen intern buffert att sälja från), och butiker du köper pallar från påverkas aldrig." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fylls gradvis)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Endast hela pallar" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Skapa aldrig pallar" />
+
+        <text name="dr_set_menuRefresh"     text="Uppdateringsfrekvens meny" />
+        <text name="dr_set_menuRefresh_tt"  text="Hur ofta den öppna menyn läser om gården. Översikten räknar upp varje byggnad och produkt, så på en stor gård håller en långsammare frekvens menyn responsiv. Manuell stoppar bakgrundsuppdateringen helt - siffrorna uppdateras fortfarande när du väljer något eller trycker på Uppdatera i Översikten." />
+        <text name="dr_set_menuRefresh_v1"  text="Live (0,5s)" />
+        <text name="dr_set_menuRefresh_v2"  text="Normal (2s)" />
+        <text name="dr_set_menuRefresh_v3"  text="Avslappnad (10s)" />
+        <text name="dr_set_menuRefresh_v4"  text="Endast manuell" />
+
+        <text name="dr_set_debugEnabled"     text="Debug-loggning" />
+        <text name="dr_set_debugEnabled_tt"  text="Skriv detaljerad distributionsaktivitet till log.txt (flyttar, försäljningar, lagringar, vattenpåfyllningar och avgifter). Stäng av för en tystare logg." />
+        <text name="dr_set_debugEnabled_v1"  text="Aktiverad" />
+        <text name="dr_set_debugEnabled_v2"  text="Inaktiverad" />
+
+
+        <!-- ============ ANVÄNDARGUIDE (genererad: gen_guide_l10n.py) ============
+             11 ämnen, en nyckel per icke-tomt stycke. Markörer i början av ett
+             värde är STRUKTUR, inte ord, och måste behållas exakt som de är:
+               "## "   en rubrik
+               "### "  en underrubrik
+               "- "    en punkt i en lista
+             Allt efter markören är vanlig prosa. En nyckel du utelämnar faller
+             tillbaka på engelska, så ett ämne kan översättas ett stycke i taget.
+             Ändra INTE ordning eller numrering på dessa; siffrorna är positioner i guiden. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Komma igång" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux ersätter helt grundspelets distributionssystem. Inga extra byggnader behövs. Det fungerar med alla standardbyggnader och med byggnadsmoddar som följer GIANTS standardschema för sin byggnadstyp. Detta är en mycket komplicerad mod och det kan vara lätt att oavsiktligt skapa problem/blockeringar. Läs igenom hela hjälpguiden innan användning." />
+        <text name="dr_guide_gettingStarted_2" text="## Åtkomst till gränssnittet" />
+        <text name="dr_guide_gettingStarted_3" text="Backslash-tangent: öppna Distribution Redux-menyn - ett helskärmsfönster med en flik för varje typ av byggnad, plus denna guide och inställningarna." />
+        <text name="dr_guide_gettingStarted_4" text="Vänster-hakparentes-tangent: medan du är till fots, titta på en byggnads lastnings- eller lossningspunkt för att öppna menyn direkt till den byggnadens sida. Prompterna visas endast när du tittar på en av dina egna byggnader som är en del av nätverket." />
+        <text name="dr_guide_gettingStarted_5" text="Båda tangenterna kan ombindas under Alternativ - Kontroller." />
+        <text name="dr_guide_gettingStarted_6" text="## Idén" />
+        <text name="dr_guide_gettingStarted_7" text="Öppna menyn, välj den byggnad du bryr dig om, och ställ in varje produkt på Håll, Distribuera, Sälj, och så vidare. Det är hela loopen - allt annat är detaljer." />
+        <text name="dr_guide_gettingStarted_8" text="## Vad den gör annorlunda jämfört med grundspelet" />
+        <text name="dr_guide_gettingStarted_9" text="- Tillåter alla byggnader som lagrar, producerar, matar eller säljer att delta i distributionen." />
+        <text name="dr_guide_gettingStarted_10" text="- Levererar endast vad efterfrågan behöver snarare än att försöka fylla till kapacitet." />
+        <text name="dr_guide_gettingStarted_11" text="- Tar betalt för distribution baserat på avstånd." />
+        <text name="dr_guide_gettingStarted_12" text="- Låter dig sälja omedelbart eller vänta tills bästa pris uppnås." />
+        <text name="dr_guide_gettingStarted_13" text="- Möjliggör en säsongsreserv för säsongsgrödor för att säkerställa att produktioner kan fortsätta, och endast sälja den onödiga delen av skörden." />
+        <text name="dr_guide_gettingStarted_14" text="- Auto-vatten kommer att hämta vatten från all förvaring eller den närmaste vattenkällan (t.ex. sjö) för att tillgodose efterfrågan." />
+        <text name="dr_guide_gettingStarted_15" text="- Låter dig åsidosätta standarddistributionsmekanismen för att prioritera efterfrågan, blockera specifika inmatningar och utmatningar, ställa in utmatningsreserver och ställa in inmatningsefterfrågemål." />
+        <text name="dr_guide_gettingStarted_16" text="## Vad den gör varje cykel" />
+        <text name="dr_guide_gettingStarted_17" text="- Allokera - Bygg en efterfrågelista från varje konsument: produktionsingångar, djurfoder, utfodringsrobotar, halm, vatten till djurhållning. Matcha sedan källor till efterfrågan närmast först, med respekt för produktspecifika blockeringar, prioriteter och inmatningstak." />
+        <text name="dr_guide_gettingStarted_18" text="- Flytta resten - Lagra överskott i tillgängliga förvaringsbyggnader, Flytta lager till tillgängliga marknader, flytta sedan lager mellan förvaringar, med respekt för produktspecifika blockeringar, prioriteter och inmatningstak." />
+        <text name="dr_guide_gettingStarted_19" text="- Debitera - Avståndsbaserad transportfakturering, plus grundspelets löpande produktionskostnader per timme (som annars går förlorade eftersom DR undertrycker grundspelets timpassage)." />
+        <text name="dr_guide_gettingStarted_20" text="- Sälj / Marknadsförsörjning - Sälj överskott, sälj från marknadsbuffertar, sälj sedan direktutmatningar (t.ex. el, metan), med respekt för säsongsskörd, samt regler för omedelbar försäljning vs försäljning till bästa pris." />
+        <text name="dr_guide_gettingStarted_21" text="- Redovisa - Registrera produktions- och djurhållningsgenomflöde, beräkna manuella lastnings-/lossningsdifferenser, skicka ut ekonomisammandraget." />
+
+        <text name="dr_guide_theMenu_title" text="Menyn" />
+        <text name="dr_guide_theMenu_1" text="Backslash-tangenten öppnar den samlade menyn. Längs vänster sida finns flikar." />
+        <text name="dr_guide_theMenu_2" text="## Flikar" />
+        <text name="dr_guide_theMenu_3" text="- Produktioner - fabriker och produktionspunkter." />
+        <text name="dr_guide_theMenu_4" text="- Silor - bulksilor och pall-/balförråd, samt gödsel- och urinbrunnar." />
+        <text name="dr_guide_theMenu_5" text="- Djurhållning - ladugårdar, hönshus, fällor och bikupor." />
+        <text name="dr_guide_theMenu_6" text="- Marknader - de kiosker och marknader du har placerat på kartan." />
+        <text name="dr_guide_theMenu_7" text="- Översikt - detaljerade siffror för varje byggnad och varje produkt i en tabell." />
+        <text name="dr_guide_theMenu_8" text="- Användarguide - denna guide." />
+        <text name="dr_guide_theMenu_9" text="- Inställningar - de globala alternativen." />
+        <text name="dr_guide_theMenu_10" text="Varje byggnadsflik är en tvåpanels-sida: dina byggnader listade till vänster, och den valda byggnadens inkommande produkter, produktionslinjer och utgående produkter till höger. Exakt vilka av dessa tre listor som visas beror på vad byggnaden gör." />
+        <text name="dr_guide_theMenu_11" text="## Tidsskala" />
+        <text name="dr_guide_theMenu_12" text="Varje byggnadsflik, och fliken Översikt, har en tidsskalväljare högst upp som erbjuder Timme, Månad och År. Den ändrar omfattningen på flödessiffrorna på den sidan - vad som tagits emot, förbrukats, producerats, distribuerats och sålts under det fönstret." />
+        <text name="dr_guide_theMenu_13" text="En Distribution Redux-&quot;månad&quot; är 24 timpassager, så Månad betyder ungefär den senaste spel-dagen oavsett hur många riktiga dagar du har ställt in per period. Innehav skalas aldrig om: det är ett lager, inte ett flöde, så det visar alltid vad som finns i byggnaden just nu." />
+        <text name="dr_guide_theMenu_14" text="Årsdata byggs upp över tid. Det fanns ingen årsskalaregistrering innan denna funktion fanns, så på en äldre savegame börjar År-kolumnen tom och fylls på när varje spel-månad slutförs." />
+        <text name="dr_guide_theMenu_15" text="## Dolda flikar" />
+        <text name="dr_guide_theMenu_16" text="Flikarna Silor, Djurhållning och Marknader visas endast när den gruppen är påslagen i Inställningar. Stäng av en grupp och dess byggnader lämnar distributionsnätverket helt och dess flik försvinner. Slå på gruppen igen för att få tillbaka båda." />
+
+        <text name="dr_guide_buildingPages_title" text="Byggnadssidor" />
+        <text name="dr_guide_buildingPages_1" text="Flikarna Produktioner, Silor, Marknader och Djurhållning delar samma layout: välj en byggnad till vänster, konfigurera sedan dess produkter till höger. Tabeller och kolumnuppsättningar skiljer sig något beroende på byggnadstyp, eftersom inte alla byggnader förbrukar eller producerar." />
+        <text name="dr_guide_buildingPages_2" text="## Tabellinnehåll" />
+        <text name="dr_guide_buildingPages_3" text="### Inkommande produkter" />
+        <text name="dr_guide_buildingPages_4" text="- PRODUKT - namnet och ikonen." />
+        <text name="dr_guide_buildingPages_5" text="- INNEHAV/MAX - hur mycket som finns i byggnaden nu, den maximala mängd som kan lagras och den inställda maxmängden inom parentes som en procentsats." />
+        <text name="dr_guide_buildingPages_6" text="- LEDIG LAGRING - hur mycket mer av denna produkt byggnaden kan rymma, med hänsyn till den inställda maxmängden (%) och kvarvarande utrymme." />
+        <text name="dr_guide_buildingPages_7" text="- MOTTAGET - hur mycket av produkten Distribution Redux levererade till denna byggnad under den valda tidsskalan." />
+        <text name="dr_guide_buildingPages_8" text="- FÖRBRUKAT - hur mycket av produkten byggnaden använde under den valda tidsskalan. Endast produktioner och djurhållning." />
+        <text name="dr_guide_buildingPages_9" text="- STATUS - Aktiv (Mottar) eller Aktiv (Väntar), baserat på aktivitet under den senaste cykeln, eller Blockerad." />
+        <text name="dr_guide_buildingPages_10" text="### Produktionslinjer (endast produktioner)" />
+        <text name="dr_guide_buildingPages_11" text="- PRODUKTIONSLINJER - produkten som linjen gör, med dess ingångar inom parentes." />
+        <text name="dr_guide_buildingPages_12" text="- STATUS - Igång, Väntar (påslagen men saknar ingångar), eller Av." />
+        <text name="dr_guide_buildingPages_13" text="- MÅL /mån - hur mycket den linjen förväntas producera per månad om alla ingångar tillhandahålls." />
+        <text name="dr_guide_buildingPages_14" text="### Utgående produkter" />
+        <text name="dr_guide_buildingPages_15" text="- PRODUKT - namnet och ikonen." />
+        <text name="dr_guide_buildingPages_16" text="- INNEHAV (MAX) - hur mycket av denna produkt som finns i byggnaden nu, med kapacitet inom parentes." />
+        <text name="dr_guide_buildingPages_17" text="- LEDIG LAGRING - hur mycket mer av denna produkt byggnaden kan rymma." />
+        <text name="dr_guide_buildingPages_18" text="- PRODUCERAT - hur mycket som producerades under den valda tidsskalan. Endast produktioner och djurhållning." />
+        <text name="dr_guide_buildingPages_19" text="- DISTRIBUERAT - allt som lämnade: distribuerat, lagrat, flyttat och sålt kombinerat, med försäljningsvärdet inom parentes när något såldes." />
+        <text name="dr_guide_buildingPages_20" text="- UTMATNINGSLÄGE - läget som denna utmatning för närvarande är inställd på." />
+        <text name="dr_guide_buildingPages_21" text="- STATUS - Aktiv (Skickar) eller Aktiv (Väntar), baserat på aktivitet under den senaste cykeln, eller Blockerad." />
+        <text name="dr_guide_buildingPages_22" text="## OBS" />
+        <text name="dr_guide_buildingPages_23" text="- Om en byggnad kan ha både intern lagring och pallar, kommer visningen att visa den interna mängden och sedan mängden som lagras på pallar på byggnadens pallskapare." />
+        <text name="dr_guide_buildingPages_24" text="- Den valda tidsramen visar endast material som har flyttats inom den tidsramen. Om du nyss har aktiverat produktionen och visar År, ser du bara vad som flyttats sedan du aktiverade den." />
+        <text name="dr_guide_buildingPages_25" text="- Mer information om vad som går vart finns på fliken Översikt." />
+        <text name="dr_guide_buildingPages_26" text="- Volymer byter enhet vid 1 000 liter. Upp till 999 L visas de i liter; från 1 000 L och uppåt visas de i kiloliter med eventuella extra nollor borttagna, så 1 001 L visas som 1.001 kL, 123 123 L som 123.123 kL, och 600 000 L helt enkelt som 600 kL. Tre decimaler är exakt en liter, så ingenting går förlorat vid enhetsbytet." />
+        <text name="dr_guide_buildingPages_27" text="- För att se om en ändring har trätt i kraft (t.ex. väntar eller igång), måste du vänta en cykel (1 timme) innan UI-kolumnen uppdateras. Om du har en kedja av distributioner kan du behöva vänta flera timmar tills alla steg har uppdaterats." />
+        <text name="dr_guide_buildingPages_28" text="## Ändra inställningar" />
+        <text name="dr_guide_buildingPages_29" text="- För att slå på eller av en produktionslinje, välj linjen och tryck på Växla linje." />
+        <text name="dr_guide_buildingPages_30" text="- För att ändra vad som händer med en utmatning, välj den och tryck på Växla utmatning." />
+        <text name="dr_guide_buildingPages_31" text="- Avancerat öppnar de produktspecifika routingkontrollerna (se Avancerade inmatningar och utmatningar)." />
+        <text name="dr_guide_buildingPages_32" text="- Säljtidpunkt visas för en utmatning i ett säljläge." />
+        <text name="dr_guide_buildingPages_33" text="Att ändra en produktionsutmatning eller växla en produktionslinje här är samma inställning som grundspelets produktionsskärms utmatningsväxling, så båda ställena uppdaterar varandra - och grundskärmen visar också moddens lägesnamn." />
+
+        <text name="dr_guide_outputModes_title" text="Utmatningslägen" />
+        <text name="dr_guide_outputModes_1" text="## Vilka lägen varje byggnadstyp erbjuder" />
+        <text name="dr_guide_outputModes_2" text="- Produktioner - Distribuera, Lagra, Håll pallar, Håll internt, Sälj, Marknadsförsörjning." />
+        <text name="dr_guide_outputModes_3" text="- Silor och förvaring - Distribuera, Flytta till, Håll, Sälj, Marknadsförsörjning." />
+        <text name="dr_guide_outputModes_4" text="- Djurhållning - Distribuera, Lagra, Håll pallar, Håll internt, Sälj, Marknadsförsörjning." />
+        <text name="dr_guide_outputModes_5" text="- Marknader - Endast Sälj eller Håll." />
+        <text name="dr_guide_outputModes_6" text="Alla lägen erbjuds inte hela tiden. Om ett läge inte har någon möjlig slutpunkt döljs det istället för att visas som en återvändsgränd. T.ex. utan en placerad marknad, eller utan en marknad som accepterar produkten, visas inte Marknadsförsörjning i listan." />
+        <text name="dr_guide_outputModes_7" text="## Lägena" />
+        <text name="dr_guide_outputModes_8" text="- Distribuera - mata närliggande produktioner och djur som behöver denna produkt, närmaste källa först, upp till vad deras recept kräver. Överskott stannar kvar." />
+        <text name="dr_guide_outputModes_9" text="- Lagra - flytta utmatningen till vilken förvaringsbyggnad som helst som accepterar den, närmast först, och spilla över till nästa när en fylls. Produktioner och djurhållning." />
+        <text name="dr_guide_outputModes_10" text="- Flytta till - flytta produkt från en förvaringsbyggnad till en annan som accepterar den. Endast förvaringsbyggnader. Se varningen nedan." />
+        <text name="dr_guide_outputModes_11" text="- Håll internt - behåll utmatningen som bulkmaterial inne i byggnaden; inga pallar skapas automatiskt och du skapar dem själv på begäran (se Pallskapande)." />
+        <text name="dr_guide_outputModes_12" text="- Håll pallar - behåll utmatningen där den är, som pallar, och låt den ackumuleras." />
+        <text name="dr_guide_outputModes_13" text="- Sälj - sälj produkten, antingen omedelbart eller till bästa pris (se Säljtidpunkt)." />
+        <text name="dr_guide_outputModes_14" text="- Marknadsförsörjning - överför utmatningen till en marknad eller kiosk du har placerat, där den säljs till ett premiumpris." />
+        <text name="dr_guide_outputModes_15" text="## Kombinerade lägen" />
+        <text name="dr_guide_outputModes_16" text="- Distribuera + Sälj - mata all efterfrågan först, sälj sedan det som blir över." />
+        <text name="dr_guide_outputModes_17" text="- Distribuera + Lagra - mata efterfrågan först, flytta sedan överskottet till din förvaring istället för att sälja det. Endast produktioner och djurhållning." />
+        <text name="dr_guide_outputModes_18" text="- Distribuera + Flytta till - mata efterfrågan först, flytta sedan överskottet till din valda förvaring. Endast förvaringsbyggnader." />
+        <text name="dr_guide_outputModes_19" text="- Distribuera + Marknadsförsörjning - mata efterfrågan först, överför sedan överskottet till din marknad eller kiosk." />
+        <text name="dr_guide_outputModes_20" text="I varje kombinerat läge sker den första halvan verkligen först. Inget säljs, lagras eller skickas till en marknad förrän konsumenter har erbjudits det." />
+        <text name="dr_guide_outputModes_21" text="Flytta till erbjuds endast om avancerad routing är aktiverad (se Avancerad routing)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Avancerad routing &amp; regler" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Avancerad routing" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Avancerad routing låter dig styra varje enskild inmatning och utmatning för varje byggnad. Den är påslagen som standard och kan stängas av i Inställningar." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Avancerade inmatningar" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Välj valfri inkommande produkt och tryck på Avancerade inmatningar." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Blockera / Tillåt - hindra denna byggnad från att någonsin ta emot den produkten." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Blockera alla / Tillåt alla - växla alla inmatningar samtidigt." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Max In - det mesta av den produkten som byggnaden får innehålla. Detta är viktigt för samlad lagring, där flera produkter delar en tank. En pool är först till kvarn: som standard får varje produkt använda allt, precis som grundspelet beter sig. Det betyder att en populär produkt kan fylla en silo och lämna lite plats åt de andra - så sätt Max In på den produkten för att begränsa den och hålla utrymme för resten. Taksättning är oberoende och behöver inte summera till 100 procent; allt du lämnar ifred förblir obegränsat." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Mål - ett fyllnadsmål för den produkten. Istället för att endast leverera vad nästa cykel behöver, arbetar nätverket mot denna nivå och håller den sedan - i praktiken en inmatningsreserv." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Avancerade utmatningar" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Välj den utgående produkten du vill justera och tryck på Avancerade utmatningar." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Blockera / Tillåt - skicka aldrig denna utmatning till den destinationen." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Prioritera - ranka efterfrågan och lagringsalternativ för denna utmatning. Detta åsidosätter standardbeteendet närmast-först-sedan-spilla-över." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Reserv (+/-) - behåll denna mängd liter i byggnaden hela tiden. Ingenting - distribution, försäljning, lagring, flyttning eller marknadsförsörjning - får ta produkten under denna siffra." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### &quot;Flytta till&quot;-utmatningsläge" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Detta läge är endast tillgängligt som utmatningsläge när Avancerad routing är påslagen och byggnaden är av typ: Förvaring." />
+        <text name="dr_guide_advancedRoutingRules_16" text="- Detta läge låter dig flytta materialen i den förvaringen till en annan förvaring som stöder det." />
+        <text name="dr_guide_advancedRoutingRules_17" text="- Som standard, när du aktiverar detta, är varje möjlig destination blockerad för att undvika oavsiktlig skapelse av produktloopar." />
+        <text name="dr_guide_advancedRoutingRules_18" text="- För att aktivera detta, välj valfri utmatning och tryck på Avancerade utmatningar. Du kommer att se en lista över stödjande destinationer till höger (alla blockerade) och du kan tillåta byggnader efter behov. Alla andra avancerade utmatningsfunktioner är också tillgängliga för denna Flytta (Prioritera, Reserv etc.)." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- Som standard kommer Flytta till att försöka fylla byggnaden så mycket som möjligt i varje cykel. Du kan ställa in ett &quot;Max In&quot; på de mottagande byggnadernas inmatningar för att säkerställa att du har plats att flytta flera produkter (istället för att bara fylla silon helt med den första produkten)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Innan du stänger av Avancerad routing" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Varje avancerad inställning du har gjort raderas, inte bara ignoreras - alla blockeringar, prioriteter, reserver, Max In-värden och mål. Att slå på Avancerad routing igen senare ger dig en ren skiffer, så du måste ställa in allt igen." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Avancerade regler" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Dessa avancerade regler gäller oavsett om Avancerad routing är på eller inte, säsongsreserv för skörd och AutoVatten kan slås på/av i inställningarna om så önskas." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Säljlägen" />
+        <text name="dr_guide_advancedRoutingRules_25" text="För alla utmatningar i ett säljläge kan du välja att sälja omedelbart eller att vänta på bästa pris. Att vänta innebär att produkten ackumuleras i byggnaden tills toppen anländer, så se till att det finns plats för den." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Säsongsreserv för skörd" />
+        <text name="dr_guide_advancedRoutingRules_27" text="AV som standard. När du slår på den kommer en utmatning som är en årlig skördegröda att hålla ungefär ett års konsumtion för att mata dina egna produktioner och endast sälja överskottet. Gräs och andra grödor som växer om under året håller tre månader istället. Tills modden har sett en gröda skördas vet den inte när nästa skörd är planerad, så den faller tillbaka på inställningen Reservmånader." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### AutoVatten" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Vatten levereras automatiskt till alla byggnader som behöver det, från närmaste vattenkälla, medan Auto-Vatten är på. Om det inte finns någon placerad vattenkälla, kommer systemet att hämta det från närmaste vattenförekomst (observera att om närmaste vattenförekomst är långt borta blir distributionskostnaden hög)." />
+
+        <text name="dr_guide_overviewTab_title" text="Fliken Översikt" />
+        <text name="dr_guide_overviewTab_1" text="Fliken Översikt placerar hela nätverket i en tabell: varje ansluten byggnad och varje produkt som går in i eller ut ur den. Det är platsen att titta på när du vill veta vad som faktiskt händer snarare än vad en enskild byggnad är inställd på." />
+        <text name="dr_guide_overviewTab_2" text="Varje produkt är märkt (In), (Ut) eller (In/Ut) så att du snabbt kan se vilken sida av byggnaden den befinner sig på. Silor och förråd är In/Ut för allt, eftersom de både tar emot och levererar." />
+        <text name="dr_guide_overviewTab_3" text="## De fyra väljarna" />
+        <text name="dr_guide_overviewTab_4" text="- Filtrera efter - Inget (visa alla), Byggnad, Produkt eller Slutprodukt (hela kedjan)." />
+        <text name="dr_guide_overviewTab_5" text="- Visa - väljer vilken byggnad eller produkt filtret gäller." />
+        <text name="dr_guide_overviewTab_6" text="- Tidsskala - Timme, Månad eller År, som på byggnadsflikarna." />
+        <text name="dr_guide_overviewTab_7" text="- Gruppering - Av visar en rad per byggnad; På slår ihop byggnader av samma typ till en enda summerad rad, märkt t.ex. &quot;Bageri x2&quot;." />
+        <text name="dr_guide_overviewTab_8" text="Slutprodukt (hela kedjan) är den mest användbara av dessa. Välj en färdig produkt som tårta och tabellen visar varje byggnad och varje mellanprodukt som matar den, ordnad från den färdiga varan och bakåt i kedjan. Det är det snabbaste sättet att hitta flaskhalsen eller överskottet i en produktionslinje." />
+        <text name="dr_guide_overviewTab_9" text="## Kolumnerna" />
+        <text name="dr_guide_overviewTab_10" text="- MOTTAGET - levererat till denna byggnad av Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- LASTAT - inlagt i denna byggnad av något som INTE är Distribution Redux: du med en trailer, en bal, en AI-hjälpare, en annan mod." />
+        <text name="dr_guide_overviewTab_12" text="- FÖRBRUKAT (FÖRV.) - förbrukat, med den förväntade siffran inom parentes." />
+        <text name="dr_guide_overviewTab_13" text="- URLASSAT - taget ut ur denna byggnad av något som inte är Distribution Redux, inklusive en pall som du kör iväg med." />
+        <text name="dr_guide_overviewTab_14" text="- INNEHAV (MAX) - vad som finns i byggnaden just nu, med kapacitet. Skalas aldrig om av Tidsskala." />
+        <text name="dr_guide_overviewTab_15" text="- PRODUCERAT (FÖRV.) - tillverkat av denna byggnad, med den förväntade siffran inom parentes." />
+        <text name="dr_guide_overviewTab_16" text="- DISTRIBUERAT - levererat till konsumenter." />
+        <text name="dr_guide_overviewTab_17" text="- LAGRAT/FLYTTAT - skickat till förvaring, eller flyttat till en annan förvaring." />
+        <text name="dr_guide_overviewTab_18" text="- SÅLT - sålt, antingen direkt eller via en marknad." />
+        <text name="dr_guide_overviewTab_19" text="- DISTR.KOSTN. - vad transporten för denna byggnads leveranser kostade. Debiteras endast den skickande byggnaden, så kolumnen summeras till de faktiskt spenderade pengarna snarare än att räkna varje leverans två gånger." />
+        <text name="dr_guide_overviewTab_20" text="## De förväntade siffrorna och deras färger" />
+        <text name="dr_guide_overviewTab_21" text="FÖRBRUKAT och PRODUCERAT visar den förväntade mängden inom parentes, beräknad från recepten för de produktionslinjer som är påslagna. Siffran är grön när den är vid eller mycket nära målet, orange när den är något under, och röd när den är långt under. Endast produktioner har ett recept, så djurhållning och silorader visar en vanlig siffra utan mål snarare än en påhittad." />
+        <text name="dr_guide_overviewTab_22" text="En röd PRODUCERAT-siffra är det snabbaste sättet att upptäcka en svältande linje." />
+        <text name="dr_guide_overviewTab_23" text="## Visa inställningar" />
+        <text name="dr_guide_overviewTab_24" text="Längst ner på sidan har du en knapp för att växla mellan Visa flöden och Visa inställningar. Om du har en produktionslinje som är blockerad kan du snabbt växla till sidan Visa inställningar för att se vilken inställning som kan blockera den." />
+        <text name="dr_guide_overviewTab_25" text="Dubbelklicka på en rad i någon av vyerna tar dig direkt till den byggnadens sida." />
+
+        <text name="dr_guide_palletManagement_title" text="Pallhantering" />
+        <text name="dr_guide_palletManagement_1" text="Många utmatningar levereras på pallar - brädor, plankor, grönsaker i lådor, ägg, ull och så vidare. För att säkerställa att Distribution Redux fungerar som förväntat har hur pallar fungerar skrivits om helt." />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux kommer att ta hänsyn till både produkt som hålls internt i byggnaden samt alla pallar som finns på byggnadens pallskapare för både informationsvisningar OCH utmatningslägen. Distribution kommer alltid att hämta från pallskaparen först och sedan från den interna lagringen. Om pallskaparen är blockerad kommer produkten att ackumuleras i byggnadens egen interna lagring och distribueras därifrån. En pall som tas bort manuellt från pallskaparen tas omedelbart bort från byggnadens totala innehav." />
+        <text name="dr_guide_palletManagement_3" text="Byggnader utan en riktig pallplatta i sin modell - vissa moddade pallskapare och några bikupor - faller tillbaka på en enkel regel med närmaste byggnad istället." />
+        <text name="dr_guide_palletManagement_4" text="## Skapa manuellt" />
+        <text name="dr_guide_palletManagement_5" text="- Ställ in utmatningen på Håll internt. När den väl håller minst en hel pall värd, visas en knapp Skapa pallar, både på fliken Produktioner och på grundspelets produktionsskärm. Tryck på den för att öppna skaparfönstret." />
+        <text name="dr_guide_palletManagement_6" text="- Typ - palltypen. Om utmatningen endast stöder en visas den som referens; om den stöder flera, använd pilarna för att välja." />
+        <text name="dr_guide_palletManagement_7" text="- Antal - hur många som ska skapas. Pilarna stegar en i taget, -10 / +10-knapparna hoppar i tiotals, och totalen begränsas av det lager du har." />
+        <text name="dr_guide_palletManagement_8" text="- Skapa skapar det antalet fyllda pallar vid byggnadens pallpunkt och tar bort motsvarande lager. Avbryt stänger utan att skapa." />
+        <text name="dr_guide_palletManagement_9" text="Knappen visas endast för en utmatning på Håll internt som håller minst en hel pall värd - under det finns inget att skapa. Byggnaden måste också ha en pallskapningspunkt i sin modell, vilket de flesta pallhanterande byggnader har. I multiplayer utför värden skapandet, så pallarna visas för alla." />
+        <text name="dr_guide_palletManagement_10" text="## Pallar från djurfållor" />
+        <text name="dr_guide_palletManagement_11" text="I grundspelet skapar djurfållor en pall och laddar den med vad som finns i den interna lagringen varje timme oavsett om det räcker till en hel pall eller inte (till skillnad från produktioner). För att hålla allt konsekvent har djurhållningar som standard ändrats till att fungera på samma sätt som produktioner. Detta kan ändras i inställningarna för att återgå till grundspelsläge, men detta kan påverka distribution och distributionsspårningsdata (rekommenderas inte)." />
+        <text name="dr_guide_palletManagement_12" text="Det finns också ett alternativ i samma inställning att aldrig skapa pallar. Detta förhindrar att pallar någonsin skapas och använder bara byggnadens interna lagring för distribution." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Andra ändringar av grundspelets mekanik" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Plansilor" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- När du öppnar en plansilo behöver du nu bara trycka på R så tar modden bort hela täcket från silon (inga fler deltäck som inte kan tas bort)." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- Plansilor förväntar sig att du skapar utmatningen genom att lasta in material, täcka det, vänta på att det jäser och sedan avtäcka det. Som sådan visar Distribution Redux endast utmatningstabellen och alternativen, och kommer endast att visa lager när materialet är avtäckt." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Gödselhögar och urinbrunnar" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Gödselhögar och urinbrunnar kan nu placeras var som helst på kartan och kopplas INTE automatiskt till en djurhållning. För att flytta material från en djurhållning till dessa objekt, placera det och välj &quot;Lagra&quot; som utmatningsläge på ladugården. Gödsel och urin kommer att flyttas till dessa byggnader precis som vilken annan utmatning som helst." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Siloutbyggnader" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Siloutbyggnader har skrivits om i stor utsträckning och fungerar nu annorlunda än i grundspelet. Siloutbyggnader kan nu endast placeras inom 50 m från en befintlig silo, hög eller grop och lägger ENDAST till lagringsutrymme till den byggnaden." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Manuell tippning på marknader" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Du kan fortfarande manuellt tippa/lämna av produkter på dina egna marknader/stånd. Istället för att bara sälja omedelbart som i grundspelet kommer dessa produkter att respektera utmatningsläget som är inställt på marknaden." />
+
+        <text name="dr_guide_settings_title" text="Inställningar" />
+        <text name="dr_guide_settings_1" text="Globala inställningar finns på fliken Inställningar. De sparas med din SaveGame och synkroniseras i multiplayer av värden. Byggnadsspecifika val åsidosätter alltid dessa globala inställningar för den byggnaden." />
+        <text name="dr_guide_settings_2" text="## Alternativen" />
+        <text name="dr_guide_settings_3" text="- Listade i den ordning de visas på fliken." />
+        <text name="dr_guide_settings_4" text="- Omfattning - Räckvidd (hela gården) eller Närhet (inom en radie)." />
+        <text name="dr_guide_settings_5" text="- Djurhållning - inkludera eller exkludera ladugårdar, hönshus, fällor och bikupor." />
+        <text name="dr_guide_settings_6" text="- Silor &amp; Pallförvaring - inkludera eller exkludera bulksilor, pall- och balförråd, samt gödsel- och urinbrunnar." />
+        <text name="dr_guide_settings_7" text="- Marknader &amp; Kiosker - inkludera eller exkludera dina marknader och kiosker." />
+        <text name="dr_guide_settings_8" text="- Avancerad routing - huvudströmbrytare för Avancerade inmatningar och Avancerade utmatningar. Av tar också bort Flytta till och raderar alla avancerade inställningar (se Avancerade inmatningar och utmatningar)." />
+        <text name="dr_guide_settings_9" text="- Närhetsradie - hur långt en källa når i närhetsläge. Standard 50 m." />
+        <text name="dr_guide_settings_10" text="- Konsumentbuffert - timmar av råmaterial som fylls på hos varje konsument per cykel. Standard 2." />
+        <text name="dr_guide_settings_11" text="- Försäljning - huvud på/av för all försäljning. Av innebär att inget någonsin säljs, oavsett vad enskilda utmatningar är inställda på." />
+        <text name="dr_guide_settings_12" text="- Auto-Vatten - förse automatiskt vatten till byggnader som förbrukar det." />
+        <text name="dr_guide_settings_13" text="- Distributionskostnad - om transportavgift tas ut överhuvudtaget." />
+        <text name="dr_guide_settings_14" text="- Kostnadstakt - basavgiften per länk och timme. Standard 10." />
+        <text name="dr_guide_settings_15" text="- Kostnadsavstånd - avståndssteget som takten multipliceras med. Standard 50 m." />
+        <text name="dr_guide_settings_16" text="- Säsongsreserv för skörd - håll tillräckligt med råmaterial för att räcka till nästa skörd, sälj endast överskottet. Av som standard." />
+        <text name="dr_guide_settings_17" text="- Reservmånader (tills inlärd) - hur många månader att hålla undan innan modden har lärt sig en grödas skördefönster. Standard 13." />
+        <text name="dr_guide_settings_18" text="- Sälj till bästa pris - huvud på/av för försäljning till bästa pris. Av innebär att allt säljs omedelbart." />
+        <text name="dr_guide_settings_19" text="- Standard säljtidpunkt - vad en ny utmatning använder när du inte har ställt in den: vänta på toppen, eller sälj omedelbart." />
+        <text name="dr_guide_settings_20" text="- Pallskapande - tre alternativ, standardspel (Skapa delvisa pallar), Skapa endast hela pallar (STANDARD) och Skapa aldrig pallar." />
+        <text name="dr_guide_settings_21" text="- Uppdateringsfrekvens meny - kan justeras om du upplever lagg eller ryckningar i gränssnittet. Manuell aktiverar en uppdateringsknapp som du kan använda för att uppdatera gränssnittet." />
+        <text name="dr_guide_settings_22" text="- Debug-loggning - skriv detaljerad aktivitet till log.txt. Lämna av för en tystare logg." />
+
+        <text name="dr_guide_support_title" text="Support" />
+        <text name="dr_guide_support_1" text="## Felsökning" />
+        <text name="dr_guide_support_2" text="- En byggnad visas inte. Kontrollera Omfattning och gruppväxlarna. Närhet når endast inom radien, och en byggnad vars grupp är avstängd tas bort från nätverket och dess flik döljs." />
+        <text name="dr_guide_support_3" text="- Inget levereras. Se till att källan är inställd på ett Distribuera-läge snarare än Håll, att konsumentens produktionslinje är påslagen, och att de två är inom räckhåll för den aktuella omfattningen." />
+        <text name="dr_guide_support_4" text="- En Flytta till-utmatning flyttar ingenting. Flytta till börjar med alla destinationer blockerade. Öppna Avancerade utmatningar och aktivera destinationen du vill ha. Om en destination visas som &quot;Aktiv - Ogiltig&quot; i rött, skulle aktivering skapa en loop." />
+        <text name="dr_guide_support_5" text="- Något anlände men såldes inte denna timme. Det är avsiktligt. Produkt som just har anlänt väntar en passage så att konsumenterna får första tjing." />
+        <text name="dr_guide_support_6" text="- En djurfålla håller på sina ägg eller ull. Med &quot;Hela pallar från fällor&quot; på, ackumulerar en fålla tills den har en hel pall innan den släpper en. Konsumenter kan fortfarande ta från lagret medan det fylls; försäljning och lagring väntar på pallen." />
+        <text name="dr_guide_support_7" text="- En fabrik får inte vatten. Vatten levereras automatiskt medan Auto-Vatten är på; om en vattenkrävande anläggning ser svält ut, bekräfta inställningen." />
+        <text name="dr_guide_support_8" text="- Ingen prompt vid en byggnad. Vänster-hakparentes-prompten visas endast för byggnader som är en del av nätverket. Om du exkluderade den gruppen i Inställningar, är prompten borta av design." />
+        <text name="dr_guide_support_9" text="- Modden beter sig inte som förväntat. Kör inte detta tillsammans med andra distributionsöverskridande moddar - de kopplar in samma system och kommer att bråka. Modden fungerar med grundspelets byggnader och med moddade byggnader som följer GIANTS standardschema; vissa moddade byggnader kan bete sig annorlunda och kan påverka denna modd." />
+        <text name="dr_guide_support_10" text="## Guider och översikter" />
+        <text name="dr_guide_support_11" text="Översikter och guider finns på min YouTube-kanal, @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Felrapportering" />
+        <text name="dr_guide_support_13" text="Buggar, funktionsönskemål och kompatibilitetsförfrågningar för moddar kan skickas in som ett ärende på min GitHub-repository:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Ändringslogg" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Talrika buggfixar (se GitHub för fullständiga detaljer)." />
+        <text name="dr_guide_changelog_3" text="2. Talrika QoL-tillägg (se GitHub för fullständiga detaljer)." />
+        <text name="dr_guide_changelog_4" text="3. Kompatibilitet tillagd för många moddar, och koden stärktes för att förbättra moddkompatibilitet överlag (se GitHub för fullständiga detaljer)." />
+        <text name="dr_guide_changelog_5" text="4. Lade till en översiktsflik som låter dig se all distributionsaktivitet och distributionsinställningar för alla byggnader på ett ställe (inkluderar filter och kan ställas in för att visa alla källor och produktioner som bidrar till en specifik slutprodukt)." />
+        <text name="dr_guide_changelog_6" text="5. Lade till avancerad inmatnings- och utmatningshantering (blockera, prioritera, reservera lager, fyllnadsmål, max in)." />
+        <text name="dr_guide_changelog_7" text="6. Lade till möjlighet att flytta och sortera produkter mellan förvaringar (dvs. silor, pallbutiker etc.)." />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Namnge byggnader - varje byggnad i distributionsnätverket kan nu ges ett anpassat namn från grundspelets byggnadsmeny. Spelet tillåter detta endast på vissa byggnader som standard; Distribution Redux aktiverar det för alla dess byggnader (silor, förråd, gropar och marknader inkluderade). Modden använder sedan ditt namn överallt i denna meny, med det ursprungliga byggnadsnamnet under det som referens, så en gård med åtta identiska växthus blir äntligen läsbar." />
+        <text name="dr_guide_changelog_10" text="2. Gödselhög / Urinbrunn produktfix - var och en listade den andras produkt som utmatning. Gödselhögen visar nu endast Gödsel, och Urinbrunnen endast Urin." />
+        <text name="dr_guide_changelog_11" text="3. Gödselhög / Urinbrunn inmatningsfix - ingen av dem visade en inkommande produkt. De listar nu vad som faktiskt flödar in i dem (gödsel respektive urin)." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. UI-förbättringar och en konsekvensgenomgång, inklusive rullningslister, omplacerade tabeller och värdet av sålda produkter tillagt i försäljningskolumnen." />
+        <text name="dr_guide_changelog_14" text="2. Lade till Marknader och Kiosker i distributionssystemet - alla byggnader har nu ett Marknadsförsörjning-alternativ för att skicka sin utmatning till en marknad du har placerat. Varor som säljs via din marknad får 20 % prisbonus, även om försäljning i bulk minskar priset du får, precis som i grundspelet." />
+        <text name="dr_guide_changelog_15" text="3. Sälj till bästa pris-fix - utan prishistorik sålde systemet tidigare än förväntat. Det faller nu tillbaka på spelets prisgraf tills det har samlat in tillräckligt med egna data." />
+        <text name="dr_guide_changelog_16" text="4. Lade till Håll internt-läge och manuellt pallskapande - produkter som kan pallhanteras kan hållas som bulklager istället för att automatiskt skapa pallar, och sedan skapas manuellt via ett skaparfönster där du väljer palltyp och antal. Tillgängligt från både fliken Produktioner och grundspelets produktionsskärm." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Lade till möjligheten att specificera om varor ska säljas omedelbart eller när de når bästa pris." />
+        <text name="dr_guide_changelog_19" text="2. Helt ombyggt UI som bryter ut distributionstyper och konsoliderar inställningarna och hjälpguiden i menyn." />
+        <text name="dr_guide_changelog_20" text="3. Fixar för siloutbyggnader så att de fungerar på ett konsekvent sätt. En utbyggnad måste nu placeras i närheten av en matchande silotyp; all distribution hanteras i den primära silon och utbyggnaden lägger bara till lagring till den." />
+        <text name="dr_guide_changelog_21" text="4. Pall- och balförråd visar nu alla aktiva pallar i nätverket så att de kan förkonfigureras innan varor anländer. Lade till en reservfunktion som säljer pallar (minst värdefulla först) för att hålla utrymme fritt för nästa cykel - kringgås om ett annat pallförråd har plats, i så fall flyttas pallar dit istället." />
+        <text name="dr_guide_changelog_22" text="5. Interaktion med pallförråd fixad: titta på lastningspunktens ikon i spelet för att öppna den byggnadens distributionssida direkt." />
+        <text name="dr_guide_changelog_23" text="6. Fixade en liten mängd utmatning som blev kvar i källan efter distribution (ett timingproblem)." />
+        <text name="dr_guide_changelog_24" text="7. Biogasanläggning fixad: metan- och elförsäljning tar nu hänsyn till spelsvårighet, och digestat registreras nu korrekt som Biogasanläggningsintäkt på ekonomirapporten." />
+        <text name="dr_guide_changelog_25" text="8. Inställningar omarbetade för att vara mer granulära: du kan nu inkludera eller exkludera silor / pallförråd, och inkludera eller exkludera djurhållningsbyggnader. Produktioner registreras alltid och deltar i distribution, precis som i grundspelet." />
+        <text name="dr_guide_changelog_26" text="9. Ändring av lägestitlar: Håll håller nu varor i byggnaden (brukade vara &quot;Lagra&quot;); Lagra flyttar varor till annan plats när lagring finns tillgänglig." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Förrelease." />
+
+        <!-- ============ SLUT PÅ ANVÄNDARGUIDE ============ -->
+    </texts>
+</l10n>
