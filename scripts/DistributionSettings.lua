@@ -178,6 +178,18 @@ DistributionSettings.SETTINGS = {
         values  = { 0, 1, 2 },
         strings = { "Vanilla (fill gradually)", "Whole pallets only", "Never spawn pallets" },
     },
+    -- Storage buildings that carry a fake production point so the base game will distribute to them
+    -- (see SmartDistribution.isPassThroughStore). Three states rather than an on/off because SUPPRESSING
+    -- the fake lines writes production state into the SAVEGAME, which outlives DR -- remove the mod and
+    -- those lines stay switched off until the player turns them back on. So treating the building as
+    -- storage (which is DR-side only, and reversible by flipping this back) is the default, and touching
+    -- the game's own state is a separate, deliberate step.
+    passThroughStores = {
+        order   = 9.9,
+        default = 2,                                            -- Treat as storage
+        values  = { 0, 1, 2 },
+        strings = { "Treat as production", "Treat as storage", "Treat as storage + switch lines off" },
+    },
     -- How hard the OPEN menu works. Every DR tab re-reads live state on a timer -- the building tabs
     -- re-populate their number cells, and the Overview re-enumerates the entire network. That cost scales
     -- with the farm, and on a very large one (reported: ~103 productions, ~270 active products) it is worth
@@ -311,6 +323,9 @@ function DistributionSettings.apply()
     -- what the new NEVER behaviour tests (SmartDistribution.palletSpawnAllowed).
     g.palletSpawnMode  = DistributionSettings.palletSpawnMode
     g.fullPalletSpawn  = (DistributionSettings.palletSpawnMode ~= 0)
+    -- 0 = leave them as productions (the pre-1.1.0.2 behaviour), 1 = treat as storage, 2 = also switch
+    -- their identity lines off in the game itself. Read by SmartDistribution.passThroughMode.
+    g.passThroughStores = DistributionSettings.passThroughStores
     -- purely a GUI pacing dial: read by DistributionMenuPage and the Overview, never by the hourly pass.
     -- Clearing the adaptive backoff gives an explicit choice a fresh start rather than leaving it stretched
     -- by whatever the menu measured before -- the menu re-learns within a refresh or two if it needs to.
@@ -436,6 +451,7 @@ function DistributionSettings.save(missionInfo)
     setXMLInt(xml,    "distributionRedux.settings#defaultOutputMode", DistributionSettings.defaultOutputMode)
     setXMLInt(xml,    "distributionRedux.settings#defaultInputMode",  DistributionSettings.defaultInputMode)
     setXMLInt(xml,    "distributionRedux.settings#palletSpawnMode", DistributionSettings.palletSpawnMode)
+    setXMLInt(xml,    "distributionRedux.settings#passThroughStores", DistributionSettings.passThroughStores)
     -- menuRefresh is NOT written here: it is localOnly, so it belongs to the machine rather than to the
     -- world, and lives in the profile file via saveLocal(). Writing it per-savegame would make one
     -- player's display pacing a property of the map.
@@ -521,6 +537,15 @@ local function readWorldSettings(xml)
     else
         local fullPal = getXMLBool(xml, "distributionRedux.settings#fullPalletSpawn")
         if fullPal ~= nil then DistributionSettings.palletSpawnMode = fullPal and 1 or 0 end
+    end
+
+    -- Absent in a save written before 1.1.0.2, which is the common case: the field then keeps its default
+    -- (Treat as storage). That IS a behaviour change for an existing save carrying one of these buildings,
+    -- and it is the intended one -- the building stops being a 4,000,000 L demand and becomes the silo it
+    -- always was. Set it back to "Treat as production" to get the old behaviour.
+    local ptStores = getXMLInt(xml, "distributionRedux.settings#passThroughStores")
+    if ptStores ~= nil and isAllowed("passThroughStores", ptStores) then
+        DistributionSettings.passThroughStores = ptStores
     end
 
     -- menuRefresh is deliberately NOT read here -- it is localOnly and comes from the profile file, so a

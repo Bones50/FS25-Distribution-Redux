@@ -40,8 +40,6 @@
              existing row instead. The two are worded differently ON PURPOSE so the log
              is not needed to tell which registration produced a row.
              DELETE BOTH when the probe goes.                                          -->
-        <text name="dr_finance_distributionCost"    text="Distribution Costs" />
-        <text name="dr_finance_distributionCostCtl" text="Distribution Costs (control)" />
 
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview"        text="Distribution - Overview" />
@@ -67,6 +65,7 @@
         <text name="dr_lbl_show"             text="Show" />
         <text name="dr_lbl_grouping"         text="Grouping" />
         <text name="dr_lbl_modeKeys" text="X / Z: cycle selected output mode" />
+        <text name="dr_lbl_sellingOff"       text="SELLING IS OFF - every market sells on arrival, whatever these rows are set to" />
         <text name="dr_lbl_overviewPointer"  text="Full breakdown + supply chains: Overview tab" />
 
         <!-- ================= Overview: FLOW view column headers =================
@@ -154,6 +153,7 @@
         <text name="dr_btn_cycleOutput"      text="Cycle Output" />
         <text name="dr_btn_advanced"         text="Advanced" />
         <text name="dr_btn_sellTiming"       text="Sell Timing" />
+        <text name="dr_btn_sellTimingOff"    text="Sell Timing: selling is OFF" />
         <text name="dr_btn_sellTimingValue"  text="Sell Timing: %s" />
         <text name="dr_btn_toggleLine"       text="Toggle Line" />
         <text name="dr_btn_showSettings"     text="Show Settings" />
@@ -312,6 +312,8 @@
              sells nothing until told to. -->
         <text name="dr_timing_bestPrice" text="Best price" />
         <text name="dr_timing_immediate" text="Immediate" />
+        <text name="dr_market_sellsNow"    text="Sells now" />
+        <text name="dr_market_sellsNowSet" text="%s (set: %s)" />
         <text name="dr_market_hold"      text="Hold" />
         <text name="dr_market_best"      text="Sell  -  Best price" />
         <text name="dr_market_immediate" text="Sell  -  Immediate" />
@@ -461,6 +463,22 @@
         <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fill gradually)" />
         <text name="dr_set_palletSpawnMode_v2"  text="Whole pallets only" />
         <text name="dr_set_palletSpawnMode_v3"  text="Never spawn pallets" />
+        <text name="dr_set_passThroughStores"     text="Pass-through stores" />
+        <text name="dr_set_passThroughStores_tt"  text="Some mods add a storage building with a fake production attached, where every line turns a product straight back into itself. The production does nothing; it is only there so the game will deliver to the building. Treat as storage makes Distribution Redux see it as the silo it really is, so it stops asking for every litre on the farm and its real lines (if it has any) still show on Productions. The third option also switches those fake lines off in the game itself - tidier, but it is written into your savegame and stays off if you remove this mod." />
+        <text name="dr_set_passThroughStores_v1"  text="Treat as production" />
+        <text name="dr_set_passThroughStores_v2"  text="Treat as storage" />
+        <text name="dr_set_passThroughStores_v3"  text="Treat as storage + switch lines off" />
+        <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
+             pallet store), to tell its halves apart in the building list. Keep them short - they are
+             appended to a building name in a fixed-width list. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="Silo" />
+        <text name="dr_role_shed"         text="Pallet Store" />
+        <text name="dr_role_production"   text="Production" />
+        <text name="dr_role_husbandry"    text="Animals" />
+        <text name="dr_role_heap"         text="Pit" />
+        <text name="dr_role_market"       text="Market" />
+        <text name="dr_type_linked"       text="Linked" />
 
         <text name="dr_set_menuRefresh"     text="Menu refresh rate" />
         <text name="dr_set_menuRefresh_tt"  text="How often the open menu re-reads the farm. The Overview re-enumerates every building and product, so on a large farm a slower rate keeps the menu responsive. Manual only stops the background refresh entirely - the figures still update whenever you select something or press Refresh on the Overview." />

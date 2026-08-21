@@ -60,7 +60,7 @@ end
 -- (SmartDistribution.visibleProducts) and the count comes back as one final row, so a shortened table
 -- always explains itself rather than quietly losing rows. The row carries `notice` and NO `ft`, and every
 -- accessor that reaches for a product treats it as absent -- see selectedDetailRow.
-local NOTICE_CELLS = { "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
+local NOTICE_CELLS = { "typeText", "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
                        "consumedText", "consumed", "prodText", "produced", "distText", "distr",
                        "modeText", "method", "statusText", "status" }
 
@@ -161,7 +161,7 @@ end
 -- Pallets are counted as OBJECTS by palletCountOf, never litres/1000 -- a part-filled pallet is one pallet
 -- standing on the pad, not zero. Falls back to the plain total for anything that spawns no pallets, so
 -- milk / manure / slurry rows are unchanged.
-local function heldWithPallets(placeable, ft, held)
+local function heldWithPallets(placeable, ft, held, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return fmtV(held) end
     -- one memoised pad scan for both figures rather than two full vehicle-list walks per row per refresh
     local pallets, n = 0, 0
@@ -183,7 +183,7 @@ local function heldWithPallets(placeable, ft, held)
     local text = fmtV(internal)
     -- capacity sits directly beside the figure it qualifies, not trailing after the pad part
     if SmartDistribution.outputCapacityTotal ~= nil then
-        local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft)
+        local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft, role)
         if ok and type(c) == "number" and c > 0 and c < math.huge then
             text = text .. " (" .. fmtV(c) .. ")"
         end
@@ -210,10 +210,10 @@ local function fillTypeTitle(ft)
 end
 -- Build the product rows for one list, dropping blocked-and-empty products and appending the notice.
 -- Shared by all three classes in this file so the rule cannot drift between the tabs.
-local function buildProductRows(asset, ordered)
+local function buildProductRows(asset, ordered, role)
     local rows, hidden = {}, 0
     if SmartDistribution ~= nil and SmartDistribution.visibleProducts ~= nil then
-        ordered, hidden = SmartDistribution.visibleProducts(asset, ordered)
+        ordered, hidden = SmartDistribution.visibleProducts(asset, ordered, role)
     end
     for _, ft in ipairs(ordered) do rows[#rows + 1] = { ft = ft, name = fillTypeTitle(ft) } end
     if hidden > 0 then rows[#rows + 1] = { notice = hidden } end
@@ -226,15 +226,15 @@ end
 -- store reports the shared pool times this product's share; an individual tank reports its own capacity.
 -- Blocked -> 0 (it will accept nothing). Returns nil when capacity can't be resolved, so the caller can
 -- fall back to showing the held figure alone rather than inventing a denominator.
-local function inputMaxLiters(placeable, ft)
+local function inputMaxLiters(placeable, ft, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return nil end
-    local uid = (SmartDistribution.assetUid ~= nil) and SmartDistribution.assetUid(placeable) or nil
+    local uid = (SmartDistribution.settingUid ~= nil) and SmartDistribution.settingUid(placeable, ft, role) or nil
     if uid ~= nil and SmartDistribution.isInputBlocked ~= nil and SmartDistribution.isInputBlocked(uid, ft) then
         return 0
     end
     local cap = nil
     if SmartDistribution.inputProductCapacity ~= nil then
-        local ok, c = pcall(SmartDistribution.inputProductCapacity, placeable, ft)
+        local ok, c = pcall(SmartDistribution.inputProductCapacity, placeable, ft, role)
         if ok and type(c) == "number" then cap = c end
     end
     if (cap == nil or cap <= 0) and SmartDistribution.husbandryInputCapacity ~= nil then
@@ -258,8 +258,8 @@ end
 
 -- "619 L / 50,000 L (50%)" for an input row: what is there, the most that may go in, and the percentage
 -- that ceiling comes from. Drops the tail when capacity cannot be resolved rather than inventing one.
-local function heldOfMaxText(placeable, ft, held)
-    local maxL, pct = inputMaxLiters(placeable, ft)
+local function heldOfMaxText(placeable, ft, held, role)
+    local maxL, pct = inputMaxLiters(placeable, ft, role)
     if maxL == nil then return fmtV(held) end
     local s = fmtV(held) .. " / " .. fmtV(maxL)
     if pct ~= nil then s = s .. string.format(" (%d%%)", pct) end
@@ -274,19 +274,26 @@ end
 -- Colour: red when nothing is left (or it is overfilled), orange at 10% or less of the ceiling, green
 -- otherwise. nil capacity means there is nothing to judge against, so the cell shows a dash in the default
 -- colour rather than inventing a verdict.
-local function inputRemaining(placeable, ft)
+local function inputRemaining(placeable, ft, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return nil end
     if SmartDistribution.inputAcceptableLiters == nil then return nil end
-    local ok, v = pcall(SmartDistribution.inputAcceptableLiters, placeable, ft)
+    local ok, v = pcall(SmartDistribution.inputAcceptableLiters, placeable, ft, role)
     if not ok or type(v) ~= "number" or v ~= v or v < 0 or v >= math.huge then return nil end
     return v
 end
 
-local function outputRemaining(placeable, ft, held)
+local function outputRemaining(placeable, ft, held, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return nil, nil end
     if SmartDistribution.outputCapacityTotal == nil then return nil, nil end
-    local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft)
+    local ok, c = pcall(SmartDistribution.outputCapacityTotal, placeable, ft, role)
     if not ok or type(c) ~= "number" or c <= 0 or c >= math.huge then return nil, nil end
+    -- POOLED TANKS: `c - held` is this product's OWN holding subtracted from the WHOLE tank, so a silo
+    -- filled to the brim with wheat still reported full free space for every other crop. The INPUT side
+    -- already answers this correctly -- inputAcceptableLiters clamps by `cap - othersHeld` -- so the free
+    -- figure is taken from there and only falls back to the naive form when it cannot answer (a pure
+    -- output with no input side, e.g. a pen's eggs).
+    local room = inputRemaining(placeable, ft, role)
+    if room ~= nil then return math.min(room, math.max(0, c - (held or 0))), c end
     return math.max(0, c - (held or 0)), c
 end
 
@@ -315,17 +322,19 @@ end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
 -- building category -- silos, storages, productions, animal pens and markets resolve a link the same way.
-local function inputStatusLabel(placeable, ft)
+local function inputStatusLabel(placeable, ft, window, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return "" end
     if SmartDistribution.inputLinkStatus == nil or SmartDistribution.assetUid == nil then return "" end
-    local uid = SmartDistribution.assetUid(placeable)
+    -- the ROLE's key, so a pallet-store row answers for itself and not for the building
+    local uid = SmartDistribution.settingUid ~= nil and SmartDistribution.settingUid(placeable, ft, role)
+                or SmartDistribution.assetUid(placeable)
     if uid == nil then return "" end
-    local st = SmartDistribution.inputLinkStatus(uid, ft)
+    local st = SmartDistribution.inputLinkStatus(uid, ft, window)
     return (SmartDistribution.LINK_LABEL or {})[st] or ""
 end
 
 -- write the status into a row cell AND colour it: green feeding, orange idle, red blocked
-local function setStatusCell(cell, placeable, ft)
+local function setStatusCell(cell, placeable, ft, window, role)
     local c = cell:getAttribute("statusText")
     if c == nil then return end
     if placeable == nil or ft == nil or SmartDistribution == nil or SmartDistribution.inputLinkStatus == nil
@@ -342,7 +351,7 @@ local function setStatusCell(cell, placeable, ft)
         if bc ~= nil and c.setTextColor ~= nil then c:setTextColor(bc[1], bc[2], bc[3], bc[4]) end
         return
     end
-    local st  = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft) or nil
+    local st  = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft, window) or nil
     if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.LINK_LABEL or {})[st] or "") or "") end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) end
@@ -351,11 +360,11 @@ end
 -- OUTGOING (source-side) status into a row's statusText cell + the same green/orange/red colours:
 -- Active (Sending) when it moved product last cycle, Active (Idle) when configured but nothing moved,
 -- Blocked when every routable destination is blocked. Blank for Hold / non-sending modes.
-local function setOutputStatusCell(cell, placeable, ft)
+local function setOutputStatusCell(cell, placeable, ft, window, role)
     local c = cell:getAttribute("statusText")
     if c == nil then return end
     local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
-        and SmartDistribution.outputLinkStatus(placeable, ft) or nil
+        and SmartDistribution.outputLinkStatus(placeable, ft, window, role) or nil
     if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
@@ -410,16 +419,20 @@ function DistributionStoragePage:buildDetailRows()
     local asset = self.selectedAsset
     local lister = SmartDistribution ~= nil and (SmartDistribution.assetMenuFillTypes or SmartDistribution.assetFillTypes or SmartDistribution.siloFillTypes) or nil
     if asset == nil or lister == nil then return end
-    local fts = lister(asset)
+    local fts = lister(asset, self.selectedRole)
     local ordered = {}
     for ft in pairs(fts) do ordered[#ordered + 1] = ft end
     table.sort(ordered)
-    self.rows = buildProductRows(asset, ordered)
+    self.rows = buildProductRows(asset, ordered, self.selectedRole)
 end
 
 function DistributionStoragePage:selectAsset(index)
     local a = self.assets[index]
     self.selectedAsset = a ~= nil and a.placeable or nil
+    -- WHICH HALF of the building this row is. nil for an ordinary single-role building, which is every
+    -- building bar a handful, and nil means "the primary role" everywhere downstream -- so the whole
+    -- role mechanism costs those buildings nothing and changes nothing about them.
+    self.selectedRole = a ~= nil and a.role or nil
     if self.assetTitleElement ~= nil then
         self.assetTitleElement:setText(a ~= nil and (a.name or ""):upper() or "")
     end
@@ -522,20 +535,30 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         applyRowHighlight(cell, (self._focusRole or "output") == "input")
         setc("fillName", row.name)
         local e = self:windowStats(row.ft)
-        local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
+        local held = (SmartDistribution.roleHeld ~= nil)
+        and SmartDistribution.roleHeld(self.selectedAsset, row.ft, self.selectedRole) or nil
+    if held == nil then
+        held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
+    end
         setc("recvText", fmtV(e.received))
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
-        setStatusCell(cell, self.selectedAsset, row.ft)
+        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held, self.selectedRole))
+        setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
+            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
+        setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
         return
     end
 
     applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
     setc("fillName", row.name)
 
-    local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-    setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
-    setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held))
+    local held = (SmartDistribution.roleHeld ~= nil)
+        and SmartDistribution.roleHeld(self.selectedAsset, row.ft, self.selectedRole) or nil
+    if held == nil then
+        held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
+    end
+    setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held, self.selectedRole))
+    setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held, self.selectedRole))
     setc("distText", outTotalText(self:windowStats(row.ft)))
     -- Arrows are shown for every real output row WITHOUT asking whether the mode can actually be
     -- stepped. Answering that means validModeRing -> modeHasEndpoint, i.e. a placeableSystem scan per
@@ -549,13 +572,13 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         -- matching the Productions tab for the same pair of modes
         local pal = (SmartDistribution.holdLabelFlag ~= nil)
             and SmartDistribution.holdLabelFlag(self.selectedAsset, row.ft) or false
-        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
+        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole), pal)
         local timing = (SmartDistribution.sellTimingLabel ~= nil)
-            and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
+            and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft, nil, self.selectedRole) or nil
         if timing ~= nil then text = text .. "  -  " .. timing end
         modeCell:setText(text)
     end
-    setOutputStatusCell(cell, self.selectedAsset, row.ft)
+    setOutputStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
 end
 
 function DistributionStoragePage:onListSelectionChanged(list, section, index)
@@ -613,7 +636,7 @@ end
 function DistributionStoragePage:currentSellTimingLabel()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil or SmartDistribution.sellTimingLabel == nil then return nil end
-    return SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft)
+    return SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft, nil, self.selectedRole)
 end
 
 -- rebuild the footer button list, showing the Sell Timing button ONLY when the selected output is a
@@ -632,7 +655,7 @@ function DistributionStoragePage:updateSellTimingButton()
     -- decides its own footer (Advanced Inputs only). Do not add a market case here -- it would be dead code.
     local showAdvancedOut = adv and row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
         and SmartDistribution.modeConfigurable ~= nil
-        and SmartDistribution.modeConfigurable(self.selectedAsset, row.ft)
+        and SmartDistribution.modeConfigurable(self.selectedAsset, row.ft, self.selectedRole)
     local showAdvancedIn = adv and self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
         and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
     -- Shared CANCEL slot: "Spawn Pallets" for a Hold Internal pallet output holding at least one pallet's
@@ -677,7 +700,7 @@ function DistributionStoragePage:stepRowMode(dir, ...)
     local el = clickedArrow(...)
     local ft = (el ~= nil) and el.sdFillType or nil
     if ft == nil or self.selectedAsset == nil then return end
-    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, ft)
+    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, ft, self.selectedRole)
     local nxt
     if dir < 0 then
         nxt = (SmartDistribution.cyclePrevForAsset ~= nil)
@@ -688,7 +711,7 @@ function DistributionStoragePage:stepRowMode(dir, ...)
               or SmartDistribution.cycleNext(cur)
     end
     if nxt == nil or nxt == cur then return end
-    SmartDistribution.applyAssetMode(self.selectedAsset, ft, nxt)
+    SmartDistribution.applyAssetMode(self.selectedAsset, ft, nxt, false, self.selectedRole)
     -- Silos use detailList; Animal Husbandry has separate input/output lists. Reload whichever this
     -- page actually has, rather than making each subclass override this the way onCycleSelected has to.
     if self.detailList ~= nil then self.detailList:reloadData() end
@@ -721,10 +744,10 @@ function DistributionStoragePage:onCycleSelectedBack()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil then return end
     if SmartDistribution.cyclePrevForAsset == nil then return end
-    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft)
+    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
     local nxt = SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, row.ft)
     if nxt == nil or nxt == cur then return end
-    SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt)
+    SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt, false, self.selectedRole)
     if self.detailList ~= nil then self.detailList:reloadData() end
     if self.outputList ~= nil then self.outputList:reloadData() end
     self:updateSellTimingButton()
@@ -733,10 +756,10 @@ end
 function DistributionStoragePage:onCycleSelected()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil then return end
-    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft)
+    local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
     local nxt = (SmartDistribution.cycleNextForAsset and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, row.ft))
                 or SmartDistribution.cycleNext(cur)
-    SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt)
+    SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt, false, self.selectedRole)
     if self.detailList ~= nil then self.detailList:reloadData() end
     self:updateSellTimingButton()
 end
@@ -746,13 +769,13 @@ function DistributionStoragePage:onAdvanced()
     if self.selectedAsset == nil or SmartDistribution.openAdvancedDialog == nil then return end
     local row = self:selectedDetailRow()
     if row == nil or row.ft == nil then return end
-    SmartDistribution.openAdvancedDialog(self.selectedAsset, row.ft)
+    SmartDistribution.openAdvancedDialog(self.selectedAsset, row.ft, self.selectedRole)
 end
 
 -- footer "Advanced Inputs": receiver-side block + per-product max %% for this building
 function DistributionStoragePage:onAdvancedInputs()
     if self.selectedAsset == nil or SmartDistribution.openInputsDialog == nil then return end
-    SmartDistribution.openInputsDialog(self.selectedAsset)
+    SmartDistribution.openInputsDialog(self.selectedAsset, self.selectedRole)
 end
 
 function DistributionStoragePage:onSellTiming()
@@ -807,14 +830,22 @@ end
 
 -- [ + gaze entry: jump the building list to a specific placeable and select it
 -- (called right after this tab is switched to, so the list is already populated).
-function DistributionStoragePage:selectPlaceable(placeable)
+function DistributionStoragePage:selectPlaceable(placeable, role)
     if placeable == nil then return end
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
     local target = 1
+    -- A building that does two jobs has two rows on this tab. Prefer the one the caller MEANT (the
+    -- gazed building's primary role), falling back to whichever row comes first -- so walking up to a
+    -- DriveIn and pressing [ lands on its silo rather than on its pallet store.
+    local first = nil
     for i, a in ipairs(self.assets) do
-        if a.placeable == placeable then target = i; break end
+        if a.placeable == placeable then
+            if first == nil then first = i end
+            if role == nil or a.role == role then first = i; break end
+        end
     end
+    if first ~= nil then target = first end
     self:selectAsset(target)
     self:setSoundSuppressed(true)
     if self.assetList ~= nil then
@@ -871,13 +902,13 @@ function DistributionAnimalHusbandryPage:buildDetailRows()
         local ins = {}
         for ft in pairs(SmartDistribution.husbandryInputFillTypes(asset)) do ins[#ins + 1] = ft end
         table.sort(ins)
-        self.inputRows = buildProductRows(asset, ins)
+        self.inputRows = buildProductRows(asset, ins, self.selectedRole)
     end
     if SmartDistribution.husbandryOutputSet ~= nil then
         local outs = {}
         for ft in pairs(SmartDistribution.husbandryOutputSet(asset)) do outs[#outs + 1] = ft end
         table.sort(outs)
-        self.outputRows = buildProductRows(asset, outs)
+        self.outputRows = buildProductRows(asset, outs, self.selectedRole)
     end
 end
 
@@ -930,9 +961,11 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         local held = (SmartDistribution.husbandryInputHeld ~= nil) and SmartDistribution.husbandryInputHeld(self.selectedAsset, row.ft) or 0
         setc("recvText", fmtV(e.received))
         setc("consumedText", fmtV(e.consumed))
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held))
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
-        setStatusCell(cell, self.selectedAsset, row.ft)
+        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held, self.selectedRole))
+        setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
+            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
+        setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
     elseif list == self.outputList then
         local row = self.outputRows[index]; if row == nil then return end
         if row.notice ~= nil then renderNoticeRow(cell, row.notice, "outputs"); setModeArrows(cell, nil); return end
@@ -941,24 +974,28 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
         setIcon(row.ft); setc("fillName", row.name)
         local e = self:windowStats(row.ft)
-        local held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
+        local held = (SmartDistribution.roleHeld ~= nil)
+        and SmartDistribution.roleHeld(self.selectedAsset, row.ft, self.selectedRole) or nil
+    if held == nil then
+        held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
+    end
         setc("prodText", fmtV(e.produced))
         setc("distText", outTotalText(e))
-        setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held))
-        setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held))
+        setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held, self.selectedRole))
+        setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held, self.selectedRole))
         local modeCell = cell:getAttribute("modeText")
         if modeCell ~= nil then
             -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
         -- matching the Productions tab for the same pair of modes
         local pal = (SmartDistribution.holdLabelFlag ~= nil)
             and SmartDistribution.holdLabelFlag(self.selectedAsset, row.ft) or false
-        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft), pal)
+        local text = SmartDistribution.modeName(SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole), pal)
             local timing = (SmartDistribution.sellTimingLabel ~= nil)
-                and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft) or nil
+                and SmartDistribution.sellTimingLabel(self.selectedAsset, row.ft, nil, self.selectedRole) or nil
             if timing ~= nil then text = text .. "  -  " .. timing end
             modeCell:setText(text)
         end
-        setOutputStatusCell(cell, self.selectedAsset, row.ft)
+        setOutputStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
     end
 end
 
@@ -1023,10 +1060,13 @@ end
 -- Immediate / Best-price timing toggle (footer "Timing").
 DistributionMarketsPage = {}
 local DistributionMarketsPage_mt = Class(DistributionMarketsPage, DistributionStoragePage)
--- NO mode keys here. A market's MODE column is the market TIMING enum with its own toggle, not the
--- asset mode ring, so Z would write a meaningless asset mode over it. This is the same reason the
--- Markets XML carries no in-row arrows.
-DistributionMarketsPage.MODE_KEYS_ENABLED = false
+-- Markets HAS mode keys and in-row arrows, like every other tab -- but they drive the market TIMING ring
+-- (Hold -> Sell Immediate -> Sell Best price), NOT the asset mode ring, which is why stepRowMode is
+-- overridden below. 5.64 originally excluded this page on the grounds that its MODE column is a different
+-- enum; that argued for giving it its OWN ring rather than for having no arrows at all, and the gap
+-- surfaced 2026-08-21 as "I can not change the market output mode" (the third state was unreachable --
+-- see marketTimingNext).
+DistributionMarketsPage.MODE_KEYS_ENABLED = true
 function DistributionMarketsPage.new(target, custom_mt)
     local self = DistributionStoragePage.new(target, custom_mt or DistributionMarketsPage_mt)
     self.pageName = "DISTREDUX_MARKETS"
@@ -1041,7 +1081,7 @@ function DistributionMarketsPage:buildDetailRows()
     local ordered = {}
     for ft in pairs(SmartDistribution.marketMenuFillTypes(asset)) do ordered[#ordered + 1] = ft end
     table.sort(ordered)
-    self.rows = buildProductRows(asset, ordered)
+    self.rows = buildProductRows(asset, ordered, self.selectedRole)
 end
 
 function DistributionMarketsPage:populateCellForItemInSection(list, section, index, cell)
@@ -1052,9 +1092,14 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     if row == nil then return end
     if row.notice ~= nil then
         renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        setModeArrows(cell, nil)                       -- notice row has no timing: hide the arrows
         return
     end
     hideNoticeRow(cell)
+    -- Only the OUTGOING list carries a timing, and only its template has the arrow buttons -- on an
+    -- input row these resolve to nil and the call is a no-op. Cells are RECYCLED, so this has to run on
+    -- every populate rather than once (5.7 / 5.57).
+    if list ~= self.inputList then setModeArrows(cell, row.ft) end
     local iconCell = cell:getAttribute("fillIcon")
     if iconCell ~= nil then
         local file = fillIconFile(row.ft)
@@ -1077,9 +1122,11 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
         -- was the bare held figure, with no ceiling beside it -- the one input list in the mod that did not
         -- say what it could take. A market resolves through inputProductCapacity -> marketCap like any other
         -- receiver (5.36), so the shared helper works here and the column now matches every other tab.
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, buffer))
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft), inputMaxLiters(self.selectedAsset, row.ft))
-        setStatusCell(cell, self.selectedAsset, row.ft)
+        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, buffer, self.selectedRole))
+        setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
+            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
+        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
+        setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
         return
     end
     setc("fillName", row.name)
@@ -1095,18 +1142,51 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
         and math.max(0, mktCap - buffer) or nil, mktCap)
     setc("distText", outTotalText(self:windowStats(row.ft)))
     local modeCell = cell:getAttribute("modeText")
-    if modeCell ~= nil then
+    if modeCell ~= nil and SmartDistribution.marketModeDisplay ~= nil then
+        -- Shows what the market is DOING, and the player's own setting after it when the two differ
+        -- (i.e. while the Selling setting is off). Coloured to flag the override -- and RESET to white
+        -- otherwise, because SmoothList recycles cells and a row would inherit the previous row's
+        -- colour (the trap 5.7 and 5.57 both hit).
+        local text, overridden = SmartDistribution.marketModeDisplay(self.selectedAsset, row.ft)
+        modeCell:setText(text or "")
+        if modeCell.setTextColor ~= nil then
+            if overridden then modeCell:setTextColor(0.95, 0.65, 0.20, 1)
+            else               modeCell:setTextColor(1, 1, 1, 1) end
+        end
+    elseif modeCell ~= nil then
         modeCell:setText((SmartDistribution.marketProductLabel ~= nil)
             and SmartDistribution.marketProductLabel(self.selectedAsset, row.ft)
             or SmartDistribution.l10n("dr_market_immediate", "Sell  -  Immediate"))
     end
 end
 
--- footer "Change Output": toggle the selected product between Sell and Hold
+-- In-row arrows. The asset-mode version in the base class would write a meaningless asset mode over a
+-- market's timing, so this is a full override rather than a tweak -- but it keeps the identical
+-- element-carries-the-ft contract (5.64), because these lists re-enumerate on a timer and a row index
+-- captured at populate can point at a different product by the time it is clicked.
+function DistributionMarketsPage:stepRowMode(dir, ...)
+    local el = clickedArrow(...)
+    local ft = (el ~= nil) and el.sdFillType or nil
+    if ft == nil or self.selectedAsset == nil or SmartDistribution.marketCycleTiming == nil then return end
+    SmartDistribution.marketCycleTiming(self.selectedAsset, ft, dir < 0)
+    if self.detailList ~= nil then self.detailList:reloadData() end
+    self:updateTimingButton()
+end
+
+-- footer "Cycle Output" and the X key: one step FORWARD around the same ring, so all three routes agree.
 function DistributionMarketsPage:onCycleSelected()
     local row = self:selectedDetailRow()
-    if self.selectedAsset == nil or row == nil or SmartDistribution.marketToggleOutput == nil then return end
-    SmartDistribution.marketToggleOutput(self.selectedAsset, row.ft)
+    if self.selectedAsset == nil or row == nil or SmartDistribution.marketCycleTiming == nil then return end
+    SmartDistribution.marketCycleTiming(self.selectedAsset, row.ft, false)
+    if self.detailList ~= nil then self.detailList:reloadData() end
+    self:updateTimingButton()
+end
+
+-- the Z key: one step BACKWARD. MODE_KEYS_ENABLED gates whether DistributionMenu calls this at all.
+function DistributionMarketsPage:onCycleSelectedBack()
+    local row = self:selectedDetailRow()
+    if self.selectedAsset == nil or row == nil or SmartDistribution.marketCycleTiming == nil then return end
+    SmartDistribution.marketCycleTiming(self.selectedAsset, row.ft, true)
     if self.detailList ~= nil then self.detailList:reloadData() end
     self:updateTimingButton()
 end
@@ -1121,7 +1201,27 @@ function DistributionMarketsPage:onSellTiming()
 end
 
 -- reflect the selected product's sell type on the footer "Sell Type" button
+-- The page-level banner. Per-row the MODE cell already says "Sells now (set: Hold)", but a player
+-- opening the tab needs to see the override without selecting anything -- so the overview-pointer line
+-- doubles as it. Refreshed here because this runs on frame open AND on every selection change.
+function DistributionMarketsPage:updateSellingBanner()
+    local h = self.marketsHint
+    if h == nil or h.setText == nil then return end
+    local sellOff = SmartDistribution.settings ~= nil and SmartDistribution.settings.global ~= nil
+                    and not SmartDistribution.settings.global.sellEnabled
+    if sellOff then
+        h:setText(SmartDistribution.l10n("dr_lbl_sellingOff",
+            "SELLING IS OFF - every market sells on arrival, whatever these rows are set to"))
+        if h.setTextColor ~= nil then h:setTextColor(0.95, 0.65, 0.20, 1) end
+    else
+        h:setText(SmartDistribution.l10n("dr_lbl_overviewPointer",
+            "FULL BREAKDOWN + SUPPLY CHAINS: OVERVIEW TAB"))
+        if h.setTextColor ~= nil then h:setTextColor(1, 1, 1, 1) end
+    end
+end
+
 function DistributionMarketsPage:updateTimingButton()
+    self:updateSellingBanner()
     local all = self._allButtons
     if all == nil then return end
     local row = self:selectedDetailRow()
@@ -1130,7 +1230,17 @@ function DistributionMarketsPage:updateTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end   -- hidden while the product is Held
+            -- The button always shows and edits the player's CHOICE. With the Selling setting off the
+            -- pass overrules that choice (a market reverts to base-game operation and sells on arrival),
+            -- so the label says so rather than the control being locked or the row quietly reporting
+            -- something the player never chose -- which is what the first version did, and it read as
+            -- "can't adjust output type ... can't do anything in the market".
+            local sellOff = SmartDistribution.settings ~= nil and SmartDistribution.settings.global ~= nil
+                            and not SmartDistribution.settings.global.sellEnabled
+            if sellOff then
+                b.text = SmartDistribution.l10n("dr_btn_sellTimingOff", "Sell Timing: selling is OFF")
+                vis[#vis + 1] = b
+            elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end   -- hidden while the product is Held
         elseif b._role == "advanced" then
             -- A market is the exact OPPOSITE of what this used to say ("sell endpoints (no inputs)"): its
             -- buffer never feeds the network back (5.7), so there is no outgoing routing to arrange, while

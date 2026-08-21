@@ -122,11 +122,11 @@ end
 
 -- Drop blocked-and-empty products from an already-built row list and append the count as a final row.
 -- Takes the RECORDS (not bare fill types) because this page carries held / capacity / flow on each.
-local function filterBlockedRows(asset, rows)
+local function filterBlockedRows(asset, rows, role)
     if asset == nil or SmartDistribution == nil or SmartDistribution.visibleProducts == nil then return rows end
     local fts = {}
     for _, r in ipairs(rows) do fts[#fts + 1] = r.ft end
-    local keep, hidden = SmartDistribution.visibleProducts(asset, fts)
+    local keep, hidden = SmartDistribution.visibleProducts(asset, fts, role)
     if hidden <= 0 then return rows end
     local ok = {}
     for _, ft in ipairs(keep) do ok[ft] = true end
@@ -245,17 +245,19 @@ end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). The label set is
 -- shared in SmartDistribution so every building category reads identically.
-local function inputStatusLabel(placeable, ft)
+local function inputStatusLabel(placeable, ft, window, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return "" end
     if SmartDistribution.inputLinkStatus == nil or SmartDistribution.assetUid == nil then return "" end
-    local uid = SmartDistribution.assetUid(placeable)
+    -- the ROLE's key, so a pallet-store row answers for itself and not for the building
+    local uid = SmartDistribution.settingUid ~= nil and SmartDistribution.settingUid(placeable, ft, role)
+                or SmartDistribution.assetUid(placeable)
     if uid == nil then return "" end
-    local st = SmartDistribution.inputLinkStatus(uid, ft)
+    local st = SmartDistribution.inputLinkStatus(uid, ft, window)
     return (SmartDistribution.LINK_LABEL or {})[st] or ""
 end
 
 -- write the status into a row cell AND colour it: green feeding, orange idle, red blocked
-local function setStatusCell(cell, placeable, ft)
+local function setStatusCell(cell, placeable, ft, window, role)
     local c = cell:getAttribute("statusText")
     if c == nil then return end
     if placeable == nil or ft == nil or SmartDistribution == nil or SmartDistribution.inputLinkStatus == nil
@@ -272,18 +274,18 @@ local function setStatusCell(cell, placeable, ft)
         if bc ~= nil and c.setTextColor ~= nil then c:setTextColor(bc[1], bc[2], bc[3], bc[4]) end
         return
     end
-    local st  = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft) or nil
+    local st  = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft, window) or nil
     if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.LINK_LABEL or {})[st] or "") or "") end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) end
 end
 
 -- OUTGOING (source-side) status for an output row: Active (Sending) / Active (Idle) / Blocked, same colours.
-local function setOutputStatusCell(cell, placeable, ft)
+local function setOutputStatusCell(cell, placeable, ft, window, role)
     local c = cell:getAttribute("statusText")
     if c == nil then return end
     local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
-        and SmartDistribution.outputLinkStatus(placeable, ft) or nil
+        and SmartDistribution.outputLinkStatus(placeable, ft, window, role) or nil
     if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
@@ -352,6 +354,9 @@ function DistributionProductionsPage:rebuildAssets()
     self.assets = {}
     if SmartDistribution == nil or SmartDistribution.enumerateConfigurableAssets == nil then return end
     for _, a in ipairs(SmartDistribution.enumerateConfigurableAssets()) do
+        -- A pass-through store keeps a PRODUCTION role of its own when it still has a genuine line (the
+        -- DriveIn's SILAGE -> SILAGE_ADDITIVE), so it arrives here as an ordinary role row -- no special
+        -- case needed. This replaces the tab-level test that stood in for roles before they existed.
         if a.class == "PRODUCTION" then
             self.assets[#self.assets + 1] = a
         end
@@ -467,20 +472,40 @@ function DistributionProductionsPage:buildSections()
                     sold = e.sold or 0, money = e.money or 0,
                     produced = e.produced or 0,
                     modeName = o.modeName,
-                    sellTiming = (SmartDistribution.sellTimingLabel ~= nil) and SmartDistribution.sellTimingLabel(p, o.ft) or nil,
+                    sellTiming = (SmartDistribution.sellTimingLabel ~= nil) and SmartDistribution.sellTimingLabel(p, o.ft, nil, self.selectedRole) or nil,
                 }
             end
         end
     end
 
     -- blocked-and-empty products are dropped and counted (Advanced routing only; see visibleProducts)
-    self.inputs  = filterBlockedRows(p, self.inputs)
-    self.outputs = filterBlockedRows(p, self.outputs)
+    -- INPUTS ARE LINKED, OUTPUTS ARE THE PRODUCTION'S. A genuine line's input is one pool of stock the
+    -- silo and the production share, so it is addressed by the SILO's key (nil role) on both tabs --
+    -- block it here and it is blocked there, which is the honest description of one tank. The OUTPUT is
+    -- the production's alone and shows on this tab only, so it keeps its own key.
+    self.inputs  = filterBlockedRows(p, self.inputs, self:inputRole())
+    self.outputs = filterBlockedRows(p, self.outputs, self.selectedRole)
+end
+
+-- The role an INPUT row is addressed by. nil -- i.e. the primary, the silo -- whenever this building
+-- shares its tank, so a genuine line's input is ONE setting seen from two tabs: block it on the silo and
+-- it is blocked here. An ordinary production has nothing to share with, so it keeps its own role.
+function DistributionProductionsPage:inputRole()
+    local p = self.selectedAsset
+    if p ~= nil and SmartDistribution ~= nil and SmartDistribution.treatPassThroughAsStore ~= nil
+       and SmartDistribution.treatPassThroughAsStore(p) then
+        return nil
+    end
+    return self.selectedRole
 end
 
 function DistributionProductionsPage:selectAsset(index)
     local a = self.assets[index]
     self.selectedAsset = a ~= nil and a.placeable or nil
+    -- WHICH HALF this row is. It was never set here, so filterBlockedRows below asked with nil -- i.e.
+    -- the PRIMARY role -- and a pass-through's production rows were filtered by the SILO's input blocks.
+    -- The Storage page has tracked this since roles landed; this page was missed.
+    self.selectedRole = a ~= nil and a.role or nil
     if self.assetTitleElement ~= nil then
         self.assetTitleElement:setText(a ~= nil and (a.name or ""):upper() or "")
     end
@@ -570,7 +595,7 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
             and (fmtV(inp.held) .. " / " .. fmtV(maxL) .. (pct ~= nil and string.format(" (%d%%)", pct) or ""))
             or amountText(inp.held, inp.capacity))
         setRemainingCell(cell, inputRemaining(self.selectedAsset, inp.ft), maxL)
-        setStatusCell(cell, self.selectedAsset, inp.ft)
+        setStatusCell(cell, self.selectedAsset, inp.ft, self:currentWindow(), self.selectedRole)
         setIcon(cell, inp.ft)
         return
     end
@@ -604,7 +629,7 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     local method = o.modeName or "-"
     if o.sellTiming ~= nil then method = method .. " - " .. o.sellTiming end
     setc("method", method)
-    setOutputStatusCell(cell, self.selectedAsset, o.ft)
+    setOutputStatusCell(cell, self.selectedAsset, o.ft, self:currentWindow(), self.selectedRole)
     setIcon(cell, o.ft)
 end
 
@@ -701,7 +726,7 @@ function DistributionProductionsPage:updateSellTimingButton()
     -- Advanced only applies to a configurable output (distribute / store / market, incl. combos).
     local showAdvancedOut = adv and o ~= nil and o.ft ~= nil and self.selectedAsset ~= nil
         and SmartDistribution.modeConfigurable ~= nil
-        and SmartDistribution.modeConfigurable(self.selectedAsset, o.ft)
+        and SmartDistribution.modeConfigurable(self.selectedAsset, o.ft, self.selectedRole)
     -- Advanced Inputs applies whenever the production has at least one input product to cap/block.
     local showAdvancedIn = adv and self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
         and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
@@ -795,13 +820,13 @@ function DistributionProductionsPage:onAdvanced()
     if self.selectedAsset == nil or SmartDistribution.openAdvancedDialog == nil then return end
     local o = self:selectedOutput()
     if o == nil or o.ft == nil then return end
-    SmartDistribution.openAdvancedDialog(self.selectedAsset, o.ft)
+    SmartDistribution.openAdvancedDialog(self.selectedAsset, o.ft, self.selectedRole)
 end
 
 -- footer "Advanced Inputs": receiver-side block + per-product max %% for this production's inputs
 function DistributionProductionsPage:onAdvancedInputs()
     if self.selectedAsset == nil or SmartDistribution.openInputsDialog == nil then return end
-    SmartDistribution.openInputsDialog(self.selectedAsset)
+    SmartDistribution.openInputsDialog(self.selectedAsset, self.selectedRole)
 end
 
 -- Sell Timing: flip best-price/immediate for the selected OUTPUT (if it's a sell mode).
@@ -809,10 +834,10 @@ function DistributionProductionsPage:onSellTiming()
     local o = self:selectedOutput()
     if o == nil or o.ft == nil or self.selectedAsset == nil then return end
     if SmartDistribution.sellTimingLabel == nil
-        or SmartDistribution.sellTimingLabel(self.selectedAsset, o.ft) == nil then return end
+        or SmartDistribution.sellTimingLabel(self.selectedAsset, o.ft, nil, self.selectedRole) == nil then return end
     local mode = SmartDistribution.resolvedAssetMode(self.selectedAsset, o.ft)
-    local target = not SmartDistribution.resolveBestPrice(self.selectedAsset, o.ft, mode)
-    SmartDistribution.applyAssetSellTiming(self.selectedAsset, o.ft, target)
+    local target = not SmartDistribution.resolveBestPrice(self.selectedAsset, o.ft, mode, self.selectedRole)
+    SmartDistribution.applyAssetSellTiming(self.selectedAsset, o.ft, target, false, self.selectedRole)
     self:refreshSections()
 end
 

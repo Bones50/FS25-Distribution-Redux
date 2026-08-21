@@ -441,6 +441,122 @@ local function getProductionPoint(placeable)
     return nil
 end
 
+-- ---- PASS-THROUGH STORES: a production point that is really a silo ----------
+-- Several mods ship a STORAGE building with a production point bolted on whose every line converts a
+-- product into itself (WHEAT in -> WHEAT out). The production does no work; it exists only so the base
+-- game will treat the building as part of its distribution network, which is the only way a mod author
+-- can make a silo participate at all. The DriveIn Distribution Centre, the LDC and the Fed Mods Pack's
+-- bale / wood / fuel stores are all built this way.
+--
+-- DR classified them PRODUCTION, with three consequences: the Productions tab listed 111 lines; the
+-- building's own pallet store was invisible (getAssetClass returns one class and PRODUCTION wins); and
+-- getPullAmount's pass-through branch asked for getFree(pp.storage, ft) EVERY HOUR -- up to 4,000,000 L
+-- per fill type on the DriveIn -- so the building was a black hole that outbid every real consumer.
+--
+-- THE TEST IS "every INPUT fill type is also an OUTPUT fill type" (I subset of O), i.e. nothing enters
+-- this building that does not also leave it in the same form, so nothing is ever consumed here.
+-- MEASURED against all 281 production placeables in the author's mods folder plus the base game's
+-- data/placeables (scratchpad/passthrough.lua + fixtures.lua): 9 hits, 0 false positives. Three weaker
+-- rules were tried and rejected on that same corpus, and it is worth recording why so they are not
+-- re-attempted:
+--   * "every line is identity"                -> 8 hits, MISSES the DriveIn. Its SILAGE_ADDITIVE line is
+--                                                SILAGE in -> SILAGE_ADDITIVE out, almost certainly a
+--                                                copy/paste slip by the mod author, but it is real.
+--   * "every line is 1-in/1-out, equal amounts" -> catches the DriveIn but FALSE-POSITIVES Mechet's
+--                                                broyeurCompost, 16 genuine lines that happen to be 1:1.
+--   * "input SET == output SET"                -> 8 hits, misses the DriveIn by that same one line.
+-- The majority-identity guard below is belt and braces against a hypothetical mod that mixes a single
+-- identity line into a real production; nothing in the corpus needs it (every hit is 100% identity bar
+-- the DriveIn at 110/111).
+function SmartDistribution.isIdentityLine(line)
+    if type(line) ~= "table" then return false end
+    local ins, outs = line.inputs, line.outputs
+    if type(ins) ~= "table" or type(outs) ~= "table" then return false end
+    if #ins ~= 1 or #outs ~= 1 then return false end
+    local a, b = ins[1], outs[1]
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    return a.type ~= nil and a.type == b.type
+end
+
+-- STRUCTURE, not level -- so like the pool and extension-only memos this deliberately does NOT take the
+-- memoReadable guard: the answer cannot go stale as a tank fills, and canAccept needs it INSIDE the pass.
+SmartDistribution._passThroughMemo = setmetatable({}, { __mode = "k" })
+
+-- Returns true / false / NIL. nil means UNKNOWN and must never be cached.
+--
+-- THE LOAD-ORDER TRAP, and it bites in the dangerous direction here (compare 5.29, where memoising a MISS
+-- hid a modded building for a whole session): pp.productions is populated during placeable load, and an
+-- EMPTY line list satisfies "every input is also an output" VACUOUSLY. Cached, that would classify every
+-- not-yet-loaded production on the map as a silo. So an empty or absent list is unknown, never "yes".
+function SmartDistribution._computePassThroughStore(pp)
+    if pp == nil then return nil end
+    local lines = pp.productions
+    if type(lines) ~= "table" then return nil end
+    local n = #lines
+    if n == 0 then return nil end
+    local ident, I, O = 0, {}, {}
+    for _, line in ipairs(lines) do
+        if SmartDistribution.isIdentityLine(line) then ident = ident + 1 end
+        for _, i in ipairs(line.inputs  or {}) do if i.type ~= nil then I[i.type] = true end end
+        for _, o in ipairs(line.outputs or {}) do if o.type ~= nil then O[o.type] = true end end
+    end
+    if next(I) == nil then return false end
+    for ft in pairs(I) do if not O[ft] then return false end end   -- every input also leaves as itself
+    return ident * 2 >= n                                          -- ...and the shape is mostly identity
+end
+
+-- Reads ALL CONFIGURED lines (pp.productions), never pp.activeProductions: a player switching a line off
+-- must not change what kind of building this is. Same reason receiverInputFillTypes unions the configured
+-- set (5.58).
+function SmartDistribution.isPassThroughStore(p)
+    if p == nil then return false end
+    local m = SmartDistribution._passThroughMemo[p]
+    local now = SmartDistribution.memoNow() or 0
+    if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
+        return m.value
+    end
+    local v = SmartDistribution._computePassThroughStore(getProductionPoint(p))
+    if v == nil then return false end                              -- unknown: answer no, and do NOT cache
+    SmartDistribution._passThroughMemo[p] = { value = v, at = now, epoch = SmartDistribution._memoEpoch }
+    return v
+end
+
+-- The SETTING is deliberately kept OUT of isPassThroughStore, which answers the structural question only.
+-- That is what lets the memo cache a permanent property of the building while a settings change takes
+-- effect on the very next call without having to invalidate anything.
+-- 0 = leave it a production (pre-1.1.0.2), 1 = treat it as storage, 2 = also switch its identity lines off.
+function SmartDistribution.passThroughMode()
+    local st = SmartDistribution.settings
+    local g  = st ~= nil and st.global or nil
+    local m  = g ~= nil and g.passThroughStores or nil
+    -- numeric test, never truthiness: 0 is a real value here and Lua calls it true (5.46c / 5.44)
+    if type(m) ~= "number" then return 1 end                       -- settings not up yet: the default
+    return m
+end
+
+-- "DR should route this building as a store." Every engine seam asks THIS, not isPassThroughStore.
+function SmartDistribution.treatPassThroughAsStore(p)
+    return SmartDistribution.passThroughMode() > 0 and SmartDistribution.isPassThroughStore(p)
+end
+
+-- "DR should switch this building's fake lines off in the game itself." Writes savegame state, so it is
+-- the third setting state only -- never implied by treating the building as storage.
+function SmartDistribution.suppressIdentityLines(p)
+    return SmartDistribution.passThroughMode() >= 2 and SmartDistribution.isPassThroughStore(p)
+end
+
+-- The tank of a pass-through store, for the two storage enumerators. pp.storage is NOT normally part of
+-- getAllStorages (storageOwnerOf adds it separately for exactly that reason), so folding it in here is
+-- what makes assetCapacity / assetHeld / _bulkStorageFor / assetHoldsFillType / isExtensionOnlyFillType
+-- and therefore storeToTargetValid all correct for these buildings with no further changes.
+-- No double-count risk: recordExtensionParent explicitly refuses a production's own buffer, so it can
+-- never also arrive through parentExtensionStorages.
+function SmartDistribution.passThroughStorage(p)
+    if not SmartDistribution.treatPassThroughAsStore(p) then return nil end
+    local pp = getProductionPoint(p)
+    return pp ~= nil and pp.storage or nil
+end
+
 -- ---- constrain silo-extension merge to real STORAGE SILOS -------------------
 -- Gated on S.master at CALL TIME: while the mod is active an extension may only
 -- ever pool into a storage silo; switched off it falls through to vanilla.  A
@@ -1169,7 +1285,11 @@ local function productionPalletFillTypes(pp)
             end
         end
     end
-    scan(pp.productions)         -- all defined lines (covers paused/inactive lines with leftover pallets)
+    -- configuredProductionLines, not pp.productions: a pass-through store's identity lines would otherwise
+    -- declare every palletizable crop it can HOLD as something it PRODUCES on pallets, and isPalletOutput
+    -- then refuses to move those litres in bulk (5.41) -- stranding them in a silo with no spawner to
+    -- collect them. Filtered, a pass-through store has no pallet outputs, which is the truth.
+    scan(SmartDistribution.configuredProductionLines(pp))  -- all defined lines (covers paused/inactive lines with leftover pallets)
     scan(pp.activeProductions)   -- and currently running lines
     return out
 end
@@ -1442,6 +1562,8 @@ local function getRawStorages(p, ft)
     end
     for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
+    local ptStore = SmartDistribution.passThroughStorage(p)
+    if ptStore ~= nil then result[#result + 1] = ptStore end       -- a pass-through store's own tank
     if p.spec_husbandry ~= nil then
         local h = p.spec_husbandry
         if h.storage ~= nil then result[#result+1] = h.storage end
@@ -1462,6 +1584,8 @@ local function getAllStorages(p)
     end
     for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do result[#result + 1] = s end   -- bulk hall bays
     for _, s in ipairs(parentExtensionStorages(p)) do result[#result + 1] = s end   -- folded-in silo extensions
+    local ptStore = SmartDistribution.passThroughStorage(p)
+    if ptStore ~= nil then result[#result + 1] = ptStore end       -- a pass-through store's own tank
     if p.spec_husbandry ~= nil then
         local h = p.spec_husbandry
         if h.storage ~= nil then result[#result+1] = h.storage end
@@ -1592,9 +1716,225 @@ function SmartDistribution.marketAccepts(p, ft)
     return false
 end
 -- mod-side virtual buffer + per-market sell timing (persisted + synced).
+-- ---- ROLE BUFFERS: a DR-owned container for a sub-building with no storage of its own -------------
+-- A few buildings do two jobs from ONE physical tank. The DriveIn's production half writes its output
+-- into the very `pp.storage` its silo half reads, so the two could not hold stock independently: one
+-- pool, one set of figures, and every setting on one half leaking onto the other.
+--
+-- WHY NOT JUST SPLIT THE TANK: partitioning capacity takes half the silo away for no reason a player can
+-- see, and reporting the full figure to both halves promises space that does not exist (the 5.54c
+-- over-commitment shape). There is no third option -- and worse, with one pool DR would have to INVENT a
+-- rule for which share tipped material lands in and then defend it in every mode and every reload. With
+-- two containers there is no rule to invent: material is wherever it was put.
+--
+-- WHY NOT A REAL `Storage` OBJECT: the base game persists and network-registers ONLY `self.storage` --
+-- `ProductionPoint:loadFromXMLFile` calls `self.storage:loadFromXMLFile`, and `writeStream` does
+-- `registerObjectInStream(connection, self.storage)`. A second Storage would therefore be saved by
+-- nobody and never reach a client. Its litres would vanish on reload.
+--
+-- So the second container is DR's own, in exactly the shape `_marketBuffer` has used in production for
+-- months (a real save carries `<marketBuf ... litres="38630.347656"/>`): plain numbers, persisted by DR,
+-- server-authoritative. Keyed by ROLE UID, so it cannot collide with the primary half.
+--
+-- THE REAL TANK ALWAYS STAYS WITH THE PRIMARY ROLE. That is what makes the failure mode benign: if this
+-- buffer is ever lost or unreadable, the litres are all still in the game's own storage and read as the
+-- silo's -- which is both today's behaviour and the migration rule the author specified ("if a building
+-- already has material in a shared storage, move that material to the silo over the production").
+SmartDistribution._roleBuffer = {}     -- roleUid -> ft -> litres
+
+-- NOTHING WRITES TO _roleBuffer any more. Its only writer was settleSharedTankProductions, deleted
+-- 2026-08-21 with the rest of that cluster -- so this returns 0 for everything, and the save block below
+-- writes no <roleBuf> rows. It is retained because roleUsesBuffer still gates two LIVE display reads
+-- (outputCapacityTotal and roleHeld) for a pass-through store's PRODUCTION half, and removing it would
+-- change what those report rather than merely deleting dead code. Worth revisiting: under 5.65's
+-- ownership model that half arguably ought to report the SHARED TANK's level, not a private zero.
+function SmartDistribution.roleBufferLevel(roleUid, ft)
+    local b = roleUid ~= nil and SmartDistribution._roleBuffer[roleUid] or nil
+    return (b ~= nil and b[ft]) or 0
+end
+
+function SmartDistribution.roleBufferAdd(roleUid, ft, delta)
+    if roleUid == nil or ft == nil or type(delta) ~= "number" or delta == 0 then return 0 end
+    local b = SmartDistribution._roleBuffer[roleUid]
+    if b == nil then b = {}; SmartDistribution._roleBuffer[roleUid] = b end
+    local cur = b[ft] or 0
+    local new = math.max(0, cur + delta)                      -- never negative: a short draw takes what is there
+    b[ft] = (new > 0) and new or nil
+    if next(b) == nil then SmartDistribution._roleBuffer[roleUid] = nil end
+    return new - cur
+end
+
+-- Does this ROLE have to fall back to a DR-owned buffer, because the real container it would otherwise
+-- use already belongs to another half of the same building?
+--
+-- Exactly ONE case today: a PASS-THROUGH store's production half. Its silo half owns `pp.storage` (that
+-- is what makes it a silo at all), so the production has nowhere of its own. Every other sub-building
+-- has a real container -- a shed has `spec_objectStorage`, an ordinary production owns `pp.storage`
+-- outright, a husbandry has its own specs -- and must NOT be diverted here.
+-- The role a building's PRODUCTION side is addressed by, or nil when it is the building's primary job.
+--
+-- For an ordinary bakery the production IS the building, so this is nil and every key stays the bare uid
+-- exactly as it always was. For a pass-through store the silo is primary, so its production half needs
+-- its own key -- without it the Productions tab wrote its output modes onto the SILO's key, and setting
+-- the silage-additive output there changed the silo row's mode for the same product.
+function SmartDistribution.productionRoleOf(p)
+    if p == nil then return nil end
+    if SmartDistribution.primaryRole(p) == "PRODUCTION" then return nil end
+    if not SmartDistribution.hasGenuineProductionLines(p) then return nil end
+    return "PRODUCTION"
+end
+
+-- ---- WHO OWNS A PRODUCT IN A SHARED TANK ---------------------------------------------------------
+-- A pass-through store's silo half and its production half read ONE physical tank. Rather than split the
+-- litres (which either halves the silo or promises space that does not exist -- 5.54c), the split is one
+-- of OWNERSHIP, decided per fill type:
+--
+--   * a genuine line's OUTPUT  -> the PRODUCTION's. Shown on the Productions tab only, where it already
+--     has an output control. Taking it off the silo tab is what stops the same product appearing twice.
+--   * a genuine line's INPUT   -> SHARED, and deliberately LINKED. It shows on both tabs with ONE setting
+--     and one held figure, because it is one pool of stock: blocking it on the silo blocks it on the
+--     production, which is the honest description of what the tank does.
+--   * everything else          -> the silo's, untouched.
+--
+-- Nothing moves, so tipping, hand-loading and every trigger behave exactly as they do today.
+-- Reads CONFIGURED lines, never enabled ones: a product must not migrate between tabs (and appear to
+-- lose its settings) when the player toggles a line.
+function SmartDistribution.productionOwnedFillTypes(p)
+    local out = {}
+    if p == nil or not SmartDistribution.treatPassThroughAsStore(p) then return out end
+    local pp = getProductionPoint(p)
+    if pp == nil then return out end
+    for _, line in ipairs(SmartDistribution.configuredProductionLines(pp)) do
+        for _, o in ipairs(line.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
+    end
+    return out
+end
+
+-- The inputs of a pass-through's genuine lines: shown on BOTH tabs, one shared setting. Used for the
+-- "Linked" marker so the sharing is visible rather than something the player deduces.
+-- DOES THIS PRODUCT RUN ON A PRODUCTION'S V-MODE ENUM, OR ON THE ASSET MODE ENUM?
+--
+-- `getProductionPoint(p) ~= nil` is NOT the test, and using it was a live bug at four sites. A
+-- PASS-THROUGH STORE has a production point, but its tank products are the SILO half's and run on the
+-- asset mode -- so they resolved a v-mode they do not have, seedV fell through to the vanilla engine
+-- flag, and every one of them reported plain DISTRIBUTE (5.49's fingerprint). In the Advanced Outputs
+-- dialog that also drove showDemands / rightKind, so the store list was never built and a product on
+-- Move To offered no destinations at all. Reported 2026-08-20.
+--
+-- The rule is 5.65's ownership split: the v-mode belongs to products the PRODUCTION half owns.
+function SmartDistribution.usesVMode(p, ft)
+    if p == nil or ft == nil then return false end
+    if getProductionPoint(p) == nil then return false end
+    if not SmartDistribution.treatPassThroughAsStore(p) then return true end   -- an ordinary production
+    return SmartDistribution.productionOwnedFillTypes(p)[ft] == true
+end
+
+function SmartDistribution.sharedTankFillTypes(p)
+    local out = {}
+    if p == nil or not SmartDistribution.treatPassThroughAsStore(p) then return out end
+    local pp = getProductionPoint(p)
+    if pp == nil then return out end
+    local owned = SmartDistribution.productionOwnedFillTypes(p)
+    for _, line in ipairs(SmartDistribution.configuredProductionLines(pp)) do
+        -- an ft that is BOTH a genuine input and a genuine output belongs to the production outright:
+        -- that is the side carrying the routing control, so it is not "shared"
+        for _, i in ipairs(line.inputs or {}) do
+            if i.type ~= nil and not owned[i.type] then out[i.type] = true end
+        end
+    end
+    return out
+end
+
+-- The STORAGE TYPE cell: Linked / Pooled / Individual. One resolver so the building tabs and the
+-- Advanced Inputs dialog can never describe the same storage differently (the 5.37 rule).
+--   Linked     -- one pool of stock shared with the in-building production; its setting is shared too
+--   Pooled     -- capacity shared between PRODUCTS in one tank
+--   Individual -- this product has its own capacity
+function SmartDistribution.storageTypeLabel(p, ft, role)
+    if p == nil or ft == nil then return nil end
+    -- LINKED is only ever true of the two halves that read the TANK -- the silo and the in-building
+    -- production. A pallet store has its own container (spec_objectStorage) and shares nothing with
+    -- either, so its rows must never claim it however the tank is arranged.
+    if role ~= "SHED" and SmartDistribution.sharedTankFillTypes(p)[ft] then
+        return SmartDistribution.l10n("dr_type_linked", "Linked")
+    end
+    local pool = SmartDistribution.pooledInputCapacity(p)
+    if pool ~= nil then
+        for _, pf in ipairs(pool.fts) do
+            if pf == ft then return SmartDistribution.l10n("dr_type_pooled", "Pooled") end
+        end
+    end
+    return SmartDistribution.l10n("dr_type_individual", "Individual")
+end
+
+-- THE KEY ONE PRODUCT'S SETTINGS LIVE UNDER, for a given role. Per FILL TYPE, not per role, because
+-- linkage is a property of the product: a genuine line's INPUT is one pool of stock the silo and the
+-- production share, so both tabs must read and write the SAME entry -- set a fill target on the silo and
+-- the production's Advanced Inputs shows it, and the other way round. Everything else keeps its own
+-- role's key.
+--
+-- One resolver so the dialog, the tab cells and the allocator cannot disagree about where a setting
+-- lives; a mismatch there is stored-but-ignored, which is the failure this arc hit most often.
+function SmartDistribution.settingUid(p, ft, role)
+    if p == nil then return nil end
+    if ft ~= nil and SmartDistribution.sharedTankFillTypes(p)[ft] then
+        return SmartDistribution.assetUid(p)          -- LINKED: the tank's key, whichever tab is asking
+    end
+    return SmartDistribution.roleUid(p, role)
+end
+
+function SmartDistribution.roleUsesBuffer(p, role)
+    if p == nil or role ~= "PRODUCTION" then return false end
+    if SmartDistribution.primaryRole(p) == "PRODUCTION" then return false end   -- it owns pp.storage
+    return SmartDistribution.treatPassThroughAsStore(p)
+end
+
+-- The capacity a buffered role gets for a product: the SAME figure the shared tank declares. Author's
+-- rule -- "equivalent storage should be added to the production, same amount as the silo" -- and it
+-- takes nothing away from the silo, which keeps its full declared capacity.
+function SmartDistribution.roleBufferCapacity(p, ft)
+    local st = SmartDistribution.passThroughStorage(p)
+    if st == nil or ft == nil then return 0 end
+    local c = st.capacities
+    return (type(c) == "table" and c[ft]) or 0
+end
+
+-- A pallet store's capacity in LITRES: its slots, valued at one slot's worth. Read directly rather than
+-- through pooledInputCapacity, which is memoised per PLACEABLE and answers for whichever half won.
+function SmartDistribution.shedCapacityFor(p)
+    local spec = p ~= nil and p.spec_objectStorage or nil
+    if spec == nil then return 0 end
+    local slots = spec.capacity or 0
+    if slots <= 0 then return 0 end
+    return slots * (SmartDistribution._shedLitresPerSlot(p) or 0)
+end
+
 SmartDistribution._marketBuffer = {}   -- uid -> ft -> litres (<= MARKET_CAP)
 SmartDistribution._marketTiming = {}   -- uid -> ft -> sell mode; the DEFAULT (hold) is omitted, 0/1 stored
-SmartDistribution._marketPriceHigh = {}   -- uid -> ft -> highest effective price seen (session; best-price target)
+-- uid -> ft -> HOURLY PASSES this product has sat unsold in the market buffer. Drives the patience decay
+-- in marketAtBestPrice, so a product held through a bad year eventually releases instead of waiting out
+-- a peak that may be eleven months away. Reset by any sale and by the buffer emptying; persisted on the
+-- <marketBuf> element so saving and reloading cannot quietly restore a product's patience.
+-- (Replaces _marketPriceHigh, the observed-high ratchet -- see marketAtBestPrice.)
+SmartDistribution._marketHold = {}
+-- months this product has been held unsold (fractional; a DR month is MONTHLY_CYCLES hourly passes)
+function SmartDistribution.marketHoldMonths(uid, ft)
+    local h = uid ~= nil and SmartDistribution._marketHold[uid] or nil
+    local passes = (h ~= nil and h[ft]) or 0
+    local perMonth = SmartDistribution.MONTHLY_CYCLES or 24   -- field, not the local: see its definition
+    return passes / perMonth
+end
+function SmartDistribution.marketHoldTick(uid, ft, held)
+    if uid == nil or ft == nil then return end
+    local h = SmartDistribution._marketHold[uid]
+    if not held then                            -- sold, or the buffer is empty: patience resets
+        if h ~= nil then h[ft] = nil end
+        return
+    end
+    if h == nil then h = {}; SmartDistribution._marketHold[uid] = h end
+    h[ft] = (h[ft] or 0) + 1
+end
+
 function SmartDistribution.marketBufferLevel(uid, ft)
     local b = uid ~= nil and SmartDistribution._marketBuffer[uid] or nil
     return (b ~= nil and b[ft]) or 0
@@ -1642,6 +1982,22 @@ function SmartDistribution.marketSellMode(uid, ft)
     if v ~= nil then return v end       -- explicit choice, including 0 (Immediate) -- never collapse with or
     return SmartDistribution.marketDefaultMode()
 end
+
+-- WHAT THE PASS ACTS ON, as opposed to what the player has CHOSEN. The two differ in exactly one case:
+-- with the Selling setting off a market reverts to base-game operation, so every product sells on arrival
+-- whatever its stored timing says. Best price and Hold both park product in a buffer DR would then have
+-- no way to release -- which is how a player's hand-tipped 24,000 L of apples ended up banked for good.
+--
+-- THE SPLIT IS THE POINT, and the first version of this got it wrong by folding the override into
+-- marketSellMode itself. That forced the override on the UI as well as the pass: the row showed
+-- "Immediate" while the stored value was Hold, the buttons were locked against writing a value the
+-- resolver would overrule, and the player's real configuration became invisible and unreachable --
+-- reported at once as "can't adjust output type ... can't do anything in the market". The UI must always
+-- show and edit the CHOICE; only the pass consults this.
+function SmartDistribution.marketSellModeEffective(uid, ft)
+    if not S.global.sellEnabled then return SmartDistribution.MARKET_IMMEDIATE end
+    return SmartDistribution.marketSellMode(uid, ft)
+end
 -- NOTE FOR ANYTHING ADDED IN THIS BLOCK: `getUid` is a local declared BELOW here, so the name resolves to
 -- a nil global at this point and calling it throws at runtime. `luac -p` does NOT catch that -- it is
 -- valid syntax. This is why every accessor in this block takes a `uid`, never a placeable; the
@@ -1661,6 +2017,9 @@ end
 
 -- ---- asset classification / identity / settings resolution -----------------
 local function getAssetClass(p)
+    -- A pass-through store is a SILO wearing a production point (see isPassThroughStore). Tested BEFORE
+    -- the production branch, which would otherwise claim it and hide the storage the building really is.
+    if SmartDistribution.treatPassThroughAsStore(p) then return "SILO" end
     if getProductionPoint(p) ~= nil then return "PRODUCTION" end
     if SmartDistribution.isMarket(p) then return "MARKET" end   -- owned sell point / kiosk
     if isManurePit(p) then return "HEAP" end              -- manure pit (standalone manure heap)
@@ -1681,6 +2040,165 @@ end
 
 -- which classes vanilla itself would distribute from (for VANILLA_ONLY)
 local VANILLA_ELIGIBLE = { PRODUCTION = true, SILO = true, HUSBANDRY = false, OTHER = false }
+
+-- ---- ROLES: one placeable can be more than one thing -------------------------------------------
+-- A few buildings genuinely do two jobs at once. The DriveIn is a bulk silo AND a 350-slot pallet store
+-- AND (after the pass-through filter) a one-line production; the Mechet Fromage is a real dairy AND a
+-- 175-slot store; the bergerie is a sheep pen AND a hay drier. getAssetClass answers with ONE class, so
+-- the other halves were invisible: unlistable, unconfigurable, and not addressable as a routing endpoint.
+--
+-- THE PRIMARY ROLE IS EXACTLY WHAT getAssetClass RETURNS, and that is not a stylistic choice -- it is the
+-- entire save-compatibility guarantee. Every stored key in smartDistribution.xml is (uid, fillType), and
+-- the uid addresses "the building". If the primary role were picked by some fixed priority instead, the
+-- Fromage's primary would flip from PRODUCTION to SHED and every butter mode the player had set would
+-- silently start addressing the pallet store. So: the primary role KEEPS THE BARE UID, and secondary
+-- roles get a suffix that no real uniqueId can contain (verified across every savegame and placeables.xml
+-- on this machine: 63 distinct ids, zero containing '#').
+--
+-- Consequence, and it is why this is safe to land: a save written before roles existed contains only bare
+-- uids, so it loads EXACTLY as it did before -- nothing to migrate, nothing to rewrite, no version bump.
+-- A downgrade is equally safe: suffixed rows simply read as orphans and are ignored.
+SmartDistribution.ROLE_SEP = "#"
+
+function SmartDistribution.isRoleUid(uid)
+    return type(uid) == "string" and uid:find(SmartDistribution.ROLE_SEP, 1, true) ~= nil
+end
+
+-- The placeable-identifying half of a uid, suffix or not. Anything resolving a stored uid BACK to a
+-- building must go through this, or a secondary role's settings resolve to nothing and are silently lost.
+function SmartDistribution.baseUidOf(uid)
+    if type(uid) ~= "string" then return uid end
+    return uid:match("^(.-)" .. SmartDistribution.ROLE_SEP) or uid
+end
+
+-- The BUILDING ROLE a role-qualified uid names ("uid#shed" -> "SHED"), or nil for a bare uid, which is
+-- the primary role and is addressed by passing nil everywhere.
+--
+-- Exists because the Overview carries the role on its ROWS as a uid, while `settingsFor`'s own `role`
+-- parameter is the IN/OUT TAG ("In" / "Out" / "In/Out") -- two different things sharing one name in one
+-- file. Passing the tag where a building role was expected produced keys like `uid#in`, which nothing
+-- ever writes, so those columns silently read defaults. Recovering the role from the uid is exact and
+-- needs no new field on the row.
+function SmartDistribution.roleOfUid(uid)
+    if type(uid) ~= "string" then return nil end
+    local suffix = uid:match(SmartDistribution.ROLE_SEP .. "(.+)$")
+    if suffix == nil then return nil end
+    return string.upper(suffix)
+end
+
+-- Every role this placeable plays, primary first. Secondary roles are only ever ADDED to the primary, so
+-- a single-role building returns a one-element list and can never mint a suffixed uid.
+-- ONLY SHED AND PRODUCTION ARE EVER ADDED, and that restriction is a correctness rule, not a shortcut.
+-- A secondary role must be a genuinely SEPARATE facility, never a re-reading of the spec that already
+-- decided the primary class. Adding "SILO" for `spec_silo ~= nil` looks obvious and is wrong: a slurry
+-- pit and a manure pit are classified HEAP but ARE silo placeables, so every one of them would have
+-- sprouted a second, bogus SILO row on the Silos tab. Same for HUSBANDRY.
+--
+-- These two cover every multi-role building found across the base game and all installed mods:
+--   DriveIn VZ       SILO + shed + production      DriveIn Silo   SILO + shed
+--   Mechet Fromage   PRODUCTION + shed             Escargot       PRODUCTION + shed
+--   Mechet bergerie  HUSBANDRY + production
+-- If a building ever genuinely needs a secondary bulk tank, that is a new rule with its own evidence.
+function SmartDistribution.assetRoles(p)
+    if p == nil then return {} end
+    local primary = getAssetClass(p)
+    local roles, seen = { primary }, { [primary] = true }
+    local function add(r) if r ~= nil and not seen[r] then seen[r] = true; roles[#roles + 1] = r end end
+    if p.spec_objectStorage ~= nil then add("SHED") end
+    if SmartDistribution.hasGenuineProductionLines(p) then add("PRODUCTION") end
+    return roles
+end
+
+function SmartDistribution.primaryRole(p)
+    return getAssetClass(p)
+end
+
+-- Human label for a role, for the building list. Only ever SHOWN on a building that plays more than one
+-- (see roleDisplayName), so an ordinary silo's name is never decorated.
+SmartDistribution.ROLE_L10N = {
+    SILO = "dr_role_silo", SHED = "dr_role_shed", PRODUCTION = "dr_role_production",
+    HUSBANDRY = "dr_role_husbandry", HEAP = "dr_role_heap", MARKET = "dr_role_market",
+}
+function SmartDistribution.roleLabel(role)
+    local key = role ~= nil and SmartDistribution.ROLE_L10N[role] or nil
+    if key == nil then return tostring(role) end
+    return SmartDistribution.l10n(key, role)
+end
+
+-- "Drive-In" for a single-role building; "Drive-In (Pallet Store)" for one half of a building that does
+-- two jobs. Gated on the role COUNT rather than on the role itself, so nothing in an ordinary farm gains
+-- a suffix and the change is invisible to everyone who owns none of these buildings.
+function SmartDistribution.roleDisplayName(p, role, baseName, roleCount)
+    baseName = baseName or ""
+    if roleCount == nil then roleCount = #SmartDistribution.assetRoles(p) end
+    if roleCount < 2 or role == nil then return baseName end
+    return string.format(SmartDistribution.l10n("dr_role_nameFmt", "%s (%s)"),
+                         baseName, SmartDistribution.roleLabel(role))
+end
+
+-- The key a given ROLE of a building is addressed by. Primary -> the bare uid, byte-identical to every
+-- key already in every save. NOTE this deliberately does NOT change getUid / assetUid: all 96 of their
+-- call sites keep addressing the primary role, so nothing that exists today has to be touched or audited.
+-- Only code that deliberately works with a secondary role calls this.
+-- The fill types that belong to ONE half of a building, inputs and outputs together.
+--
+-- Returns NIL for an ordinary single-role building, which means "do not filter" -- so every caller stays
+-- byte-identical for the buildings that are not multi-role, and the cost is one length check.
+--
+-- Needed because the row builders ask the PLACEABLE what it handles: without this the Overview gave a
+-- DriveIn's silo, pallet store and production rows the SAME product list (reported in game: all three
+-- showed milk and bottled milk, which only the silo holds).
+function SmartDistribution.roleFillTypeSet(p, role)
+    if p == nil or role == nil then return nil end
+    if #SmartDistribution.assetRoles(p) < 2 then return nil end
+    local set = {}
+    local outs = SmartDistribution.assetMenuFillTypes(p, role)
+    if type(outs) == "table" then for ft in pairs(outs) do set[ft] = true end end
+    local ins = SmartDistribution.receiverInputFillTypes(p, role)
+    if type(ins) == "table" then for ft in pairs(ins) do set[ft] = true end end
+    -- A PASS-THROUGH STORE'S PRODUCTION HALF HAS NO STORAGE OF ITS OWN. It writes into the very tank the
+    -- SILO half reads -- one `pp.storage`, one pool of litres -- so its products ARE the silo's products,
+    -- and listing them on both rows would report the same litres twice in every total.
+    --
+    -- Measured on the DriveIn: its production half handles SILAGE and SILAGE_ADDITIVE, both of which the
+    -- 111-type tank already declares, and it has ZERO products of its own. So the subtraction empties its
+    -- Overview rows entirely, which is the honest answer -- those flows belong to the tank. The
+    -- Productions TAB is unaffected: it lists the LINE (from productionLines), which is what it is for.
+    --
+    -- NOT applied to the SHED half, and that distinction is the whole point: an object storage is a
+    -- genuinely separate container holding genuinely separate stock, so its products stay listed even
+    -- when the tank happens to support the same fill type.
+    -- OWNERSHIP, not subtraction. The earlier rule stripped the production's products entirely, which
+    -- emptied its Overview rows; the tank is split by OWNER instead (productionOwnedFillTypes):
+    -- the production keeps its genuine outputs AND its inputs (the latter shared with the silo), while
+    -- the silo drops the production's outputs so nothing is listed twice.
+    if SmartDistribution.treatPassThroughAsStore(p) then
+        local owned = SmartDistribution.productionOwnedFillTypes(p)
+        if role == "PRODUCTION" then
+            local shared = SmartDistribution.sharedTankFillTypes(p)
+            local keep = {}
+            for ft in pairs(owned)  do keep[ft] = true end
+            for ft in pairs(shared) do keep[ft] = true end
+            return keep
+        elseif next(owned) ~= nil then
+            for ft in pairs(owned) do set[ft] = nil end
+        end
+    end
+    return set
+end
+
+function SmartDistribution.roleUid(p, role)
+    local base = SmartDistribution.assetUid(p)
+    -- FAST PATH FIRST, and it is load-bearing rather than tidy: resolveMode calls this for every
+    -- (placeable, fill type) on the allocator's path, and primaryRole -> getAssetClass is an UNMEMOISED
+    -- chain of spec probes (market / pit / slurry / bulk hall / bunker / husbandry). Testing the class
+    -- before the nil would have put that whole chain into the hourly pass -- the exact regression shape
+    -- 5.46 and 5.52 exist to keep out. With `role` nil -- which is every caller that is not deliberately
+    -- addressing a secondary half -- this costs one nil comparison more than the old getUid(p).
+    if base == nil or role == nil then return base end
+    if role == SmartDistribution.primaryRole(p) then return base end
+    return base .. SmartDistribution.ROLE_SEP .. string.lower(role)
+end
 
 -- ---- MULTIPLAYER CLIENT IDENTITY -------------------------------------------
 -- A placeable's uniqueId is NEVER sent over the network. Confirmed in the base source:
@@ -1748,6 +2266,10 @@ local cycleAcc = nil
 -- alongside S.lastCycle. SmartDistribution.monthlyStats / monthlyReceived sum the window for the
 -- UI's /mo columns; persisted across save/load (see save/loadOverrides). A month is 24 hourly cycles.
 local MONTHLY_CYCLES = 24
+-- Exposed as a FIELD as well, so code defined ABOVE this line can still read it: a local declared here is
+-- not in lexical scope up there and would silently resolve to a nil global (the 5.44 trap, which luac -p
+-- does not catch). marketHoldMonths is the caller that needs it.
+SmartDistribution.MONTHLY_CYCLES = MONTHLY_CYCLES
 local monthlyRing = {}    -- [1..MONTHLY_CYCLES] = one completed cycle's snapshot (uid -> ft -> {dist,sold,stored,received})
 local monthlyPos  = 0     -- next slot to overwrite (0-based; wraps at MONTHLY_CYCLES)
 -- MULTIPLAYER: the hourly pass (and so the ring above) runs only on the server, leaving clients
@@ -1755,6 +2277,29 @@ local monthlyPos  = 0     -- next slot to overwrite (0-based; wraps at MONTHLY_C
 -- and clients keep it here; monthlyStats / monthlyReceived read this on a client instead of summing
 -- the (empty) ring. Stays nil on the server / in single-player, so those keep using the ring.
 local clientMonthly = nil   -- client-only: uid -> ft -> {dist,sold,stored,received}
+-- Uid-keyed twin, for a flow that belongs to ONE HALF of a building rather than to the building.
+-- A FIELD, never a `local function`: the main chunk is at Lua's 200-local ceiling (CLAUDE.md 1.1) and
+-- adding one here tips it over -- luac -p caught exactly that. It still closes over `cycleAcc`. The
+-- Overview keys a role row by its role uid, so a figure ledgered against the base uid appears on EVERY
+-- role row of that building -- which is how an internal move showed 1 kL on the DriveIn's silo row AND
+-- its pallet store row (reported 2026-08-21).
+-- Ledger a flow against the ROLE that produced it. The Overview rows a building once per role and a
+-- SECONDARY row now reads its OWN key (6.24), so a flow written against the placeable -- i.e. the base
+-- uid -- lands on the PRIMARY row and the secondary shows nothing. Reported 2026-08-21: the DriveIn's
+-- pallet store read "Sending" (status is keyed by the base uid) while its DISTRIBUTED column stayed
+-- empty. nil role collapses to the bare uid, so single-role buildings are untouched.
+function SmartDistribution.ledgerAddRole(p, ft, field, amount, role)
+    if p == nil then return end
+    SmartDistribution.ledgerAddUid(SmartDistribution.roleUid(p, role), ft, field, amount)
+end
+
+function SmartDistribution.ledgerAddUid(uid, ft, field, amount)
+    if cycleAcc == nil or uid == nil or ft == nil or amount == nil or amount <= 0 then return end
+    local a = cycleAcc[uid]; if a == nil then a = {}; cycleAcc[uid] = a end
+    local e = a[ft];        if e == nil then e = { dist = 0, sold = 0, stored = 0, received = 0 }; a[ft] = e end
+    e[field] = (e[field] or 0) + amount
+end
+
 local function ledgerAdd(placeable, ft, field, amount)
     if cycleAcc == nil or placeable == nil or ft == nil or amount == nil or amount <= 0 then return end
     local uid = getUid(placeable)
@@ -1808,16 +2353,62 @@ local function resolveReach(p)
     return classField(getAssetClass(p), "reach") or S.global.reach
 end
 
-local function resolveMode(p, ft)
-    local uid = getUid(p)
+-- `role` is optional; nil means the PRIMARY role, whose key is the bare uid -- so every existing caller
+-- (the whole allocator) resolves exactly as before. A secondary role reads its own stored mode and then
+-- falls through to the same class / global defaults, which is what makes an unconfigured half behave
+-- sensibly rather than inheriting whatever its sibling was set to.
+-- SELLING SWITCHED OFF: degrade a sell mode at READ time, and never rewrite what the player stored.
+--
+-- Requested 2026-08-21: with the Selling setting off, Sell should disappear from every output's ring,
+-- and anything already on a sell mode should fall back -- a COMBO to its surviving half, a plain Sell to
+-- the default. Doing that by REWRITING S.assets would be the one-way data loss 5.48 deleted
+-- enforceValidModes over ("you should never revert regardless"): flick the switch back on and the
+-- player's Distribute + Sell is gone for good, with no restore path. Masking is behaviourally identical
+-- and restores everything the instant the switch comes back up.
+--
+-- Cheap enough for the allocator's hot path: one table lookup, and it short-circuits when selling is on.
+function SmartDistribution.sellMask(m)
+    if S.global.sellEnabled then return m end
+    if m == MODE.DISTRIBUTE_SELL then return MODE.DISTRIBUTE end   -- combo -> the half that survives
+    if m == MODE.SELL            then return MODE.HOLD        end   -- plain sell -> hold it instead
+    return m
+end
+
+local function resolveMode(p, ft, role)
+    local uid = SmartDistribution.roleUid(p, role)
     local a = uid ~= nil and S.assets[uid] or nil
-    if a ~= nil and a[ft] ~= nil and a[ft] ~= MODE.INHERIT then return a[ft] end
+    if a ~= nil and a[ft] ~= nil and a[ft] ~= MODE.INHERIT then return SmartDistribution.sellMask(a[ft]) end
+    -- ROLE FALLBACK -- WITHOUT THIS A PASS-THROUGH STORE'S OUTPUT MODE DOES NOTHING AT ALL.
+    --
+    -- Every branch of ProductionDistributeSell's applyVLocal writes the asset mode with
+    -- `SD.productionRoleOf(pl)`, so on a pass-through store the player's choice lands under
+    -- `uid#production` -- while EVERY pass-side reader (storeAmount, storeToAmount, palletPhase,
+    -- marketTransferPhase) calls resolveMode with NO role and looks under the bare uid. The setting was
+    -- therefore stored correctly, displayed correctly on the Productions tab, and silently ignored by the
+    -- allocator, which fell through to the class default. Reported 2026-08-19 as a DriveIn's silage
+    -- additive on Store; the empty destination list was the visible half, this was the reason nothing
+    -- could have moved even once that was fixed.
+    --
+    -- ORDINARY BUILDINGS NEVER REACH THIS. The gate is getProductionPoint (memoised) so silos, pens and
+    -- sheds exit on one cached lookup; productionRoleOf then returns nil for an ordinary production,
+    -- because its PRIMARY role is already PRODUCTION and roleUid collapses to the bare uid it just read.
+    -- So only a building whose production is a SECONDARY role gets here -- and only when the bare key had
+    -- no answer, which is the miss path either way. getAssetClass is deliberately kept behind the
+    -- production-point test rather than in front of it (the roleUid hot-path note, 5.46 / 5.52).
+    if role == nil and p ~= nil and getProductionPoint(p) ~= nil then
+        local pr = SmartDistribution.productionRoleOf(p)
+        if pr ~= nil then
+            local ru = SmartDistribution.roleUid(p, pr)
+            local ra = (ru ~= nil and ru ~= uid) and S.assets[ru] or nil
+            if ra ~= nil and ra[ft] ~= nil and ra[ft] ~= MODE.INHERIT then return SmartDistribution.sellMask(ra[ft]) end
+        end
+    end
     -- PUBLIC MAP STORAGE DEFAULTS TO HOLD, not to the global default. Storing in one COSTS money
     -- (costsPerFillLevelAndDay), so turning the setting on must never start moving product into a
     -- building the player is charged rent for -- it appears in the network, inert, until configured.
     -- An explicit per-product choice above still wins, so a configured silo behaves normally.
     if SmartDistribution.isMapStorage ~= nil and SmartDistribution.isMapStorage(p) then return MODE.HOLD end
-    return classField(getAssetClass(p), "mode") or S.global.mode
+    return SmartDistribution.sellMask(classField(getAssetClass(p), "mode") or S.global.mode)
 end
 
 -- public per-asset override API (for the future config dialog) ----------------
@@ -1839,12 +2430,15 @@ end
 -- Set a per-asset override AND sync it in multiplayer. This is the seam the
 -- console and (later) the per-silo dialog call. On the receiving side of the
 -- sync event, run() calls this with noEventSend = true so it doesn't echo back.
-function SmartDistribution.applyAssetMode(placeable, ft, mode, noEventSend)
+-- `role` is OPTIONAL and defaults to the primary role, which resolves to the bare uid -- so every
+-- existing caller (all of them, today) behaves exactly as it did. Only a caller that deliberately
+-- addresses a building's secondary half passes one.
+function SmartDistribution.applyAssetMode(placeable, ft, mode, noEventSend, role)
     if placeable == nil or ft == nil then return end
-    SmartDistribution.setAssetMode(getUid(placeable), ft, mode)
-    SmartDistribution._seedMoveToBlocks(placeable, ft, mode)   -- Move To starts all-blocked (loop-safe)
+    SmartDistribution.setAssetMode(SmartDistribution.roleUid(placeable, role), ft, mode)
+    SmartDistribution._seedMoveToBlocks(placeable, ft, mode, role)   -- Move To starts all-blocked (loop-safe)
     if not noEventSend and DistributionModeEvent ~= nil and DistributionModeEvent.sendEvent ~= nil then
-        DistributionModeEvent.sendEvent(placeable, ft, mode)
+        DistributionModeEvent.sendEvent(placeable, ft, mode, false, role)   -- role is the 5th arg; the 4th is noEventSend
     end
 end
 
@@ -1854,34 +2448,207 @@ end
 -- Move To mode -- but only when the player has not already configured this output (no existing blocks or
 -- priority for it), so re-entering the mode doesn't wipe their choices. Server-authoritative; the block
 -- edits persist + replay to clients like any other.
-function SmartDistribution._seedMoveToBlocks(placeable, ft, mode)
+function SmartDistribution._seedMoveToBlocks(placeable, ft, mode, role)
     if mode ~= MODE.STORE_TO and mode ~= MODE.DISTRIBUTE_STORE_TO then return end
     if placeable == nil or placeable.rootNode == nil then return end
     if g_currentMission ~= nil and g_currentMission.getIsServer ~= nil and not g_currentMission:getIsServer() then return end
-    local srcUid = getUid(placeable)
+    -- keyed by the ROLE that was set to Move To, or its blocks land under the building's other half
+    local srcUid = SmartDistribution.roleUid(placeable, role)
     if srcUid == nil then return end
     -- already configured? leave it alone
     local C = SmartDistribution.control
     if (C.blocked[srcUid] ~= nil and C.blocked[srcUid][ft] ~= nil)
        or (C.priority[srcUid] ~= nil and C.priority[srcUid][ft] ~= nil) then return end
-    local form = SmartDistribution.sourceHoldForm(placeable, ft)
-    if form == nil then
-        if placeable.spec_objectStorage ~= nil then form = "PALLET" else form = "BULK" end
-    end
+    local form = SmartDistribution.sourceHoldForm(placeable, ft, role)
+                 or SmartDistribution.defaultHoldForm(placeable, role)
     local myFarm = SmartDistribution._ownerFarmId(placeable)
+    local seedMat = (form == "BULK") and SmartDistribution.canMaterialisePallets(ft)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
         -- STRUCTURAL, not room-based: seed a block for every store that could EVER be a target. A store that
         -- merely happened to be FULL at this instant was not seeded, and then became an ACTIVE destination
         -- the player never approved the moment it had room again -- defeating the loop-safe default this
         -- whole function exists to provide. See storeToTargetPossible.
-        if tp ~= placeable and tp.rootNode ~= nil and isEnrolled(tp)
-           and SmartDistribution._farmCanUse(tp, myFarm)
-           and SmartDistribution.storeToTargetPossible(form, tp, ft) then
-            local du = getUid(tp)
-            if du ~= nil then SmartDistribution.setDestBlocked(srcUid, ft, du, true) end
+        -- Keyed by the same storeRoleUid the PASS reads, and filtered by the same `du ~= srcUid` rule
+        -- storeToAmount uses. If these two ever disagree the loop-safe default silently develops a hole:
+        -- a half that was never seeded is ABSENT, and absent means ACTIVE.
+        if tp.rootNode ~= nil and isEnrolled(tp) and SmartDistribution._farmCanUse(tp, myFarm) then
+            -- Mirrors storeToAmount's candidate set EXACTLY, pallet stores included. If the two ever
+            -- disagree the loop-safe default develops a hole, because a destination that was never seeded
+            -- is ABSENT, and absent means ACTIVE.
+            local kinds = {}
+            if SmartDistribution.storeToTargetPossible(form, tp, ft) then kinds[#kinds + 1] = form end
+            if seedMat and SmartDistribution.storeToTargetPossible("PALLET", tp, ft) then kinds[#kinds + 1] = "PALLET" end
+            for _, kind in ipairs(kinds) do
+                local du = SmartDistribution.storeRoleUid(tp, ft, kind)
+                if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du) then
+                    SmartDistribution.setDestBlocked(srcUid, ft, du, true)
+                end
+            end
         end
     end
+end
+
+-- ---- Move To: seeding blocks for destinations that did not exist when the save was written ---------
+-- THE PROBLEM THIS SOLVES, because it is not obvious and it is a live-farm hazard.
+--
+-- _seedMoveToBlocks above deliberately does nothing to an output the player has already configured
+-- ("already configured? leave it alone"), so their choices survive re-entering the mode. But in the block
+-- model ABSENT MEANS ACTIVE. So the moment a NEW kind of destination becomes routable -- a building's
+-- secondary role, say -- it is absent from every existing blocked map, and therefore live and unapproved
+-- on the next load. A silo the player set to Move To months ago would start pushing into a pallet store
+-- they never chose.
+--
+-- The naive repair is WRONG and worth naming so it is not reached for: "block every candidate not in the
+-- map" would also block the destinations the player deliberately ACTIVATED, because activation is
+-- recorded as absence. That would silently switch off working Move To setups.
+--
+-- This is exact instead: it blocks only destinations addressed by a ROLE uid, which by construction
+-- cannot appear in a save written before that role kind was routable. A bare uid -- the only kind such a
+-- save contains -- is never touched, whether it was activated or merely never seeded.
+--
+-- A VERSION, not a boolean. The plumbing has to exist in the save format from the start, but roles are
+-- not routable yet, so a flag stamped "done" now would still read "done" when phase 4 makes them
+-- routable, and the repair would never run at all -- reintroducing the exact bug it exists to prevent.
+-- Bump this constant in the same build that makes a new role kind a valid Move To target.
+-- BUMPED 1 -> 2 BY PHASE 4, in the same build that made a role a routable destination -- which is
+-- exactly what the note above says must happen and is not optional. A save written at version 1 mentions
+-- only bare uids, so every newly-routable role destination is ABSENT from its blocked maps, and absent
+-- means ACTIVE: without this bump a silo the player set to Move To months ago would start pushing into a
+-- pallet store they never chose, on the first load of this build.
+SmartDistribution.ROLE_SEED_VERSION = 3
+
+-- The role uids that are valid Move To destinations for (srcP, ft) -- the single seam the repair reads.
+--
+-- Deliberately built from the SAME pair of primitives the pass and the seeder use (sourceHoldForm ->
+-- storeToTargetPossible -> storeRoleUid), so a destination can never become routable without also
+-- becoming repairable. Anything that widened routing while leaving this behind would reopen the hole
+-- silently, and the failure only shows up as product arriving somewhere the player never approved.
+--
+-- STRUCTURAL (storeToTargetPossible, not ...Valid): a store that merely happens to be full this instant
+-- must still be seeded blocked, or it becomes an unapproved ACTIVE destination the moment it has room --
+-- the same reasoning that made the seeder structural in the first place.
+function SmartDistribution.moveToRoleCandidates(srcP, ft)
+    local out = {}
+    if srcP == nil or ft == nil or srcP.rootNode == nil then return out end
+    local srcUid = SmartDistribution.assetUid(srcP)
+    if srcUid == nil then return out end
+    local form = SmartDistribution.sourceHoldForm(srcP, ft) or SmartDistribution.defaultHoldForm(srcP, nil)
+    local myFarm = SmartDistribution._ownerFarmId(srcP)
+    local newMat = (form == "BULK") and SmartDistribution.canMaterialisePallets(ft)
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
+        if tp.rootNode ~= nil and isEnrolled(tp) and SmartDistribution._farmCanUse(tp, myFarm) then
+            -- (a) ROLE-SUFFIXED destinations -- new in v2. A bare uid in a pre-v2 save may be absent
+            --     because the player ACTIVATED it, and re-blocking those would switch off working
+            --     setups; a suffixed uid cannot appear in such a save at all, so its absence is
+            --     unambiguous.
+            if SmartDistribution.storeToTargetPossible(form, tp, ft) then
+                local du = SmartDistribution.storeRoleUid(tp, ft, form)
+                if du ~= nil and SmartDistribution.isRoleUid(du)
+                   and not SmartDistribution.isSelfDestination(srcUid, du) then out[#out + 1] = du end
+            end
+            -- (b) PALLET STORES reachable from a BULK source -- new in v3, and the SAME argument licenses
+            --     returning a BARE uid here even though (a) may not. Before this build a bulk source
+            --     could not target a pallet store at ALL, so such a destination's absence cannot mean
+            --     "the player activated it" -- it can only mean "it never existed". The rule the repair
+            --     actually depends on is NOT "suffixed", it is "could not have been activated before".
+            if newMat and SmartDistribution.storeToTargetPossible("PALLET", tp, ft) then
+                local du = SmartDistribution.storeRoleUid(tp, ft, "PALLET")
+                if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du) then out[#out + 1] = du end
+            end
+        end
+    end
+    return out
+end
+
+-- ONE-TIME: move a shared-tank production's OUTPUT settings from the silo's key to its own.
+--
+-- Before ownership existed those products lived on the silo tab, so any mode or sell timing the player
+-- set for them is stored under the BARE uid. They now show on the Productions tab only, addressed by the
+-- production role's key -- so without this they would read as reset. Two fill types on one building in
+-- practice, but a setting silently reverting is the failure this codebase has chased most often.
+--
+-- Guarded by the same ROLE_SEED_VERSION the Move To repair uses, so it runs once and only for a save
+-- written before this landed. Moves, never copies: leaving the old key would make the silo's stored
+-- setting shadow the production's the moment ownership were ever revisited.
+function SmartDistribution.migrateProductionOutputSettings()
+    local stored = SmartDistribution._roleSeedVersion or 0
+    if stored >= SmartDistribution.ROLE_SEED_VERSION then return 0 end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return 0 end
+    local moved = 0
+    for _, p in ipairs(ps.placeables or {}) do
+        local role = (p.rootNode ~= nil) and SmartDistribution.productionRoleOf(p) or nil
+        if role ~= nil and SmartDistribution.treatPassThroughAsStore(p) then
+            local from = SmartDistribution.assetUid(p)
+            local to   = SmartDistribution.roleUid(p, role)
+            if from ~= nil and to ~= nil and from ~= to then
+                for ft in pairs(SmartDistribution.productionOwnedFillTypes(p)) do
+                    local m = S.assets[from] ~= nil and S.assets[from][ft] or nil
+                    if m ~= nil then
+                        S.assets[to] = S.assets[to] or {}
+                        S.assets[to][ft] = m
+                        S.assets[from][ft] = nil
+                        moved = moved + 1
+                    end
+                    local t = S.sellTiming[from] ~= nil and S.sellTiming[from][ft] or nil
+                    if t ~= nil then
+                        S.sellTiming[to] = S.sellTiming[to] or {}
+                        S.sellTiming[to][ft] = t
+                        S.sellTiming[from][ft] = nil
+                        moved = moved + 1
+                    end
+                end
+            end
+        end
+    end
+    if moved > 0 then
+        print(string.format("[SmartDistribution persist] moved %d production-output setting(s) onto the production's own key", moved))
+    end
+    return moved
+end
+
+function SmartDistribution.repairMoveToRoleBlocks()
+    local stored = SmartDistribution._roleSeedVersion or 0
+    if stored >= SmartDistribution.ROLE_SEED_VERSION then return 0 end
+    local C = SmartDistribution.control
+    if C == nil or type(C.blocked) ~= "table" then return 0 end
+    local touched = 0
+    for srcUid, byFt in pairs(C.blocked) do
+        local srcP = SmartDistribution.placeableByUid(srcUid)
+        if srcP ~= nil then
+            for ft, dests in pairs(byFt) do
+                -- ONLY A MOVE TO OUTPUT. Auto-blocking exists solely to stop Move To cascading into a
+                -- ring; STORE is supposed to use every store in reach and let DISTANCE decide. Blocking
+                -- regardless of mode meant a pen set to Store found some destinations pre-blocked and
+                -- others not, with no way to know why -- reported 2026-08-21 (the DriveIn's pallet store
+                -- blocked, its silo not). The block table is shared between the two modes, so this repair
+                -- must ask what the output is actually set to.
+                local m = resolveMode(srcP, ft)
+                if type(dests) == "table"
+                   and (m == MODE.STORE_TO or m == MODE.DISTRIBUTE_STORE_TO) then
+                    for _, du in ipairs(SmartDistribution.moveToRoleCandidates(srcP, ft)) do
+                        -- ONLY what the save has never mentioned either way. The isRoleUid filter that
+                        -- used to sit here has moved INTO moveToRoleCandidates, because the rule it was
+                        -- standing in for is "could not have been activated before", and from v3 that is
+                        -- true of some BARE uids too (a pallet store was unreachable from a bulk source).
+                        -- Keeping the filter here would have silently skipped exactly those.
+                        if dests[du] == nil then
+                            dests[du] = true
+                            touched = touched + 1
+                        end
+                    end
+                end
+
+            end
+        end
+    end
+    SmartDistribution._roleSeedVersion = SmartDistribution.ROLE_SEED_VERSION
+    if touched > 0 then
+        print(string.format("[SmartDistribution persist] Move To: blocked %d newly-routable role destination(s) pending your approval", touched))
+    end
+    return touched
 end
 
 -- SERVER SIDE: hand a joining client (network object id -> our uniqueId) for every placeable it
@@ -1915,7 +2682,8 @@ function SmartDistribution.forEachAssetOverride(cb)
         if p.rootNode ~= nil then byUid[getUid(p)] = p end
     end
     for uid, byFt in pairs(S.assets) do
-        local p = byUid[uid]
+        -- baseUidOf: a secondary role's key carries a suffix, and must still find its building (roleUid)
+        local p = byUid[SmartDistribution.baseUidOf(uid)]
         if p ~= nil then
             for ft, mode in pairs(byFt) do
                 if mode ~= nil and mode ~= MODE.INHERIT then cb(p, ft, mode) end
@@ -1942,10 +2710,14 @@ end
 -- Resolve whether THIS output is configured to hold for the best price (config
 -- only -- the calendar "is it the peak month" check happens at sell time).
 -- master on -> mode sells -> explicit per-output value, else the global default.
-function SmartDistribution.resolveBestPrice(placeable, ft, mode)
+-- `role` addresses ONE HALF of a building that does two jobs. Sell timing is stored per (uid, ft) just
+-- like a mode, so without it the two halves shared one setting: reported in game on the Mechet Fromage --
+-- setting the DAIRY's cheese to "Sell - best price" turned its PALLET STORE row into
+-- "Distribute - best price". The modes were already independent by then; the TIMING was still leaking.
+function SmartDistribution.resolveBestPrice(placeable, ft, mode, role)
     if not S.global.bestPriceEnabled then return false end
     if mode ~= MODE.SELL and mode ~= MODE.DISTRIBUTE_SELL then return false end
-    local uid = getUid(placeable)
+    local uid = SmartDistribution.roleUid(placeable, role)
     local v = nil
     if uid ~= nil then v = SmartDistribution.getAssetSellTiming(uid, ft) end   -- may be false (explicit immediate); don't collapse with and/or
     if v ~= nil then return v end
@@ -1953,11 +2725,11 @@ function SmartDistribution.resolveBestPrice(placeable, ft, mode)
 end
 
 -- set + multiplayer sync (mirror of applyAssetMode)
-function SmartDistribution.applyAssetSellTiming(placeable, ft, value, noEventSend)
+function SmartDistribution.applyAssetSellTiming(placeable, ft, value, noEventSend, role)
     if placeable == nil or ft == nil then return end
-    SmartDistribution.setAssetSellTiming(getUid(placeable), ft, value)
+    SmartDistribution.setAssetSellTiming(SmartDistribution.roleUid(placeable, role), ft, value)
     if not noEventSend and DistributionSellTimingEvent ~= nil and DistributionSellTimingEvent.sendEvent ~= nil then
-        DistributionSellTimingEvent.sendEvent(placeable, ft, value)
+        DistributionSellTimingEvent.sendEvent(placeable, ft, value, false, role)   -- role is 5th; 4th is noEventSend
     end
 end
 
@@ -1971,7 +2743,7 @@ function SmartDistribution.forEachAssetSellTiming(cb)
         if p.rootNode ~= nil then byUid[getUid(p)] = p end
     end
     for uid, byFt in pairs(S.sellTiming) do
-        local p = byUid[uid]
+        local p = byUid[SmartDistribution.baseUidOf(uid)]
         if p ~= nil then
             for ft, value in pairs(byFt) do
                 if value ~= nil then cb(p, ft, value) end
@@ -1982,10 +2754,10 @@ end
 
 -- UI helper: nil when (placeable, ft) is not a sell output; otherwise "Best price"
 -- or "Immediate", reflecting the resolved best-price timing. `mode` optional.
-function SmartDistribution.sellTimingLabel(placeable, ft, mode)
-    mode = mode or resolveMode(placeable, ft)
+function SmartDistribution.sellTimingLabel(placeable, ft, mode, role)
+    mode = mode or resolveMode(placeable, ft, role)
     if mode ~= MODE.SELL and mode ~= MODE.DISTRIBUTE_SELL then return nil end
-    if SmartDistribution.resolveBestPrice(placeable, ft, mode) then
+    if SmartDistribution.resolveBestPrice(placeable, ft, mode, role) then
         return SmartDistribution.l10n("dr_timing_bestPrice", "Best price")
     end
     return SmartDistribution.l10n("dr_timing_immediate", "Immediate")
@@ -1993,17 +2765,17 @@ end
 
 -- UI helper: flip a sell output between best-price and immediate (writes an explicit
 -- per-output value, MP-synced). Returns false if it isn't a sell output.
-function SmartDistribution.toggleSellTiming(placeable, ft)
-    local mode = resolveMode(placeable, ft)
+function SmartDistribution.toggleSellTiming(placeable, ft, role)
+    local mode = resolveMode(placeable, ft, role)
     if mode ~= MODE.SELL and mode ~= MODE.DISTRIBUTE_SELL then return false end
-    local cur = SmartDistribution.resolveBestPrice(placeable, ft, mode)
-    SmartDistribution.applyAssetSellTiming(placeable, ft, not cur)
+    local cur = SmartDistribution.resolveBestPrice(placeable, ft, mode, role)
+    SmartDistribution.applyAssetSellTiming(placeable, ft, not cur, false, role)
     return true
 end
 
 -- the EFFECTIVE mode for (placeable, ft) after L4 -> L3 -> L2 resolution
-function SmartDistribution.resolvedAssetMode(placeable, ft)
-    return resolveMode(placeable, ft)
+function SmartDistribution.resolvedAssetMode(placeable, ft, role)
+    return resolveMode(placeable, ft, role)
 end
 
 -- fill-type HUD icon file (the same overlay the input/output lists use), for the no-store-image fallback.
@@ -2069,12 +2841,28 @@ function SmartDistribution.setAssetIcon(cell, placeable)
     end
 end
 
+-- WHICH ROLE IS THIS BUILDING'S PALLET STORE, as a source. nil for an ordinary pallet store, because
+-- SHED is its PRIMARY role and every key collapses to the bare uid -- so single-role buildings are
+-- untouched by everything below. Only a building that ALSO does something else has a distinct shed half.
+--
+-- The pass used to be per BUILDING: it read the mode from the bare uid and computed the source form from
+-- the primary half. On a multi-role building that meant a mode set on the PALLET STORE row was stored,
+-- displayed, and never acted on -- reported 2026-08-21 as "set the pallet store to distribute and it
+-- distributed 20k with no demand" (it had not distributed at all; the silo half's Move To had run).
+-- ONE function, because half a dozen sites sweep a shed and they must not drift apart again.
+function SmartDistribution.shedRoleOf(p)
+    if p == nil or p.spec_objectStorage == nil then return nil end
+    if SmartDistribution.primaryRole(p) == "SHED" then return nil end   -- it IS the primary: bare uid
+    if #SmartDistribution.assetRoles(p) < 2 then return nil end
+    return "SHED"
+end
+
 -- a source may hand out ft only if enrolled, not excluded, and mode distributes
-local function canSourceDistribute(p, ft)
+local function canSourceDistribute(p, ft, role)
     if SmartDistribution.isMarket(p) then return false end   -- a market's buffer is sell-only; it can never feed the network back
     if not isEnrolled(p) then return false end
     if S.global.excludedFillTypes[ft] then return false end
-    local m = resolveMode(p, ft)
+    local m = resolveMode(p, ft, role)
     return m == MODE.DISTRIBUTE or m == MODE.DISTRIBUTE_SELL or m == MODE.DISTRIBUTE_STORE or m == MODE.DISTRIBUTE_MARKET
         or m == MODE.DISTRIBUTE_STORE_TO
 end
@@ -2084,6 +2872,7 @@ local function getActiveProductionDefs(pp)
     local defs = {}
     local active = pp.activeProductions
     if active == nil then return defs end
+    local dropIdentity = SmartDistribution.treatPassThroughAsStore(pp.owningPlaceable)
     for _, ap in ipairs(active) do
         -- Resolve to the FULL definition whenever EITHER field the caller needs is missing.
         -- This used to resolve only on `inputs == nil`, so a lightweight activeProductions record that
@@ -2103,9 +2892,42 @@ local function getActiveProductionDefs(pp)
             end
             if full ~= nil then def = full end
         end
-        defs[#defs + 1] = def
+        -- A pass-through store's identity lines are not production, they are scaffolding (see
+        -- isPassThroughStore). Dropping them HERE is the single seam that keeps every downstream figure
+        -- honest at once: hourly consumption, the serial-throughput divisor, receiverInputFillTypes and
+        -- configuredOutputFillTypes all read this list. A building that ALSO has a genuine line -- the
+        -- DriveIn's SILAGE -> SILAGE_ADDITIVE -- keeps it, because the filter is per LINE, not per building.
+        if not (dropIdentity and SmartDistribution.isIdentityLine(def)) then
+            defs[#defs + 1] = def
+        end
     end
     return defs
+end
+
+-- The CONFIGURED lines (enabled or not) DR should treat as real, i.e. pp.productions minus a pass-through
+-- store's scaffolding. The partner to the filter above, for the several callers that read pp.productions
+-- directly BECAUSE a switched-off line still leaves real stock (5.58) -- that reasoning is about the
+-- player's own choice, and does not extend to lines that were never production in the first place.
+-- Returns pp.productions ITSELF when nothing is filtered, so the normal path allocates nothing.
+function SmartDistribution.configuredProductionLines(pp)
+    local lines = pp ~= nil and pp.productions or nil
+    if type(lines) ~= "table" then return {} end
+    if not SmartDistribution.treatPassThroughAsStore(pp.owningPlaceable) then return lines end
+    local out = {}
+    for _, def in ipairs(lines) do
+        if not SmartDistribution.isIdentityLine(def) then out[#out + 1] = def end
+    end
+    return out
+end
+
+-- Does this building actually MAKE anything -- i.e. does it have a configured line that is not
+-- pass-through scaffolding? True for every ordinary production; true for the DriveIn (its one real
+-- SILAGE -> SILAGE_ADDITIVE line); FALSE for the LDC, which is 113 identity lines and nothing else, so
+-- that one is pure storage and correctly has no production side at all.
+function SmartDistribution.hasGenuineProductionLines(p)
+    local pp = getProductionPoint(p)
+    if pp == nil then return false end
+    return #SmartDistribution.configuredProductionLines(pp) > 0
 end
 
 -- Every fill type this production point can OUTPUT, from every CONFIGURED line -- enabled or NOT.
@@ -2147,10 +2969,8 @@ function SmartDistribution.configuredOutputFillTypes(pp)
     for _, def in ipairs(getActiveProductionDefs(pp)) do
         for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
     end
-    if type(pp.productions) == "table" then
-        for _, def in ipairs(pp.productions) do
-            for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
-        end
+    for _, def in ipairs(SmartDistribution.configuredProductionLines(pp)) do
+        for _, o in ipairs(def.outputs or {}) do if o.type ~= nil then out[o.type] = true end end
     end
     return out
 end
@@ -2509,8 +3329,13 @@ local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
                     end
                     -- (d) pallet storage sheds (object storage) holding ft: pull the stored
                     -- pallet liters via a thin proxy (same transfer + billing path)
+                    -- ...and it is the SHED half's OWN mode that decides, not the building's primary.
+                    -- Without this a pallet store attached to a silo could never be set to Distribute.
                     if p.spec_objectStorage ~= nil and shedStoredLiters(p, ft) > 0 then
-                        sources[#sources+1] = { storage = makeShedSourceProxy(p), d2 = d2, placeable = p }
+                        local sr = SmartDistribution.shedRoleOf(p)
+                        if sr == nil or canSourceDistribute(p, ft, sr) then
+                            sources[#sources+1] = { storage = makeShedSourceProxy(p), d2 = d2, placeable = p }
+                        end
                     end
                     -- (f) bunker silos distributing SILAGE: only UNCOVERED bays count (bunkerPlaceableSilage
                     -- returns 0 while filling or sealed), pulled through a proxy like the two above
@@ -2765,12 +3590,16 @@ end
 -- With Advanced routing OFF it returns the ORIGINAL table and 0, unchanged and un-copied, so every tab is
 -- byte-identical to before for anyone not using the feature. Blocking is an advanced-only concept
 -- (clearAdvancedControl wipes the block table when the switch goes off), so there is nothing to hide.
-function SmartDistribution.visibleProducts(p, ordered)
+-- `role` addresses one HALF of a building that does two jobs. Without it the hide (and the "+N blocked"
+-- count beneath the table) read the BARE uid on every tab, so blocking a product on one half made it
+-- vanish from the other half's list too -- reported in game on a DriveIn: blocking EGG on one row took
+-- it off the other row's outputs as well, and both showed "+1 blocked input".
+function SmartDistribution.visibleProducts(p, ordered, role)
     if p == nil or type(ordered) ~= "table" then return ordered, 0 end
     if SmartDistribution.advancedEnabled == nil or not SmartDistribution.advancedEnabled() then
         return ordered, 0
     end
-    local uid = (SmartDistribution.assetUid ~= nil) and SmartDistribution.assetUid(p) or nil
+    local uid = (SmartDistribution.roleUid ~= nil) and SmartDistribution.roleUid(p, role) or nil
     if uid == nil or SmartDistribution.isInputBlocked == nil then return ordered, 0 end
     local out, hidden = {}, 0
     for _, ft in ipairs(ordered) do
@@ -3121,8 +3950,13 @@ local function collectProductionSlots(points, slots)
     if points == nil then return end
     for _, pp in ipairs(points) do
         local placeable = pp.owningPlaceable
+        -- A PASS-THROUGH STORE MUST NOT RAISE INPUT SLOTS. It is storage now, filled by Store / Move To
+        -- like any silo; leaving it here as well would have DR demand the same product twice over.
+        -- It is also what closes the black hole: getPullAmount's pass-through branch asks for
+        -- getFree(pp.storage, ft) -- 4,000,000 L per fill type on the DriveIn -- every single hour.
         if placeable ~= nil and placeable.rootNode ~= nil and
-           pp.storage ~= nil and pp.inputFillTypeIds ~= nil then
+           pp.storage ~= nil and pp.inputFillTypeIds ~= nil and
+           not SmartDistribution.treatPassThroughAsStore(placeable) then
             local x, _, z = getWorldTranslation(placeable.rootNode)
             local farmId  = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
             for ft in pairs(pp.inputFillTypeIds) do
@@ -3532,11 +4366,13 @@ local function getSinkStorages(p, ft)
     local isSilo = p.spec_silo ~= nil
     local hall = SmartDistribution.bulkHallSpec(p) ~= nil
     local pit = isManurePit(p)
-    if not (isSilo or hall or pit) then return result end
+    local ptStore = SmartDistribution.passThroughStorage(p)        -- silo wearing a production point
+    if not (isSilo or hall or pit or ptStore ~= nil) then return result end
     local stores = {}
     if isSilo and p.spec_silo.storages ~= nil then
         for _, s in ipairs(p.spec_silo.storages) do stores[#stores+1] = s end
     end
+    if ptStore ~= nil then stores[#stores+1] = ptStore end
     if hall then
         -- one crop per bay: skip any bay already piled with a different product
         for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do
@@ -3627,8 +4463,11 @@ function SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, srcReach)
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
                 if srcReach == REACH.FARM_WIDE or (dx * dx + dz * dz) <= r2 then
-                    -- BULK: any silo / bulk hall / manure pit storage that SUPPORTS ft (room ignored)
-                    if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil or isManurePit(p) then
+                    -- BULK: any silo / bulk hall / manure pit storage that SUPPORTS ft (room ignored).
+                    -- getAllStorages already folds in a pass-through store's tank, so this only has to
+                    -- admit the building -- mirroring getSinkStorages' gate above it, as the header says.
+                    if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil or isManurePit(p)
+                       or SmartDistribution.treatPassThroughAsStore(p) then
                         for _, s in ipairs(getAllStorages(p)) do
                             if storageSupports(s, ft) then return true end
                         end
@@ -3649,13 +4488,23 @@ end
 
 -- gather pallet-shed sinks (object storages) within reach; entries carry `.shed` instead of
 -- `.storage`, so the pallet store path moves whole pallets into them rather than draining liters.
-local function gatherShedSinks(sourcePlaceable, ft, x, z, farmId, srcReach)
+-- `includeSelf` admits the SOURCE's own placeable as a candidate, and exactly one caller passes it:
+-- _storeToPalletAmount, where a building that does two jobs may legitimately store its own pallet output
+-- in its own attached pallet store (Mechet Fromage: a dairy that owns a 175-slot shed). That caller
+-- applies a `du ~= srcUid` guard, so the two halves are told apart by KEY and a self-move within one
+-- half remains impossible.
+--
+-- THE OTHER TWO CALLERS MUST NOT PASS IT, and shedReleaseHeld is the reason this is a parameter rather
+-- than a blanket relaxation: it has no uid guard at all and leans entirely on this filter, so admitting
+-- self would let it call transferShedPallets(shed, shed, ...) -- ledgering a phantom relocation and
+-- corrupting its own slot count.
+local function gatherShedSinks(sourcePlaceable, ft, x, z, farmId, srcReach, includeSelf)
     local sinks = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return sinks end
     local r2 = S.global.radius * S.global.radius
     for _, p in ipairs(ps.placeables) do
-        if p ~= sourcePlaceable and p.rootNode ~= nil and isPalletShedSink(p, ft) then
+        if (includeSelf or p ~= sourcePlaceable) and p.rootNode ~= nil and isPalletShedSink(p, ft) then
             if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
@@ -3674,8 +4523,14 @@ end
 function SmartDistribution.orderedStoreSinks(p, ft, farmId, x, z, cands, srcUid)
     local out = {}
     for _, si in ipairs(cands or {}) do
-        local du = si.placeable ~= nil and getUid(si.placeable) or nil
-        if du ~= nil and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+        -- Same rule as _storeToPalletAmount: the entry names the half. Callers hand this bulk sinks
+        -- today, so `form` is BULK and du collapses to the bare uid -- identical to before -- but it is
+        -- read off the entry rather than assumed, so a shed sink arriving here later cannot be silently
+        -- filed under the tank's key.
+        local form = (si.shed ~= nil) and "PALLET" or "BULK"
+        local du = si.placeable ~= nil and SmartDistribution.storeRoleUid(si.placeable, ft, form) or nil
+        if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du) and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            si.destRole = (si.shed ~= nil) and "SHED" or nil
             si.rank = SmartDistribution.destRank(srcUid, ft, du)
             out[#out + 1] = si
         end
@@ -3705,14 +4560,33 @@ local function storeAmount(p, storage, ft, farmId, bill)
 
     -- Default-ON: auto-hunt all valid store sinks, drop any the player BLOCKED, order by rank else distance.
     local srcUid = getUid(p)
-    local sinks = SmartDistribution.orderedStoreSinks(p, ft, farmId, x, z, gatherSinks(p, ft, x, z, farmId, resolveReach(p)), srcUid)
+    -- PHASE 5: pallet STORES join the bulk tanks as candidates, because litres can be materialised into
+    -- pallets on arrival (materialiseToShed). Gated on the product having a pallet model at all, so an
+    -- ordinary bulk crop with no pallet form gathers exactly the sinks it always did and this costs one
+    -- memoised lookup. Shed entries carry `.shed`; orderedStoreSinks keys them by the SHED role.
+    local cands = gatherSinks(p, ft, x, z, farmId, resolveReach(p))
+    if SmartDistribution.canMaterialisePallets(ft) then
+        for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, resolveReach(p), true)) do
+            cands[#cands + 1] = sh
+        end
+    end
+    local sinks = SmartDistribution.orderedStoreSinks(p, ft, farmId, x, z, cands, srcUid)
 
     local remaining = level
     for _, sink in ipairs(sinks) do
         if remaining <= 0 then break end
-        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft)   -- receiver-side block / max %
+        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft, sink.destRole)   -- receiver-side block / max %
         local want = math.min(remaining, room)
-        local moved = want > 0 and transfer(farmId, storage, sink.storage, ft, want) or 0
+        local moved
+        if sink.shed ~= nil then
+            -- PHASE 5: a pallet STORE takes whole pallets, so the litres are materialised on arrival.
+            -- Whole pallets only -- a shed slot holds a pallet, and a part-filled one cannot be stored
+            -- (depositPalletsToShed has always required palletIsFull), so the remainder stays in the tank
+            -- and goes with the next cycle rather than being rounded away.
+            moved = SmartDistribution.materialiseToShed(p, storage, ft, sink.shed, want, farmId)
+        else
+            moved = want > 0 and transfer(farmId, storage, sink.storage, ft, want) or 0
+        end
         if moved > 0 then
             ledgerAdd(p, ft, "stored", moved)
             ledgerAdd(sink.placeable, ft, "received", moved)   -- recipient side: a store transfer is incoming product too
@@ -3727,8 +4601,10 @@ end
 -- uid -> placeable lookup (Store To resolves its chosen targets through this)
 function SmartDistribution.placeableByUid(uid)
     if uid == nil or g_currentMission == nil or g_currentMission.placeableSystem == nil then return nil end
+    -- a role uid addresses one HALF of a building, but it is still that building (see roleUid)
+    local base = SmartDistribution.baseUidOf(uid)
     for _, p in ipairs(g_currentMission.placeableSystem.placeables) do
-        if p.rootNode ~= nil and getUid(p) == uid then return p end
+        if p.rootNode ~= nil and getUid(p) == base then return p end
     end
     return nil
 end
@@ -3738,9 +4614,9 @@ end
 -- and the rest spills to the next. If nothing can be pushed (every chosen store is full, or none are
 -- chosen yet) the stock simply stays put and the mode stays as it is: we flag it so the UI can show that
 -- the product can no longer be pushed, and it will top the stores up again on a later cycle.
-function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
+function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill, role)
     if S.global.excludedFillTypes[ft] then return end
-    local rm = resolveMode(p, ft)
+    local rm = resolveMode(p, ft, role)
     if rm ~= MODE.STORE_TO and rm ~= MODE.DISTRIBUTE_STORE_TO then return end
     if p.rootNode == nil then return end
     -- Move To IS the Advanced routing feature: its destinations are chosen in the Advanced Outputs
@@ -3754,7 +4630,8 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     -- so every destination would read unblocked and the source would push to every compatible store on
     -- the farm. Deleting the revert without this would have been strictly worse than the bug it fixed.
     if not SmartDistribution.advancedEnabled() then return end
-    local srcUid = getUid(p)
+    -- the SAME key the dialog writes under, so a setting made on this half is the one enforced
+    local srcUid = SmartDistribution.settingUid(p, ft, role) or getUid(p)
     if srcUid == nil then return end
 
     -- Palletized outputs (production pallet outputs, coop eggs/wool, beehive honey) are delivered as
@@ -3764,7 +4641,7 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     if SmartDistribution.isPalletOutput(p, ft) then return end
 
     -- how the source holds this product right now decides both the amount and which targets are valid
-    local form = SmartDistribution.sourceHoldForm(p, ft)
+    local form = SmartDistribution.sourceHoldForm(p, ft, role)
     if form == nil then SmartDistribution.setStoreTargetFull(srcUid, ft, false); return end
     local level = (form == "PALLET") and shedStoredLiters(p, ft) or getLevel(storage, ft)
     level = SmartDistribution.drawableLevel(p, ft, level)                         -- output reserve stays put
@@ -3776,15 +4653,36 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     local x, _, z = getWorldTranslation(p.rootNode)
     local myFarm = SmartDistribution._ownerFarmId(p)
     local targets = {}
+    -- A BULK source can reach a PALLET STORE by materialising its litres into whole pallets (phase 5).
+    -- Store has done this since phase 5; Move To could not -- yet outputDestinations already LISTED those
+    -- stores for it, so a silo on Move To offered pallet-store destinations that silently moved nothing.
+    -- Gated on the product having a pallet model at all, so an ordinary bulk crop gathers exactly the
+    -- candidates it always did, at the cost of one memoised lookup.
+    local canMat = (form == "BULK") and SmartDistribution.canMaterialisePallets(ft)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     for _, tp in ipairs(ps ~= nil and ps.placeables or {}) do
-        if tp ~= p and tp.rootNode ~= nil and isEnrolled(tp)
-           and SmartDistribution._farmCanUse(tp, myFarm)
-           and SmartDistribution.storeToTargetValid(form, tp, ft) then
-            local du = getUid(tp)
-            if du ~= nil and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
-                local tx, _, tz = getWorldTranslation(tp.rootNode)
-                targets[#targets + 1] = { placeable = tp, d2 = (tx - x) ^ 2 + (tz - z) ^ 2, rank = SmartDistribution.destRank(srcUid, ft, du) }
+        -- `du ~= srcUid` REPLACES the old `tp ~= p`, and it is strictly more precise rather than merely
+        -- equivalent. For an ordinary building du IS getUid(tp), so tp == p yields du == srcUid and the
+        -- candidate is dropped exactly as before -- byte-identical. On a building that does two jobs the
+        -- two halves have different keys, so a production can now Move To into ITS OWN pallet store while
+        -- a self-move within one half is still impossible by construction (same key, dropped). That is
+        -- the guard doing double duty: it is what makes same-building routing safe without a special case.
+        if tp.rootNode ~= nil and isEnrolled(tp) and SmartDistribution._farmCanUse(tp, myFarm) then
+            -- ONE ENTRY PER (building, CONTAINER KIND). A building owning both a tank and a pallet store
+            -- offers each separately, so they are independently blockable and rankable -- and a source can
+            -- reach the OTHER half of its own building without ever reaching itself.
+            local kinds = {}
+            if SmartDistribution.storeToTargetValid(form, tp, ft) then kinds[#kinds + 1] = form end
+            if canMat and SmartDistribution.storeToTargetValid("PALLET", tp, ft) then kinds[#kinds + 1] = "PALLET" end
+            for _, kind in ipairs(kinds) do
+                local du = SmartDistribution.storeRoleUid(tp, ft, kind)
+                if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du)
+                   and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+                    local tx, _, tz = getWorldTranslation(tp.rootNode)
+                    targets[#targets + 1] = { placeable = tp, destUid = du, kind = kind,
+                                              d2 = (tx - x) ^ 2 + (tz - z) ^ 2,
+                                              rank = SmartDistribution.destRank(srcUid, ft, du) }
+                end
             end
         end
     end
@@ -3798,12 +4696,40 @@ function SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
     local remaining, movedAny = level, false
     for _, t in ipairs(targets) do
         if remaining <= 0 then break end
-        local moved = SmartDistribution.storeToMove(p, storage, t.placeable, ft, remaining, farmId)
+        local moved
+        if t.kind == "PALLET" and form == "BULK" then
+            -- BULK -> PALLET STORE: materialise whole pallets. The receiver-side clamp is applied HERE
+            -- because materialiseToShed takes an already-clamped figure, where storeToMove does its own
+            -- internally. Whole pallets only; the sub-pallet remainder stays in the tank for next cycle.
+            local room = SmartDistribution.inputAcceptableLiters(t.placeable, ft, "SHED")
+            local want = math.min(remaining, room)
+            moved = (want > 0) and SmartDistribution.materialiseToShed(p, storage, ft, t.placeable, want, farmId) or 0
+        else
+            moved = SmartDistribution.storeToMove(p, storage, t.placeable, ft, remaining, farmId,
+                                                  (t.kind == "PALLET") and "SHED" or nil)
+        end
         if moved > 0 then
             movedAny = true
-            ledgerAdd(p, ft, "stored", moved)
-            ledgerAdd(t.placeable, ft, "received", moved)
-            recordBill(bill, farmId, p, t.placeable, t.d2, ft, moved)
+            -- A MOVE WITHIN ONE BUILDING IS NOT DISTRIBUTION. Ledgering it would credit the SAME uid with
+            -- both `stored` and `received`, so a building that merely reclassified its own stock from tank
+            -- to attached pallet store reported having distributed it -- and twice over, since the tabs sum
+            -- dist + stored. Reported 2026-08-21 as "distributed 20k with no demand for eggs". Nothing has
+            -- left the farm or even the building, so nothing is ledgered and no haulage is charged (5.7's
+            -- rule that the ledger reflects what actually moved between buildings).
+            if t.placeable ~= p then
+                ledgerAdd(p, ft, "stored", moved)
+                ledgerAdd(t.placeable, ft, "received", moved)
+                recordBill(bill, farmId, p, t.placeable, t.d2, ft, moved)
+            else
+                -- INTERNAL: not distribution, so it stays out of dist/stored/received and raises no
+                -- haulage -- but it IS movement along a configured link, so it is recorded where a
+                -- windowed status can find it. Keyed to the two HALVES rather than to the building: the
+                -- Overview rows a building once per role, so a base-uid figure appears on every one of
+                -- them -- the silo row AND the pallet store row both read 1 kL for one move.
+                SmartDistribution.ledgerAddUid(srcUid, ft, "moved", moved)
+                local du = SmartDistribution.storeRoleUid(t.placeable, ft, t.kind or form)
+                if du ~= nil and du ~= srcUid then SmartDistribution.ledgerAddUid(du, ft, "received", moved) end
+            end
             log("storedTo %d %s : %s -> %s", moved, fillTypeName(ft), placeableName(p), placeableName(t.placeable))
             SmartDistribution.recordFeed(t.placeable, ft, p, moved)
             remaining = remaining - moved
@@ -3849,19 +4775,24 @@ local function storePhase(manager, bill)
     for _, p in ipairs(ps.placeables) do
         if isEnrolled(p) and p.rootNode ~= nil then
             local farmId = p.ownerFarmId
-            local seen = {}
+            -- ONE SWEEP PER HALF, EACH WITH ITS OWN `seen` SET. They used to share one, so on a building
+            -- whose TANK also holds the product the shed loop was skipped entirely and that half was
+            -- never swept -- which is why a mode set on a pallet-store row did nothing. Within a half the
+            -- dedupe is still wanted: an extended silo lists the same fill type on several storages.
+            local seenBulk = {}
             for _, storage in ipairs(getAllStorages(p)) do
                 for ft in pairs(storageFillTypes(storage)) do
-                    if not seen[ft] then seen[ft] = true
-                        SmartDistribution.storeToAmount(p, storage, ft, farmId, bill)
+                    if not seenBulk[ft] then seenBulk[ft] = true
+                        SmartDistribution.storeToAmount(p, storage, ft, farmId, bill, nil)
                     end
                 end
             end
             -- object-storage sheds: their held pallet/bale fill types aren't in getAllStorages
             if p.spec_objectStorage ~= nil and SmartDistribution.shedStoredFillTypes ~= nil then
+                local shedRole, seenShed = SmartDistribution.shedRoleOf(p), {}
                 for ft in pairs(SmartDistribution.shedStoredFillTypes(p)) do
-                    if not seen[ft] then seen[ft] = true
-                        SmartDistribution.storeToAmount(p, nil, ft, farmId, bill)
+                    if not seenShed[ft] then seenShed[ft] = true
+                        SmartDistribution.storeToAmount(p, nil, ft, farmId, bill, shedRole)
                     end
                 end
             end
@@ -4575,11 +5506,19 @@ function SmartDistribution.marketTransferPhase(manager)
     seasonalBudget = computeSeasonalBudget()   -- annual-harvest reserve for Distribute + Market Supply (nil when the feature is off)
     -- storage sources (silos / husbandry storages) + non-production pallet spawners + object-storage sheds
     for _, p in ipairs(ps.placeables) do
-        if not SmartDistribution.isMarket(p) and isEnrolled(p) and p.rootNode ~= nil and getProductionPoint(p) == nil then
+        -- THE GATE MOVED OFF THE LOOP AND ONTO THE TWO BRANCHES THAT NEED IT. It used to read
+        -- `getProductionPoint(p) == nil`, which skipped the WHOLE building -- so a pallet store attached
+        -- to something with a production point (a DriveIn, a Mechet Fromage) had NO path to a market at
+        -- all: this loop never saw it, and the production loop below only drains pp.storage and the pad.
+        -- Reported 2026-08-21: a DriveIn pallet store on Market Supply, 7 lettuce pallets, market owned
+        -- and accepting lettuce, and nothing moved -- the branch was never reached, so even the debug
+        -- line stayed silent. The sixth site of the `pp ~= nil` shortcut (6.23).
+        if not SmartDistribution.isMarket(p) and isEnrolled(p) and p.rootNode ~= nil then
+            local isProd = getProductionPoint(p) ~= nil
             local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId
             local reach = resolveReach(p)
             local sx, _, sz = getWorldTranslation(p.rootNode)
-            for _, storage in ipairs(getAllStorages(p)) do
+            for _, storage in ipairs(isProd and {} or getAllStorages(p)) do
                 for ft in pairs(storageFillTypes(storage)) do
                     local m = resolveMode(p, ft)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
@@ -4588,7 +5527,9 @@ function SmartDistribution.marketTransferPhase(manager)
                     end
                 end
             end
-            local pfts = palletSpawnerFillTypes(p)
+            -- a PRODUCTION's tank and pad are the production loop's business (it drains pp.storage and
+            -- the pad, in that order); only the OBJECT STORAGE below is unowned by it.
+            local pfts = (not isProd) and palletSpawnerFillTypes(p) or nil
             if pfts ~= nil then
                 for _, ft in ipairs(pfts) do
                     local m = resolveMode(p, ft)
@@ -4601,11 +5542,25 @@ function SmartDistribution.marketTransferPhase(manager)
                 end
             end
             if p.spec_objectStorage ~= nil then   -- pallet / bale warehouse (object storage)
+                local shedRole = SmartDistribution.shedRoleOf(p)
                 for ft in pairs(SmartDistribution.shedStoredFillTypes(p)) do
-                    local m = resolveMode(p, ft)
+                    local m = resolveMode(p, ft, shedRole)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(p, ft, m, SmartDistribution.drawableLevel(p, ft, shedStoredLiters(p, ft)))
-                        if amt > 0 then local moved = SmartDistribution.transferShedToMarkets(p, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(p, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
+                        if amt > 0 then
+                            local moved = SmartDistribution.transferShedToMarkets(p, ft, farmId, sx, sz, reach, amt)
+                            if moved > 0 then
+                                SmartDistribution.ledgerAddRole(p, ft, "stored", moved, shedRole)
+                                SmartDistribution.noteSeasonalSpend(ft, moved)
+                            elseif SmartDistribution.debug then
+                                log("shed->market %s [%s]: wanted %.0f but moved 0 (no market in reach accepts it, or its buffer is full)",
+                                    placeableName(p), tostring(fillTypeName(ft)), amt)
+                            end
+                        elseif SmartDistribution.debug then
+                            log("shed->market %s [%s]: amount 0 (held %.0f, mode %s -- buffer full, sell timing, or reserve)",
+                                placeableName(p), tostring(fillTypeName(ft)),
+                                shedStoredLiters(p, ft) or 0, tostring(m))
+                        end
                     end
                 end
             end
@@ -4797,7 +5752,7 @@ function SmartDistribution.marketDivertLiters(p, ft, liters)
     if not isEnrolled(p) then return 0 end
     if S.global.excludedFillTypes[ft] then return 0 end
     local uid = getUid(p); if uid == nil then return 0 end
-    if SmartDistribution.marketSellMode(uid, ft) == SmartDistribution.MARKET_IMMEDIATE then return 0 end
+    if SmartDistribution.marketSellModeEffective(uid, ft) == SmartDistribution.MARKET_IMMEDIATE then return 0 end
     -- Advanced Inputs block: the player has said this market does not stock this product, so a hand-tipped
     -- load is NOT banked -- it falls through to the vanilla instant sale, exactly like the over-cap overflow
     -- below. The trailer can still always empty (it is a selling station after all); it just gets paid on
@@ -4849,11 +5804,44 @@ function SmartDistribution.installMarketManualFill()
     log("market manual fill interception installed (SellingStation.addFillLevelFromTool)")
 end
 
--- Best-price gate for a market product. Sells when this market's current effective price is within ~5%
--- of the best price we can justify: the higher of (a) the highest price seen here for this product and
--- (b) the seasonal peak the price forecast projects from the current price. Early on, with no observed
--- high yet, (b) -- the graph -- drives it; once a real high has been seen, (a) does. A near-full buffer
--- always sells, so best-price never back-pressures the supplying network.
+-- Best-price gate for a market product: sell when this month is at (or within tolerance of) the fill
+-- type's SEASONAL PEAK, growing less fussy the longer the product has been sitting.
+--
+-- WAS: `target = max(observedHigh, graphPeak)`, where observedHigh was a per-session RATCHET that only
+-- ever rose. One demand spike raised the bar permanently and nothing below 95% of it ever sold again --
+-- reported 2026-08-21 as "best price had been reached" with the product still sitting there. Deleting it
+-- costs NOTHING: mid-spike the observed high equals the current price, so the target was already
+-- `cur * peakRatio` and the old code never sold into a spike either. It bought nothing on the way up and
+-- blocked every sale on the way down.
+--
+-- NO LEARNING WAS EVER NEEDED. DistributionPricing reads FS25's own seasonal curve -- factors[1..12] with
+-- peakVal precomputed, a fixed definition that never drifts year to year -- so `peakVal` LITERALLY IS the
+-- best price in a twelve month period, known on the first hour of a new save. With the ratchet gone the
+-- price level cancels out of the comparison entirely (`cur >= cur * peakRatio * tol` reduces to
+-- `factors[now] >= peakVal * tol`), which is exactly DistributionPricing.isPeakNow -- the test silos,
+-- pens, productions and pallet sheds have always used. Markets stop being the odd one out.
+--
+-- PATIENCE (the second half): a perfect curve can still hold product ~11 months if the peak has just
+-- passed, so the tolerance decays with the SQUARE of the months held -- firm through the first half of
+-- the year, then giving up progressively, reaching zero at MARKET_PATIENCE_MONTHS. A sale within twelve
+-- months is therefore guaranteed by construction rather than by leaning on the near-cap backstop.
+-- The counter resets on any sale and on an empty buffer, so a market that keeps turning product over
+-- never accumulates patience it has not earned.
+--
+-- A near-full buffer still always sells, so best-price never back-pressures the supplying network.
+SmartDistribution.MARKET_PATIENCE_MONTHS = 12    -- 0 disables patience: hold for the peak indefinitely
+-- How close to the seasonal peak this product still insists on, given how long it has been held.
+-- Monotonically non-increasing, so a product can never become fussier than it was an hour ago.
+function SmartDistribution.marketPatienceTolerance(heldMonths)
+    local base = (DistributionPricing ~= nil and DistributionPricing.DEFAULT_TOLERANCE) or 0.95
+    local span = SmartDistribution.MARKET_PATIENCE_MONTHS or 0
+    if span <= 0 then return base end                                 -- patience disabled
+    if heldMonths == nil or heldMonths <= 0 then return base end
+    if heldMonths >= span then return 0 end                           -- out of patience: sell at any price
+    local pr = heldMonths / span
+    return base * (1 - pr * pr)
+end
+
 function SmartDistribution.marketAtBestPrice(market, muid, ft, station, avail)
     local cur = 0
     if station ~= nil and type(station.getEffectiveFillTypePrice) == "function" then
@@ -4861,16 +5849,10 @@ function SmartDistribution.marketAtBestPrice(market, muid, ft, station, avail)
         if ok and type(a) == "number" then cur = a end
     end
     if cur <= 0 then return true end                                  -- can't price it -> don't trap it
-    local hi = SmartDistribution._marketPriceHigh[muid]
-    if hi == nil then hi = {}; SmartDistribution._marketPriceHigh[muid] = hi end
-    if (hi[ft] or 0) < cur then hi[ft] = cur end                      -- track the observed high
     if avail ~= nil and avail >= SmartDistribution.marketCap(market) * 0.95 then return true end   -- safety: near cap, sell
-    local graphPeak = cur
-    if DistributionPricing ~= nil and DistributionPricing.peakRatio ~= nil then
-        graphPeak = cur * (DistributionPricing.peakRatio(ft) or 1)    -- current price projected to the seasonal peak
-    end
-    local target = math.max(hi[ft] or 0, graphPeak)
-    return cur >= target * 0.95                                       -- within 5% of the best justifiable price
+    if DistributionPricing == nil or DistributionPricing.isPeakNow == nil then return true end
+    local held = SmartDistribution.marketHoldMonths(muid, ft)
+    return DistributionPricing.isPeakNow(ft, SmartDistribution.marketPatienceTolerance(held))
 end
 
 function SmartDistribution.marketSellPhase(manager)
@@ -4887,17 +5869,29 @@ function SmartDistribution.marketSellPhase(manager)
                 local fts = {}
                 for ft, v in pairs(buf) do if v ~= nil and v > 0 then fts[#fts + 1] = ft end end
                 for _, ft in ipairs(fts) do
-                    local mode = SmartDistribution.marketSellMode(muid, ft)   -- per-product: 0 immediate / 1 best price / 2 hold
+                    local mode = SmartDistribution.marketSellModeEffective(muid, ft)   -- 0 immediate / 1 best / 2 hold
                     local avail = SmartDistribution.marketBufferLevel(muid, ft)
                     local sellNow = mode ~= SmartDistribution.MARKET_HOLD
                     if sellNow and mode == SmartDistribution.MARKET_BEST then
                         sellNow = SmartDistribution.marketAtBestPrice(p, muid, ft, station, avail)
                     end
+                    -- PATIENCE: age this product unless it is about to sell. Ticked here rather than
+                    -- inside marketAtBestPrice because HOLD products never reach that call, and an
+                    -- explicit Hold must never accumulate patience it would later act on.
+                    SmartDistribution.marketHoldTick(muid, ft, avail > 0 and not sellNow)
                     if avail > 0 and sellNow and station ~= nil then
+                        -- NEVER CONSUME PRODUCT THAT DID NOT SELL. marketSell returns early (nil) when it
+                        -- cannot price the product at all -- and this used to debit `avail` and ledger it
+                        -- as sold regardless, so an unpriceable product was deleted from the buffer for no
+                        -- money and reported as a sale. 5.45b's rule, applied to the other direction:
+                        -- never credit -- or consume -- product you have not verified moved.
                         local got = SmartDistribution.marketSell(station, farmId, ft, avail)
-                        SmartDistribution.marketBufferAdd(muid, ft, -avail)
-                        ledgerAdd(p, ft, "sold", avail)
-                        if got ~= nil and got > 0 then ledgerAdd(p, ft, "money", got) end
+                        if got ~= nil then
+                            SmartDistribution.marketBufferAdd(muid, ft, -avail)
+                            SmartDistribution.marketHoldTick(muid, ft, false)   -- sold: patience resets
+                            ledgerAdd(p, ft, "sold", avail)
+                            if got > 0 then ledgerAdd(p, ft, "money", got) end
+                        end
                     end
                 end
             end
@@ -5866,11 +6860,17 @@ end
 -- here (Distribute feeds those; Store To does not).
 function SmartDistribution.storeToTargetValid(srcForm, dst, ft)
     if dst == nil or ft == nil then return false end
-    local cls = getAssetClass(dst)
-    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    -- AN OBJECT STORAGE IS NEVER A DEMAND BUFFER, so the class gate below deliberately does not apply to
+    -- the pallet branch. The gate reads the PRIMARY class, so a building that owns a genuine pallet store
+    -- but whose primary role is a production (Mechet Fromage, Escargot) was refused outright -- its shed
+    -- half was unreachable as a destination, which is half of what phase 4 exists to fix. The bulk branch
+    -- keeps the gate exactly as it was: a production's tank really is a demand, not a stockpile.
     if srcForm == "PALLET" then
+        if dst.spec_objectStorage == nil then return false end
         return isPalletShedSink(dst, ft)                      -- object storage that supports + has a free slot
     end
+    local cls = getAssetClass(dst)
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
     return SmartDistribution._bulkStorageFor(dst, ft) ~= nil  -- any bulk tank that supports ft
 end
 
@@ -5894,8 +6894,9 @@ end
 -- untouched, so what actually MOVES is bit-for-bit unchanged.
 function SmartDistribution.storeToTargetPossible(srcForm, dst, ft)
     if dst == nil or ft == nil then return false end
-    local cls = getAssetClass(dst)
-    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    -- MIRRORS storeToTargetValid's gate exactly, including its object-storage exemption. The invariant
+    -- the header states is valid => possible, so if this were the stricter of the two the mode ring would
+    -- refuse to offer a mode that demonstrably works.
     if srcForm == "PALLET" then
         local spec = dst.spec_objectStorage
         if spec == nil or spec.supportsPallets == false then return false end
@@ -5910,6 +6911,8 @@ function SmartDistribution.storeToTargetPossible(srcForm, dst, ft)
         if not ok then return true end
         return sup and true or false
     end
+    local cls = getAssetClass(dst)
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
     return SmartDistribution._bulkStorageFor(dst, ft) ~= nil
 end
 
@@ -5919,10 +6922,45 @@ end
 --     the production buffers them in a bulk tank internally, so they must target a pallet store, not a
 --     bulk silo. Detect that from the production's pallet-spawner output set.
 --   * anything held in a real bulk tank -> BULK
-function SmartDistribution.sourceHoldForm(p, ft)
+-- WHICH CONTAINER A ROLE OWNS, when the building is EMPTY and sourceHoldForm cannot tell from stock.
+--
+-- The fallback used to be `spec_objectStorage ~= nil and "PALLET" or "BULK"`, duplicated at FOUR sites.
+-- On a building that owns a pallet store ALONGSIDE a tank that answered PALLET even when the SILO half
+-- was the thing being configured -- so `wantBulk` went false and the Advanced Outputs store list came up
+-- EMPTY. Reported 2026-08-20: a DriveIn on Move To offered no storage destinations while a Farma 400
+-- did, and the difference between those two buildings is precisely that the DriveIn owns a pallet store.
+--
+-- The question is about the ROLE, not about what the building happens to also own: only a shed-owned
+-- product defaults to PALLET. A single-role building is unchanged by construction -- an ordinary pallet
+-- store has SHED as its PRIMARY role and still answers PALLET; anything else answers BULK exactly as
+-- before.
+function SmartDistribution.defaultHoldForm(p, role)
+    if role == "SHED" then return "PALLET" end
+    if p ~= nil and p.spec_objectStorage ~= nil and SmartDistribution.primaryRole(p) == "SHED" then
+        return "PALLET"
+    end
+    return "BULK"
+end
+
+function SmartDistribution.sourceHoldForm(p, ft, role)
+    -- ROLE-SCOPED, because on a building that does two jobs the two halves hold the product in DIFFERENT
+    -- FORMS: the tank has litres, the attached pallet store has objects. Asking the placeable conflates
+    -- them, and _holdsAsPallets reads the SHED -- so a production half's BULK output reported PALLET form
+    -- whenever the shed happened to be holding any of the same product, and the destination KIND flipped
+    -- with the shed's contents. With no role the behaviour is exactly as before.
+    -- `nil` means "the primary half", NOT "look at every container this building owns". On a building
+    -- that also has a pallet store, treating nil as "the shed counts too" made the SILO half report PALLET
+    -- form as soon as its shed held any of the product -- so its Advanced Outputs listed pallet stores
+    -- instead of demands. An ordinary pallet store still answers PALLET, because SHED is its primary role.
+    local shedIsMine = (role == "SHED")
+        or (role == nil and (#SmartDistribution.assetRoles(p) < 2
+                             or SmartDistribution.primaryRole(p) == "SHED"))
     -- pallets it is ACTUALLY holding come first, so product already standing on a pad still targets a
     -- pallet store even when spawning is off -- switching the setting strands nothing already out there.
-    if SmartDistribution._holdsAsPallets(p, ft) then return "PALLET" end
+    if shedIsMine and SmartDistribution._holdsAsPallets(p, ft) then return "PALLET" end
+    -- The SHED half owns nothing but its pallets: with none of this product it has nothing to give, and
+    -- must not fall through and claim the tank's litres as its own.
+    if role == "SHED" then return nil end
     -- isPalletOutput, not the raw list: with spawning set to NEVER the product will never take pallet
     -- form, so it is BULK and must target bulk tanks rather than pallet sheds.
     if SmartDistribution.isPalletOutput(p, ft) then return "PALLET" end
@@ -5930,12 +6968,89 @@ function SmartDistribution.sourceHoldForm(p, ft)
     return nil
 end
 
+-- WHICH HALF of a destination physically receives `ft` when it arrives in `srcForm`. The destination
+-- twin of receiverRoleUid, and the single seam phase 4 turns on: every store-side site that used to key
+-- a destination by getUid(p) -- the PRIMARY role's key -- now asks this instead.
+--
+-- The rule is decided by the FORM, because the form already decides which container is written:
+--   * BULK   -> the tank, which the primary role owns (getSinkStorages / _bulkStorageFor read it)
+--   * PALLET -> the object storage, which is by definition the SHED role (depositPalletsToShed)
+--
+-- An ordinary building is byte-identical to before and cannot be made otherwise: roleUid collapses to
+-- the bare uid whenever the role asked for IS the primary, so a plain pallet store keys `shed1` and a
+-- plain silo keys `silo1`, exactly as every existing save already records them. Only a building that
+-- genuinely does two jobs mints a suffix -- which is what makes a DriveIn's tank and its pallet store
+-- separately blockable and separately rankable for the first time.
+--
+-- NOT built on assetRoles: the object-storage spec IS the SHED role's evidence (assetRoles adds "SHED"
+-- on exactly this test), so reading it directly keeps the two in step and costs one field lookup on a
+-- path the allocator walks per candidate.
+function SmartDistribution.storeRoleUid(dst, ft, srcForm)
+    if dst == nil then return nil end
+    local base = SmartDistribution.assetUid(dst)
+    if base == nil then return nil end
+    if srcForm ~= "PALLET" then return base end          -- bulk fills the tank; the primary owns it
+    if dst.spec_objectStorage == nil then return base end
+    return SmartDistribution.roleUid(dst, "SHED")
+end
+
+-- STATUS is read off the BASE uid, blocking off the ROLE uid, and they are genuinely different lookups.
+-- recordFeed keys its ledger by getUid(consumer) -- the base uid -- because a ledger records what a
+-- BUILDING moved (5.65 settled the same split for the Overview). So issuing fedBy against a role uid
+-- finds nothing and reports every role destination "Idle" while it is visibly receiving. This exists so
+-- that trap is named at the call site rather than rediscovered from a screenshot.
+function SmartDistribution.destStatusUid(destUid)
+    return SmartDistribution.baseUidOf(destUid)
+end
+
+-- Is `destUid` really the SAME PLACE the source already is? Not the same question as `destUid == srcUid`,
+-- and getting it wrong offers the player a destination that silently moves nothing.
+--
+-- A pass-through store's SILO half and its PRODUCTION half read ONE physical tank (5.65: the production
+-- "writes into the very tank the SILO half reads -- one pp.storage, one pool of litres"). Once the source
+-- is addressed by role, those two halves have DIFFERENT keys, so a bare `destUid ~= srcUid` test stops
+-- excluding the source's own tank and starts advertising it -- a bulk "move" from a building into itself.
+--
+-- The rule is therefore about the CONTAINER, not the key: on the same placeable only a genuinely separate
+-- container counts, and the only separate container a building has is its object storage. So a PALLET
+-- destination on the same placeable is real (a production's output into its own attached pallet store)
+-- and a BULK one never is.
+function SmartDistribution.isSelfDestination(srcUid, destUid)
+    if srcUid == nil or destUid == nil then return false end
+    if destUid == srcUid then return true end
+    if SmartDistribution.baseUidOf(destUid) ~= SmartDistribution.baseUidOf(srcUid) then return false end
+    -- Same building, different keys. It asks about the DESTINATION, not about the source's form, and that
+    -- distinction became load-bearing the moment a BULK source could reach a pallet store by materialising
+    -- its litres: the old test `srcForm ~= "PALLET"` used the source as a proxy for "the destination is the
+    -- object storage", and that proxy said "self" for exactly the case now being enabled.
+    return SmartDistribution.roleOfUid(destUid) ~= "SHED"
+end
+
 -- Move up to `amount` litres of `ft` from source to dst, using the right primitive for the source's
 -- current FORM. Returns litres moved. Caller has already validated form compatibility.
-function SmartDistribution.storeToMove(srcP, srcStorage, dstP, ft, amount, farmId)
+function SmartDistribution.storeToMove(srcP, srcStorage, dstP, ft, amount, farmId, dstRole)
     if amount <= 0 then return 0 end
+    -- NO SAME-PLACEABLE MOVE THROUGH THIS FUNCTION, and it is a guard rather than an assertion because
+    -- the candidate filter upstream is now `du ~= srcUid` rather than `tp ~= p`. Those differ on exactly
+    -- one shape: a pass-through store whose silo half reports PALLET form because its SHED half is
+    -- holding the product. That would reach transferShedPallets(p, p, ...) -- a shed relocating into
+    -- itself, ledgering a phantom move and corrupting its own slot count, which is the same trap
+    -- gatherShedSinks' includeSelf note describes.
+    --
+    -- Nothing legitimate is lost: the only coherent same-building move is bulk litres becoming pallets in
+    -- the attached shed, which needs phase 5's materialisation and has no path here today. The pallet
+    -- case that IS coherent (a production's pad into its own pallet store) runs through
+    -- _storeToPalletAmount -> depositPalletsToShed, which snapshots its work list before mutating and is
+    -- therefore safe with src == dst.
+    if srcP ~= nil and srcP == dstP then return 0 end
     -- receiver-side cap: never push more than the target will accept for this product (block / max %).
-    local room = SmartDistribution.inputAcceptableLiters(dstP, ft)
+    -- ROLE-SCOPED. Without dstRole this asks receiverRoleUid, which picks whichever half CAN hold the
+    -- product with the primary winning ties -- right for the allocator, which has no destination row in
+    -- hand, but wrong here: we know exactly which half we are writing into. On a pass-through store whose
+    -- tank also declares the product, the pallet-store deposit was reading the SILO's block and free
+    -- space, so the shed's own Max in % was never enforced (5.65's "every read behind a role-scoped cell
+    -- must be role-scoped", applied to the PASS rather than to the UI).
+    local room = SmartDistribution.inputAcceptableLiters(dstP, ft, dstRole)
     if room <= 0 then return 0 end
     if amount > room then amount = room end
     if SmartDistribution._holdsAsPallets(srcP, ft) then
@@ -6199,12 +7314,19 @@ function SmartDistribution._storeToPalletAmount(p, ft, farmId, bill)
     -- rank then nearest-first.
     local cands = {}
     for _, si in ipairs(gatherSinks(p, ft, x, z, farmId, reach)) do cands[#cands+1] = si end
-    for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, reach)) do cands[#cands+1] = sh end
+    for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, reach, true)) do cands[#cands+1] = sh end
     local ordered = {}
     for _, si in ipairs(cands) do
-        local du = si.placeable ~= nil and getUid(si.placeable) or nil
-        if du ~= nil and SmartDistribution._farmCanUse(si.placeable, myFarm)
+        -- A sink entry ALREADY says which half it is: gatherSinks emits `.storage` (the tank, owned by
+        -- the primary role) and gatherShedSinks emits `.shed` (the object storage, i.e. the SHED role).
+        -- So the destination's role is read off the entry rather than inferred -- which is what stops a
+        -- multi-role building contributing two candidates under ONE key, where blocking either blocked
+        -- both and rank could not separate them.
+        local form = (si.shed ~= nil) and "PALLET" or "BULK"
+        local du = si.placeable ~= nil and SmartDistribution.storeRoleUid(si.placeable, ft, form) or nil
+        if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du) and SmartDistribution._farmCanUse(si.placeable, myFarm)
            and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            si.destRole = (si.shed ~= nil) and "SHED" or nil
             si.rank = SmartDistribution.destRank(srcUid, ft, du)
             ordered[#ordered + 1] = si
         end
@@ -6219,7 +7341,12 @@ function SmartDistribution._storeToPalletAmount(p, ft, farmId, bill)
     local remaining, movedAny = level, false
     for _, sink in ipairs(ordered) do
         if remaining <= 0 then break end
-        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft)   -- receiver-side block / max %
+        -- ROLE-SCOPED, and this was a live bug rather than tidying. With no role this resolves through
+        -- receiverRoleUid, which lets the PRIMARY half win whenever it can hold the product -- so on a
+        -- pass-through store whose tank also declares the product, a deposit into the PALLET STORE read
+        -- the SILO's block and the SILO's free space. Since slotCap divides that figure by one slot's
+        -- litres, the shed's own Max in % was not merely misreported, it was unenforced.
+        local room = SmartDistribution.inputAcceptableLiters(sink.placeable, ft, sink.destRole)
         if sink.shed ~= nil then
             local perSlot = SmartDistribution._shedLitresPerSlot(sink.placeable) or 1
             local slotCap = math.floor(room / math.max(1, perSlot))   -- how many slots the cap still allows
@@ -6309,9 +7436,10 @@ local function shedPhase(manager)
             local farmId = (p.getOwnerFarmId ~= nil and p:getOwnerFarmId()) or p.ownerFarmId
             local fts = shedStoredFillTypes(p)
             local held = nil
+            local shedRole = SmartDistribution.shedRoleOf(p)   -- this half's own mode, not the building's
             for ft in pairs(fts) do
                 if not S.global.excludedFillTypes[ft] then
-                    local m = resolveMode(p, ft)
+                    local m = resolveMode(p, ft, shedRole)
                     if (m == MODE.SELL or m == MODE.DISTRIBUTE_SELL) and S.global.sellEnabled then
                         if SmartDistribution.resolveBestPrice(p, ft, m)
                            and DistributionPricing ~= nil and not DistributionPricing.isPeakNow(ft) then
@@ -6460,7 +7588,26 @@ function SmartDistribution.runHourly(manager)
     SmartDistribution.observeHusbandryProduction()            -- record husbandry output produced since last cycle (pre-drain)
     SmartDistribution.sweepEmptyPadPallets()                   -- phase 0b: clear empty pallets left on a pen's OR production's pad
     SmartDistribution.spawnWholePallets()                     -- phase 0c: release FULL pallets from pen buffers (setting); before slots so they are sources this pass
-    SmartDistribution.flushPendingLedger()                     -- fold in deposits whose callbacks landed after last pass
+    SmartDistribution.suppressPassThroughLines()              -- phase 0d: switch a pass-through store's scaffolding lines off (setting; no-op unless chosen)
+    -- REVERTED 2026-08-17, and the reason is a rule this codebase already learned the hard way.
+    --
+    -- gateSharedTankProductions held a line OFF until its input had been routed. It does not work and it
+    -- should never have been attempted: it REWRITES A PLAYER'S SETTING every hour. Switch the line on in
+    -- the base menu and DR switched it off again on the next tick -- reported as "every time I close and
+    -- reopen the UI the production turns off". That is exactly what enforceValidModes did to MODES, and
+    -- 5.48 deleted it outright on the author's call: "you should never revert regardless".
+    --
+    -- It also did not even achieve the goal: the tick runs continuously while DR's pass is hourly, so
+    -- the production had already eaten the silo's silage long before the gate could look.
+    --
+    -- DELETED OUTRIGHT 2026-08-21. They had been kept unwired on the grounds that "the ACCOUNTING half is
+    -- sound", which was true but beside the point: settleSharedTankProductions measures against
+    -- _prodGateSnap, and only the GATE ever populated that -- so with the gate unwired every baseline was
+    -- nil and the settle corrected nothing. It was inert by construction, not merely waiting to be
+    -- reconnected. 5.65's OWNERSHIP model (nothing moves; a shared input belongs to both halves and reads
+    -- "Linked") replaced the whole approach anyway.
+    --
+    -- ANYTHING THAT TRIES AGAIN MUST NOT TOUCH LINE STATE. That is the part worth keeping.
     local bill = {}
     local slots = {}
     SmartDistribution.collectVirtualProduction(manager)        -- materialise sellDirectly outputs set to Distribute (electricity/methane) as sources BEFORE allocation
@@ -6482,9 +7629,12 @@ function SmartDistribution.runHourly(manager)
         sellPhase(manager)
     end
     SmartDistribution.marketTransferPhase(manager)             -- phase 2c: route "Transfer to My Market" surplus into market buffers
-    if S.global.sellEnabled then
-        SmartDistribution.marketSellPhase(manager)             -- phase 2d: markets sell their buffers (native price + 20% bonus)
-    end
+    -- DELIBERATELY NOT gated on sellEnabled. With the switch off marketSellMode forces every market
+    -- product to Immediate, which IS base-game behaviour for a selling station -- product delivered to
+    -- one gets sold. Gating this phase is what left a player's hand-tipped 24,000 L of apples stuck in
+    -- a buffer for good (the divert had banked 20,000 of them and nothing could ever release it).
+    -- Market Supply therefore keeps routing with selling off; it just sells on arrival.
+    SmartDistribution.marketSellPhase(manager)                 -- phase 2d: markets sell their buffers (native price + 20% bonus)
     sellDirectProduction(manager)                              -- phase 2b: plant sellDirectly outputs (biogas electric/methane)
     -- phase 2e: sell the surplus of Distribute+Sell / Sell production OUTPUTS (incl. modded grid products like
     -- electricity) that phase 1 did not distribute. MUST run here, after distribute -- it used to be appended
@@ -6496,6 +7646,8 @@ function SmartDistribution.runHourly(manager)
     SmartDistribution.recordHusbandryConsumption(cycleAcc)    -- husbandry feed/water/straw consumed this cycle
     SmartDistribution.flushManualTransfers(cycleAcc)          -- player/AI loads + unloads since the last pass
     S.lastCycle = cycleAcc                                     -- publish this cycle's tallies for the asset dialog
+    SmartDistribution.publishFeedPass()                        -- ...and the link log, so BOTH sides of a
+                                                               -- link update on the cycle it moved, not the next
     monthlyRing[(monthlyPos % MONTHLY_CYCLES) + 1] = cycleAcc  -- roll the 24-cycle "monthly" window (persisted)
     monthlyPos = (monthlyPos + 1) % MONTHLY_CYCLES
     -- feed the same cycle into the 12-month ring behind the Overview tab's Year view. A full month has
@@ -6691,6 +7843,8 @@ local function saveOverrides(missionInfo)
     setXMLInt(xml, "smartDistribution#version", PERSIST_VERSION)
     -- one-shot marker for the pre-fix production-cost backlog write-off (see chargeProductionCosts)
     setXMLBool(xml, "smartDistribution#backlogForgiven", SmartDistribution._backlogForgiven == true)
+    -- how far the Move To role-seeding has been brought up to date (see repairMoveToRoleBlocks)
+    setXMLInt(xml, "smartDistribution#roleSeedVersion", SmartDistribution.ROLE_SEED_VERSION)
     local i = 0
     for uid, fts in pairs(S.assets) do
         for ft, mode in pairs(fts) do
@@ -6725,7 +7879,25 @@ local function saveOverrides(missionInfo)
                 setXMLString(xml, k .. "#uniqueId", tostring(uid))
                 setXMLString(xml, k .. "#fillType", fillTypeName(ft))
                 setXMLFloat(xml,  k .. "#litres",   litres)
+                -- patience rides along on the same element: without it, saving and reloading would hand
+                -- a product back its full patience and the twelve-month guarantee would never fire for
+                -- anyone who saves regularly.
+                local hp = SmartDistribution._marketHold[uid]
+                if hp ~= nil and (hp[ft] or 0) > 0 then setXMLFloat(xml, k .. "#heldPasses", hp[ft]) end
                 mb = mb + 1
+            end
+        end
+    end
+    -- role buffers: DR-owned stock for a sub-building with no storage of its own (see _roleBuffer)
+    local rb = 0
+    for uid, byFt in pairs(SmartDistribution._roleBuffer) do
+        for ft, litres in pairs(byFt) do
+            if type(litres) == "number" and litres > 0 then
+                local k = string.format("smartDistribution.roleBuf(%d)", rb)
+                setXMLString(xml, k .. "#uniqueId", tostring(uid))
+                setXMLString(xml, k .. "#fillType", fillTypeName(ft))
+                setXMLFloat(xml,  k .. "#litres",   litres)
+                rb = rb + 1
             end
         end
     end
@@ -6898,6 +8070,10 @@ local function loadOverrides()
     if xml == nil or xml == 0 then print(string.format("[SmartDistribution persist] LOAD FAILED: loadXMLFile(%s)", tostring(path))) return end
     -- Absent on saves written before this fix -> false -> the write-off runs once, then persists true.
     SmartDistribution._backlogForgiven = getXMLBool(xml, "smartDistribution#backlogForgiven") == true
+    -- Absent on any save written before roles existed, which reads as 0 -- i.e. "not yet seeded", which is
+    -- correct: such a save has never had a role destination offered to it. The repair itself runs after the
+    -- block table has been read, at the end of this function.
+    SmartDistribution._roleSeedVersion = getXMLInt(xml, "smartDistribution#roleSeedVersion") or 0
     local i, n = 0, 0
     while true do
         local k = string.format("smartDistribution.asset(%d)", i)
@@ -6926,24 +8102,14 @@ local function loadOverrides()
     --
     -- Deliberately a bare print, NOT gated on debug: this is silent data loss, it costs one pass over the
     -- placeables ONCE at load, and it prints nothing at all when everything resolves.
-    if g_currentMission ~= nil and g_currentMission.placeableSystem ~= nil then
-        local live = {}
-        for _, p in ipairs(g_currentMission.placeableSystem.placeables or {}) do
-            if p.rootNode ~= nil then
-                local u = getUid(p)
-                if u ~= nil then live[u] = p end
-            end
-        end
-        for uid, byFt in pairs(S.assets) do
-            if live[uid] == nil then
-                local names = {}
-                for ft in pairs(byFt) do names[#names + 1] = tostring(fillTypeName(ft)) end
-                print(string.format(
-                    "[SmartDistribution persist] ORPHANED override: uniqueId=%s matches no live building (%s) -- this setting cannot appear in game",
-                    tostring(uid), table.concat(names, ", ")))
-            end
-        end
-    end
+    -- DEFERRED, because PLACEABLE LOADING IS ASYNCHRONOUS (6.19). Run inline, this fires while buildings
+    -- are still streaming in, so the live map is short and EVERY override is reported as data loss -- on
+    -- savegame4 all three, including uniqueIds demonstrably present in placeables.xml. It only ever
+    -- printed, so nothing was pruned, but "this setting cannot appear in game" is alarming and wrong.
+    -- runOrphanCheck below does the real work on the first proximityWatcher tick, once the mission is
+    -- actually updating and every placeable exists.
+    SmartDistribution._pendingOrphanCheck = true
+
     -- learned harvest windows per crop
     local j, c = 0, 0
     while true do
@@ -7057,7 +8223,31 @@ local function loadOverrides()
         end
         t = t + 1
     end
-    -- market virtual buffers + per-market sell timing
+    -- role buffers. Reset first: loadOverrides can run more than once in a session (the deferred-load
+    -- retry), and adding to a table that already holds the same stock would double it.
+    SmartDistribution._roleBuffer = {}
+    local rb, rbn = 0, 0
+    while true do
+        local k = string.format("smartDistribution.roleBuf(%d)", rb)
+        local uid = getXMLString(xml, k .. "#uniqueId")
+        if uid == nil then break end
+        local ftName = getXMLString(xml, k .. "#fillType")
+        local litres = getXMLFloat(xml,  k .. "#litres")
+        if ftName ~= nil and litres ~= nil and litres > 0 and g_fillTypeManager ~= nil then
+            local ft = g_fillTypeManager:getFillTypeIndexByName(ftName)
+            if ft ~= nil then
+                local b = SmartDistribution._roleBuffer[uid]
+                if b == nil then b = {}; SmartDistribution._roleBuffer[uid] = b end
+                b[ft] = litres
+                rbn = rbn + 1
+            end
+        end
+        rb = rb + 1
+    end
+    -- market virtual buffers + per-market sell timing. Patience resets with them, for the reason the
+    -- role buffers above give: loadOverrides can run more than once in a session (the deferred-load
+    -- retry), and a counter added to twice would age a product at double rate.
+    SmartDistribution._marketHold = {}
     local mb, mbn = 0, 0
     while true do
         local k = string.format("smartDistribution.marketBuf(%d)", mb)
@@ -7070,6 +8260,12 @@ local function loadOverrides()
             if ft ~= nil then
                 local b = SmartDistribution._marketBuffer[uid]; if b == nil then b = {}; SmartDistribution._marketBuffer[uid] = b end
                 b[ft] = math.max(0, litres)
+                local hp = getXMLFloat(xml, k .. "#heldPasses")
+                if hp ~= nil and hp > 0 then
+                    local h = SmartDistribution._marketHold[uid]
+                    if h == nil then h = {}; SmartDistribution._marketHold[uid] = h end
+                    h[ft] = hp
+                end
                 mbn = mbn + 1
             end
         end
@@ -7154,6 +8350,10 @@ local function loadOverrides()
     end
     -- rolling 12-month window behind the Overview tab's Year view (owned by DistributionStats.lua)
     if SmartDistribution.loadYearWindow ~= nil then pcall(SmartDistribution.loadYearWindow, xml) end
+    -- AFTER the block table has been read, or there would be nothing to repair. Inert while
+    -- ROLE_SEED_VERSION is 1 (no role is routable yet); see the header on repairMoveToRoleBlocks.
+    pcall(SmartDistribution.migrateProductionOutputSettings)   -- BEFORE the seed version is stamped
+    pcall(SmartDistribution.repairMoveToRoleBlocks)
     delete(xml)
     SmartDistribution._persistLoaded = true                      -- success: stop the deferred-load retry
     print(string.format("[SmartDistribution persist] LOADED %d mode(s) + %d timing from %s", n, tn, tostring(path)))
@@ -9119,20 +10319,36 @@ local function assetCanStore(asset)
     return c == "PRODUCTION" or c == "HUSBANDRY"
 end
 
+-- ...and its MIRROR. STORE and MOVE TO do the same job from opposite ends: a producer STOREs its output
+-- into the network's stores, a store MOVEs its stock to another store. Offering both on one building is
+-- two names for one behaviour, which is what a pen showing "Move To" was -- reported 2026-08-21.
+--
+-- Move To was previously in the ring UNCONDITIONALLY and only filtered by hasStoreToEndpoint, so any
+-- building holding a product that some store could take was offered it. This makes the rule explicit and
+-- symmetrical: producers store, stores move.
+local function assetCanMoveTo(asset)
+    local c = getAssetClass(asset)
+    return c == "SILO" or c == "SHED" or c == "HEAP"
+end
+
 -- Mode cycle ring. Distribute+Store is only offered for store-capable assets; a
 -- plain silo can't store-cascade to another silo, so it keeps the 4-mode ring and
 -- never lands on Distribute+Store.
-local function cycleNext(m, includeStore, includeMarket, includePallets)
+local function cycleNext(m, includeStore, includeMarket, includePallets, includeMoveTo)
     if m == MODE.DISTRIBUTE       then return MODE.HOLD end
     if m == MODE.HOLD             then return includePallets and MODE.HOLD_INTERNAL or MODE.DISTRIBUTE_SELL end
     if m == MODE.HOLD_INTERNAL    then return MODE.DISTRIBUTE_SELL end
     if m == MODE.DISTRIBUTE_SELL  then return MODE.SELL end
     if m == MODE.SELL then
         if includeStore  then return MODE.DISTRIBUTE_STORE end
-        return MODE.DISTRIBUTE_STORE_TO
+        if includeMoveTo then return MODE.DISTRIBUTE_STORE_TO end
+        return includeMarket and MODE.TRANSFER_MARKET or MODE.DISTRIBUTE
     end
     if m == MODE.DISTRIBUTE_STORE then return MODE.STORE end
-    if m == MODE.STORE            then return MODE.DISTRIBUTE_STORE_TO end
+    if m == MODE.STORE            then
+        if includeMoveTo then return MODE.DISTRIBUTE_STORE_TO end
+        return includeMarket and MODE.TRANSFER_MARKET or MODE.DISTRIBUTE
+    end
     -- Store To pair sits after the auto-Store pair; cycleNextForAsset skips whichever has no endpoint
     -- (e.g. Store To is only meaningful for a silo/shed that has somewhere to push to).
     if m == MODE.DISTRIBUTE_STORE_TO then return MODE.STORE_TO end
@@ -9164,6 +10380,21 @@ local function siloFillTypes(silo)
         for _, storage in pairs(spec.storages) do
             if storage.fillTypes ~= nil then
                 for ft in pairs(storage.fillTypes) do fts[ft] = true; any = true end
+            end
+        end
+    end
+    -- A pass-through store has no spec_silo -- its tank hangs off the production point -- so without this
+    -- assetConfigFillTypes returned an EMPTY set for it and the Silos tab listed no products at all,
+    -- while Advanced Inputs (which reads ownStorageFillTypes) listed all 111. Reported in game: milk
+    -- sitting in the DriveIn was invisible on its storage rows.
+    -- All THREE tables, not just fillTypes: storageSupports answers from any of them (5.54b), and
+    -- pp.storage is populated per fill type from <capacity> entries rather than a <fillTypes> attribute.
+    local ptStore = SmartDistribution.passThroughStorage(silo)
+    if ptStore ~= nil then
+        for _, key in ipairs({ "fillTypes", "capacities", "fillLevels" }) do
+            local t = ptStore[key]
+            if type(t) == "table" then
+                for ft in pairs(t) do fts[ft] = true; any = true end
             end
         end
     end
@@ -9250,6 +10481,10 @@ end
 
 local function assetConfigFillTypes(p)
     if p == nil then return {}, false end
+    -- ABOVE the production branch, which would otherwise answer with the fake identity lines' outputs.
+    -- siloFillTypes reads getAllStorages, which now folds in the pass-through tank, so this lists exactly
+    -- what the building can hold -- the same answer any other silo gives.
+    if SmartDistribution.treatPassThroughAsStore(p) then return siloFillTypes(p) end
     if getProductionPoint(p) ~= nil then return productionOutputFillTypes(p) end
     if p.spec_silo ~= nil or SmartDistribution.bulkHallSpec(p) ~= nil then return siloFillTypes(p) end
     -- bunker silo: a single row for whatever it DECLARES it makes (silage on a vanilla bunker, COMPOST on the
@@ -9274,8 +10509,41 @@ end
 -- menu / cycle-facing fill-type set: identical to assetConfigFillTypes EXCEPT a pallet shed expands to
 -- every network-supplyable + shed-accepted type (so empty types can be pre-configured). The allocator
 -- keeps using assetConfigFillTypes (stored-only for sheds), so seasonal budget / sell passes are unchanged.
-function SmartDistribution.assetMenuFillTypes(p)
-    if p ~= nil and p.spec_objectStorage ~= nil then return SmartDistribution.shedSupportedFillTypes(p) end
+-- `role` is optional. With one, this answers for THAT HALF of the building; without, it answers exactly
+-- as it always did. A building that does two jobs holds two different product lists -- a DriveIn's silo
+-- half lists 111 crops, its pallet half lists what a pallet store accepts -- and each row on the tab
+-- asks for its own.
+function SmartDistribution.assetMenuFillTypes(p, role)
+    if p == nil then return {}, false end
+    if role == "SHED" and p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
+        return SmartDistribution.shedSupportedFillTypes(p)
+    end
+    if role == "PRODUCTION" and getProductionPoint(p) ~= nil then
+        return productionOutputFillTypes(p)
+    end
+    if role == "SILO" then
+        local fts, any = siloFillTypes(p)
+        -- a genuine line's OUTPUT belongs to the production and shows on its tab only, so the same
+        -- product never appears on two tabs of one building (productionOwnedFillTypes)
+        local owned = SmartDistribution.productionOwnedFillTypes(p)
+        if next(owned) ~= nil then
+            local keep, kept = {}, false
+            for ft in pairs(fts) do
+                if not owned[ft] then keep[ft] = true; kept = true end
+            end
+            return keep, kept
+        end
+        return fts, any
+    end
+    -- No role (or a role with no special reading): the original behaviour, unchanged.
+    --
+    -- The pass-through guard below is what stopped a DriveIn answering with its PALLET store's supported
+    -- set: that listed only what can go on a pallet, which is why MILK_BOTTLED appeared on its Silos tab
+    -- and plain MILK did not -- bottles are palletizable, milk is not, so one crop of 111 survived the
+    -- filter and the rest silently vanished.
+    if p.spec_objectStorage ~= nil and not SmartDistribution.treatPassThroughAsStore(p) then
+        return SmartDistribution.shedSupportedFillTypes(p)
+    end
     return assetConfigFillTypes(p)
 end
 
@@ -9310,7 +10578,7 @@ end
 function SmartDistribution.isSellDirectlyFillType(p, ft)
     local pp = getProductionPoint(p)
     if pp == nil or ft == nil or type(pp.productions) ~= "table" then return false end
-    for _, prod in ipairs(pp.productions) do
+    for _, prod in ipairs(SmartDistribution.configuredProductionLines(pp)) do
         for _, o in ipairs(prod.outputs or {}) do
             if o.type == ft and o.sellDirectly then return true end
         end
@@ -9325,6 +10593,13 @@ function SmartDistribution.hasSellEndpoint(asset, ft)
     -- by sellDirectProduction, NOT through the market economy, so getPricePerLiter reads 0 and would wrongly
     -- hide Sell / Distribute+Sell for them.
     if SmartDistribution.isSellDirectlyFillType(asset, ft) then return true end
+    -- SELLING SWITCHED OFF -> no sell endpoint, so Sell and Distribute + Sell leave the ring entirely.
+    -- ONE seam covers everything: modeHasEndpoint routes BOTH sell modes through here, cycleNextForAsset
+    -- skips a mode with no endpoint, validModeRing (which cyclePrevForAsset is built on) excludes it, and
+    -- cycleAssetMode leaves that fill type unchanged. Deliberately BELOW the sellDirectly return above:
+    -- a grid output (electricity / methane) is sold by the BASE GAME in sellDirectProduction, not by DR,
+    -- so hiding it would strand a biogas plant with no destination at all while stopping nothing.
+    if not S.global.sellEnabled then return false end
     local econ = g_currentMission ~= nil and g_currentMission.economyManager or nil
     if econ == nil or econ.getPricePerLiter == nil then return true end   -- unknown -> don't hide the option
     local ok, price = pcall(econ.getPricePerLiter, econ, ft)
@@ -9355,14 +10630,17 @@ end
 -- end is having nowhere at all it could ever push.
 function SmartDistribution.hasStoreToEndpoint(asset, ft)
     if asset == nil or ft == nil then return false end
+    if not assetCanMoveTo(asset) then return false end     -- producers STORE; only stores MOVE TO
     -- Store To is meaningful when some OTHER store can physically receive the product in the SAME form
     -- (bulk->bulk or pallet->pallet). Offered even before targets are chosen; a dead end is having
     -- nowhere it could ever push. Form follows how the source currently holds it; on an empty store we
     -- fall back to its declared capability so the mode can be pre-configured.
     local form = SmartDistribution.sourceHoldForm ~= nil and SmartDistribution.sourceHoldForm(asset, ft) or nil
     if form == nil then
-        if asset.spec_objectStorage ~= nil then form = "PALLET"
-        elseif SmartDistribution.assetHoldsFillType ~= nil and SmartDistribution.assetHoldsFillType(asset, ft) then form = "BULK"
+        -- capability, then the role's own container -- NOT "it owns a pallet store, so PALLET"
+        if SmartDistribution.assetHoldsFillType ~= nil and SmartDistribution.assetHoldsFillType(asset, ft) then
+            form = SmartDistribution.defaultHoldForm(asset, nil)
+        elseif asset.spec_objectStorage ~= nil then form = "PALLET"
         else
             if SmartDistribution._storeToDebug then SmartDistribution.log("storeto? %s [%s]: no form (holds nothing)", placeableName(asset), fillTypeName(ft)) end
             return false
@@ -9372,7 +10650,11 @@ function SmartDistribution.hasStoreToEndpoint(asset, ft)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return false end
     for _, p in ipairs(ps.placeables) do
-        if p ~= asset and p.rootNode ~= nil and isEnrolled(p)
+        -- isSelfDestination, NOT `p ~= asset`: the PASS routes a silo half into its own pallet store, so
+        -- excluding the whole placeable here made the mode ring skip Move To for a product whose only
+        -- destination was the building's own other half. Reported 2026-08-21 on a fresh save: a DriveIn
+        -- silo holding eggs offered only Hold and Sell.
+        if p.rootNode ~= nil and isEnrolled(p)
            and SmartDistribution._farmCanUse(p, myFarm)
            -- STRUCTURAL, not room-based (storeToTargetPossible): "is Move To meaningful at all", not "is
            -- there space this instant". A pallet shed that was momentarily full used to make Move To look
@@ -10051,16 +11333,13 @@ function SmartDistribution.cmdPalletHook(self, what)
         SmartDistribution._palletHookRedirect = not SmartDistribution._palletHookRedirect
     elseif what == "log" then
         SmartDistribution._palletHookLog = not SmartDistribution._palletHookLog
-    elseif what == "insert" then
-        SmartDistribution._shedDirectInsert = not SmartDistribution._shedDirectInsert
     elseif what ~= nil then
-        return "usage: sdPalletHook [redirect|log|insert]"
+        return "usage: sdPalletHook [redirect|log]"
     end
-    return string.format("palletHook: installed=%s  log=%s  redirect=%s  shedDirectInsert=%s",
+    return string.format("palletHook: installed=%s  log=%s  redirect=%s",
         tostring(SmartDistribution._origSpawnPallet ~= nil),
         tostring(SmartDistribution._palletHookLog),
-        tostring(SmartDistribution._palletHookRedirect),
-        tostring(SmartDistribution._shedDirectInsert))
+        tostring(SmartDistribution._palletHookRedirect))
 end
 -- ============================================================================
 
@@ -10072,7 +11351,8 @@ SmartDistribution.cycleNext      = cycleNext
 function SmartDistribution.cycleNextForAsset(asset, m, ft)   -- store-aware + pallet-aware (Hold Internal only where the asset spawns pallets)
     local step = function(cur)
         return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
-                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed())
+                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed(),
+                         assetCanMoveTo(asset))
     end
     local nxt = step(m)
     if ft == nil then return nxt end
@@ -10096,7 +11376,8 @@ function SmartDistribution.validModeRing(asset, ft)
     if asset == nil or ft == nil then return out end
     local step = function(cur)
         return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
-                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed())
+                         palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed(),
+                         assetCanMoveTo(asset))
     end
     local m, seen = MODE.DISTRIBUTE, {}
     for _ = 1, 14 do                                           -- ring is <=12; the cap is a backstop
@@ -10167,7 +11448,9 @@ end
 function SmartDistribution.setProductionEnabled(p, on)
     local pp = getProductionPoint(p)
     if pp == nil or pp.setProductionState == nil or type(pp.productions) ~= "table" then return false end
-    for _, prod in ipairs(pp.productions) do
+    -- Only REAL lines: on a pass-through store this button must never switch the 110 identity lines back
+    -- on, which would undo the suppression and put the scaffolding back in the player's face.
+    for _, prod in ipairs(SmartDistribution.configuredProductionLines(pp)) do
         if prod.id ~= nil then pcall(function() pp:setProductionState(prod.id, on and true or false) end) end
     end
     return true
@@ -10207,7 +11490,7 @@ function SmartDistribution.outputLineCounts(p, ft)
         end
     end
     local total, on = 0, 0
-    for _, prod in ipairs(pp.productions) do
+    for _, prod in ipairs(SmartDistribution.configuredProductionLines(pp)) do
         local makes = false
         for _, o in ipairs(prod.outputs or {}) do
             if o.type == ft then makes = true; break end
@@ -10257,7 +11540,9 @@ function SmartDistribution.productionLines(p)
         return c
     end
     local out = {}
-    for _, prod in ipairs(pp.productions) do
+    -- A pass-through store contributes only its GENUINE lines here, so the Productions tab shows the
+    -- DriveIn's one silage line rather than 111 rows of scaffolding.
+    for _, prod in ipairs(SmartDistribution.configuredProductionLines(pp)) do
         local id = prod.id
         local enabled = id ~= nil and activeSet[id] == true
         local st = enabled and (activeStatus[id] or prod.status) or nil
@@ -10540,7 +11825,8 @@ function SmartDistribution.salesByAsset(window)
     local out = {}
     local function emit(uid, byFt)
         if type(byFt) ~= "table" then return end
-        local p = byUid[uid]
+        -- ledger keys may name a secondary ROLE once roles route product; resolve to the building
+        local p = byUid[SmartDistribution.baseUidOf(uid)]
         local name, icon
         for ft, e in pairs(byFt) do
             if type(e) == "table" then
@@ -11060,7 +12346,17 @@ function SmartDistribution.cycleAssetMode(asset)
     -- productions: bulk-cycle the outputs through the shared 5-state virtual mode
     -- (Keep/Distribute/Sell/Distribute+Sell/Distribute+Store), unify-then-step, so
     -- the distribution UI and the production screen stay in lockstep.
-    if getProductionPoint(asset) ~= nil and SmartDistribution.productionOutputVMode ~= nil then
+    -- ...but ONLY for products that actually run on the v-mode. On a pass-through store the Silos tab's
+    -- list is the TANK's crops, which do not -- cycling those as v-modes wrote a mode nothing reads.
+    -- The list is homogeneous by construction (the tabs partition products by role, 5.65), so testing it
+    -- is enough; a mixed list falls through to the asset path, which is the safe direction.
+    local vCycles = getProductionPoint(asset) ~= nil and SmartDistribution.productionOutputVMode ~= nil
+    if vCycles then
+        for _, ft in ipairs(order) do
+            if not SmartDistribution.usesVMode(asset, ft) then vCycles = false; break end
+        end
+    end
+    if vCycles then
         local pp = getProductionPoint(asset)
         local modes = {}
         for i, ft in ipairs(order) do modes[i] = SmartDistribution.productionOutputVMode(pp, ft) or 0 end
@@ -11166,6 +12462,17 @@ end
 
 local function assetInteractionNodes(p)
     local out = {}
+    -- A PASS-THROUGH STORE'S TANK HANGS OFF ITS PRODUCTION POINT, not off a spec_silo, so none of the
+    -- branches below found its tipping or loading triggers: reported in game as "the silo drop-off
+    -- points have no icon and do nothing", while the pallet store beside them worked. Its stations are
+    -- ordinary unloading/loading stations; they just live somewhere this function never looked.
+    if SmartDistribution.treatPassThroughAsStore(p) then
+        local pp = getProductionPoint(p)
+        if pp ~= nil then
+            collectStationNodes(pp.unloadingStation, out)
+            collectStationNodes(pp.loadingStation, out)
+        end
+    end
     if p.spec_silo ~= nil then
         collectStationNodes(p.spec_silo.loadingStation, out)
         collectStationNodes(p.spec_silo.unloadingStation, out)
@@ -11414,6 +12721,78 @@ function SmartDistribution.marketToggleOutput(market, ft)
     SmartDistribution.applyMarketTiming(market, ft, nextMode)
     return nextMode
 end
+-- What the MODE cell should read for a market product, and whether the player's choice is currently
+-- being OVERRULED. Two facts, because with the Selling setting off they diverge and the player needs
+-- both: what the market is actually DOING right now, and what they set it to.
+--
+-- Reported 2026-08-22: after the 6.25a split the rows correctly kept showing the stored choice, but
+-- "there is really no indication that all lines have been set to sell immediate". Honest about the
+-- setting, silent about the override -- so the row said Hold while the market sold everything on
+-- arrival. The footer button said so, but only for the selected row and only if you looked.
+--
+-- Returns (text, overridden). When nothing is overruling the choice this is exactly marketProductLabel,
+-- so the normal case is unchanged.
+function SmartDistribution.marketModeDisplay(market, ft)
+    local chosen = SmartDistribution.marketProductLabel(market, ft)
+    if S.global.sellEnabled then return chosen, false end
+    -- Selling off: the pass sells on arrival whatever the timing says (marketSellModeEffective). Lead
+    -- with what it is DOING and keep the choice visible after it, so the arrows still visibly edit
+    -- something real -- and drop the suffix when the two agree, or every Immediate row would carry a
+    -- redundant "(set: Sell - Immediate)".
+    local doing = SmartDistribution.l10n("dr_market_sellsNow", "Sells now")
+    local uid = getUid(market)
+    if uid ~= nil and SmartDistribution.marketSellMode(uid, ft) == SmartDistribution.MARKET_IMMEDIATE then
+        return doing, true
+    end
+    return string.format(SmartDistribution.l10n("dr_market_sellsNowSet", "%s (set: %s)"), doing, chosen), true
+end
+
+-- ONE RING OVER ALL THREE MARKET STATES: Hold -> Sell Immediate -> Sell Best price -> Hold.
+--
+-- The two toggles below it (marketToggleOutput = Hold<->Sell, marketToggleSellType = Immediate<->Best)
+-- each cover a PAIR, and the second HIDES ITSELF while a product is on Hold -- so reaching Immediate from
+-- Hold meant pressing one button and then a second one that did not exist until the first press.
+-- Reported 2026-08-21 as "I can not change the market output mode"; instrumenting it showed seven
+-- presses, seven correct writes, and the value flipping Hold <-> Best every time. The control worked, it
+-- simply could not REACH the third state. This is what the in-row arrows and Z/X drive.
+--
+-- Ordered Hold FIRST so stepping forward off Hold reaches "sell it now" before "wait for the peak" --
+-- coming off a hold, the impatient option is the commoner intent.
+SmartDistribution.MARKET_TIMING_RING = { 2, 0, 1 }   -- HOLD, IMMEDIATE, BEST (values, not indices)
+
+function SmartDistribution.marketTimingNext(cur)
+    local R = SmartDistribution.MARKET_TIMING_RING
+    for i = 1, #R do
+        if R[i] == cur then return R[(i % #R) + 1] end
+    end
+    return SmartDistribution.MARKET_HOLD              -- an unknown value lands somewhere valid
+end
+
+-- DERIVED BY WALKING FORWARD, never a second hand-written order -- the rule cyclePrevForAsset and
+-- prevVirtual both follow, so the two directions cannot drift when a value is added.
+function SmartDistribution.marketTimingPrev(cur)
+    local R = SmartDistribution.MARKET_TIMING_RING
+    local c = R[1]
+    for _ = 1, #R do
+        local n = SmartDistribution.marketTimingNext(c)
+        if n == cur then return c end
+        c = n
+    end
+    return cur
+end
+
+-- Step the selected market product one place around that ring. Shares applyMarketTiming with the footer
+-- buttons, so the arrows, the keys and the footer all replicate and refresh identically.
+function SmartDistribution.marketCycleTiming(market, ft, back)
+    if market == nil or ft == nil then return end
+    local cur = SmartDistribution.marketSellMode(getUid(market), ft)
+    local nextMode = back and SmartDistribution.marketTimingPrev(cur)
+                          or  SmartDistribution.marketTimingNext(cur)
+    if nextMode == nil or nextMode == cur then return cur end
+    SmartDistribution.applyMarketTiming(market, ft, nextMode)
+    return nextMode
+end
+
 -- "Change sell type": toggle the selected product between Immediate and Best price (no-op while Held).
 function SmartDistribution.marketToggleSellType(market, ft)
     if market == nil or ft == nil then return end
@@ -12141,6 +13520,49 @@ function SmartDistribution.flushManualTransfers(acc)
     end
 end
 
+-- ---- POOLED OVERFILL CLAMP --------------------------------------------------------------------------
+-- THE BASE GAME'S GATE AND ITS WRITE DISAGREE ABOUT A POOLED TANK, and the write wins.
+--
+--   Storage:getFreeCapacity  -- for a pooled tank (no capacities[ft], supportsMultipleFillTypes) sums
+--                               EVERY level: `capacity - sum(fillLevels)`. Correct.
+--   Storage:setFillLevel     -- `math.clamp(fillLevel, 0, self.capacities[fillType] or self.capacity)`.
+--                               Clamps the incoming product against the WHOLE tank and never looks at
+--                               what the others are holding.
+--
+-- So a fill trigger asks for room, is told the truth, and then writes more than it was granted. It
+-- overshoots exactly ONCE per tank -- on the load that straddles the boundary -- and every load after
+-- that is refused, because by then the pooled gate reads zero. Reproduced on two buildings 2026-08-20:
+--   Farma 400 (400,000): 200k wheat + 400k barley = 600,000 held, third product refused
+--   Hay loft  (250,000): 125k hay   + 250k straw  = 375,000 held
+-- In both, the second load was written IN FULL rather than trimmed to the space actually left.
+--
+-- DR ITSELF NEVER DOES THIS -- transfer() clamps `moved` by getFree (the pooled figure) before writing,
+-- so this is purely about product arriving from outside DR, i.e. the player's trailer.
+--
+-- SCOPED THREE WAYS, because this sits on a GLOBAL class hook and 5.62 is the precedent for what that
+-- costs (an unscoped refusal there froze the game at a pallet shop):
+--   * only a genuinely POOLED storage -- an explicit capacities[ft] means per-product IS the intended
+--     rule, and supportsMultipleFillTypes == false is a different model again;
+--   * only a DR-ENROLLED building, so nothing outside the farm's network is touched;
+--   * only an INCREASE, so a withdrawal can never be blocked.
+-- Returns the ceiling this fill type may be written to, or nil for "not our business".
+function SmartDistribution.pooledWriteCap(storage, ft)
+    if storage == nil or ft == nil then return nil end
+    local levels = storage.fillLevels
+    if type(levels) ~= "table" then return nil end
+    if storage.capacities ~= nil and storage.capacities[ft] ~= nil then return nil end   -- per-ft by design
+    if storage.supportsMultipleFillTypes == false then return nil end
+    local cap = storage.capacity
+    if type(cap) ~= "number" or cap <= 0 then return nil end
+    local p = SmartDistribution.storageOwnerOf ~= nil and SmartDistribution.storageOwnerOf(storage) or nil
+    if p == nil or not isEnrolled(p) then return nil end
+    local others = 0
+    for f, lvl in pairs(levels) do
+        if f ~= ft then others = others + (lvl or 0) end
+    end
+    return math.max(0, cap - others)
+end
+
 function SmartDistribution.installManualTransferTracking()
     if SmartDistribution._manualTrackingInstalled then return end   -- installing twice would make the hook call itself
     SmartDistribution._manualTrackingInstalled = true
@@ -12160,6 +13582,19 @@ function SmartDistribution.installManualTransferTracking()
                 if (SmartDistribution._selfWrite or 0) > 0 or SmartDistribution._inManualHook
                    or self == nil or type(self.fillLevels) ~= "table" or type(a2) ~= "number" then
                     return orig(self, a1, a2, ...)
+                end
+                -- POOLED OVERFILL CLAMP -- setFillLevel ONLY. Its signature is confirmed from the base
+                -- source (fillLevel, fillType, fillInfo), so a1 IS the absolute level and trimming it
+                -- here is exact. addFillLevel is deliberately left alone: it does not exist on the base
+                -- Storage class at all, so any implementation is a subclass's with an argument order
+                -- this cannot read -- and guessing it would corrupt a write rather than bound one.
+                -- Runs BEFORE `before` is captured so the tracking below still measures what really
+                -- moved, not what was asked for.
+                if name == "setFillLevel" and type(a1) == "number" then
+                    local ceiling = SmartDistribution.pooledWriteCap(self, a2)
+                    if ceiling ~= nil and a1 > ceiling and a1 > (self.fillLevels[a2] or 0) then
+                        a1 = math.max(ceiling, self.fillLevels[a2] or 0)   -- never force a level DOWN
+                    end
                 end
                 SmartDistribution._inManualHook = true
                 local before = self.fillLevels[a2] or 0
@@ -12211,12 +13646,16 @@ end
 -- Cheap enough for a per-cell call: it sums only this uid+ft across the window's ledgers, rather than
 -- flattening the whole ring the way windowAggregate does.
 function SmartDistribution.assetWindowStats(p, ft, window)
+    return SmartDistribution.uidWindowStats(p ~= nil and getUid(p) or nil, ft, window)
+end
+
+-- The same sum keyed by UID. inputLinkStatus only ever holds a uid, and resolving it back to a placeable
+-- would walk placeableSystem per row -- exactly the per-row cross-building cost 5.52 removed.
+function SmartDistribution.uidWindowStats(uid, ft, window)
     local out = {}
     local fields = SmartDistribution.WINDOW_FIELDS
     for _, f in ipairs(fields) do out[f] = 0 end
-    if p == nil or ft == nil then return out end
-    local uid = getUid(p)
-    if uid == nil then return out end
+    if uid == nil or ft == nil then return out end
     for _, led in ipairs(SmartDistribution.windowLedgers(window)) do
         local a = led[uid]
         local e = a ~= nil and a[ft] or nil
@@ -12231,7 +13670,12 @@ end
 -- { received, loaded, consumed, unloaded, produced, dist, sold, stored, money }. The Overview tab builds
 -- a table of hundreds of rows at once, so it resolves the window here rather than re-summing the
 -- 24-cycle ring per cell. The key set also tells the tab which (asset, product) pairs saw any activity.
-SmartDistribution.WINDOW_FIELDS = { "received", "loaded", "consumed", "unloaded", "produced", "dist", "sold", "stored", "money", "cost" }
+-- `moved` is product that changed CONTAINER inside one building (a tank into its own attached pallet
+-- store). Deliberately its own field and NOT folded into `stored`: the tabs sum dist + stored + sold for
+-- DISTRIBUTED, and an internal move is not distribution -- counting it there is what reported "20k
+-- distributed with no demand". It exists so a LINK STATUS can still see the movement over a window,
+-- which the last-pass link log cannot answer beyond the current cycle.
+SmartDistribution.WINDOW_FIELDS = { "received", "loaded", "consumed", "unloaded", "produced", "dist", "sold", "stored", "money", "cost", "moved" }
 
 function SmartDistribution.windowAggregate(window)
     local out, fields = {}, SmartDistribution.WINDOW_FIELDS
@@ -12356,14 +13800,35 @@ function SmartDistribution.enumerateConfigurableAssets()
     local farmId = (g_currentMission.getFarmId ~= nil) and g_currentMission:getFarmId() or nil
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil then
-            local cls = getAssetClass(p)
-            if cls == "SILO" or cls == "HUSBANDRY" or cls == "PRODUCTION" or cls == "SHED" or cls == "HEAP" or cls == "MARKET" then
-                -- ownership PLUS public map storage. This is the enumerator the four building tabs
-                -- actually call -- enrolledAssets is a different list -- so gating only that one left
-                -- the feature invisible in the UI however correct the engine side was.
-                if SmartDistribution._farmCanUse(p, farmId) then
-                    out[#out + 1] = { placeable = p, name = placeableName(p), class = cls,
-                                      origName = SmartDistribution.placeableRenamedFrom(p) }
+            -- ownership PLUS public map storage. This is the enumerator the four building tabs
+            -- actually call -- enrolledAssets is a different list -- so gating only that one left
+            -- the feature invisible in the UI however correct the engine side was.
+            if SmartDistribution._farmCanUse(p, farmId) then
+                -- ONE ROW PER ROLE. A building that does two jobs at once appears once per job, each
+                -- with its own key, its own products and its own modes -- so a DriveIn is a silo on the
+                -- Silos tab, a pallet store beside it, and a one-line production on Productions.
+                -- `class` stays the role so every existing tab filter (allow[a.class],
+                -- a.class == "PRODUCTION") keeps working untouched.
+                --
+                -- CONSUMERS THAT MUST NOT SEE THE EXTRA ROWS: the Overview builds its whole table from
+                -- this list, and one row per BUILDING is what it wants -- roles do not change what
+                -- flowed. It filters on isPrimaryRole; see enrolledAssetsWithUniqueNames.
+                local roles = SmartDistribution.assetRoles(p)
+                local base  = placeableName(p)
+                local orig  = SmartDistribution.placeableRenamedFrom(p)
+                local primary = roles[1]
+                for _, cls in ipairs(roles) do
+                    if cls == "SILO" or cls == "HUSBANDRY" or cls == "PRODUCTION" or cls == "SHED"
+                       or cls == "HEAP" or cls == "MARKET" then
+                        out[#out + 1] = {
+                            placeable = p, class = cls, role = cls,
+                            isPrimaryRole = (cls == primary),
+                            roleUid  = SmartDistribution.roleUid(p, cls),
+                            name     = SmartDistribution.roleDisplayName(p, cls, base, #roles),
+                            baseName = base,
+                            origName = orig,
+                        }
+                    end
                 end
             end
         end
@@ -12452,21 +13917,21 @@ function SmartDistribution.registerMenuGui()
 end
 
 -- Open the Advanced window (granular routing) for a building.
-function SmartDistribution.openAdvancedDialog(asset, ft)
+function SmartDistribution.openAdvancedDialog(asset, ft, role)
     if g_gui == nil or SmartDistribution._advDialog == nil or asset == nil or ft == nil then return false end
-    SmartDistribution._advDialog:setup(asset, ft)
+    SmartDistribution._advDialog:setup(asset, ft, role)
     g_gui:showDialog("DistributionAdvancedDialog")
     return true
 end
 
 -- Open the Advanced Inputs window (receiver-side block + per-product max %) for a building.
-function SmartDistribution.openInputsDialog(asset)
+function SmartDistribution.openInputsDialog(asset, role)
     if g_gui == nil or asset == nil then return false end
     if SmartDistribution._inputsDialog == nil then
         log("openInputsDialog: dialog not registered (needs a full game restart after adding DistributionInputsDialog)")
         return false
     end
-    SmartDistribution._inputsDialog:setup(asset)
+    SmartDistribution._inputsDialog:setup(asset, role)
     g_gui:showDialog("DistributionInputsDialog")
     return true
 end
@@ -12475,22 +13940,33 @@ end
 -- pooled/individual classification, block state, effective max %, and the live litre equivalent so the
 -- UI can show "50%  (125,000 L)". Pooled products are grouped; the caller renders a pooled section and
 -- an individual section.
-function SmartDistribution.receiverInputRows(p)
+-- `role` addresses ONE HALF of a building that does two jobs. Its blocks and caps are stored under that
+-- half's own key, so blocking wheat on a DriveIn's pallet store no longer blocks it on the silo beside it.
+function SmartDistribution.receiverInputRows(p, role)
     local rows = {}
     if p == nil then return rows end
-    local rcvUid = getUid(p)
+    -- keyed per row below (settingUid), not once here: a LINKED product shares the silo's entry
     local pool = SmartDistribution.pooledInputCapacity(p)
     local poolSet = {}
     if pool ~= nil then for _, ft in ipairs(pool.fts) do poolSet[ft] = true end end
-    for ft in pairs(SmartDistribution.receiverInputFillTypes(p)) do
+    -- WITH THE ROLE, or the dialog lists the wrong half's inputs: on the Mechet Fromage's PALLET STORE
+    -- row this showed the production's three milk inputs instead of what the store accepts.
+    for ft in pairs(SmartDistribution.receiverInputFillTypes(p, role)) do
         local pooled = poolSet[ft] == true
-        local cap = SmartDistribution.inputProductCapacity(p, ft)
-        local pct = SmartDistribution.inputCapPct(p, ft)
+        local cap = SmartDistribution.inputProductCapacity(p, ft, role)
+        local pct = SmartDistribution.inputCapPct(p, ft, role)
         rows[#rows + 1] = {
             ft = ft,
+            -- LINKED: this product is one pool of stock the silo and the in-building production share,
+            -- so its setting is a single setting seen from two tabs. Shown in the storage-type column
+            -- so the sharing is visible rather than something the player has to deduce from behaviour.
+            linked = SmartDistribution.sharedTankFillTypes(p)[ft] == true,
             name = fillTypeName(ft),   -- dialog re-resolves the display title from ft; this is a fallback
             pooled = pooled,
-            blocked = rcvUid ~= nil and SmartDistribution.isInputBlocked(rcvUid, ft) or false,
+            blocked = (function()
+                local u = SmartDistribution.settingUid(p, ft, role)
+                return u ~= nil and SmartDistribution.isInputBlocked(u, ft) or false
+            end)(),
             pct = pct,
             capLiters = cap,
             -- MAX IN: exactly what the percentage means -- that share of the building's total capacity.
@@ -12512,10 +13988,21 @@ function SmartDistribution.receiverInputRows(p)
                 if type(a) ~= "number" or a ~= a or a >= INF then return nil end
                 return a
             end)(),
-            held = SmartDistribution.inputHeldLevel(p, ft),
-            explicit = rcvUid ~= nil and SmartDistribution.hasExplicitInputCapPct(rcvUid, ft) or false,
-            targetPct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil,
-            targetLiters = SmartDistribution.inputTargetLiters(p, ft),
+            held = SmartDistribution.inputHeldLevel(p, ft, role),   -- this half's held, not the placeable's
+            explicit = (function()
+                local u = SmartDistribution.settingUid(p, ft, role)
+                return u ~= nil and SmartDistribution.hasExplicitInputCapPct(u, ft) or false
+            end)(),
+            -- `targetApplies` is what the dialog renders on: a push-only receiver gets a dash rather than
+            -- "Off", because "Off" implies it could be switched ON. See fillTargetApplies.
+            targetApplies = SmartDistribution.fillTargetApplies(p, ft, role),
+            targetPct = (function()
+                if not SmartDistribution.fillTargetApplies(p, ft, role) then return nil end
+                local u = SmartDistribution.settingUid(p, ft, role)
+                return u ~= nil and SmartDistribution.getInputTargetPct(u, ft) or nil
+            end)(),
+            targetLiters = SmartDistribution.fillTargetApplies(p, ft, role)
+                and SmartDistribution.inputTargetLiters(p, ft, role) or nil,
         }
     end
     -- Feeding-robot barn: append a READ-ONLY row for the internal mixed-feed / food level (the robot mixes
@@ -12558,6 +14045,12 @@ function SmartDistribution.ownStorageFillTypes(p)
         for _, s in ipairs(silo.storages) do
             for ft in pairs(storageFillTypes(s)) do out[ft] = true end
         end
+    end
+    -- a pass-through store's tank is its OWN storage in every sense that matters here: it is what the
+    -- building can hold, and what receiverInputFillTypes must offer once the production branch is skipped
+    local ptStore = SmartDistribution.passThroughStorage(p)
+    if ptStore ~= nil then
+        for ft in pairs(storageFillTypes(ptStore)) do out[ft] = true end
     end
     -- a bulk hall bay lists only the crop currently piled there under fillTypes, so prefer its supported set
     for _, s in ipairs(SmartDistribution.bulkHallStorages(p)) do
@@ -12652,19 +14145,39 @@ function SmartDistribution.isExtensionOnlyFillType(p, ft)
     return set ~= nil and set[ft] == true
 end
 
-function SmartDistribution.receiverInputFillTypes(p)
+function SmartDistribution.receiverInputFillTypes(p, role)
     local out = {}
     if p == nil then return out end
+    -- The PRODUCTION half of a shared-tank building takes its OWN line inputs -- not the tank's whole
+    -- crop list. The pass-through guard further down skips the production branch (it exists so the SILO
+    -- half lists the tank), and without this the production's Advanced Inputs offered all 111 products.
+    if role == "PRODUCTION" and SmartDistribution.treatPassThroughAsStore(p) then
+        local pp = getProductionPoint(p)
+        if pp ~= nil then
+            for _, def in ipairs(SmartDistribution.configuredProductionLines(pp)) do
+                for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
+            end
+            return out
+        end
+    end
+    -- the SHED half of a dual building accepts what a pallet store accepts, not what its tank holds
+    if role == "SHED" and p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
+        for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do out[ft] = true end
+        return out
+    end
+    -- A PASS-THROUGH STORE RECEIVES AS A SILO, not as a production. Taking the branch below would list
+    -- only its surviving REAL line's inputs (SILAGE on the DriveIn), so Advanced Inputs would offer one
+    -- row out of 111 and inputAcceptableLiters would answer for a building that supposedly accepts
+    -- nothing else. Skipping it drops through to the ownStorageFillTypes sweep at the tail, which is the
+    -- right answer for a store: everything it can hold, exactly as for any silo.
     local pp = getProductionPoint(p)
-    if pp ~= nil then
+    if pp ~= nil and not SmartDistribution.treatPassThroughAsStore(p) then
         for _, def in ipairs(getActiveProductionDefs(pp)) do
             for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
         end
         -- include configured (not just active) lines so the player can pre-set caps
-        if type(pp.productions) == "table" then
-            for _, def in ipairs(pp.productions) do
-                for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
-            end
+        for _, def in ipairs(SmartDistribution.configuredProductionLines(pp)) do
+            for _, i in ipairs(def.inputs or {}) do if i.type ~= nil then out[i.type] = true end end
         end
         return out
     end
@@ -12680,7 +14193,23 @@ function SmartDistribution.receiverInputFillTypes(p)
         for ft in pairs(SmartDistribution.marketMenuFillTypes(p)) do out[ft] = true end
         return out
     end
-    -- storage / sheds: everything the building can hold is an "input" for cap purposes
+    -- ONE ANSWER FOR A STORAGE ROLE, shared with the building tab.
+    --
+    -- This function and assetMenuFillTypes both mean "what products does this thing take in", and both
+    -- had grown their own branch stack -- production / husbandry / market / shed / own-storage -- so
+    -- every rule had to be added to BOTH and they drifted three times in two days: siloFillTypes not
+    -- knowing about pass-throughs, the production-output exclusion, and the pallet store's cheeses
+    -- appearing in the SILO's Advanced Inputs while its own table correctly showed none.
+    --
+    -- For a role backed by real storage the tab's answer IS the right answer, so take it rather than
+    -- rebuild it. The branches above stay separate because they are genuinely different questions: a
+    -- production RECEIVES its inputs and DISPLAYS its outputs, and a market has no storage at all.
+    if role == "SILO" or role == "SHED" or role == "HEAP" then
+        local fts = SmartDistribution.assetMenuFillTypes(p, role)
+        if type(fts) == "table" then for ft in pairs(fts) do out[ft] = true end end
+        return out
+    end
+    -- storage / sheds (no role named -- the allocator's union view): everything the building can hold
     if p.spec_objectStorage ~= nil and SmartDistribution.shedSupportedFillTypes ~= nil then
         for ft in pairs(SmartDistribution.shedSupportedFillTypes(p)) do out[ft] = true end
     end
@@ -12688,20 +14217,32 @@ function SmartDistribution.receiverInputFillTypes(p)
     -- This used to sweep getAllStorages, which is why a silo with a 113-product extension attached listed
     -- 113 incoming products here while its building page correctly showed 10.
     for ft in pairs(SmartDistribution.ownStorageFillTypes(p)) do out[ft] = true end
+    -- LAST, after every branch above has added its products: a genuine line's OUTPUT belongs to the
+    -- production and is listed on its tab only. The tab rows already exclude it (assetMenuFillTypes);
+    -- without the same rule here the SILO's Advanced Inputs dialog went on offering it, so the product
+    -- was hidden in one place and configurable in another.
+    if role ~= "PRODUCTION" and SmartDistribution.productionOwnedFillTypes ~= nil then
+        for ft in pairs(SmartDistribution.productionOwnedFillTypes(p)) do out[ft] = nil end
+    end
     return out
 end
 
 -- Should the Advanced button be offered for this (asset, ft)? Only when the output's mode routes
 -- somewhere the player can configure -- i.e. it distributes, stores, or supplies a market (incl. combos).
 -- Sell / Hold / Hold Internal / Market-less setups have nothing to arrange, so no button.
-function SmartDistribution.modeConfigurable(asset, ft)
+function SmartDistribution.modeConfigurable(asset, ft, role)
     if asset == nil or ft == nil then return false end
     local pp = getProductionPoint(asset)
-    if pp ~= nil then
+    -- usesVMode, NOT `pp ~= nil` -- THE FIFTH SITE OF THAT FAULT, and the one with the worst symptom.
+    -- On a pass-through store a TANK product has no v-mode, so this resolved a stale/derived one, decided
+    -- the mode was not configurable, and HID the Advanced Outputs button. Because the tab writes the ASSET
+    -- mode while this read the v-mode, no amount of changing the mode brought it back -- reported
+    -- 2026-08-20 as "the button disappears and doesn't come back regardless of what i set the mode to".
+    if pp ~= nil and role ~= "SHED" and SmartDistribution.usesVMode(asset, ft) then
         local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
         return v == 1 or v == 3 or v == 4 or v == 5 or v == 6 or v == 7   -- dist / dist+sell / dist+store / store / market / dist+market
     end
-    local m = SmartDistribution.resolvedAssetMode(asset, ft)
+    local m = SmartDistribution.resolvedAssetMode(asset, ft, role)
     local M = MODE
     if SmartDistribution.modeDistributes(m) then return true end
     return m == M.STORE or m == M.STORE_TO
@@ -12978,11 +14519,15 @@ SmartDistribution.husbandryOutputFillTypes = husbandryOutputFillTypes
 --  at it would rewrite the whole farm the moment it was flipped. S.global.mode stays MODE.DISTRIBUTE.
 --
 --  TELLING A NEW BUILDING FROM A LOADED ONE is the only hard part, because both arrive through
---  onFinalizePlacement. `_worldLoaded` is the latch: raised at the END of the
---  Mission00.loadMission00Finished hook (i.e. after loadOverrides), and every placeable in a savegame
---  finalizes BEFORE that fires. So during a load the queue is never filled and nothing is stamped.
---  A consequence worth knowing: the map's own PREPLACED buildings on a brand-new game are not stamped
---  either -- they load the same way. Only what the player puts down afterwards is.
+--  finalizePlacement. The primary test is the placeable's OWN `isLoadedFromSavegame`, which the base
+--  game sets immediately before calling finalizePlacement (Placeable.lua, verified) -- a per-placeable
+--  fact that assumes nothing about ordering. `isPreplaced` covers the map's own buildings.
+--
+--  `_worldLoaded` is kept as a second, weaker guard, but it CANNOT be relied on alone and the claim it
+--  used to carry here -- "every placeable in a savegame finalizes BEFORE that fires" -- was WRONG.
+--  Placeable loading is asynchronous, so loadMission00Finished fires while buildings are still streaming
+--  in, and everything that finalized afterwards was stamped as newly built. See queuePlacementStamp for
+--  the reproduction; it cost a live farm every input block it had.
 --
 --  DEFERRED BY ONE TICK, DELIBERATELY. The stamp needs the building's fill types, and at finalize time
 --  a modded production point's spec_* may not be populated yet -- the load-order hazard that
@@ -13000,7 +14545,29 @@ SmartDistribution._stampQueue  = nil
 
 -- Called from the placement hook. Cheap and allocation-free until something is actually placed.
 function SmartDistribution.queuePlacementStamp(p)
-    if p == nil or not SmartDistribution._worldLoaded then return end
+    if p == nil then return end
+    -- THE LATCH IS NOT ENOUGH, AND ITS STATED ASSUMPTION IS FALSE. The header below claimed "every
+    -- placeable in a savegame finalizes BEFORE loadMission00Finished fires". Placeable loading is
+    -- ASYNCHRONOUS, so that hook fires while buildings are still streaming in -- and every one that
+    -- finalized after it was stamped as though the player had just built it.
+    --
+    -- Reported 2026-08-20 and reproduced exactly: set the input default to Block all, existing buildings
+    -- correctly unchanged, place a new building and it is correctly blocked -- then SAVE, EXIT, RELOAD and
+    -- "most buildings" came back with every input blocked. MOST, not all, is the async fingerprint: the
+    -- ones that happened to finalize before the latch rose were spared. It showed up on the INPUT default
+    -- and not the output one only because of the guards further down -- an already-configured output is
+    -- skipped and most buildings have one, while almost nothing has an input block, so nearly every
+    -- building was eligible.
+    --
+    -- THE FIX IS A PER-PLACEABLE FACT, not a global latch, so no ordering has to be assumed.
+    -- Placeable.lua (34% blank = complete) sets the flag immediately BEFORE calling finalizePlacement:
+    --     self.isLoadedFromSavegame = true
+    --     ...
+    --     if self.isLoadedFromSavegame then self:finalizePlacement() end
+    -- so it is guaranteed true at the moment this hook runs for a loaded building, and it is initialised
+    -- false (line 237) for a freshly placed one. isPreplaced covers the map's own buildings on a new game.
+    if p.isLoadedFromSavegame or p.isPreplaced then return end
+    if not SmartDistribution._worldLoaded then return end
     -- SERVER ONLY. NOTE this is deliberately NOT `S.master` -- that flag is initialised true and is
     -- never set false anywhere, so it means "the mod is active", not "I am the server". Using it here
     -- would let every CLIENT stamp its own copies as placeables stream in on join.
@@ -13096,12 +14663,53 @@ function SmartDistribution.installPlacementDefaults()
         print("[SmartDistribution] placement defaults NOT installed -- Placeable.finalizePlacement missing")
         return
     end
+    -- GUARD ON THE CLASS, not on SmartDistribution: the mod chunk re-runs on every mission load (two
+    -- "hook installed" lines appear in a single launch's log), so a field on our own table resets with
+    -- it and the append would stack -- one extra queue call per placement per load since launch.
+    if Placeable._drPlacementHooked then
+        print("[SmartDistribution] placement defaults hook already installed (re-load); not re-appending")
+        return
+    end
+    Placeable._drPlacementHooked = true
     Placeable.finalizePlacement = Utils.appendedFunction(
         Placeable.finalizePlacement,
         function(self) pcall(SmartDistribution.queuePlacementStamp, self) end)
     -- print, not log(): log() is debug-gated and silent in a release build, so a SUCCESSFUL install
     -- left no trace at all. Only the failure was visible, which is half a diagnostic.
     print("[SmartDistribution] placement defaults hook installed (Placeable.finalizePlacement)")
+end
+
+-- Report any stored override whose building no longer exists -- genuine, silent data loss, and the thing
+-- that distinguishes "the setting was lost" from "the routing is wrong" when a report comes in.
+--
+-- DEFERRED to the first update tick, because PLACEABLE LOADING IS ASYNCHRONOUS (6.19). Run inside
+-- loadOverrides it fired while buildings were still streaming in, so the live map was short and EVERY
+-- override was reported as lost -- on savegame4 all three, including uniqueIds demonstrably present in
+-- placeables.xml. It only ever printed, so nothing was pruned, but the message is alarming and was wrong.
+--
+-- A bare print, not gated on debug: this IS data loss when it is real, and it prints nothing at all when
+-- everything resolves. A role key (uid#shed) resolves through baseUidOf to the same building as its base.
+function SmartDistribution.runOrphanCheck()
+    if not SmartDistribution._pendingOrphanCheck then return end
+    SmartDistribution._pendingOrphanCheck = nil
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    local live = {}
+    for _, p in ipairs(ps.placeables or {}) do
+        if p.rootNode ~= nil then
+            local u = getUid(p)
+            if u ~= nil then live[u] = p end
+        end
+    end
+    for uid, byFt in pairs(S.assets) do
+        if live[SmartDistribution.baseUidOf(uid)] == nil then
+            local names = {}
+            for ft in pairs(byFt) do names[#names + 1] = tostring(fillTypeName(ft)) end
+            print(string.format(
+                "[SmartDistribution persist] ORPHANED override: uniqueId=%s matches no live building (%s) -- this setting cannot appear in game",
+                tostring(uid), table.concat(names, ", ")))
+        end
+    end
 end
 
 -- Drained from proximityWatcher:update, one tick after placement.
@@ -13120,6 +14728,7 @@ function proximityWatcher:update(dt)
     -- here (rather than done inside onFinalizePlacement) so the building's specs are fully populated
     -- before its fill types are read -- see the header above stampPlacementDefaults.
     if SmartDistribution._stampQueue ~= nil then SmartDistribution.flushPlacementStamps() end
+    if SmartDistribution._pendingOrphanCheck then SmartDistribution.runOrphanCheck() end
     -- Run an hourly pass deferred from onHourChanged (normal play). We wait one update
     -- tick first, so the engine's hour-change processing -- including producers depositing
     -- this hour's batch in a listener that runs after ours -- has completed; the store pass
@@ -13526,26 +15135,35 @@ function SmartDistribution.stagePalletsForShed(bill)
                                     -- through to the spawn chain when it is off, or when it inserted
                                     -- nothing -- an empty farm has no stored object to clone from, and
                                     -- spawning one real pallet is the only way to seed the first.
+                                    -- BUILT DIRECTLY (6.22). No pallet, no pad, no spawner, no async --
+                                    -- so a blocked or full spawn pad is irrelevant and the whole move
+                                    -- lands inside this pass, ledger included.
                                     local done = 0
-                                    if SmartDistribution._shedDirectInsert then
-                                        local want = SmartDistribution.drawInternal(p, pp, ft, n * cap, farmId)
-                                        if want > 0 then
-                                            done = SmartDistribution.insertPalletsIntoShed(shed, ft,
-                                                       math.floor(want / cap), cap, farmId, p)
-                                            -- anything the shed would not take goes straight back; the
-                                            -- draw happens first so two consumers cannot claim it twice
-                                            if want > done then
-                                                SmartDistribution.returnInternal(p, pp, ft, want - done, farmId)
-                                            end
-                                            if done > 0 then
-                                                ledgerAdd(p, ft, "stored", done)
-                                                ledgerAdd(shed, ft, "received", done)
-                                                SmartDistribution.recordFeed(shed, ft, p, done)
-                                            end
+                                    local drawn = SmartDistribution.drawInternal(p, pp, ft, n * cap, farmId)
+                                    if drawn > 0 then
+                                        local built = 0
+                                        for _ = 1, math.floor(drawn / cap) do
+                                            if SmartDistribution.shedFreeSlots(shed) <= 0 then break end
+                                            if not SmartDistribution.createStoredPallet(shed, ft, cap, farmId) then break end
+                                            built = built + 1
                                         end
-                                    end
-                                    if done <= 0 then
-                                        SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, n)
+                                        done = built * cap
+                                        -- anything the shed would not take goes straight back; the draw
+                                        -- happens FIRST so two consumers cannot claim the same litres
+                                        if drawn > done then
+                                            SmartDistribution.returnInternal(p, pp, ft, drawn - done, farmId)
+                                        end
+                                        if done > 0 then
+                                            ledgerAdd(p, ft, "stored", done)
+                                            ledgerAdd(shed, ft, "received", done)
+                                            SmartDistribution.recordFeed(shed, ft, p, done)
+                                        elseif SmartDistribution.debug then
+                                            -- with the fallbacks gone this is the only sign of trouble,
+                                            -- so it is worth a line: the class registry did not yield a
+                                            -- usable object for this fill type.
+                                            log("stageForShed %s [%s]: could not BUILD a stored pallet",
+                                                placeableName(p), tostring(fillTypeName(ft)))
+                                        end
                                     end
                                 end
                             end
@@ -13582,33 +15200,133 @@ end
 -- to the spawn chain if a modded shed ever misbehaves. Every insert is verified and rolled back on
 -- failure regardless, because the failure that matters is at RETRIEVAL -- when the player tries to take
 -- the pallets back OUT -- which is far too late to notice.
-SmartDistribution._shedDirectInsert = true
 
 -- the pallet i3d this fill type spawns as, so a cross-product clone points at the right model
-function SmartDistribution.palletFilenameFor(p, ft)
-    local sp
-    local pp = getProductionPoint(p)
-    if pp ~= nil then sp = pp.palletSpawner
-    else sp = SmartDistribution.husbandryPalletSpawner(p, ft) end
-    local map = sp ~= nil and sp.fillTypeIdToPallet or nil
-    local entry = map ~= nil and map[ft] or nil
-    local fn = entry ~= nil and entry.filename or nil
-    if fn == nil or fn == "nope" then return nil end
-    return fn
+-- ---- PHASE 5: THE GLOBAL PALLET REGISTRY ----------------------------------------------------------
+-- The pallet model + capacity for a fill type, WITHOUT needing a spawner on the source building.
+--
+-- READ FROM THE BASE SOURCE (PalletSpawner.lua:80-85, measured 23% blank = complete), and its own comment
+-- says it outright -- "load default global pallets defined at fillTypes registration":
+--     for fillTypeId, fillType in pairs(g_fillTypeManager.indexToFillType) do
+--         if fillType.palletFilename then self:loadPalletFromFilename(fillType.palletFilename, fillTypeId) end
+-- So EVERY PalletSpawner loads a pallet for EVERY fill type that declares one, which makes any single
+-- spawner's fillTypeIdToPallet a GLOBAL registry -- the 114-entry table 5.14 noted and mistook for a
+-- curiosity. It carries `filename` AND `capacity`, both already parsed, so this needs no XML loading.
+--
+-- WHY IT IS NEEDED: the clone-era resolver read the SOURCE's own spawner, and a pass-through store has none
+-- (confirmed: neither driveIn.xml nor driveInProd.xml declares a palletSpawner). So a bulk source could
+-- never name the pallet to build, and materialisation refused every product that was not already stored
+-- somewhere on the farm.
+--
+-- Falls back to the fill type's own declaration, which is where the spawner got it from -- so a farm with
+-- no pallet spawner at all still resolves a model, just without a parsed capacity.
+function SmartDistribution.globalPalletFor(ft)
+    if ft == nil then return nil end
+    local memo = SmartDistribution._globalPalletMemo
+    if memo == nil then memo = {}; SmartDistribution._globalPalletMemo = memo end
+    local hit = memo[ft]
+    if hit ~= nil then return hit end
+
+    -- THE FILL TYPE'S OWN DECLARATION DECIDES, AND IT IS THE ONLY THING THAT MEANS "this product comes on
+    -- pallets": EGG -> eggBoxPallet, BREAD -> bakeryBoxPallet. Wheat, barley and every other bulk crop
+    -- declare NO pallet at all.
+    --
+    -- READING A SPAWNER'S REGISTRY FIRST WAS WRONG, and the log named it: WHEAT resolved
+    -- `model=fillablePallet.xml`. That pallet declares `fillTypeCategories="BULK"`, and a spawner's
+    -- <pallets> block loads it with NO limitFillTypeId (base source), so it registers itself against
+    -- EVERY bulk fill type. So every crop on the farm read as palletisable and phase 5 offered a pallet
+    -- store as a Store / Move To destination for the entire harvest -- reported 2026-08-20 as "why is it
+    -- showing as an option if it is not supported".
+    --
+    -- A generic fillable pallet CAN physically hold wheat; that is not the question. The question is
+    -- whether the product is one DR should package, and the fill type answers it.
+    local mgr = g_fillTypeManager
+    local def = (mgr ~= nil and mgr.getFillTypeByIndex ~= nil) and mgr:getFillTypeByIndex(ft) or nil
+    local fn  = def ~= nil and def.palletFilename or nil
+    if fn == nil or fn == "nope" then return nil end            -- not a pallet product: never cached
+
+    -- Capacity is a convenience, taken from any spawner registry entry for the SAME model (already
+    -- parsed by the base game). A mismatch means that spawner carries a different pallet for this
+    -- product, so its capacity does not describe ours -- palletLitresFor falls back in that case.
+    local capacity = nil
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    for _, p in ipairs(ps ~= nil and ps.placeables or {}) do
+        local sp = nil
+        local pp = getProductionPoint(p)
+        if pp ~= nil then sp = pp.palletSpawner
+        elseif p.spec_husbandryPallets ~= nil then sp = SmartDistribution.husbandryPalletSpawner(p, ft) end
+        local entry = (sp ~= nil and type(sp.fillTypeIdToPallet) == "table") and sp.fillTypeIdToPallet[ft] or nil
+        if entry ~= nil and entry.filename == fn and (entry.capacity or 0) > 0 then
+            capacity = entry.capacity
+            break
+        end
+    end
+    local found = { filename = fn, capacity = capacity }
+    -- CACHE A HIT ONLY. Memoising a miss is the 5.29 trap, and 6.19 proved placeable loading is async, so
+    -- a call made mid-load would otherwise answer "never a pallet" for the whole session.
+    memo[ft] = found
+    return found
 end
 
--- Plain deep copy for the DATA half (the attributes table). Deliberately does NOT try to carry a
--- metatable: see storedObjectIsUsable / insertPalletsIntoShed for why copying a stored object's class is
--- impossible, and why the object shell must come from class.new() instead.
-function SmartDistribution._deepCopyStored(v, seen)
-    if type(v) ~= "table" then return v end
-    seen = seen or {}
-    if seen[v] ~= nil then return seen[v] end
-    local out = {}
-    seen[v] = out
-    for k, val in pairs(v) do out[k] = SmartDistribution._deepCopyStored(val, seen) end
-    return out
+-- "Could this product physically exist as a pallet at all?" -- the capability gate for materialising bulk
+-- litres into a pallet store. A product with no declared pallet model can never reach one, and offering
+-- such a destination would be offering something nothing could move to.
+-- A pallet model shared by MANY fill types is a GENERIC CONTAINER, not "this product's pallet".
+--
+-- Measured across the base game's 96 pallet-declaring fill types: 77 models are claimed by exactly ONE
+-- fill type (eggBoxPallet -> EGG, woolPallet -> WOOL, silageAdditivePallet -> SILAGE_ADDITIVE), one by
+-- THREE (vegetablesPallet -> beetroot/carrot/parsnip, still a produce pallet) and one by **SIXTEEN** --
+-- `fillablePallet`, which every bulk crop declares. The distribution is bimodal with NOTHING between 3
+-- and 16, so the threshold is taken from that empty band rather than fitted to a sample (the same way
+-- SPAWN_PLACE_ACROSS_TOL was chosen).
+--
+-- WHY IT MATTERS: wheat, barley, oat and thirteen more genuinely DO declare a pallet, so "does the fill
+-- type declare one" is true for them and offered a pallet store as a Store / Move To destination for the
+-- entire harvest. A fillable pallet CAN hold wheat; it is not wheat's packaging.
+SmartDistribution.GENERIC_PALLET_MIN = 4
+
+function SmartDistribution.palletModelIsGeneric(filename)
+    if filename == nil then return false end
+    local memo = SmartDistribution._palletModelUse
+    if memo == nil then
+        memo = {}
+        local mgr = g_fillTypeManager
+        local all = (mgr ~= nil) and mgr.indexToFillType or nil
+        if type(all) == "table" then
+            for _, def in pairs(all) do
+                local fn = def ~= nil and def.palletFilename or nil
+                if fn ~= nil then memo[fn] = (memo[fn] or 0) + 1 end
+            end
+        end
+        SmartDistribution._palletModelUse = memo
+    end
+    return (memo[filename] or 0) >= SmartDistribution.GENERIC_PALLET_MIN
 end
+
+function SmartDistribution.canMaterialisePallets(ft)
+    local g = SmartDistribution.globalPalletFor(ft)
+    if g == nil then return false end
+    -- ...and that is the whole test. It USED to also require "some way to put one in a store" -- a stored
+    -- object to clone, or a spawner to mint the first -- because the old insert could only CLONE.
+    -- createStoredPallet builds through the game's own savegame path (6.22) and needs neither, so that
+    -- gate now only hides pallet stores from a farm that could in fact use them: a fresh save with a silo
+    -- and a pallet store and nothing else is exactly the case it wrongly refused.
+    return not SmartDistribution.palletModelIsGeneric(g.filename)
+end
+
+-- Litres one pallet of ft holds. The registry's parsed capacity where a spawner exists, else the shed's
+-- own per-slot figure, else a conservative default -- never nil, because the caller divides by it.
+function SmartDistribution.palletLitresFor(ft, shed)
+    local g = SmartDistribution.globalPalletFor(ft)
+    if g ~= nil and (g.capacity or 0) > 0 then return g.capacity end
+    if shed ~= nil and SmartDistribution._shedLitresPerSlot ~= nil then
+        local s = SmartDistribution._shedLitresPerSlot(shed)
+        if (s or 0) > 0 then return s end
+    end
+    return 1000
+end
+
+
 
 -- The field holding a stored object's attributes, and the attributes themselves. The KEY varies by class
 -- (palletAttributes for a Vehicle, baleAttributes for a Bale), so a new object has to be populated under
@@ -13630,14 +15348,13 @@ end
 --
 -- REPORTED 2026-08-06: a Bale & Pallet Storage holding 24 straw round bales and no pallets ended up with
 -- "Round bale (Noodle Soup 1,000 l)" and "Round bale (Carton Roll 3,000 l)" in it, and taking them out
--- produced STRAW BALES. _findStoredTemplate's fallback was "the first stored object of any kind", so with
--- no pallet on the farm to model on it cloned a BALE: the clone inherited the bale's class and its model,
--- and only fillType / fillLevel / ownerFarmId were rewritten. The cross-product retarget could not save it
--- either -- it writes `configFileName`, which is a PALLET attribute; a bale keeps its own filename field,
--- so the clone stayed a straw bale wearing a pallet's fill type.
+-- produced STRAW BALES. The clone-era template search fell back to "the first stored object of any kind",
+-- so with no pallet on the farm to model on it cloned a BALE and only rewrote fillType / fillLevel /
+-- ownerFarmId. CLONING IS GONE (6.22 builds from the savegame contract instead, so nothing is inherited
+-- from an unrelated object) -- but this test still earns its place: repairSheds uses it to tell a pallet
+-- from a bale when stripping objects a shed cannot use.
 --
--- IDENTIFIES A PALLET POSITIVELY, and returns false when it cannot tell. Declining costs only the slower
--- spawn-chain fallback; guessing puts an object in the player's shed that is not what it claims to be.
+-- IDENTIFIES A PALLET POSITIVELY, and returns false when it cannot tell.
 function SmartDistribution.storedObjectIsPallet(obj)
     if type(obj) ~= "table" then return false end
     local key = SmartDistribution.storedAttrsKey(obj)
@@ -13648,29 +15365,6 @@ function SmartDistribution.storedObjectIsPallet(obj)
     return cn == "Vehicle"        -- probed 2026-08-02: a stored pallet's REFERENCE_CLASS_NAME is "Vehicle"
 end
 
--- A pallet template to clone: same fill type first (nothing to rewrite but the level), otherwise any other
--- PALLET. Never a bale -- insertPalletsIntoShed only ever inserts pallets, and the kind must match or the
--- shed ends up holding something the player cannot get back out as what it says it is.
-function SmartDistribution._findStoredTemplate(ft)
-    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
-    if ps == nil then return nil end
-    local fallback = nil
-    for _, p in ipairs(ps.placeables) do
-        local oss = p.spec_objectStorage
-        if oss ~= nil and type(oss.storedObjects) == "table" then
-            for _, obj in ipairs(oss.storedObjects) do
-                if SmartDistribution.storedObjectIsPallet(obj) then
-                    local a = storedObjectAttrs(obj)
-                    if a ~= nil then
-                        if a.fillType == ft then return obj, true end
-                        if fallback == nil then fallback = obj end
-                    end
-                end
-            end
-        end
-    end
-    return fallback, false
-end
 
 -- Every method the base game calls on a stored object. A clone that answers all of these behaves like the
 -- real thing everywhere PlaceableObjectStorage touches it: updateObjectStorageObjectInfos groups by
@@ -13722,98 +15416,6 @@ function SmartDistribution.cmdShedRepair(self)
 end
 
 
--- Insert `count` pallets of `ft` x `litresEach` straight into `shed`. Returns litres actually inserted.
---
--- The SHELL comes from the class's own constructor and the DATA is copied from a working object.
--- Nothing here is guessed -- every field name below was read off a live object by sdStoredProbe:
---     own fields: palletAttributes(table)
---     attrs:      configFileName=.../bakeryBoxPallet.xml, configurations=table,
---                 fillLevel=1000, fillType=61, isBigBag=false, ownerFarmId=1
--- Note how little those match the savegame's attribute names (`filename`, `farmId`) -- writing this from
--- the XML, which was the plan before the probe, would have produced an object that verified and then
--- failed somewhere unhelpful.
---
--- **The object's class CANNOT be copied, and that is why the first attempt crashed.** sdStoredProbe:
---     getmetatable -> table   __index -> nil
---     candidate shallow+getmetatable -> usable=false  (all five methods missing)
---     candidate _deepCopyStored      -> usable=false  (all five methods missing)
---     candidate class.new()          -> usable=true
--- `getmetatable` hands back a table with no `__index` while the real object's methods resolve fine, which
--- is a PROTECTED metatable (Lua returns the `__metatable` field instead of the real one). So no copy
--- depth could ever have carried the methods; the shell has to be built by the class itself.
-function SmartDistribution.insertPalletsIntoShed(shed, ft, count, litresEach, farmId, srcP)
-    local oss = shed ~= nil and shed.spec_objectStorage or nil
-    if oss == nil or ft == nil or (count or 0) <= 0 or (litresEach or 0) <= 0 then return 0 end
-    if type(oss.storedObjects) ~= "table" then return 0 end
-    local template, exact = SmartDistribution._findStoredTemplate(ft)
-    if template == nil then return 0 end                    -- nothing to model on: caller falls back to spawning
-    local reg = PlaceableObjectStorage ~= nil and PlaceableObjectStorage.ABSTRACT_OBJECTS_BY_CLASS_NAME or nil
-    local cls = type(reg) == "table" and reg[template.REFERENCE_CLASS_NAME] or nil
-    if cls == nil or type(cls.new) ~= "function" then return 0 end
-    local attrsKey, srcAttrs = SmartDistribution.storedAttrsKey(template)
-    if attrsKey == nil or srcAttrs == nil then return 0 end
-    -- a cross-product build has to point at the RIGHT pallet model, or retrieval spawns the wrong one
-    local cfg = (not exact) and SmartDistribution.palletFilenameFor(srcP, ft) or nil
-    if not exact and cfg == nil then return 0 end
-    local before = #oss.storedObjects
-    local added  = 0
-    for _ = 1, count do
-        if SmartDistribution.shedFreeSlots(shed) <= 0 then break end
-        local ok = pcall(function()
-            local obj = cls.new()
-            if obj == nil then error("class.new() returned nil", 0) end
-            local a = SmartDistribution._deepCopyStored(srcAttrs)   -- plain data; configurations copied intact
-            a.fillType, a.fillLevel = ft, litresEach
-            if farmId ~= nil and a.ownerFarmId ~= nil then a.ownerFarmId = farmId end
-            if cfg ~= nil then
-                a.configFileName = cfg
-                a.configurations = {}          -- a different pallet's configs would not apply to this model
-            end
-            obj[attrsKey] = a
-            if shed.addAbstactObjectToObjectStorage ~= nil then
-                shed:addAbstactObjectToObjectStorage(obj)     -- base-game entry point (note GIANTS' typo)
-            else
-                oss.storedObjects[#oss.storedObjects + 1] = obj
-                oss.numStoredObjects = #oss.storedObjects
-            end
-            added = added + 1
-        end)
-        if not ok then break end
-    end
-    -- VERIFY, and roll back anything that did not read back correctly. The shed must never be left
-    -- holding an object the player cannot retrieve.
-    --
-    -- CHECKING THE DATA WAS NOT ENOUGH, and this cost a crash. The first version verified only fillType
-    -- and fillLevel; the clones passed, and a second later the shed's own update loop died on
-    -- `PlaceableObjectStorage.lua:764: attempt to call missing method 'getIsIdentical'`. A stored object
-    -- is not a data record -- the base game CALLS it (getIsIdentical to group identical objects,
-    -- getSpawnInfo to size them, getLimitedObjectId and removeFromStorage to hand them back). So the
-    -- object must be verified as an OBJECT, not just as the right numbers.
-    -- AND NOT ENOUGH ON ITS OWN EITHER: it must be the right KIND of object. A clone made from a BALE
-    -- template answers every method and carries the right fillType, so both tests above pass -- and the
-    -- player still gets "Round bale (Noodle Soup)" that comes back out as a straw bale (reported
-    -- 2026-08-06). _findStoredTemplate now refuses a bale up front; this is the backstop, and it is the
-    -- same lesson twice over -- verify the thing as what it is supposed to BE, not merely as well-formed.
-    local good = 0
-    for i = #oss.storedObjects, before + 1, -1 do
-        local obj = oss.storedObjects[i]
-        local a   = storedObjectAttrs(obj)
-        local ok  = a ~= nil and a.fillType == ft and (a.fillLevel or 0) > 0
-                    and SmartDistribution.storedObjectIsUsable(obj)
-                    and SmartDistribution.storedObjectIsPallet(obj)
-        if ok then good = good + 1 else table.remove(oss.storedObjects, i) end
-    end
-    oss.numStoredObjects = #oss.storedObjects
-    if good > 0 and shed.setObjectStorageObjectInfosDirty ~= nil then
-        pcall(function() shed:setObjectStorageObjectInfosDirty() end)
-    end
-    if SmartDistribution.debug then
-        log("shedInsert %s [%s]: template=%s x%d -> %d accepted (%d rejected)",
-            placeableName(shed), tostring(fillTypeName(ft)),
-            exact and "exact" or "cross-product", added, good, added - good)
-    end
-    return good * litresEach
-end
 
 -- Take `litres` out of the building's own internal store (production buffer or pen queue). Returns what
 -- actually came out, so the caller only ever credits product that genuinely left.
@@ -13842,67 +15444,9 @@ function SmartDistribution.returnInternal(p, pp, ft, litres, farmId)
     end
 end
 
--- Spawn ONE pallet, fill it, put it straight into the shed, then do the next. Serial via the spawn
--- callback, so only one pad slot is needed however many pallets are moving.
---
--- The ledger cannot be written here: these callbacks land AFTER the pass, when cycleAcc is nil
--- (ledgerAdd would silently drop them). So each deposit is queued to _pendingLedger and folded into the
--- next cycle by flushPendingLedger -- one hour late in the STATS, while the product itself moved now.
-function SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, remaining)
-    if remaining <= 0 or shed == nil then return end
-    if SmartDistribution.shedFreeSlots(shed) <= 0 then return end     -- filled up mid-chain
-    local function afterSpawn(pallet, statusCode)
-        if pallet == nil then return end                              -- refused (no space / pallet cap): stop
-        -- fill from the building's own internal stock, debiting it (both helpers do the debit)
-        local added
-        local isNew = (PalletSpawner == nil) or (statusCode ~= PalletSpawner.PALLET_ALREADY_PRESENT)
-        if pp ~= nil then
-            added = SmartDistribution._fillSpawnedPallet(pp, ft, pallet, isNew) or 0
-        else
-            added = SmartDistribution._fillSpawnedPalletFromHusbandry(p, ft, pallet, isNew) or 0
-        end
-        if added <= 0 then return end
-        -- depositPalletsToShed rather than a bespoke despawn: it already handles the shed's capacity, the
-        -- spec.pallets bookkeeping and the object-info dirty flag. maxSlots 1 so it takes only ours.
-        local moved = depositPalletsToShed(p, ft, shed, 1) or 0
-        if moved > 0 then
-            SmartDistribution.queueLedger(p, ft, "stored", moved)
-            SmartDistribution.queueLedger(shed, ft, "received", moved)
-            SmartDistribution._chainPalletToShed(p, pp, ft, farmId, shed, remaining - 1)
-        end
-    end
-    local bypass = SmartDistribution._palletHookBypass                -- DR's own spawn: never refused
-    SmartDistribution._palletHookBypass = true
-    pcall(function()
-        if pp ~= nil then
-            pp.palletSpawner:spawnPallet(farmId, ft, function(_, pallet, statusCode)
-                afterSpawn(pallet, statusCode)
-            end, pp)
-        else
-            local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
-            if spawner ~= nil then
-                spawner:getOrSpawnPallet(farmId, ft, function(_, pallet, statusCode)
-                    afterSpawn(pallet, statusCode)
-                end, p)
-            end
-        end
-    end)
-    SmartDistribution._palletHookBypass = bypass
-end
 
 -- Deferred ledger: entries raised outside the hourly pass, folded in at the start of the next one.
 SmartDistribution._pendingLedger = {}
-function SmartDistribution.queueLedger(placeable, ft, field, amount)
-    if placeable == nil or ft == nil or amount == nil or amount <= 0 then return end
-    local t = SmartDistribution._pendingLedger
-    t[#t + 1] = { p = placeable, ft = ft, field = field, amount = amount }
-end
-function SmartDistribution.flushPendingLedger()
-    local t = SmartDistribution._pendingLedger
-    if t == nil or #t == 0 then return end
-    SmartDistribution._pendingLedger = {}
-    for _, e in ipairs(t) do ledgerAdd(e.p, e.ft, e.field, e.amount) end
-end
 
 -- free object slots left in a pallet shed
 function SmartDistribution.shedFreeSlots(shed)
@@ -13925,9 +15469,14 @@ function SmartDistribution.shedSinkFor(p, ft, farmId)
     local myFarm  = SmartDistribution._ownerFarmId(p)
     local cands = {}
     for _, sh in ipairs(gatherShedSinks(p, ft, x, z, farmId, resolveReach(p))) do
-        local du = sh.placeable ~= nil and getUid(sh.placeable) or nil
-        if du ~= nil and SmartDistribution._farmCanUse(sh.placeable, myFarm)
+        -- Every entry here is a SHED sink by construction, so the destination is the SHED role -- which
+        -- collapses to the bare uid on an ordinary pallet store and only mints a suffix on a building
+        -- that also does something else. NOTE this caller deliberately does not pass includeSelf: see the
+        -- header on gatherShedSinks.
+        local du = sh.placeable ~= nil and SmartDistribution.storeRoleUid(sh.placeable, ft, "PALLET") or nil
+        if du ~= nil and not SmartDistribution.isSelfDestination(srcUid, du) and SmartDistribution._farmCanUse(sh.placeable, myFarm)
            and not SmartDistribution.isDestBlocked(srcUid, ft, du) then
+            sh.destRole = "SHED"
             sh.rank = SmartDistribution.destRank(srcUid, ft, du)
             cands[#cands + 1] = sh
         end
@@ -14209,6 +15758,88 @@ if SmartDistribution.DEV_CONSOLE and addConsoleCommand ~= nil then
     -- effect on the next LOAD, because the binding happens when the extension is placed or loaded.
     addConsoleCommand("sdExtExclusive", "Toggle 'an extension binds to the NEAREST silo only' (next load)", "cmdExtExclusive", SmartDistribution)
 end
+-- ---- A SHARED-TANK PRODUCTION: the GATE and its accounting are GONE (2026-08-21) ----------------
+-- gateSharedTankProductions held a production line OFF until its input had been routed to it, and
+-- settleSharedTankProductions reconciled the tank afterwards. Both are DELETED, along with
+-- lineCycleNeed and the _prodGateSnap baseline they shared.
+--
+-- The gate FAILED IN GAME (5.65): it rewrote a setting the player owns -- switch a line on in the base
+-- menu and DR switched it off again on the next tick -- which is exactly what 5.48 deleted
+-- enforceValidModes over. LINE STATE IS THE PLAYER'S. And its timing made it useless anyway: the base
+-- production tick runs continuously while DR's pass is hourly, so the input was consumed long before
+-- the gate could look.
+--
+-- The settle half could not run without it EITHER, which is what made this one dead cluster rather than
+-- a wiring gap: it measured against _prodGateSnap, and only the gate ever populated that -- so every
+-- baseline was nil and it corrected nothing. Inert by construction, not merely unwired.
+--
+-- 5.65's OWNERSHIP model replaced the whole approach: nothing moves, a shared input belongs to both
+-- halves and is shown as "Linked". _roleBuffer SURVIVES because roleUsesBuffer still gates two live
+-- display reads -- but nothing writes to it any more; see the note above roleBufferLevel.
+
+-- ---- PASS-THROUGH SCAFFOLDING: switch it off, and keep it off -------------------------------------
+-- The opt-in third state of the "Pass-through stores" setting. Treating the building as storage is
+-- DR-side and reversible; THIS writes production state into the savegame, where it outlives the mod --
+-- which is exactly why it is a separate choice and never implied by the other two states.
+--
+-- Per LINE, not per building: the DriveIn's SILAGE -> SILAGE_ADDITIVE is a real conversion and keeps
+-- running. Only identity lines (product in -> same product out) are touched.
+function SmartDistribution.suppressPassThroughLines()
+    if SmartDistribution.passThroughMode() < 2 then return end     -- numeric: 0 is a real value here
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil then return end
+    for _, p in ipairs(ps.placeables or {}) do
+        if p.rootNode ~= nil and SmartDistribution.suppressIdentityLines(p) then
+            local pp = getProductionPoint(p)
+            local active = pp ~= nil and pp.activeProductions or nil
+            if pp ~= nil and pp.setProductionState ~= nil and type(active) == "table" and #active > 0 then
+                -- copy the ids first: setProductionState mutates activeProductions underneath us
+                local ids = {}
+                for _, ap in ipairs(active) do
+                    local def = ap
+                    if def.outputs == nil and ap.id ~= nil and pp.productionsIdToObj ~= nil then
+                        def = pp.productionsIdToObj[ap.id] or ap
+                    end
+                    if ap.id ~= nil and SmartDistribution.isIdentityLine(def) then ids[#ids + 1] = ap.id end
+                end
+                for _, id in ipairs(ids) do
+                    pcall(function() pp:setProductionState(id, false) end)
+                end
+                if #ids > 0 and SmartDistribution.debug then
+                    log("passThrough %s: switched off %d scaffolding line(s)", placeableName(p), #ids)
+                end
+            end
+        end
+    end
+end
+
+-- Keep them off. Without this the sweep above is undone by the base production menu (or by the game
+-- restoring saved state on load) and the scaffolding reappears until the next hour tick.
+--
+-- SCOPED, per 5.62: ProductionPoint is a GLOBAL class, so an unscoped refusal would answer for every
+-- production in the world. Refuses ONLY an identity line, ONLY on a building DR classifies as a
+-- pass-through store, and ONLY while the setting asks for it. Everything else -- every ordinary
+-- production, and these same buildings' genuine lines -- goes straight through to the original.
+function SmartDistribution.installPassThroughSuppression()
+    if ProductionPoint == nil or ProductionPoint.setProductionState == nil then
+        print("[SmartDistribution] pass-through suppression: ProductionPoint.setProductionState not found [VERIFY]")
+        return
+    end
+    if SmartDistribution._origSetProductionState ~= nil then return end   -- installing twice would self-call
+    SmartDistribution._origSetProductionState = ProductionPoint.setProductionState
+    ProductionPoint.setProductionState = function(self, productionId, isEnabled, ...)
+        if isEnabled and productionId ~= nil and SmartDistribution._passThroughSweep ~= true then
+            local ok, refuse = pcall(function()
+                if not SmartDistribution.suppressIdentityLines(self.owningPlaceable) then return false end
+                local def = self.productionsIdToObj ~= nil and self.productionsIdToObj[productionId] or nil
+                return def ~= nil and SmartDistribution.isIdentityLine(def)
+            end)
+            if ok and refuse then return end
+        end
+        return SmartDistribution._origSetProductionState(self, productionId, isEnabled, ...)
+    end
+end
+
 installInteraction()
 installHusbandryPatch()
 SmartDistribution.installHoldInternalPalletSuppression()
@@ -14216,6 +15847,7 @@ SmartDistribution.installManualTransferTracking()
 SmartDistribution.installMarketManualFill()
 SmartDistribution.installPalletSpawnerHook()   -- production partial-pallet top-up (+ spawn result codes)
 SmartDistribution.installBunkerFullOpen()      -- opening a bunker uncovers the whole heap, not one band
+SmartDistribution.installPassThroughSuppression()  -- refuse re-enabling a pass-through store's scaffolding lines
 installManureExtensionPlaceable()
 installExtensionPlacementGates()
 installManureHeapDetach()
@@ -14223,161 +15855,6 @@ installProximityWatcher()
 SmartDistribution.installPlacementDefaults()   -- defaultOutputMode / defaultInputMode, stamped on placement
 installMenu()
 
--- ============================================================================
---  TEMPORARY PROBE (2026-08-16) -- "can distribution cost be its own line item on
---  the base game's finance screen?"  REMOVE the flag, this function, its call, the
---  two dr_finance_* l10n keys and the two TEMPORARY branches in tallyMoney /
---  chargeDistribution once the answer is recorded.
---
---  THIS CANNOT BE ANSWERED BY READING. MoneyType.lua, the Farm finance-stats layer
---  and the finances GUI frame are all stripped or packed in the SDK source (8.1 --
---  InGameMenuStatisticsFrame.lua measures 97% blank), and per that rule an absence
---  there proves nothing. The only hard evidence available is the savegame, and
---  farms.xml shows finances persisted as a FIXED set of named buckets:
---      <propertyMaintenance> <productionCosts> ... <other>
---  matching the finance screen's rows one-for-one, "Other" included. But that is
---  equally consistent with "closed enum" and with "whatever the base game happens
---  to have registered", because nothing installed registers a custom one. Which of
---  those two it is, is the entire question.
---
---  What IS certain: MoneyType.register(statisticName, titleKey, modName) is real
---  and mod-facing -- GIANTS' own internal Precision Farming mod calls it with a mod
---  namespace (EnvironmentalScore.lua:42), and a registered type carries an .id that
---  the base game streams as a UInt16 (FillTriggerVehicle.lua:99).
---
---  THE EXPERIMENT, one save away from an answer:
---    1. dump a KNOWN money type, so a registered one can be compared field by field;
---    2. register a type naming a BRAND-NEW bucket ("distributionCost");
---    3. register a control into the known-good "other" bucket -- dump only, never
---       charged -- which is the pattern the base game itself uses (FillTrigger.lua:16);
---    4. route DR's real haulage bill through (2), then save and read farms.xml.
---
---  READING THE RESULT:
---    <distributionCost> appears in farms.xml -> new buckets ARE supported; a real
---        line item is reachable and cheap. Done.
---    the money lands in <other> instead      -> the bucket name fell back. Whether a
---        new ROW is still reachable then depends on whether the screen renders per
---        TYPE or per BUCKET -- look for a "Distribution Costs" row on the finances
---        screen to tell which. The two registrations are titled differently so that
---        row names its own origin without needing the log.
---    register returns nil or throws          -> closed set, answered before saving.
---
---  RISK, and why it wants a scratch save: the CHARGE is not new money -- it is the
---  same haulage bill DR has always raised, merely booked elsewhere. The REGISTRATION
---  is the new thing, and an unknown bucket is what could disturb a save. Back the
---  savegame up first. MONEY_PROBE = false disables all of it and restores the
---  shipped behaviour exactly.
---
---  MP: ids are assigned in registration order. This runs unconditionally at file
---  scope on server and client alike, so both ends assign the same id.
---
---  A FIELD, never a local -- the main chunk is at the 200-local ceiling (1.1).
--- ============================================================================
---  ANSWERED 2026-08-16, and the answer is NO -- flag left false, evidence kept.
---
---  register() ACCEPTED a brand-new statistic verbatim (id=40, statistic=distributionCost,
---  customEnv=FS25_Distribution_Redux) -- it neither validated nor coerced the name -- and
---  addMoney through that type ran clean, no error, over 5 charges totalling $344.26.
---
---  But the SAVE is where it fell apart. farms.xml gained no <distributionCost> element,
---  <other> stayed 0.000000, <propertyMaintenance> was unchanged -- while the balance fell
---  by exactly DR's $344.26 plus the base game's own costs. So the money left the player's
---  account and was booked to NOTHING. The finance stats accumulate into a fixed set of
---  buckets; a type naming a bucket outside that set is accepted at registration and then
---  silently dropped at accounting time. No new row appeared on the finances screen either
---  (author confirmed in game), for either the new-bucket type or the 'other' control.
---
---  So MoneyType.register buys a TITLE for money-change popups, not a finance line item.
---  Routing DR's haulage through a novel bucket is strictly WORSE than the shipped
---  behaviour: the cost vanishes from the player's books instead of merely being labelled
---  as someone else's. Hence false, and hence chargeDistribution's fallback is the real path.
-SmartDistribution.MONEY_PROBE = false
-
-function SmartDistribution.probeMoneyType()
-    if not SmartDistribution.MONEY_PROBE then return end
-    -- print, not log(): log() is gated on `debug`, which is false in a release build,
-    -- and a probe the author must first be talked through enabling produces no data.
-    local function dump(s) print("[SmartDistribution moneyProbe] " .. tostring(s)) end
-
-    if MoneyType == nil then
-        dump("[VERIFY] MoneyType global is nil at mod load -- nothing registered, DR unchanged")
-        return
-    end
-
-    -- Field-by-field dump. The point is COMPARISON: whatever fields a base type
-    -- carries (statistic name, title, id) are the fields a registered one must also
-    -- carry, and any it lacks is the thing that will misbehave.
-    local function describe(label, v)
-        if v == nil then dump(label .. " = nil") return end
-        if type(v) ~= "table" then
-            dump(label .. " = " .. tostring(v) .. " (" .. type(v) .. ")")
-            return
-        end
-        local parts = {}
-        for k, val in pairs(v) do
-            local tv = type(val)
-            local shown = (tv == "table" or tv == "function") and ("<" .. tv .. ">") or tostring(val)
-            parts[#parts + 1] = tostring(k) .. "=" .. shown
-        end
-        table.sort(parts)
-        dump(label .. " { " .. table.concat(parts, ", ") .. " }  hasMeta=" .. tostring(getmetatable(v) ~= nil))
-    end
-
-    describe("known PROPERTY_MAINTENANCE", MoneyType.PROPERTY_MAINTENANCE)
-    describe("known OTHER", MoneyType.OTHER)
-
-    -- Full key list, tagged by value type. Re-read this AFTER the registrations below
-    -- to see whether registering added a named constant to the table or only returned one.
-    local keys = {}
-    for k, v in pairs(MoneyType) do
-        if type(v) ~= "function" then keys[#keys + 1] = tostring(k) .. "(" .. type(v) .. ")" end
-    end
-    table.sort(keys)
-    dump("MoneyType keys BEFORE: " .. table.concat(keys, ", "))
-
-    if type(MoneyType.register) ~= "function" then
-        dump("[VERIFY] MoneyType.register is not a function -- cannot register, DR unchanged")
-        return
-    end
-
-    -- (2) THE experiment: a statistic bucket the base game has never heard of.
-    local ok, res = pcall(MoneyType.register, "distributionCost",
-                          "dr_finance_distributionCost", SmartDistribution.MOD_NAME)
-    if ok and res ~= nil then
-        SmartDistribution._distMoneyType = res
-        describe("REGISTERED new bucket 'distributionCost'", res)
-        dump("-> DR haulage is now booked to this type. Play an hour, SAVE, then grep")
-        dump("   savegame<N>/farms.xml for <distributionCost>. Absent means it fell back.")
-    else
-        dump("[VERIFY] register('distributionCost') FAILED: ok=" .. tostring(ok) .. " result=" .. tostring(res))
-        dump("-> a brand-new bucket is refused; the set is closed. DR keeps its shipped money type.")
-    end
-
-    -- (3) Control, dump-only and never charged. If this succeeds where (2) failed,
-    --     it is the STATISTIC NAME being validated rather than registration itself --
-    --     which is exactly the distinction that decides whether a new row is reachable.
-    --     Titled differently from (2) so that if the finances screen renders per TYPE,
-    --     the row on screen says which of the two produced it.
-    local ok2, res2 = pcall(MoneyType.register, "other",
-                            "dr_finance_distributionCostCtl", SmartDistribution.MOD_NAME)
-    if ok2 and res2 ~= nil then
-        describe("CONTROL registered into 'other'", res2)
-    else
-        dump("CONTROL register('other') also failed: ok=" .. tostring(ok2) .. " result=" .. tostring(res2))
-    end
-
-    local keys2 = {}
-    for k, v in pairs(MoneyType) do
-        if type(v) ~= "function" then keys2[#keys2 + 1] = tostring(k) .. "(" .. type(v) .. ")" end
-    end
-    table.sort(keys2)
-    if table.concat(keys2, ", ") ~= table.concat(keys, ", ") then
-        dump("MoneyType keys AFTER:  " .. table.concat(keys2, ", "))
-    else
-        dump("MoneyType key list unchanged by registration (types are returned, not named)")
-    end
-end
-SmartDistribution.probeMoneyType()
 
 -- ---- cross-mod API publish -------------------------------------------------
 -- FS25 loads each mod's scripts in its OWN script environment, so a bare top-level
@@ -14585,9 +16062,16 @@ function SmartDistribution._computePooledInputCapacity(p)
     -- pooled (silage + hay shown sharing 60k at 25% each). Never pool a robot barn: each bunker is its own
     -- tank, resolved individually by inputProductCapacity -> husbandryInputCapacity.
     if SmartDistribution.feedingRobotOf(p) ~= nil then return nil end
-    -- object-storage shed (hay loft, pallet shed): shared slot pool
+    -- object-storage shed (hay loft, pallet shed): shared slot pool.
+    --
+    -- SKIPPED for a pass-through store, which may carry BOTH a bulk tank and a pallet store in one
+    -- placeable (the DriveIn has a 111-crop tank and a 350-slot pallet store). DR addresses it as the
+    -- bulk silo it is, so answering with the SHED pool here would price a wheat delivery in pallet slots
+    -- -- and inputAcceptableLiters would then throttle it to a number that means nothing. The pallet half
+    -- is not lost, it is simply not this building's receiver yet: it becomes separately addressable when
+    -- roles land, and this guard goes with them.
     local spec = p.spec_objectStorage
-    if spec ~= nil then
+    if spec ~= nil and not SmartDistribution.treatPassThroughAsStore(p) then
         local slots = spec.capacity or 0
         if slots <= 0 then return nil end                     -- unlimited: no meaningful cap
         local fts = {}
@@ -14892,7 +16376,12 @@ end
 
 -- the litre capacity + current level for a specific input product at a building. For pooled storage the
 -- capacity is the shared pool; for individual storage it's that product's own tank.
-function SmartDistribution.inputProductCapacity(p, ft)
+function SmartDistribution.inputProductCapacity(p, ft, role)
+    -- ROLE FIRST: a sub-building's intake is bounded by ITS OWN container. Without this the Mechet
+    -- Fromage's pallet-store row took its capacity from whichever half won the placeable-level lookup,
+    -- which is how one pool of stock reported 700 kL coming in and 100 kL going out.
+    local rc = SmartDistribution.roleCapacity(p, ft, role)
+    if rc ~= nil then return rc, nil end
     -- MARKET: no Storage anywhere, so a product's "capacity" is its slice of the virtual buffer -- the same
     -- marketCap the transfer phase already clamps against. Giving it a real number here is what makes a
     -- Max-in % mean the same thing on a market as on a silo instead of being a dead control (with cap 0,
@@ -14929,7 +16418,10 @@ function SmartDistribution.inputProductCapacity(p, ft)
     -- Individual: this ft's own tank. SUM every storage that holds ft rather than returning the first --
     -- a silo with a folded-in extension has two, and taking the first reported the base tank alone while
     -- the output side (assetCapacity) summed both.
-    if p ~= nil and p.spec_objectStorage == nil then
+    -- The objectStorage exclusion is there because a pallet shed's capacity is SLOTS, resolved by the
+    -- pooled branch above -- but it also locked out a pass-through store that happens to own one, which
+    -- then fell through to `return 0` for every product in a 111-crop tank.
+    if p ~= nil and (p.spec_objectStorage == nil or SmartDistribution.treatPassThroughAsStore(p)) then
         local total = 0
         for _, s in ipairs(getAllStorages(p)) do
             if storageFillTypes(s)[ft] ~= nil then
@@ -14942,14 +16434,24 @@ function SmartDistribution.inputProductCapacity(p, ft)
     return 0, nil
 end
 
-function SmartDistribution.inputHeldLevel(p, ft)
+function SmartDistribution.inputHeldLevel(p, ft, role)
+    -- partner to inputProductCapacity above: held must be read on the SAME basis as capacity, or the
+    -- fill percentage and the room left come off two different totals (5.29b / 5.54c)
+    local rh = SmartDistribution.roleHeld(p, ft, role)
+    if rh ~= nil then return rh end
     if p == nil or ft == nil then return 0 end
     -- MARKET: partner to inputProductCapacity above -- held has to be read on the SAME basis as capacity or
     -- the fill percentage and the room left come off two different totals.
     if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
         return SmartDistribution.marketBufferLevel(getUid(p), ft) or 0
     end
-    if p.spec_objectStorage ~= nil then return shedStoredLiters(p, ft) or 0 end
+    -- Same guard as assetMenuFillTypes / inputProductCapacity: a pass-through store that also owns a
+    -- pallet store must not report the SHED's litres as its held level. It answered 0 for every bulk
+    -- product (no milk pallets in a pallet store, obviously), so Advanced Inputs showed 0 held against a
+    -- tank with product visibly in it.
+    if p.spec_objectStorage ~= nil and not SmartDistribution.treatPassThroughAsStore(p) then
+        return shedStoredLiters(p, ft) or 0
+    end
     -- production input buffer + any extension folded onto its stations (partner to inputProductCapacity:
     -- held must move on the same basis as capacity, or the fill percentage and the room left are computed
     -- across two different totals)
@@ -15084,14 +16586,50 @@ function SmartDistribution.getInputTargetPct(rcvUid, ft)
 end
 -- The target LEVEL in litres for (p, ft): targetPct % of the product's cap-adjusted capacity (pool share or
 -- own tank). nil when no target is set, or when Advanced routing is off (targets are an advanced override).
-function SmartDistribution.inputTargetLiters(p, ft)
+-- `role` for the same reason as its neighbours: the fill target is a share of THIS half's capacity.
+-- DOES A FILL TARGET MEAN ANYTHING FOR THIS RECEIVER? Only where demand is PULLED.
+--
+-- The target changes what a building ASKS FOR: effectiveInputNeed returns `target - current` instead of
+-- the recipe / buffer-hours default. That is a real, distinct behaviour -- but ONLY on the five paths
+-- that call it: production inputs, robot feed bunkers, husbandry straw and husbandry water.
+--
+-- A PUSH-ONLY receiver -- silo, pallet store, heap, market -- never asks for anything. It is filled by
+-- Store / Move To / Distribute, which clamp to inputAcceptableLiters (block + Max in %). So a target
+-- there would compute `cap x capPct x targetPct`, i.e. THE SAME KIND OF CEILING Max in % already
+-- computes, and the lower of the two would silently win. Two controls doing one job is what 5.53 had to
+-- revert once already, so the target is simply not offered where it cannot bind.
+--
+-- A PASS-THROUGH STORE IS PUSH-ONLY TOO, and that is not obvious: it HAS a production point, but
+-- collectProductionSlots deliberately skips it ("a pass-through store must not raise input slots"), so
+-- effectiveInputNeed never runs for it and a target on its tank would never have bound either.
+-- acceptsAsDemand already encodes exactly that distinction, which is why this delegates to it rather
+-- than re-deriving the rule and risking the two drifting apart.
+function SmartDistribution.fillTargetApplies(p, ft, role)
+    if p == nil or ft == nil then return false end
+    if role == "SHED" then return false end            -- an object storage is filled by push, never pull
+    return SmartDistribution.acceptsAsDemand(p, ft)
+end
+
+function SmartDistribution.inputTargetLiters(p, ft, role)
     if not SmartDistribution.advancedEnabled() then return nil end
-    local rcvUid = getUid(p)
+    -- settingUid, NOT getUid. This function already took a `role` and used it for CAPACITY while looking
+    -- the stored PERCENTAGE up under the bare uid -- so on a secondary role (a pallet store) it found
+    -- nothing, returned nil, and the dialog's `r.targetLiters or 0` rendered "0 L" beside a percentage
+    -- that was itself read correctly through settingUid. Reported 2026-08-20 as "Max in works but the
+    -- fill target shows 0 L on a pallet store, fine on a silo" -- and fine on a silo is the tell, because
+    -- there the primary role IS the bare uid so the two agreed by accident.
+    --
+    -- THE WHOLE POINT OF settingUid is that it also collapses a LINKED product (one shared tank, seen
+    -- from two tabs) onto the tank's own key -- so this keeps agreeing with the dialog, which stores
+    -- through the same function, in both the linked and the separate case.
+    local rcvUid = SmartDistribution.settingUid(p, ft, role) or getUid(p)
     local pct = rcvUid ~= nil and SmartDistribution.getInputTargetPct(rcvUid, ft) or nil
     if pct == nil then return nil end
-    local cap = SmartDistribution.inputProductCapacity(p, ft)
+    local cap = SmartDistribution.inputProductCapacity(p, ft, role)
     if cap == nil or cap <= 0 then return nil end
-    local capPct = SmartDistribution.inputCapPct(p, ft) or 100
+    -- ...and the cap % must name the same half too, or the target is a share of one tank scaled by
+    -- another tank's ceiling (the 5.65 rule: every read behind a role-scoped figure must be role-scoped).
+    local capPct = SmartDistribution.inputCapPct(p, ft, role) or 100
     return cap * (capPct / 100) * (pct / 100)
 end
 -- Effective demand for (p, ft) this cycle: if a fill target is set, demand toward that LEVEL (target - cur,
@@ -15181,13 +16719,59 @@ function SmartDistribution.husbandryPalletCapacity(p, ft)
     return 0
 end
 
-function SmartDistribution.outputCapacityTotal(p, ft)
+-- DEFINED HERE, NOT BESIDE THE BUFFER, and the position is load-bearing: roleHeld calls
+-- shedStoredLiters, a LOCAL declared at ~2769. Written above that line the name compiles as a nil
+-- GLOBAL, and the nil-guard inside would have turned that into 'a pallet store always holds 0' --
+-- a silently wrong figure rather than an error, which luac -p cannot catch (5.44 / 5.57).
+-- Capacity / held for ONE sub-building. Both return nil when the role needs no special reading -- an
+-- ordinary single-role building, or the primary half, which keeps answering exactly as it always has.
+function SmartDistribution.roleCapacity(p, ft, role)
+    if p == nil or role == nil then return nil end
+    if #SmartDistribution.assetRoles(p) < 2 then return nil end
+    if role == "SHED" then return SmartDistribution.shedCapacityFor(p) end
+    if SmartDistribution.roleUsesBuffer(p, role) then return SmartDistribution.roleBufferCapacity(p, ft) end
+    return nil
+end
+
+function SmartDistribution.roleHeld(p, ft, role)
+    if p == nil or role == nil then return nil end
+    if #SmartDistribution.assetRoles(p) < 2 then return nil end
+    if role == "SHED" and shedStoredLiters ~= nil then
+        local ok, v = pcall(shedStoredLiters, p, ft)
+        return (ok and type(v) == "number") and v or 0
+    end
+    -- THE PRIMARY ROLE OF A MULTI-ROLE BUILDING: the placeable's held MINUS what the SHED half holds.
+    -- Returning nil here fell back to assetHeld, which sums getAllStorages AND the object storage -- so
+    -- after moving 10,000 L of eggs from the tank into the building's OWN pallet store, the SILO row went
+    -- on reporting 10,000 while its tank was empty. Reported 2026-08-21 as "the silo still has 10k eggs";
+    -- the tank really was debited, the row was showing the shed's pallets as its own.
+    if role == SmartDistribution.primaryRole(p) and role ~= "SHED"
+       and p.spec_objectStorage ~= nil and shedStoredLiters ~= nil then
+        local total = SmartDistribution.assetHeld(p, ft) or 0
+        local ok, inShed = pcall(shedStoredLiters, p, ft)
+        return math.max(0, total - ((ok and type(inShed) == "number") and inShed or 0))
+    end
+    if SmartDistribution.roleUsesBuffer(p, role) then
+        return SmartDistribution.roleBufferLevel(SmartDistribution.roleUid(p, role), ft)
+    end
+    return nil
+end
+
+function SmartDistribution.outputCapacityTotal(p, ft, role)
     if p == nil or ft == nil then return 0 end
+    -- ROLE-SCOPED: a sub-building answers for ITS OWN container, not for the placeable. Without this the
+    -- Mechet Fromage's pallet-store row reported the DAIRY's storage as its output capacity while its
+    -- input side reported the store's slots -- 700 kL in against 100 kL out for one pool of stock.
+    local c = SmartDistribution.roleCapacity(p, ft, role)
+    if c ~= nil then return c end
     local total = SmartDistribution.assetCapacity(p, ft) or 0
     local pp = getProductionPoint(p)
-    if pp ~= nil and pp.storage ~= nil then
-        local c = storageCapacity(pp.storage, ft)
-        if type(c) == "number" and c < math.huge then total = total + c end
+    -- NEVER ADD pp.storage TWICE. assetCapacity sums getAllStorages, which folds the tank in for a
+    -- PASS-THROUGH store (that is how the silo half sees it at all) -- so adding it again here read a
+    -- DriveIn's capacity as double what the mod declares.
+    if pp ~= nil and pp.storage ~= nil and SmartDistribution.passThroughStorage(p) == nil then
+        local pc = storageCapacity(pp.storage, ft)
+        if type(pc) == "number" and pc < math.huge then total = total + pc end
     end
     total = total + SmartDistribution.husbandryPalletCapacity(p, ft)
     return total
@@ -15214,10 +16798,50 @@ end
 -- BUILDING's total holding of ft, so a silo with a folded-in extension reserves once overall rather than
 -- once per storage; the result is then capped to the storage actually being drained. Every output phase
 -- runs its available amount through this.
+-- LOCAL PRODUCTION GETS FED FIRST. On a pass-through store the silo half and the in-building production
+-- draw on ONE tank, so DR shipping the silo's stock out on the hourly pass could starve a line standing
+-- right next to it -- "if the production is on, it feeds the in-building production first, then follows
+-- whatever the silo side is set to" (author, 2026-08-17).
+--
+-- Expressed as an automatic OUTPUT RESERVE rather than as anything that touches the production: one
+-- cycle's input is held back from whatever may leave, and the rest follows the silo's mode exactly as
+-- before. That reuses 5.10's machinery through drawableLevel -- the single funnel every distribute /
+-- store / sell / market / Move To draw already passes through -- so there is no new path to keep in step.
+--
+-- DELIBERATELY NOT the line state. The previous attempt gated the LINE and had to be reverted: it
+-- rewrote a setting the player owns, and DR's hourly pass cannot outrun a continuous production tick
+-- anyway (5.65). A reserve touches nothing but DR's own arithmetic.
+--
+-- ENABLED LINES ONLY: a switched-off line has no demand, so it reserves nothing and the silo keeps full
+-- use of its stock. That is what makes "production off -> everything stays available" true.
+function SmartDistribution.localProductionReserve(p, ft)
+    if p == nil or ft == nil then return 0 end
+    -- CHEAPEST TEST FIRST: drawableLevel is on the allocator's per-candidate path, and this eliminates
+    -- every silo, barn and shed on one field check before any settings or memo lookup happens. Same
+    -- reason outputReserveLiters opens with its own emptiness test.
+    if getProductionPoint(p) == nil then return 0 end
+    if not SmartDistribution.treatPassThroughAsStore(p) then return 0 end
+    if not SmartDistribution.sharedTankFillTypes(p)[ft] then return 0 end   -- only a SHARED input
+    local pp = getProductionPoint(p)
+    if pp == nil then return 0 end
+    local need = 0
+    for _, def in ipairs(getActiveProductionDefs(pp)) do                    -- ACTIVE: filtered of scaffolding
+        local cph = def.cyclesPerHour or 0
+        for _, i in ipairs(def.inputs or {}) do
+            if i.type == ft then need = need + (i.amount or 0) * cph end
+        end
+    end
+    return need
+end
+
 function SmartDistribution.drawableLevel(p, ft, level)
     level = level or 0
     if level <= 0 then return level end
     local res = SmartDistribution.outputReserveLiters(p, ft)
+    -- the player's reserve and the automatic local-production one are both floors: take whichever is
+    -- higher, so setting one can never let the in-building line be starved and vice versa
+    local loc = SmartDistribution.localProductionReserve(p, ft)
+    if loc > 0 then res = math.max(res or 0, loc) end
     if res == nil then return level end
     local free = SmartDistribution.assetHeldTotal(p, ft) - res
     if free <= 0 then return 0 end
@@ -15225,13 +16849,13 @@ function SmartDistribution.drawableLevel(p, ft, level)
 end
 
 -- the effective % for (rcv, ft): the player's explicit value, else the default.
-function SmartDistribution.inputCapPct(p, ft)
+function SmartDistribution.inputCapPct(p, ft, role)
     -- Advanced off: no input constraint at all -- return 100% so inputAcceptableLiters lets each product
     -- fill the whole (shared) tank, the base-game first-come approach. The pooled even-split only mattered
     -- for moving product between storages, which is itself disabled with Advanced off, so nothing is left
     -- for the split to protect.
     if not SmartDistribution.advancedEnabled() then return 100 end
-    local rcvUid = getUid(p)
+    local rcvUid = SmartDistribution.settingUid(p, ft, role)   -- LINKED products share the tank's entry
     local T = SmartDistribution.control.inputCapPct
     local C = (rcvUid ~= nil and T ~= nil) and T[rcvUid] or nil
     local v = C ~= nil and C[ft] or nil
@@ -15293,11 +16917,11 @@ function SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
     return eff
 end
 
-function SmartDistribution.inputEffectiveMaxLiters(p, ft)
+function SmartDistribution.inputEffectiveMaxLiters(p, ft, role)
     if SmartDistribution._legacyInputMath then
         return SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
     end
-    local cap, pool = SmartDistribution.inputProductCapacity(p, ft)
+    local cap, pool = SmartDistribution.inputProductCapacity(p, ft, role)
     if type(cap) ~= "number" or cap <= 0 or cap >= INF then return cap end
     -- ONE resolved view of the pool, instead of re-deriving every member's % and level per member. This is
     -- what turned an O(F^2) call into an O(F) one; see poolShares. `pool` is handed in so the shares can
@@ -15328,16 +16952,169 @@ end
 -- ENFORCEMENT: how many more litres of `ft` this building will accept right now, given its input block
 -- and its per-product cap. Every fill path clamps its deposit to this. Returns a big number when the
 -- product is unconstrained (blocked -> 0; no pooled cap and no explicit cap -> the normal free space).
-function SmartDistribution.inputAcceptableLiters(p, ft)
-    local rcvUid = getUid(p)
+-- WHICH HALF of a building receives `ft`. A block is stored against the role the player set it on, so
+-- enforcement has to ask the same question or the setting is stored, displayed, and silently ignored.
+--
+-- The PRIMARY role wins whenever it can hold the product, which is the conservative reading: a bulk
+-- delivery of wheat to a DriveIn is going into its tank, and a block the player set on the pallet store
+-- should not stop it. A product only the secondary half can take (a bale type, say) resolves there.
+function SmartDistribution.receiverRoleUid(p, ft)
+    local base = SmartDistribution.assetUid(p)
+    if p == nil or ft == nil or base == nil then return base end
+    local roles = SmartDistribution.assetRoles(p)
+    if #roles < 2 then return base end                          -- ordinary building: nothing to decide
+    local primaryFts = SmartDistribution.receiverInputFillTypes(p, roles[1])
+    if primaryFts[ft] then return base end
+    for i = 2, #roles do
+        local fts = SmartDistribution.receiverInputFillTypes(p, roles[i])
+        if fts[ft] then return SmartDistribution.roleUid(p, roles[i]) end
+    end
+    return base
+end
+
+function SmartDistribution.inputAcceptableLiters(p, ft, role)
+    -- An explicit role wins: the caller is asking for ONE half of the building (a tab row, a dialog).
+    -- Without it receiverRoleUid picks the half that holds the product, which is right for the allocator
+    -- -- it has no row in hand -- but wrong for a pallet-store row, which was reading the SILO's free
+    -- space (4,000 kL against its own 1,400 kL).
+    local rcvUid = (role ~= nil) and SmartDistribution.settingUid(p, ft, role)
+                                 or SmartDistribution.receiverRoleUid(p, ft)
     if rcvUid == nil then return INF end
     if SmartDistribution.isInputBlocked(rcvUid, ft) then return 0 end
-    local cap = SmartDistribution.inputProductCapacity(p, ft)
+    -- ...and so must the three reads below it. Threading the uid alone was not enough: capacity, the
+    -- effective ceiling and held all still asked the PLACEABLE, so a pallet-store row kept reporting the
+    -- silo's free space. All four have to name the same half or the figures come off different tanks.
+    local cap = SmartDistribution.inputProductCapacity(p, ft, role)
     if cap <= 0 then return INF end                            -- unknown capacity: don't constrain
-    local maxL = SmartDistribution.inputEffectiveMaxLiters(p, ft)
+    local maxL = SmartDistribution.inputEffectiveMaxLiters(p, ft, role)
     if type(maxL) ~= "number" then return INF end
-    local held = SmartDistribution.inputHeldLevel(p, ft)
+    local held = SmartDistribution.inputHeldLevel(p, ft, role)
     return math.max(0, maxL - held)
+end
+
+-- ---- CONSTRUCT A STORED PALLET THE WAY A SAVEGAME LOAD DOES -----------------------------------------
+--
+-- THE GAME'S OWN CONSTRUCTION PATH, and it needs no live object, no template and no spawner:
+--     PlaceableObjectStorage:loadFromXMLFile
+--         local abstractObjectClass = ABSTRACT_OBJECTS_BY_CLASS_NAME[className]
+--         abstractObjectClass.loadFromXMLFile(self, xmlFile, objectKey)
+-- A STATIC call taking (placeable, xmlFile, key). It is what runs for every stored object on every load,
+-- so an object it builds is correct BY CONSTRUCTION rather than by our guessing a shape.
+--
+-- 5.42 found this door and closed it -- "every method of that class is stripped from the shipped source,
+-- so the construction contract cannot be read" -- and 6.12 then built CLONING instead. But 6.12's own
+-- probe proved the point that reopens it: those methods RESOLVE AT RUNTIME even though the source is
+-- blank, and `class.new()` came back usable. The contract we could not read is the one the SAVEGAME
+-- writes, and that we can read: <object className="Vehicle" filename="..." farmId="1" isBigBag="false"
+-- fillType="BREAD" fillLevel="1000"/>, which saveToXMLFile confirms field for field.
+--
+-- Author's observation is what prompted this: a pallet store can physicalise pallets through the vanilla
+-- UI, so the capability is plainly there. (Strictly the shed has no PalletSpawner -- it has its own
+-- retrieval spawn machinery -- but the instinct was right and this is where it led.)
+--
+-- VERIFIED AT RUNTIME, NEVER TRUSTED: the object count is read before and after, and anything that
+-- arrives must pass storedObjectIsUsable or it is removed again. So a wrong guess declines instead of
+-- leaving the shed holding something that throws every frame (the 6.12 crash).
+function SmartDistribution.createStoredPallet(shed, ft, litres, farmId)
+    local spec = shed ~= nil and shed.spec_objectStorage or nil
+    if spec == nil or type(spec.storedObjects) ~= "table" then return false end
+    if ft == nil or (litres or 0) <= 0 then return false end
+    if XMLFile == nil or XMLFile.create == nil or getUserProfileAppPath == nil then return false end
+    if XMLSchema == nil or XMLSchema.new == nil then return false end
+    if PlaceableObjectStorage == nil or PlaceableObjectStorage.registerSavegameXMLPaths == nil then return false end
+    local reg = PlaceableObjectStorage ~= nil and PlaceableObjectStorage.ABSTRACT_OBJECTS_BY_CLASS_NAME or nil
+    local cls = type(reg) == "table" and reg["Vehicle"] or nil
+    if cls == nil or type(cls.loadFromXMLFile) ~= "function" then return false end
+    local g = SmartDistribution.globalPalletFor(ft)
+    if g == nil or g.filename == nil then return false end
+
+    local before = #spec.storedObjects
+    local ok = pcall(function()
+        -- A SCHEMA IS REQUIRED. Without one setValue throws "Unable to get schema for xml file" on the
+        -- very first key -- and the game's own is the right one to use rather than hand-registering the
+        -- fields: PlaceableObjectStorage.registerSavegameXMLPaths registers `object(?)#className` AND
+        -- delegates to every abstract object's registerXMLPaths, so exactly the keys the class will read
+        -- back are declared, whatever they turn out to be. Built once and kept.
+        local schema = SmartDistribution._storedPalletSchema
+        if schema == nil then
+            schema = XMLSchema.new("drStoredPallet")
+            PlaceableObjectStorage.registerSavegameXMLPaths(schema, "objectStorage")
+            SmartDistribution._storedPalletSchema = schema
+        end
+        -- an in-memory document: never saved, so the path is only an identity for the handle
+        local xml = XMLFile.create("drStoredPallet", getUserProfileAppPath() .. "drStoredPallet.xml",
+                                   "objectStorage", schema)
+        if xml == nil then return end
+        local key = "objectStorage.object(0)"
+        xml:setValue(key .. "#className", "Vehicle")
+        xml:setValue(key .. "#filename",  g.filename)
+        xml:setValue(key .. "#farmId",    farmId or 1)
+        xml:setValue(key .. "#isBigBag",  false)
+        xml:setValue(key .. "#fillType",  fillTypeName(ft))
+        xml:setValue(key .. "#fillLevel", litres)
+        cls.loadFromXMLFile(shed, xml, key)
+        xml:delete()
+    end)
+    if not ok then return false end
+    if #spec.storedObjects <= before then return false end          -- it did not insert: decline quietly
+
+    local obj = spec.storedObjects[#spec.storedObjects]
+    if not SmartDistribution.storedObjectIsUsable(obj) then
+        table.remove(spec.storedObjects, #spec.storedObjects)        -- roll back rather than leave it
+        spec.numStoredObjects = #spec.storedObjects
+        return false
+    end
+    spec.numStoredObjects = #spec.storedObjects
+    if shed.setObjectStorageObjectInfosDirty ~= nil then shed:setObjectStorageObjectInfosDirty() end
+    return true
+end
+
+
+
+
+-- PHASE 5: turn BULK LITRES into whole pallets inside a pallet store, and debit the source tank by
+-- exactly what was accepted. Returns the litres moved.
+--
+-- This is the last gap in the store chain. A pallet store holds pallet OBJECTS, so litres in a tank had
+-- no way in -- reported 2026-08-19 as a DriveIn's SILAGE_ADDITIVE offering no destinations at all when
+-- two pallet stores on the farm accept it. The primitive doing the work is createStoredPallet (6.22),
+-- which builds through the game's own savegame path; this only decides HOW MANY and settles up after.
+--
+-- DEBIT AFTER, NEVER BEFORE, and only by what was actually accepted. createStoredPallet verifies each
+-- object it builds and rolls back any it cannot (the shed must never hold something the player cannot
+-- retrieve), so it can legitimately return fewer pallets than asked for. Taking the litres up front would
+-- destroy the difference -- the 5.45b rule: never credit product you have not verified moved.
+--
+-- WHOLE PALLETS ONLY. A shed slot holds one pallet and depositPalletsToShed has always required
+-- palletIsFull, so a part-filled pallet cannot be stored; the remainder stays in the tank for next cycle.
+function SmartDistribution.materialiseToShed(srcP, storage, ft, shed, want, farmId)
+    if shed == nil or storage == nil or (want or 0) <= 0 then return 0 end
+    if not SmartDistribution.canMaterialisePallets(ft) then return 0 end
+    local per = SmartDistribution.palletLitresFor(ft, shed)
+    if (per or 0) <= 0 then return 0 end
+    local count = math.floor(want / per)
+    if count < 1 then return 0 end                                  -- not yet a whole pallet's worth
+    local free = SmartDistribution.shedFreeSlots(shed)
+    if free ~= nil and free >= 0 then count = math.min(count, free) end
+    if count < 1 then return 0 end
+    -- never build more than the tank can actually pay for
+    local have = getLevel(storage, ft) or 0
+    count = math.min(count, math.floor(have / per))
+    if count < 1 then return 0 end
+    -- BUILT DIRECTLY through the game's own savegame path (6.22): no template, no spawner, no async.
+    local built = 0
+    for _ = 1, count do
+        if not SmartDistribution.createStoredPallet(shed, ft, per, farmId) then break end
+        built = built + 1
+    end
+    local movedL = built * per
+    if movedL <= 0 then
+        SmartDistribution.log("materialise %s -> %s [%s]: could not BUILD a stored pallet",
+            tostring(placeableName(srcP)), tostring(placeableName(shed)), tostring(fillTypeName(ft)))
+        return 0
+    end
+    setLevel(storage, ft, math.max(0, have - movedL), farmId, -movedL)
+    return movedL
 end
 
 -- "Store To" could push nothing last pass because every chosen store is full (UI indicator).
@@ -15696,11 +17473,20 @@ end
 --   DEMAND -> buildings that consume ft (rank = priority order; can be blocked)
 --   STORE  -> silos/sheds/heaps that hold ft (rank = Store To order; "listed" = picked)
 --   MARKET -> markets/kiosks that buy ft   (rank = market order;   "listed" = picked)
-function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores, showMarkets)
+-- `role` names WHICH HALF of the source this list is for, and it matters for two separate reasons on a
+-- building that does more than one job:
+--   * the KEY. Blocks and priorities must be stored against the same half the MODE is, or the player
+--     configures one half and the pass reads the other. openInputsDialog has taken a role since 5.65;
+--     this side was left behind, so a pass-through store's production-owned output had its routing filed
+--     under the SILO's key.
+--   * SELF-EXCLUSION. With srcUid collapsed to the bare uid, the building's own tank matched `srcUid` and
+--     was dropped as "self" -- which is why a DriveIn's silage additive offered NO destinations at all
+--     rather than merely too few. Addressed by role, the production half can target the silo half.
+function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores, showMarkets, role)
     local out = {}
     if asset == nil or ft == nil then return out end
     if not showDemands and not showStores and not showMarkets then return out end
-    local srcUid = getUid(asset)
+    local srcUid = SmartDistribution.settingUid(asset, ft, role) or getUid(asset)
     if srcUid == nil or asset.rootNode == nil then return out end
     local x, _, z = getWorldTranslation(asset.rootNode)
 
@@ -15733,39 +17519,73 @@ function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores
     -- not return sheds). This mirrors the engine's Store To validity exactly, so the pickable list and
     -- what actually gets pushed always agree.
     if showStores then
-        local form = SmartDistribution.sourceHoldForm ~= nil and SmartDistribution.sourceHoldForm(asset, ft) or nil
+        local form = SmartDistribution.sourceHoldForm ~= nil and SmartDistribution.sourceHoldForm(asset, ft, role) or nil
         if form == nil then
-            if asset.spec_objectStorage ~= nil then form = "PALLET" else form = "BULK" end
+            form = SmartDistribution.defaultHoldForm(asset, role)
         end
         if SmartDistribution._storeToDebug then SmartDistribution.log("advstore: %s [%s] form=%s", placeableName(asset), fillTypeName(ft), tostring(form)) end
         local myFarm = SmartDistribution._ownerFarmId(asset)
         local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+        -- WHICH DESTINATION KINDS THE PASS WILL ACTUALLY USE, so the list and the pass cannot disagree --
+        -- a destination the pass pushes to but the dialog omits is one the player has no way to block.
+        -- A palletized OUTPUT is stored by _storeToPalletAmount, which gathers pallet sheds AND bulk
+        -- tanks (drainPallets can fill a silo). A source merely HOLDING pallets -- a pallet store on
+        -- Move To -- goes through storeToAmount, which is shed-only.
+        local wantPallet = (form == "PALLET")
+            -- PHASE 5: a BULK source can reach a pallet store by MATERIALISING its litres into pallets,
+            -- so those stores are genuine destinations and must be listed. Gated on the product actually
+            -- having a pallet model (canMaterialisePallets) -- offering a store for something that can
+            -- never take pallet form would be offering a destination nothing could move to.
+            or (form == "BULK" and SmartDistribution.canMaterialisePallets(ft))
+        local wantBulk   = (form == "BULK")
+            or ((form == "PALLET") and SmartDistribution.isPalletOutput ~= nil and SmartDistribution.isPalletOutput(asset, ft))
+        local roleCount = {}
         for _, p in ipairs(ps ~= nil and ps.placeables or {}) do
-            if p ~= asset and p.rootNode ~= nil then
+            if p.rootNode ~= nil then
                 local en = isEnrolled(p)
                 local sameFarm = SmartDistribution._farmCanUse(p, myFarm)
-                local valid = SmartDistribution.storeToTargetValid ~= nil and SmartDistribution.storeToTargetValid(form, p, ft)
                 if SmartDistribution._storeToDebug and (getAssetClass(p) == "SHED" or getAssetClass(p) == "SILO" or getAssetClass(p) == "HEAP") then
-                    SmartDistribution.log("advstore:   cand %s cls=%s enrolled=%s sameFarm=%s valid=%s",
-                        placeableName(p), getAssetClass(p), tostring(en), tostring(sameFarm), tostring(valid))
+                    SmartDistribution.log("advstore:   cand %s cls=%s enrolled=%s sameFarm=%s",
+                        placeableName(p), getAssetClass(p), tostring(en), tostring(sameFarm))
                 end
-                if en and sameFarm and valid then
-                local puid = getUid(p)
-                local tx, _, tz = getWorldTranslation(p.rootNode)
-                local rank = SmartDistribution.destRank(srcUid, ft, puid)
-                local blk  = SmartDistribution.isDestBlocked(srcUid, ft, puid)
-                local status
-                if blk then status = SmartDistribution.LINK.BLOCKED
-                elseif SmartDistribution.fedBy(puid, ft, srcUid) > 0 then status = SmartDistribution.LINK.ACTIVE
-                else status = SmartDistribution.LINK.IDLE end
-                out[#out + 1] = {
-                    uid = puid, name = placeableName(p), kind = "STORE",
-                    dist = math.sqrt((tx - x) ^ 2 + (tz - z) ^ 2),
-                    rank = rank, listed = rank ~= nil, blocked = blk,
-                    status = status, statusLabel = (SmartDistribution.LINK_LABEL or {})[status] or "",
-                }
-                end   -- if en and sameFarm and valid
-            end   -- if p ~= asset and rootNode
+                if en and sameFarm then
+                    -- ONE ENTRY PER (placeable, ROLE). A building that does two jobs offers its tank and
+                    -- its pallet store as separate, separately-blockable destinations; an ordinary one
+                    -- still matches exactly one form and so still contributes exactly one row, under the
+                    -- bare uid every existing save already records.
+                    local forms = {}
+                    if wantPallet and SmartDistribution.storeToTargetValid("PALLET", p, ft) then forms[#forms + 1] = "PALLET" end
+                    if wantBulk   and SmartDistribution.storeToTargetValid("BULK",   p, ft) then forms[#forms + 1] = "BULK"   end
+                    for _, f in ipairs(forms) do
+                        local puid = SmartDistribution.storeRoleUid(p, ft, f)
+                        -- `puid ~= srcUid` replaces the old `p ~= asset`: identical for an ordinary
+                        -- building, but it lets a building offer its OTHER half while still refusing to
+                        -- offer itself.
+                        if puid ~= nil and not SmartDistribution.isSelfDestination(srcUid, puid) then
+                            if roleCount[p] == nil then roleCount[p] = #SmartDistribution.assetRoles(p) end
+                            local role = (f == "PALLET") and "SHED" or SmartDistribution.primaryRole(p)
+                            local tx, _, tz = getWorldTranslation(p.rootNode)
+                            local rank = SmartDistribution.destRank(srcUid, ft, puid)
+                            local blk  = SmartDistribution.isDestBlocked(srcUid, ft, puid)
+                            local status
+                            -- BLOCKING is keyed by ROLE; STATUS must be read off the BASE uid, because
+                            -- recordFeed ledgers what a BUILDING received (destStatusUid names the split).
+                            -- Asking fedBy for a role uid finds nothing and would report every role
+                            -- destination Idle while it is visibly receiving.
+                            if blk then status = SmartDistribution.LINK.BLOCKED
+                            elseif SmartDistribution.fedBy(SmartDistribution.destStatusUid(puid), ft, srcUid) > 0 then status = SmartDistribution.LINK.ACTIVE
+                            else status = SmartDistribution.LINK.IDLE end
+                            out[#out + 1] = {
+                                uid = puid, kind = "STORE",
+                                name = SmartDistribution.roleDisplayName(p, role, placeableName(p), roleCount[p]),
+                                dist = math.sqrt((tx - x) ^ 2 + (tz - z) ^ 2),
+                                rank = rank, listed = rank ~= nil, blocked = blk,
+                                status = status, statusLabel = (SmartDistribution.LINK_LABEL or {})[status] or "",
+                            }
+                        end
+                    end
+                end   -- if en and sameFarm
+            end   -- if rootNode
         end
         table.sort(out, function(a, b)
             if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
@@ -15780,9 +17600,11 @@ function SmartDistribution.outputDestinations(asset, ft, showDemands, showStores
     for _, s in ipairs(SmartDistribution.sinksFor(srcUid, ft, SmartDistribution._ownerFarmId(asset))) do
         local p = SmartDistribution.placeableByUid(s.uid)
         if p ~= nil and p.rootNode ~= nil then
-            local cls = getAssetClass(p)
-            local isStore = (cls == "SILO" or cls == "SHED" or cls == "HEAP")
-            if (not isStore) and showDemands then
+            -- PER-ROLE, not per primary class. The old test was `getAssetClass(p)` against
+            -- SILO/SHED/HEAP, which filed a production-primary building that merely owns a pallet store
+            -- as a DEMAND -- see acceptsAsDemand. A building now appears here only if it genuinely
+            -- consumes the product; if it can only hold it, it belongs on the storage side.
+            if SmartDistribution.acceptsAsDemand(p, ft) and showDemands then
                 local tx, _, tz = getWorldTranslation(p.rootNode)
                 local dist = math.sqrt((tx - x) ^ 2 + (tz - z) ^ 2)
                 local rank    = SmartDistribution.destRank(srcUid, ft, s.uid)
@@ -15874,7 +17696,7 @@ function SmartDistribution.outputDestinationsForMode(asset, ft)
     end
     local showDemands, rightKind = false, nil
     local pp = getProductionPoint(asset)
-    if pp ~= nil then
+    if pp ~= nil and SmartDistribution.usesVMode(asset, ft) then
         local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
         showDemands = (v == 1 or v == 3 or v == 4 or v == 7)
         if v == 4 or v == 5 then rightKind = "STORE" elseif v == 6 or v == 7 then rightKind = "MARKET" end
@@ -15917,11 +17739,11 @@ end
 --
 -- Note this reorder is only cheap because outputDestinationsForMode is memoised: it is now resolved on
 -- every call rather than being short-circuited for an active row.
-function SmartDistribution.outputLinkStatus(p, ft)
+function SmartDistribution.outputLinkStatus(p, ft, window, role)
     if p == nil or ft == nil then return nil end
     local L, M = SmartDistribution.LINK, MODE
     local pp = getProductionPoint(p)
-    if pp ~= nil then
+    if pp ~= nil and SmartDistribution.usesVMode(p, ft) then
         local v = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
         if v == nil or v == 0 then return nil end            -- 0 = Keep (Hold)
     else
@@ -15934,8 +17756,21 @@ function SmartDistribution.outputLinkStatus(p, ft)
         for _, d in ipairs(dests) do if not d.blocked then allBlocked = false; break end end
         if allBlocked then return L.BLOCKED end
     end
-    local dist, sold, stored = SmartDistribution.lastCycleStats(p, ft)
-    if (dist + sold + stored) > 0 then return L.ACTIVE end   -- Sending
+    -- LINK RECORD FIRST, for the CURRENT pass: the cheapest answer, and the only one that sees a move
+    -- into the building's own other half within the cycle it happened.
+    -- KEYED BY ROLE. Using the bare uid meant a SECONDARY row answered with the BUILDING's activity: the
+    -- DriveIn's pallet store read "Sending" because its silo half had been busy, while the pallet store
+    -- itself had moved nothing (its only market was out of range). Reported 2026-08-21. nil role collapses
+    -- to the bare uid, so single-role buildings are untouched.
+    local uid = SmartDistribution.roleUid(p, role)
+    if uid ~= nil and SmartDistribution.fedOutTotal(uid, ft) > 0 then return L.ACTIVE end
+    -- ...then the LEDGER over the SELECTED WINDOW. On Hour this is the last completed pass, exactly as
+    -- before; on Month or Year it answers "did anything move in that period", which is what makes the
+    -- status readable for an intermittent link -- a pen ships a pallet perhaps one hour in twenty, so a
+    -- per-cycle status reads Idle almost always even when the farm is working perfectly.
+    -- `moved` is included: an internal move is real movement, just not distribution.
+    local e = SmartDistribution.uidWindowStats(uid, ft, window or "hour")
+    if ((e.dist or 0) + (e.sold or 0) + (e.stored or 0) + (e.moved or 0)) > 0 then return L.ACTIVE end
     return L.IDLE
 end
 
@@ -15979,12 +17814,29 @@ SmartDistribution.LINK_COLOR = {
 -- Rebuilt each pass (see beginFeedPass) so "Active" always means "on the last pass", not "ever".
 SmartDistribution._feed     = SmartDistribution._feed or {}
 SmartDistribution._feedPrev = SmartDistribution._feedPrev or {}
+SmartDistribution._fedOut     = SmartDistribution._fedOut or {}
+SmartDistribution._fedOutPrev = SmartDistribution._fedOutPrev or {}
 
--- called at the start of each pass: the pass being built becomes current, the previous one is what the
--- UI reads (a pass in progress is incomplete, so reading it would flicker rows between Active and Idle).
+-- Start a fresh log for the pass about to run. It does NOT touch what the UI reads -- see publishFeedPass.
 function SmartDistribution.beginFeedPass()
-    SmartDistribution._feedPrev = SmartDistribution._feed or {}
-    SmartDistribution._feed = {}
+    SmartDistribution._feed   = {}
+    SmartDistribution._fedOut = {}
+end
+
+-- PUBLISH AT THE END OF THE PASS, not by swapping at the start.
+--
+-- The swap used to happen in beginFeedPass, which made the UI read the pass BEFORE last: during and
+-- after pass N, _feedPrev still held N-1, so a delivery only showed up a cycle later. Reported
+-- 2026-08-21 -- "wheat definitely moved to the chicken pen, but the pen input is Active (Idle); the
+-- silo output is Sending; after a second cycle the pen updated" -- and the asymmetry is the proof:
+-- output status reads S.lastCycle, which IS published at the end, so it was current while input lagged.
+--
+-- The original comment's worry was real -- reading a pass IN PROGRESS would flicker rows between Active
+-- and Idle as phases ran -- but publishing at the end solves that properly: the UI always reads a
+-- COMPLETE pass, and it reads the most recent one rather than the one before it.
+function SmartDistribution.publishFeedPass()
+    SmartDistribution._feedPrev   = SmartDistribution._feed   or {}
+    SmartDistribution._fedOutPrev = SmartDistribution._fedOut or {}
 end
 
 function SmartDistribution.recordFeed(consumer, ft, source, litres)
@@ -15995,6 +17847,23 @@ function SmartDistribution.recordFeed(consumer, ft, source, litres)
     f[cu] = f[cu] or {}
     f[cu][ft] = f[cu][ft] or {}
     f[cu][ft][su] = (f[cu][ft][su] or 0) + litres
+    -- ...AND THE SOURCE SIDE. outputLinkStatus used to answer "am I sending" from the distribution
+    -- LEDGER, which conflates two different questions: the ledger records what a building DISTRIBUTED,
+    -- and an internal move (tank -> its own attached pallet store) is deliberately not that -- so the
+    -- silo half read "Idle" while it was demonstrably feeding its own shed every cycle. A link record is
+    -- the honest basis for a LINK status: it says product moved along this edge, whatever the stats make
+    -- of it. Reported 2026-08-21. Answering it needs a source-keyed table, since scanning _feed for
+    -- "did anyone receive from me" would be O(consumers) per row.
+    local o = SmartDistribution._fedOut
+    o[su] = o[su] or {}
+    o[su][ft] = (o[su][ft] or 0) + litres
+end
+
+-- litres this source pushed to anyone for ft on the last completed pass
+function SmartDistribution.fedOutTotal(sourceUid, ft)
+    local o = SmartDistribution._fedOutPrev
+    local a = o ~= nil and o[sourceUid] or nil
+    return (a ~= nil and a[ft]) or 0
 end
 
 -- litres a given source moved into a consumer for ft on the last completed pass (0 if none)
@@ -16037,7 +17906,7 @@ end
 --
 -- Only affordable because sourcesFor is memoised: it is now resolved on every call rather than being
 -- short-circuited whenever the row was fed, and it is the most expensive lookup on the input side.
-function SmartDistribution.inputLinkStatus(consumerUid, ft)
+function SmartDistribution.inputLinkStatus(consumerUid, ft, window)
     local L = SmartDistribution.LINK
     if consumerUid == nil or ft == nil then return L.IDLE end
     local srcs = SmartDistribution.sourcesFor(consumerUid, ft)
@@ -16049,6 +17918,10 @@ function SmartDistribution.inputLinkStatus(consumerUid, ft)
         if allBlocked then return L.BLOCKED end
     end
     if SmartDistribution.fedTotal(consumerUid, ft) > 0 then return L.ACTIVE end
+    -- ...and over the selected window, the same way the output side does. RECEIVED is the receiver's
+    -- counterpart of dist/stored; `moved` covers a building fed by its own other half.
+    local e = SmartDistribution.uidWindowStats(consumerUid, ft, window or "hour")
+    if ((e.received or 0) + (e.moved or 0)) > 0 then return L.ACTIVE end
     return L.IDLE
 end
 
@@ -16076,6 +17949,36 @@ end
 -- Returns supports(bool), active(bool) -- active means a running production consumes ft.
 -- `supportsOnly` answers the first question and reports active=false without computing it: see the
 -- production branch below for why that half is the expensive one, and hasAnySink for who needs it.
+-- Does this building want `ft` as INPUT TO A PROCESS -- a genuine DEMAND -- as opposed to merely having
+-- somewhere to put it? Mirrors canAccept's first two branches (production input, husbandry input) and
+-- deliberately excludes its storage branches (silo / manure pit / bulk hall / object storage).
+--
+-- WHY IT EXISTS. outputDestinations split "store" from "demand" with `getAssetClass(p)`, which answers
+-- with the PRIMARY role -- so a building that accepts a product ONLY through its pallet store, but whose
+-- primary role is a production, was filed as a DEMAND. Reported 2026-08-19: a Longhouse cheese production
+-- listed as a demand for SILAGE_ADDITIVE, which none of its lines consume; it can only be STORED there,
+-- as pallets. That is the same "the class gate reads the primary role" fault phase 4 fixed in
+-- storeToTargetValid, in the one place it was not carried across.
+--
+-- Kept as a separate predicate rather than a third return from canAccept: canAccept is on the allocator's
+-- per-candidate hot path and this is a list-display concern, exactly the reasoning behind its own
+-- `supportsOnly` flag.
+function SmartDistribution.acceptsAsDemand(p, ft)
+    if p == nil or ft == nil then return false end
+    local pp = getProductionPoint(p)
+    if pp ~= nil and type(pp.inputFillTypeIds) == "table" and pp.inputFillTypeIds[ft] == true then
+        -- A pass-through store's "inputs" are its 111 identity lines, which consume nothing -- treating
+        -- those as demand would put every crop on the farm's demand list. Its GENUINE line inputs are
+        -- shared with the tank and are storage, not demand (5.65's ownership split).
+        if not SmartDistribution.treatPassThroughAsStore(p) then return true end
+    end
+    if isHusbandryBuilding(p) and SmartDistribution.husbandryInputFillTypes ~= nil
+       and SmartDistribution.husbandryInputFillTypes(p)[ft] then
+        return true
+    end
+    return false
+end
+
 function SmartDistribution.canAccept(p, ft, supportsOnly)
     -- a folded extension adds SPACE, never PRODUCTS: a silo is never a distribute sink for something its
     -- own storages cannot hold (5.54). Fires only for a silo that actually has an extension folded in.

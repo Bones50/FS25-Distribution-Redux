@@ -54,9 +54,13 @@ function DistributionAdvancedDialog.new(target, custom_mt)
     return self
 end
 
-function DistributionAdvancedDialog:setup(asset, ft)
+function DistributionAdvancedDialog:setup(asset, ft, role)
     self.asset = asset
     self.ft = ft
+    -- WHICH HALF of the building this dialog is configuring. Carried so every source-side key below
+    -- names the same half the MODE was set on -- see the header on outputDestinations. nil for an
+    -- ordinary building, which is every building that does only one job.
+    self.role = role
     self.demandIndex, self.rightIndex = 1, 1
     self.activeList = nil
     self:resolveOutput()
@@ -73,7 +77,23 @@ function DistributionAdvancedDialog:resolveOutput()
     if a == nil or ft == nil or SmartDistribution == nil then return end
 
     local pp = SmartDistribution.productionPointOf ~= nil and SmartDistribution.productionPointOf(a) or nil
-    if pp ~= nil then
+    -- A PASS-THROUGH STORE HAS A PRODUCTION POINT, BUT ITS TANK PRODUCTS ARE NOT PRODUCTION OUTPUTS.
+    --
+    -- Branching on `pp ~= nil` alone sent every product of such a building down the v-mode path -- and a
+    -- tank product has no v-mode, so seedV fell through to the vanilla engine flag and reported plain
+    -- DISTRIBUTE (5.49's exact fingerprint). Reported 2026-08-20: a DriveIn's EGG row read "Distribute"
+    -- in this dialog whatever mode was set on the tab.
+    --
+    -- NOT just a wrong caption: showDemands and rightKind are derived here, so the dialog built the
+    -- DEMAND list and never built the store list at all -- which is why no pallet stores appeared for a
+    -- product on Move To. A Farma 400 has no production point, took the asset-mode path, and behaved --
+    -- that contrast is what identified it.
+    --
+    -- The v-mode belongs to products the PRODUCTION half owns (5.65's ownership split). Everything else
+    -- on a pass-through store runs on the asset MODE enum, exactly like any silo.
+    local usesVMode = (pp ~= nil)
+        and (SmartDistribution.usesVMode == nil or SmartDistribution.usesVMode(a, ft))
+    if usesVMode then
         local v  = SmartDistribution.productionOutputVMode ~= nil and SmartDistribution.productionOutputVMode(pp, ft) or nil
         self.modeName = (v ~= nil and SmartDistribution.productionOutputVModeName ~= nil)
             and SmartDistribution.productionOutputVModeName(v) or ""
@@ -82,7 +102,11 @@ function DistributionAdvancedDialog:resolveOutput()
         if v == 4 or v == 5 then self.rightKind = "STORE"
         elseif v == 6 or v == 7 then self.rightKind = "MARKET" end
     else
-        local m = SmartDistribution.resolvedAssetMode(a, ft)
+        -- WITH THE ROLE. Without it this read the BARE uid -- the PRIMARY half's mode -- so standing on a
+        -- pallet-store row showed the SILO half's mode: set the store to Distribute and the dialog still
+        -- resolved the silo's Move To, so rightKind became "STORE" and it listed pallet stores instead of
+        -- demands. Reported 2026-08-21. self.role was already threaded through every other call here.
+        local m = SmartDistribution.resolvedAssetMode(a, ft, self.role)
         local M = SmartDistribution.MODE
         self.modeName = SmartDistribution.modeName(m)
         self.showDemands = (SmartDistribution.modeDistributes ~= nil) and SmartDistribution.modeDistributes(m) or false
@@ -100,12 +124,12 @@ function DistributionAdvancedDialog:rebuildRows()
     local a, ft = self.asset, self.ft
     if a == nil or ft == nil or SmartDistribution == nil or SmartDistribution.outputDestinations == nil then return end
     if self.showDemands then
-        self.demands = SmartDistribution.outputDestinations(a, ft, true, false, false)
+        self.demands = SmartDistribution.outputDestinations(a, ft, true, false, false, self.role)
     end
     if self.rightKind == "STORE" then
-        self.rights = SmartDistribution.outputDestinations(a, ft, false, true, false)
+        self.rights = SmartDistribution.outputDestinations(a, ft, false, true, false, self.role)
     elseif self.rightKind == "MARKET" then
-        self.rights = SmartDistribution.outputDestinations(a, ft, false, false, true)
+        self.rights = SmartDistribution.outputDestinations(a, ft, false, false, true, self.role)
     end
     -- LOOPBACK TEST: with Move To selected, an ACTIVE storage destination that can send this product back
     -- to us -- directly (A->B->A) or round any longer ring (A->B->C->A) -- would shuttle stock forever and
@@ -113,7 +137,7 @@ function DistributionAdvancedDialog:rebuildRows()
     -- player activate a route that silently does that.  The graph is walked once, not once per row.
     if self.isMoveTo and self.rightKind == "STORE" and #self.rights > 0
        and SmartDistribution.moveToCreatesLoop ~= nil and SmartDistribution.assetUid ~= nil then
-        local srcUid = SmartDistribution.assetUid(a)
+        local srcUid = SmartDistribution.settingUid(a, ft, self.role) or SmartDistribution.assetUid(a)
         if srcUid ~= nil then
             local edges = (SmartDistribution.moveToActiveEdges ~= nil)
                 and SmartDistribution.moveToActiveEdges(ft) or nil
@@ -189,7 +213,7 @@ end
 
 function DistributionAdvancedDialog:currentReserve()
     if self.asset == nil or self.ft == nil or SmartDistribution.assetUid == nil then return nil end
-    local uid = SmartDistribution.assetUid(self.asset)
+    local uid = SmartDistribution.settingUid(self.asset, self.ft, self.role) or SmartDistribution.assetUid(self.asset)
     if uid == nil or SmartDistribution.getOutputReserve == nil then return nil end
     return SmartDistribution.getOutputReserve(uid, self.ft)
 end
@@ -215,7 +239,7 @@ end
 
 function DistributionAdvancedDialog:onReserveDelta(dir)
     if self.asset == nil or self.ft == nil or SmartDistribution.assetUid == nil then return end
-    local uid = SmartDistribution.assetUid(self.asset)
+    local uid = SmartDistribution.settingUid(self.asset, self.ft, self.role) or SmartDistribution.assetUid(self.asset)
     if uid == nil then return end
     local cap = self:reserveCapacity()
     if cap <= 0 then
@@ -305,7 +329,7 @@ end
 -- The single selected row + its owning list.
 function DistributionAdvancedDialog:selectedRow()
     if self.asset == nil then return nil end
-    local srcUid = SmartDistribution.assetUid(self.asset)
+    local srcUid = SmartDistribution.settingUid(self.asset, self.ft, self.role) or SmartDistribution.assetUid(self.asset)
     if srcUid == nil then return nil end
     if self.activeList == "DEMAND" then
         return self.demands[self.demandIndex], "DEMAND", srcUid, self.demandList
@@ -374,7 +398,7 @@ end
 function DistributionAdvancedDialog:onToggleAll()
     if self.asset == nil or SmartDistribution.assetUid == nil then return end
     if DistributionControlEvent == nil or DistributionControlEvent.send == nil then return end
-    local srcUid = SmartDistribution.assetUid(self.asset)
+    local srcUid = SmartDistribution.settingUid(self.asset, self.ft, self.role) or SmartDistribution.assetUid(self.asset)
     if srcUid == nil then return end
     local rows = {}
     for _, r in ipairs(self.demands) do rows[#rows + 1] = r end

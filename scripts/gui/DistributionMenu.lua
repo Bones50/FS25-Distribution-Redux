@@ -235,6 +235,6 @@ function DistributionMenu:focusAsset()
         pcall(function() self.pageSelector:setState(idx, true) end)   -- switch tab (content + highlight)
     end
     if page.selectPlaceable ~= nil then
-        pcall(function() page:selectPlaceable(placeable) end)        -- preselect the gazed asset
+        pcall(function() page:selectPlaceable(placeable, cls) end)   -- preselect the gazed asset (its primary role)
     end
 end

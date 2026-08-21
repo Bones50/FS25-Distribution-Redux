@@ -65,8 +65,10 @@ function DistributionInputsDialog.new(target, custom_mt)
     return self
 end
 
-function DistributionInputsDialog:setup(asset)
+function DistributionInputsDialog:setup(asset, role)
     self.asset = asset
+    -- which HALF of the building these blocks and caps belong to (nil for an ordinary building)
+    self.assetRole = role
     self.rowIndex = 1
     self:rebuildRows()
 end
@@ -75,7 +77,7 @@ function DistributionInputsDialog:rebuildRows()
     self.rows = {}
     self.poolLiters = nil
     if self.asset == nil or SmartDistribution == nil or SmartDistribution.receiverInputRows == nil then return end
-    local rows, poolLiters = SmartDistribution.receiverInputRows(self.asset)
+    local rows, poolLiters = SmartDistribution.receiverInputRows(self.asset, self.assetRole)
     self.rows = rows or {}
     self.poolLiters = poolLiters
     if self.rowIndex > #self.rows then self.rowIndex = math.max(1, #self.rows) end
@@ -145,6 +147,7 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
     if r == nil then return end
     setc("name", r.readOnly and (r.name or "") or fillTypeTitle(r.ft))
     setc("kind", r.readOnly and SmartDistribution.l10n("dr_type_internal", "Internal")
+        or (r.linked and SmartDistribution.l10n("dr_type_linked", "Linked"))
         or (r.pooled and SmartDistribution.l10n("dr_type_pooled", "Pooled") or SmartDistribution.l10n("dr_type_individual", "Individual")))
     setc("held", fmtV(r.held))
     if r.readOnly then
@@ -162,7 +165,12 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
         -- the elastic figure in one cell is what made a 75,000 L silo read "100%  (15,000 L)".
         setc("cap", string.format("%d%%  (%s)", r.pct, fmtV(r.maxLiters)))
         setc("avail", r.availLiters ~= nil and fmtV(r.availLiters) or "-")
-        if r.targetPct ~= nil then
+        -- A DASH, not "Off", where a fill target cannot bind at all (silo / pallet store / heap / market
+        -- and a pass-through store's tank): "Off" implies it could be switched on, and on a push-only
+        -- receiver it would only duplicate Max in %. See SmartDistribution.fillTargetApplies.
+        if r.targetApplies == false then
+            setc("target", "-")
+        elseif r.targetPct ~= nil then
             setc("target", string.format("%d%%  (%s)", r.targetPct, fmtV(r.targetLiters or 0)))
         else
             setc("target", SmartDistribution.l10n("dr_label_off", "Off"))
@@ -203,8 +211,12 @@ end
 
 -- ---- actions (all routed through the MP-safe control event) ----------------
 function DistributionInputsDialog:rcvUid()
-    if self.asset == nil or SmartDistribution.assetUid == nil then return nil end
-    return SmartDistribution.assetUid(self.asset)
+    if self.asset == nil or SmartDistribution.settingUid == nil then return nil end
+    -- per FILL TYPE: a LINKED product writes to the tank's entry, so a change made here shows on the
+    -- silo's dialog too (and the other way round). r may be nil on a header/keypress path -- fall back
+    -- to the role's own key, which is what every non-linked product uses anyway.
+    local r = self:selectedRow()
+    return SmartDistribution.settingUid(self.asset, r ~= nil and r.ft or nil, self.assetRole)
 end
 
 function DistributionInputsDialog:apply(act, ft, delta, flag)
@@ -285,6 +297,9 @@ function DistributionInputsDialog:onCapUp()   self:onCapDelta( 1) end
 function DistributionInputsDialog:onTargetDelta(dir)
     local r = self:selectedRow()
     if r == nil or r.readOnly or r.blocked then return end
+    -- and refuse to step a target the receiver can never act on, or the buttons would write a setting
+    -- that is stored, displayed and silently ignored -- the failure shape this codebase chases most.
+    if r.targetApplies == false then return end
     local n = 2 + math.floor(100 / TARGET_STEP)          -- ring positions: Off(0), 0%(1) .. 100%(n-1)
     local curIdx = (r.targetPct == nil) and 0 or (1 + math.floor((r.targetPct or 0) / TARGET_STEP))
     local newIdx = (curIdx + dir) % n

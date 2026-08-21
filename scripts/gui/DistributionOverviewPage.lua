@@ -751,7 +751,7 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
     if r == nil then return end
     -- resolved on first display, then cached on the row -- see SmartDistribution.rowSettings
     local s = (SmartDistribution ~= nil and SmartDistribution.rowSettings ~= nil)
-        and (SmartDistribution.rowSettings(r) or {}) or (r.settings or {})
+        and (SmartDistribution.rowSettings(r, self:currentWindow()) or {}) or (r.settings or {})
     local col = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
     local function setc(name, text)
         local c = cell:getAttribute(name)

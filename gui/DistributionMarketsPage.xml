@@ -33,17 +33,18 @@
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
             <Text profile="SDHeaderLeft" position="530px 0px" size="550px 40px" textSize="14px"
-                  text="$l10n_dr_lbl_overviewPointer" />
+                  id="marketsHint" text="$l10n_dr_lbl_overviewPointer" />
         </Bitmap>
 
         <!-- right: INCOMING PRODUCTS (what the market receives). Animal Husbandry column set;
              rows selectable, ready for the input drill-down. -->
         <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="260px 40px" textSize="11px" text="$l10n_dr_col_incomingProducts" />
-            <Text profile="SDHeaderLeft" position="312px 0px" size="240px 40px" textSize="11px" text="$l10n_dr_col_heldSlashMax" />
-            <Text profile="SDHeaderLeft" position="560px 0px" size="115px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="683px 0px" size="140px 40px" textSize="11px" text="$l10n_dr_col_received" />
-            <Text profile="SDHeaderLeft" position="831px 0px" size="259px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
+            <Text profile="SDHeaderLeft" position="44px 0px"  size="200px 40px" textSize="11px" text="$l10n_dr_col_incomingProducts" />
+            <Text profile="SDHeaderLeft" position="252px 0px" size="100px 40px" textSize="11px" text="$l10n_dr_col_storageType" />
+            <Text profile="SDHeaderLeft" position="360px 0px" size="240px 40px" textSize="11px" text="$l10n_dr_col_heldSlashMax" />
+            <Text profile="SDHeaderLeft" position="608px 0px" size="115px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft" position="731px 0px" size="140px 40px" textSize="11px" text="$l10n_dr_col_received" />
+            <Text profile="SDHeaderLeft" position="879px 0px" size="211px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
@@ -53,11 +54,12 @@
                     <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
                     <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
                     <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="260px 42px" textSize="12px" name="fillName" />
-                    <Text profile="SDRowCell" position="312px 0px" size="240px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="560px 0px" size="115px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="683px 0px" size="140px 42px" textSize="12px" name="recvText" />
-                    <Text profile="SDRowCell" position="831px 0px" size="259px 42px" textSize="12px" name="statusText" />
+                    <Text profile="SDRowCell" position="44px 0px"  size="200px 42px" textSize="12px" name="fillName" />
+                    <Text profile="SDRowCell" position="252px 0px" size="100px 42px" textSize="12px" name="typeText" />
+                    <Text profile="SDRowCell" position="360px 0px" size="240px 42px" textSize="12px" name="heldText" />
+                    <Text profile="SDRowCell" position="608px 0px" size="115px 42px" textSize="12px" name="remainingText" />
+                    <Text profile="SDRowCell" position="731px 0px" size="140px 42px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCell" position="879px 0px" size="211px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight">
@@ -87,7 +89,15 @@
                     <Text profile="SDRowCell" position="282px 0px" size="235px 42px" textSize="12px" name="heldText" />
                     <Text profile="SDRowCell" position="525px 0px" size="115px 42px" textSize="12px" name="remainingText" />
                     <Text profile="SDRowCell" position="648px 0px" size="150px 42px" textSize="12px" name="distText" />
-                    <Text profile="SDRowCell" position="806px 0px" size="284px 42px" textSize="12px" name="modeText" />
+                    <!-- In-row timing arrows, the same contract as the other three tabs (5.64): the
+                         callback is ONE reference cloned into every row, so populate stashes the fill
+                         type on the element and the handler reads it back. They step the market TIMING
+                         ring (Hold -> Sell Immediate -> Sell Best price), not the asset mode ring.
+                         They fit INSIDE the old modeText band, so no flow column lost width:
+                         806 + 30 (prev) + 220 (text) + 34 (next) = 1090, exactly as before. -->
+                    <Button profile="fs25_multiTextOptionLeft" position="806px 0px" name="modePrev" onClick="onModePrev" />
+                    <Text   profile="SDRowCell" position="836px 0px" size="220px 42px" textSize="12px" name="modeText" />
+                    <Button profile="SDRowArrowRight" position="1056px 0px" name="modeNext" onClick="onModeNext" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">

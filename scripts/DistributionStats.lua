@@ -275,10 +275,26 @@ local function enrolledAssetsWithUniqueNames()
     local kept, byName = {}, {}
     for _, a in ipairs(SmartDistribution.enumerateConfigurableAssets()) do
         local p = a.placeable
+        -- ONE ROW PER BUILDING, not per role. That enumerator now returns a row for each job a building
+        -- does (a DriveIn is a silo AND a pallet store AND a small production), which is what the
+        -- building TABS want -- but the Overview is a flow table, and roles do not change what flowed.
+        -- Without this filter the DriveIn would contribute its whole product list two or three times
+        -- over, and the " (n)" duplicate-name suffixing below would then split it into "Drive-In (1)"
+        -- and "Drive-In (2)" as though they were separate buildings.
         if p ~= nil and (SmartDistribution.isAssetEnrolled == nil or SmartDistribution.isAssetEnrolled(p)) then
+            -- ONE ROW SET PER ROLE, because a building that does two jobs really is two things worth
+            -- reading separately -- a DriveIn's silo half and its pallet store hold different products
+            -- and are configured independently, so collapsing them would hide half of it.
+            --
+            -- IDENTITY is the role uid (so the two halves never share settings or a selection), while
+            -- the FLOW lookup stays on the base uid: the ledger records what a BUILDING moved, and a
+            -- role uid would find nothing there. That works out cleanly because the roles hold different
+            -- product lists, so each row still only shows the fill types that belong to it.
             local e = {
                 placeable = p,
-                uid  = SmartDistribution.assetUid ~= nil and SmartDistribution.assetUid(p) or nil,
+                uid  = a.roleUid or (SmartDistribution.assetUid ~= nil and SmartDistribution.assetUid(p) or nil),
+                flowUid = SmartDistribution.assetUid ~= nil and SmartDistribution.assetUid(p) or nil,
+                role = a.role,
                 name = a.name or "?",
                 baseName = a.name or "?",     -- kept un-suffixed: this is what Grouping collapses on
                 origName = a.origName,
@@ -460,7 +476,10 @@ function SmartDistribution.producibleProducts()
     local agg = (SmartDistribution.windowAggregate ~= nil) and SmartDistribution.windowAggregate("month") or {}
     for _, a in ipairs(SmartDistribution.enumerateConfigurableAssets()) do
         local p = a.placeable
-        if p ~= nil and (SmartDistribution.isAssetEnrolled == nil or SmartDistribution.isAssetEnrolled(p)) then
+        -- primary role only: a building's producible products are a property of the BUILDING, and
+        -- visiting it once per role would just do the same work two or three times
+        if p ~= nil and a.isPrimaryRole ~= false
+           and (SmartDistribution.isAssetEnrolled == nil or SmartDistribution.isAssetEnrolled(p)) then
             local pp = (SmartDistribution.productionPointOf ~= nil) and SmartDistribution.productionPointOf(p) or nil
             if pp ~= nil then
                 local ok, lines = pcall(SmartDistribution.productionLines, p)
@@ -740,10 +759,19 @@ end
 --
 -- Computed only when the view is on (`withSettings`), and only for the SIDE a row actually plays: an
 -- input-only row never resolves output destinations, which is the expensive half.
-local function settingsFor(p, ft, role)
+-- `role` here is the IN/OUT TAG ("In" / "Out" / "In/Out"); `brole` is the BUILDING role ("SHED" /
+-- "PRODUCTION" / nil for the primary). They are different things and were being conflated -- the tag was
+-- passed to functions expecting a building role, producing `uid#in` keys nothing ever writes, so MAX IN
+-- and HELD OF MAX quietly read defaults on every building. brole is recovered from the row's own role
+-- uid (SmartDistribution.roleOfUid).
+local function settingsFor(p, ft, role, brole, window)
     if p == nil or ft == nil then return nil end
     local SD = SmartDistribution
-    local uid = (SD.assetUid ~= nil) and SD.assetUid(p) or nil
+    -- ONE key for every read below. It used to be the bare uid here while maxL / inHeld / targetL were
+    -- resolved from the tag -- three resolutions in one function, none of them agreeing on a multi-role
+    -- building.
+    local uid = (SD.settingUid ~= nil) and SD.settingUid(p, ft, brole) or nil
+    if uid == nil then uid = (SD.assetUid ~= nil) and SD.assetUid(p) or nil end
     local s = {}
     if role == "In" or role == "In/Out" then
         local pool = (SD.pooledInputCapacity ~= nil) and SD.pooledInputCapacity(p) or nil
@@ -751,13 +779,18 @@ local function settingsFor(p, ft, role)
             for _, f in ipairs(pool.fts) do if f == ft then s.pooled = true; break end end
         end
         s.blocked   = uid ~= nil and SD.isInputBlocked ~= nil and SD.isInputBlocked(uid, ft) or false
-        s.pct       = (SD.inputCapPct ~= nil) and SD.inputCapPct(p, ft) or nil
-        s.maxL      = (SD.inputEffectiveMaxLiters ~= nil) and SD.inputEffectiveMaxLiters(p, ft) or nil
-        s.inHeld    = (SD.inputHeldLevel ~= nil) and SD.inputHeldLevel(p, ft) or nil
+        s.pct       = (SD.inputCapPct ~= nil) and SD.inputCapPct(p, ft, brole) or nil
+        -- with the ROLE: the Overview's settings view has a row per sub-building, and without it a pallet
+        -- store's row reported the silo's ceiling and held (the same fault as the building tab's FREE
+        -- STORAGE cell). settingsFor already carries the role -- it just was not passing it on.
+        s.maxL      = (SD.inputEffectiveMaxLiters ~= nil) and SD.inputEffectiveMaxLiters(p, ft, brole) or nil
+        s.inHeld    = (SD.inputHeldLevel ~= nil) and SD.inputHeldLevel(p, ft, brole) or nil
         s.explicit  = uid ~= nil and SD.hasExplicitInputCapPct ~= nil and SD.hasExplicitInputCapPct(uid, ft) or false
-        s.targetPct = uid ~= nil and SD.getInputTargetPct ~= nil and SD.getInputTargetPct(uid, ft) or nil
-        s.targetL   = (SD.inputTargetLiters ~= nil) and SD.inputTargetLiters(p, ft) or nil
-        s.inStatus  = uid ~= nil and SD.inputLinkStatus ~= nil and SD.inputLinkStatus(uid, ft) or nil
+        -- nil (rendered "-") on a push-only receiver: a fill target there would only duplicate Max in %.
+    local tgtOk = (SD.fillTargetApplies == nil) or SD.fillTargetApplies(p, ft, brole)
+    s.targetPct = tgtOk and uid ~= nil and SD.getInputTargetPct ~= nil and SD.getInputTargetPct(uid, ft) or nil
+        s.targetL   = tgtOk and (SD.inputTargetLiters ~= nil) and SD.inputTargetLiters(p, ft, brole) or nil
+        s.inStatus  = uid ~= nil and SD.inputLinkStatus ~= nil and SD.inputLinkStatus(uid, ft, window) or nil
         -- drives the "nearing the cap" highlight. Measured against maxL (the EFFECTIVE ceiling the
         -- allocator enforces), not the raw tank, so it means the same thing the Advanced Inputs dialog does.
         if type(s.maxL) == "number" and s.maxL > 0 and type(s.inHeld) == "number" then
@@ -779,7 +812,7 @@ local function settingsFor(p, ft, role)
             for _, d in ipairs(dests) do if not d.blocked then n = n + 1 end end
             s.destTotal, s.destActive = #dests, n
         end
-        s.outStatus = (SD.outputLinkStatus ~= nil) and SD.outputLinkStatus(p, ft) or nil
+        s.outStatus = (SD.outputLinkStatus ~= nil) and SD.outputLinkStatus(p, ft, window) or nil
         -- "1/4" -- lines SWITCHED ON that make this product, of all lines that could. Nil for anything
         -- with no production lines (silo, pen, market), which the page renders as a dash.
         if SD.outputLineCounts ~= nil then s.lineOn, s.lineTotal = SD.outputLineCounts(p, ft) end
@@ -787,12 +820,15 @@ local function settingsFor(p, ft, role)
         -- the v-mode enum (Keep / Distribute / ...), everything else on the asset MODE enum. Pallet-aware,
         -- so a coop's EGG row reads "Hold Pallets" where its MANURE row reads "Hold" (5.22).
         local pp = (SD.productionPointOf ~= nil) and SD.productionPointOf(p) or nil
-        if pp ~= nil and SD.productionOutputVMode ~= nil and SD.productionOutputVModeName ~= nil then
+        -- usesVMode, NOT `pp ~= nil`: a pass-through store has a production point but its TANK products
+        -- run on the asset mode, and resolving a v-mode they do not have reported plain Distribute.
+        if pp ~= nil and (SD.usesVMode == nil or SD.usesVMode(p, ft))
+           and SD.productionOutputVMode ~= nil and SD.productionOutputVModeName ~= nil then
             local v = SD.productionOutputVMode(pp, ft)
             s.mode = (v ~= nil) and SD.productionOutputVModeName(v) or nil
         elseif SD.modeName ~= nil and SD.resolvedAssetMode ~= nil then
             local pal = (SD.holdLabelFlag ~= nil) and SD.holdLabelFlag(p, ft) or nil
-            s.mode = SD.modeName(SD.resolvedAssetMode(p, ft), pal)
+            s.mode = SD.modeName(SD.resolvedAssetMode(p, ft, brole), pal)
         end
         s.isOut = true
     end
@@ -816,19 +852,21 @@ end
 --
 -- `false` is stored for a row that legitimately has no settings, so a nil result is not recomputed on
 -- every repopulate (the settings list repopulates on every menu refresh).
-function SmartDistribution.rowSettings(row)
+function SmartDistribution.rowSettings(row, window)
     if row == nil then return nil end
     local s = row.settings
-    if s ~= nil then
+    -- the cache is keyed by WINDOW as well: the two STATUS columns are now windowed, so a row resolved
+    -- under Hour must not be reused when the player switches to Month.
+    if s ~= nil and row.settingsWindow == window then
         if s == false then return nil end
         return s
     end
     if row.placeable == nil or row.ft == nil or row.role == nil then
-        row.settings = false
+        row.settings, row.settingsWindow = false, window
         return nil
     end
-    s = settingsFor(row.placeable, row.ft, row.role)
-    row.settings = s or false
+    s = settingsFor(row.placeable, row.ft, row.role, SmartDistribution.roleOfUid(row.uid), window)
+    row.settings, row.settingsWindow = s or false, window
     return s
 end
 
@@ -852,11 +890,25 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
     local assets = enrolledAssetsWithUniqueNames()
     for _, a in ipairs(assets) do
         local p, uid = a.placeable, a.uid
-        local byFt = uid ~= nil and agg[uid] or nil
+        -- A SECONDARY ROLE ROW READS ITS OWN KEY, not the building's. flowUid is the base uid, and using
+        -- it for every role meant one building's flows were echoed on all of its rows -- fine while each
+        -- role held a different product list (6.18's stated assumption), but a DriveIn holds EGG in its
+        -- tank AND in its pallet store, so one internal move read 1 kL on both rows.
+        -- The primary row keeps the base key, so single-role buildings and every existing flow are
+        -- untouched; only a role-attributed figure reaches a secondary row.
+        local flowKey = (uid ~= nil and uid ~= a.flowUid) and uid or (a.flowUid or uid)
+        local byFt = flowKey ~= nil and agg[flowKey] or nil
         local icon = SmartDistribution.assetIconFile ~= nil and SmartDistribution.assetIconFile(p) or nil
         local expCons, expProd = expectedFlows(p, window)      -- resolved once per building, not per row
         local ins, outs, kind   = roleSets(p)
+        -- SCOPE THE PRODUCTS TO THIS HALF of the building. candidateFillTypes and roleSets both answer
+        -- for the PLACEABLE, so without this every role row of a DriveIn listed the same products --
+        -- its silo, pallet store and production rows all showed milk and bottled milk, which only the
+        -- silo holds. nil for a single-role building, so nothing else is touched.
+        local roleFts = (SmartDistribution.roleFillTypeSet ~= nil)
+            and SmartDistribution.roleFillTypeSet(p, a.role) or nil
         for ft in pairs(candidateFillTypes(p, byFt)) do
+          if roleFts == nil or roleFts[ft] then
             local e = byFt ~= nil and byFt[ft] or nil
             local function v(field) return (e ~= nil and e[field]) or 0 end
             local held, heldInternal, heldPallets, heldPalletCount = heldOf(p, ft)
@@ -915,6 +967,7 @@ function SmartDistribution.overviewRows(window, grouped, chainFt, withSettings)
                 local l = rowsByFt[ft]; if l == nil then l = {}; rowsByFt[ft] = l end
                 l[#l + 1] = row
             end
+          end
         end
     end
 

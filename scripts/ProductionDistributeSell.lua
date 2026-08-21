@@ -81,6 +81,14 @@ local function placeableOf(pp) return pp ~= nil and pp.owningPlaceable or nil en
 -- this function used to. The bug was only ever visible on a client.
 local function uidOf(pl)
     if pl == nil then return nil end
+    -- THE PRODUCTION HALF'S KEY, not the building's. On a building whose primary job is something else
+    -- (a pass-through store, where the silo is primary) the production keeps its own modes under its own
+    -- key -- otherwise this file reads and writes the SILO's settings. roleUid returns the bare uid
+    -- whenever there is no separate production role, so an ordinary production is byte-identical.
+    if SD.roleUid ~= nil and SD.productionRoleOf ~= nil then
+        local u = SD.roleUid(pl, SD.productionRoleOf(pl))
+        if u ~= nil then return u end
+    end
     if SD.assetUid ~= nil then
         local u = SD.assetUid(pl)
         if u ~= nil then return u end
@@ -296,7 +304,7 @@ local function applyVLocal(pp, ft, v)
             elseif v == TRANSFER   then drMode = M.SELL
             -- KEEP / STORE / HOLD_INTERNAL_V -> HOLD: nothing to store or hold-as-pallets for a virtual product
             end
-            SD.applyAssetMode(pl, ft, drMode, true)
+            SD.applyAssetMode(pl, ft, drMode, true, SD.productionRoleOf(pl))
         end
         return
     end
@@ -310,13 +318,13 @@ local function applyVLocal(pp, ft, v)
         -- AUTO_DELIVER let "the base engine distribute the surplus", but DR suppresses the base engine pass,
         -- so that never happened -- it only enabled the premature sell.)
         engineSet(pp, ft, store)
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_SELL, true) end
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_SELL, true, SD.productionRoleOf(pl)) end
     elseif v == DISTSTORE then
         engineSet(pp, ft, store)                            -- STORE so the production spawns its output as pallets;
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_STORE, true) end  -- phase 1 distributes from them, palletPhase stores the remainder
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_STORE, true, SD.productionRoleOf(pl)) end  -- phase 1 distributes from them, palletPhase stores the remainder
     elseif v == STORE then
         engineSet(pp, ft, store)                            -- vanilla STORE so output accumulates / spawns pallets;
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.STORE, true) end  -- engine STORE: no distribute, storePhase/palletPhase moves it all to storage
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.STORE, true, SD.productionRoleOf(pl)) end  -- engine STORE: no distribute, storePhase/palletPhase moves it all to storage
     elseif v == SELL then
         -- The mod's HOOK 3 pass can only sell outputs that have a market price (it
         -- prices via economyManager:getPricePerLiter and skips price-0 items). So:
@@ -331,20 +339,20 @@ local function applyVLocal(pp, ft, v)
         end
         if hasPrice then
             engineSet(pp, ft, store)
-            if pl ~= nil then SD.applyAssetMode(pl, ft, M.SELL, true) end
+            if pl ~= nil then SD.applyAssetMode(pl, ft, M.SELL, true, SD.productionRoleOf(pl)) end
         else
             engineSet(pp, ft, sell)
-            if pl ~= nil then SD.applyAssetMode(pl, ft, M.INHERIT, true) end
+            if pl ~= nil then SD.applyAssetMode(pl, ft, M.INHERIT, true, SD.productionRoleOf(pl)) end
         end
     elseif v == TRANSFER then
         engineSet(pp, ft, store)                            -- keep the output in pp.storage so marketTransferPhase can drain it to the market
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.TRANSFER_MARKET, true) end
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.TRANSFER_MARKET, true, SD.productionRoleOf(pl)) end
     elseif v == DISTMARKET then
         engineSet(pp, ft, store)                            -- keep output in pp.storage; the allocator distributes first, the remainder transfers
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_MARKET, true) end
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.DISTRIBUTE_MARKET, true, SD.productionRoleOf(pl)) end
     elseif v == HOLD_INTERNAL_V then
         engineSet(pp, ft, store)                            -- engine KEEP so output accumulates as bulk; the updateProduction gate suppresses the auto pallet-spawn
-        if pl ~= nil then SD.applyAssetMode(pl, ft, M.HOLD_INTERNAL, true) end
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.HOLD_INTERNAL, true, SD.productionRoleOf(pl)) end
     else
         -- DISTRIBUTE and KEEP(Hold) both keep the output in pp.storage (engine STORE) so DR's phase-1
         -- allocator distributes from it. Plain DISTRIBUTE previously used AUTO_DELIVER, which for an output
@@ -354,7 +362,7 @@ local function applyVLocal(pp, ft, v)
         -- Record the base-state choice in the mod's OWN table so the resolver can tell Hold from
         -- Distribute (the engine flag alone cannot, and an output left on the global Distribute default
         -- must be usable as a source). Both persist (save skips only INHERIT) and sync exactly as before.
-        if pl ~= nil then SD.applyAssetMode(pl, ft, (v == DISTRIBUTE) and M.DISTRIBUTE or M.HOLD, true) end
+        if pl ~= nil then SD.applyAssetMode(pl, ft, (v == DISTRIBUTE) and M.DISTRIBUTE or M.HOLD, true, SD.productionRoleOf(pl)) end
     end
 end
 
@@ -528,11 +536,15 @@ local function vLabel(v)
 end
 -- Explicit cycle order (was a plain modulo): Hold -> [Hold Internal, pallet outputs only] -> Distribute ->
 -- Sell -> Distribute+Sell -> Distribute+Store -> Store -> [Market Supply, Distribute+Market] -> Hold.
-local function nextVirtual(v, hasMarket, hasPallets)
+-- `hasSell` is false when the Selling setting is off, and the two sell entries drop out of the ring --
+-- the production-side mirror of hasSellEndpoint gating the asset ring. prevVirtual walks THIS function,
+-- so the backward arrow follows automatically and the two orders cannot drift apart.
+local function nextVirtual(v, hasMarket, hasPallets, hasSell)
+    if hasSell == nil then hasSell = true end            -- default: every existing caller is unchanged
     if v == KEEP            then return hasPallets and HOLD_INTERNAL_V or DISTRIBUTE end
     if v == HOLD_INTERNAL_V then return DISTRIBUTE end
-    if v == DISTRIBUTE      then return SELL end
-    if v == SELL            then return DISTSELL end
+    if v == DISTRIBUTE      then return hasSell and SELL or DISTSTORE end
+    if v == SELL            then return hasSell and DISTSELL or DISTSTORE end
     if v == DISTSELL        then return DISTSTORE end
     if v == DISTSTORE       then return STORE end
     if v == STORE           then return hasMarket and TRANSFER or KEEP end
@@ -544,14 +556,31 @@ end
 -- DERIVED BY WALKING FORWARD and keeping the predecessor, rather than written out in reverse: a second
 -- hand-maintained order would be free to drift from nextVirtual the next time a mode is added, and this
 -- cannot, because it IS nextVirtual. The ring is at most 9 entries, and this runs on a click.
-local function prevVirtual(v, hasMarket, hasPallets)
+local function prevVirtual(v, hasMarket, hasPallets, hasSell)
     local cur = KEEP
     for _ = 1, 12 do                                     -- ring is <=9; the cap is a backstop
-        local nxt = nextVirtual(cur, hasMarket, hasPallets)
+        local nxt = nextVirtual(cur, hasMarket, hasPallets, hasSell)
         if nxt == v then return cur end
         cur = nxt
         if cur == KEEP then break end                    -- full lap without finding v: leave it alone
     end
+    return v
+end
+
+-- May this output offer a SELL mode at all? False once the Selling setting is off -- except for a
+-- `sellDirectly` grid output (biogas electricity, methane), which the BASE GAME sells rather than DR, and
+-- which has no other destination to fall back to. The asset-side mirror is hasSellEndpoint.
+local function vSellAllowed(pl, ft)
+    if SD.settings == nil or SD.settings.global == nil or SD.settings.global.sellEnabled then return true end
+    return pl ~= nil and SD.isSellDirectlyFillType ~= nil and SD.isSellDirectlyFillType(pl, ft)
+end
+-- Degrade a stored v-mode for DISPLAY, exactly as SmartDistribution.sellMask does on the asset side:
+-- a combo drops to its surviving half, a plain Sell to the default. Read-time only -- VTAB and the
+-- savegame keep the player's real choice, so it all comes back when the switch does.
+local function vSellMask(v, allowed)
+    if allowed then return v end
+    if v == DISTSELL then return DISTRIBUTE end
+    if v == SELL     then return KEEP end
     return v
 end
 
@@ -565,9 +594,15 @@ local function cycleVirtual(pp, ft, back)
     -- both simply keep the product internally once nothing can spawn).
     local hasPallets = pp.palletSpawner ~= nil
                        and (SD.palletSpawnAllowed == nil or SD.palletSpawnAllowed())
-    local cur = getV(pp, ft)
-    local nv = back and prevVirtual(cur, hasMarket, hasPallets)
-                     or nextVirtual(cur, hasMarket, hasPallets)
+    -- Sell / Distribute + Sell only while the Selling setting is on. A `sellDirectly` output (biogas
+    -- electricity, methane) is exempt: the BASE GAME sells it, not DR, so hiding it would strand a plant
+    -- that has no other destination -- the same exemption hasSellEndpoint carries on the asset side.
+    local hasSell = vSellAllowed(pl, ft)
+    -- step from what the player is LOOKING at, not from the hidden stored value -- otherwise the arrow
+    -- appears to jump a mode on a building whose stored choice is currently masked.
+    local cur = vSellMask(getV(pp, ft), hasSell)
+    local nv = back and prevVirtual(cur, hasMarket, hasPallets, hasSell)
+                     or nextVirtual(cur, hasMarket, hasPallets, hasSell)
     applyVLocal(pp, ft, nv)                              -- apply on this machine immediately
     if isMP() then                                      -- and sync the rest of the session
         ProductionOutputModeEvent.sendEvent(placeableOf(pp), ft, nv)
@@ -576,7 +611,12 @@ local function cycleVirtual(pp, ft, back)
 end
 
 -- exposed for DistributionSiloDialog (production assets): read + cycle the same mode.
-function SD.productionOutputVMode(pp, ft) return getV(pp, ft) end
+-- MASKED, so the Productions tab / Overview / Advanced dialog can never show "Distribute + Sell" while
+-- the pass is running plain Distribute. resolveMode masks the asset side; this is its twin, and it is the
+-- one accessor all of them read.
+function SD.productionOutputVMode(pp, ft)
+    return vSellMask(getV(pp, ft), vSellAllowed(placeableOf(pp), ft))
+end
 function SD.productionOutputVModeName(v) return vLabel(v) or ("mode" .. tostring(v)) end
 function SD.cycleProductionOutputMode(pp, ft) return cycleVirtual(pp, ft) end
 function SD.cycleProductionOutputModeBack(pp, ft) return cycleVirtual(pp, ft, true) end
@@ -723,6 +763,14 @@ end
 -- Distribute+Sell outputs in the same hourly pass (appended after the engine's).
 local function sellRemainder(manager)
     if not SD.PRODUCTION_DISTSELL_ENABLED or SD.dryRun then return end
+    -- THE SELLING SWITCH REACHES PRODUCTIONS TOO. This path resolves its mode through getAssetMode
+    -- directly rather than through resolveMode, so the read-time mask cannot reach it -- and without
+    -- this check a production on Sell / Distribute + Sell went on selling while every other building
+    -- class obeyed the setting. (A sellDirectly grid output is unaffected either way: it never comes
+    -- through here, it is sold by sellDirectProduction, which is the base game's own behaviour.)
+    if SD.settings ~= nil and SD.settings.global ~= nil and not SD.settings.global.sellEnabled then
+        return
+    end
     if g_currentMission == nil then return end
     if not g_currentMission:getIsServer() then return end   -- selling is server-authoritative; a
     -- client running this would addMoney + zero the storage locally and desync from the host.
