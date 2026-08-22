@@ -1,0 +1,51 @@
+{
+	"$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting.schema.json",
+
+	"runtime.version": "Lua 5.1",
+
+	"diagnostics.globals": [
+		"g_currentMission", "g_currentModName", "g_currentModDirectory",
+		"g_i18n", "g_gui", "g_modManager", "g_server", "g_client",
+		"g_fillTypeManager", "g_storeManager", "g_densityMapHeightManager",
+		"g_mapManager", "g_messageCenter", "g_farmManager", "g_economyManager",
+		"g_placeableSystem", "g_soundManager", "g_time", "g_asyncTaskManager",
+		"g_aspectScaleX", "g_aspectScaleY", "g_screenWidth", "g_screenHeight",
+		"g_pixelSizeX", "g_pixelSizeY", "g_referenceScreenWidth", "g_referenceScreenHeight",
+
+		"Utils", "MathUtil", "Logging", "Class", "SpecializationUtil", "ClassUtil",
+		"XMLFile", "XMLValueType", "GuiUtils", "GuiElement", "TabbedMenu", "ScreenElement",
+		"FrameElement", "SmoothListElement", "ButtonElement", "TextElement", "BitmapElement",
+		"MultiTextOptionElement", "PagingElement", "Overlay", "StringUtil",
+		"FillPlaneUtil", "DensityMapHeightUtil", "FSDensityMapUtil", "NetworkUtil",
+
+		"Mission00", "Placeable", "PlaceableSystem", "Storage", "PalletSpawner",
+		"BunkerSilo", "SellingStation", "UnloadingStation", "LoadingStation",
+		"ProductionPoint", "ProductionChainManager", "PlaceableObjectStorage",
+		"PlaceableHusbandryFood", "PlaceableHusbandryPallets", "AnimalFoodSystem",
+		"FarmManager", "FSCareerMissionInfo", "InputAction", "Event", "MoneyType",
+		"SlotSystem", "VehicleLoadingData", "AIParameterLoadingStation",
+
+		"addConsoleCommand", "removeConsoleCommand", "addModEventListener",
+		"getUserProfileAppPath", "fileExists", "createFolder", "getfenv", "unpack",
+		"getWorldTranslation", "localToWorld", "localDirectionToWorld", "getTimeSec",
+		"printCallstack", "overlapBox", "delete", "getXMLBool", "getXMLString",
+		"getXMLFloat", "getXMLInt", "setXMLBool", "setXMLString", "setXMLFloat",
+		"setXMLInt", "loadXMLFile", "createXMLFile", "saveXMLFile", "getNumOfChildren",
+		"streamWriteString", "streamReadString", "streamWriteInt32", "streamReadInt32",
+		"streamWriteUIntN", "streamReadUIntN", "streamWriteBool", "streamReadBool",
+		"streamWriteFloat32", "streamReadFloat32",
+
+		"SmartDistribution", "DistributionSettings", "DistributionStats",
+		"DistributionMenu", "DistributionMenuPage", "DistributionStoragePage",
+		"DistributionAnimalHusbandryPage", "DistributionMarketsPage",
+		"DistributionProductionsPage", "DistributionOverviewPage", "DistributionHelpPage",
+		"DistributionSettingsPage", "DistributionSpawnDialog", "DistributionAdvancedDialog",
+		"DistributionInputsDialog", "DistributionHelpDialog", "DistributionPricing",
+		"DistributionLimits", "DistributionModeEvent", "DistributionControlEvent",
+		"DistributionStatsEvent", "DistributionSellTimingEvent", "DistributionMarketTimingEvent",
+		"ProductionDistributeSell"
+	],
+
+	"diagnostics.disable": ["lowercase-global"],
+	"workspace.checkThirdParty": false
+}

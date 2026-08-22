@@ -136,6 +136,9 @@ v1.0.0.1
         <!-- Seasonal price-curve reader for best-price selling (pure reader; loaded early). -->
         <sourceFile filename="scripts/DistributionPricing.lua"/>
         <sourceFile filename="scripts/SmartDistribution.lua"/>
+        <!-- The public extension API. MUST load after SmartDistribution.lua: it adds
+             fields to that table, and bails with a log line if it loads first. -->
+        <sourceFile filename="scripts/DistributionAPI.lua"/>
         <!-- Overview tab data: the rolling 12-month ring behind its Year timescale, plus the row builder.
              MUST load after SmartDistribution.lua (it hangs its functions off that table), and lives in
              its own file because SmartDistribution.lua's main chunk is at Lua's 200-local ceiling. -->

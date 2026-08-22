@@ -4040,7 +4040,34 @@ local function collectFoodSlots(slots)
                 end
                 local desired  = tgtPct ~= nil and (capacity * tgtPct / 100) or (rate * S.global.bufferHours)
                 local poolNeed = math.min(desired - current, capacity - current)
-                if poolNeed > ALLOC_EPS and #fts > 0 then
+
+                -- ---- EXTENSION POINT: an external feed planner (API v1) ----------------------
+                -- A mod may supply the whole split for this pool -- which products and how many
+                -- litres of each. See DistributionAPI.lua. Reaching here already means the farm
+                -- IS auto-feeding animals (this function returns on feedHusbandryEnabled at its
+                -- first line) and that this building is enrolled, so the extension can never fire
+                -- on a farm that does not use husbandry. With nothing registered feedPlanFor
+                -- returns nil on a single numeric test and the original path below runs unchanged.
+                local plan = nil
+                if poolNeed > ALLOC_EPS and #fts > 0 and SmartDistribution.feedPlanFor ~= nil then
+                    plan = SmartDistribution.feedPlanFor(p, fts, poolNeed)
+                end
+                if plan ~= nil then
+                    -- DR still does the SOURCING: the planner says what the trough should get,
+                    -- and the allocator decides where it comes from, exactly as for its own plan.
+                    for _, ft in ipairs(fts) do
+                        local want = plan[ft]
+                        if want ~= nil and want > ALLOC_EPS then
+                            local cands = buildSlotCandidates(nil, p, { ft }, x, z, farmId, qmap)
+                            if #cands > 0 then
+                                slots[#slots + 1] = { placeable = p, farmId = farmId, need = want,
+                                                      cands = cands, blocked = {}, deposit = foodDeposit }
+                            end
+                        end
+                    end
+                end
+
+                if poolNeed > ALLOC_EPS and #fts > 0 and plan == nil then
                     -- Fill BEST-QUALITY-FIRST to maximise animal health: fill the highest-quality food tier that
                     -- has stock, splitting proportionally among EQUAL-quality types (so a 3-grain chicken coop
                     -- mixes evenly, while a graded barn takes TMR first and only falls back to lower-quality
