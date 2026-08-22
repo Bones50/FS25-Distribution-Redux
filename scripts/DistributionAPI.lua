@@ -316,19 +316,76 @@ end
 -- "gui.icon_ingameMenu_animals"); `title` is the tab's name -- pass it, because
 -- the base game's fallback looks up "ui_<pageName>" in ITS namespace and a mod
 -- key will never be found there.
+-- ATOMIC. This mutates several of the menu's internal tables, and a failure part
+-- way through leaves DR's menu unusable -- which is exactly what happened the
+-- first time: registerPage put the page into pageFrames, the paging element never
+-- learned about it, and rebuildTabList then threw on every frame
+-- (idPageHash[nil].disabled), taking the whole menu down. A pcall stops the error
+-- propagating; it does NOT undo a half-applied change.
+--
+-- So: every step records how to undo itself, the result is VERIFIED before being
+-- kept, and anything short of complete success is rolled back. An extension mod
+-- must not be able to break DR's own menu, however wrong its page is.
+--
+-- ORDER MATTERS. The page is given to the paging element FIRST, because that is
+-- both what parents it (an unparented page renders nothing) and what registers
+-- it in idPageHash. Only then is TabbedMenu told about it. addElement is used
+-- rather than addPage: addElement is present in the shipped source and passes the
+-- ELEMENT ITSELF, which is what rebuildTabList later looks up. addPage is
+-- stripped, and the base game's own addPage() hands it pageRoot instead of the
+-- controller -- a mismatch that works for XML-declared pages and not for one
+-- added at runtime.
 function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title, predicate, buttons)
     if menu == nil or page == nil then return false end
-    local always = function() return true end
+    if menu.pagingElement == nil or menu.registerPage == nil then
+        log("addMenuPage: this menu has no paging element")
+        return false
+    end
+
+    local undo = {}
     local ok, err = pcall(function()
-        local pageRoot, actualPosition = menu:registerPage(page, position, predicate or always)
+        menu.pagingElement:addElement(page)
+        undo[#undo + 1] = function() menu.pagingElement:removeElement(page) end
+
+        -- Verify the paging element really took it. Without this the failure only
+        -- shows up later, inside rebuildTabList, on every frame.
+        local pageId = menu.pagingElement:getPageIdByElement(page)
+        if pageId == nil or menu.pagingElement:getPageById(pageId) == nil then
+            error("the paging element did not register the page", 0)
+        end
+        if title ~= nil then
+            local entry = menu.pagingElement:getPageById(pageId)
+            if entry ~= nil then entry.title = title end
+        end
+
+        menu:registerPage(page, position, predicate or function() return true end)
+        undo[#undo + 1] = function() menu:unregisterPage(page:class()) end
+
         menu:addPageTab(page, nil, nil, sliceId)
-        menu.pagingElement:addPage(string.upper(pageRoot.name),
-                                   pageRoot, title or pageRoot.name, actualPosition)
+        undo[#undo + 1] = function() menu.pageTabs[page] = nil end
+
         if buttons ~= nil and page.setMenuButtonInfo ~= nil then page:setMenuButtonInfo(buttons) end
         menu:rebuildTabList()
+
+        -- Final consistency check on the WHOLE menu, not just our page: every
+        -- registered frame must resolve to a page the paging element knows, which
+        -- is precisely the invariant rebuildTabList assumes and whose violation
+        -- broke the menu.
+        for _, f in ipairs(menu.pageFrames) do
+            local id = menu.pagingElement:getPageIdByElement(f)
+            if id == nil or menu.pagingElement:getPageById(id) == nil then
+                error("menu left inconsistent: a registered page has no paging entry", 0)
+            end
+        end
     end)
-    if not ok then log("addMenuPage failed: %s", tostring(err)) end
-    return ok
+
+    if not ok then
+        log("addMenuPage failed, rolling back: %s", tostring(err))
+        for i = #undo, 1, -1 do pcall(undo[i]) end
+        pcall(function() menu:rebuildTabList() end)
+        return false
+    end
+    return true
 end
 
 ---The standard Back button, so a mod's footer matches DR's without guessing at
