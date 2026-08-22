@@ -32,6 +32,16 @@
         <!-- ================= keybindings (shown in Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="配置分发（最近资产）" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="打开 Distribution Redux 菜单" />
+		
+		<!-- ================= TEMPORARY: money-type probe =================
+			Titles handed to MoneyType.register. If the base finances screen renders a
+			row per registered TYPE, one of these is what that row will read; if it
+			renders per persisted BUCKET, neither appears and the money shows under an
+			existing row instead. The two are worded differently ON PURPOSE so the log
+			is not needed to tell which registration produced a row.
+			DELETE BOTH when the probe goes.                                          -->
+        <text name="dr_finance_distributionCost"    text="分销成本" />
+        <text name="dr_finance_distributionCostCtl" text="分销成本（控制）" />
 
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview"        text="分发 - 总览" />
@@ -56,6 +66,7 @@
         <text name="dr_lbl_filterBy"         text="筛选依据" />
         <text name="dr_lbl_show"             text="显示" />
         <text name="dr_lbl_grouping"         text="分组" />
+		<text name="dr_lbl_modeKeys" text="X/Z：循环选择输出模式" />
         <text name="dr_lbl_overviewPointer"  text="完整明细 + 供应链：总览页签" />
 
         <!-- ================= Overview: FLOW view column headers =================
@@ -359,6 +370,16 @@
         <text name="dr_set_advancedRouting_tt"  text="高级输出（来源端阻止/优先级/移动至） 和高级输入（输入阻止/容量上限/补货目标） 的总开关。 关闭后会隐藏这些按钮， 并恢复默认的按距离就近优先分发。 警告： 关闭会清除所有现有高级设置（所有阻止、 优先级、 移动至、 输入上限和补货目标）， 它们会重置为默认， 重新开启后不会恢复， 需要重新设置。" />
         <text name="dr_set_advancedRouting_v1"  text="开启" />
         <text name="dr_set_advancedRouting_v2"  text="关闭" />
+		
+		<text name="dr_set_defaultOutputMode"     text="新建筑输出模式" />
+        <text name="dr_set_defaultOutputMode_tt"  text="放置建筑物时给出的输出模式。分发是正常行为。 保留意味着一个新放置的建筑会保留它所做的一切，直到你将其设置为其他状态，这样就不会有任何东西离开你尚未配置的建筑。 在制造托盘的建筑上，当托盘生成设置为从不时，这显示为“保留托盘”或“保留内部”。 这只会影响从现在开始放置的建筑物：现有建筑物永远不会改变，更改此设置不会触及任何已建的建筑物。" />
+        <text name="dr_set_defaultOutputMode_v1"  text="分发" />
+        <text name="dr_set_defaultOutputMode_v2"  text="保留" />
+
+        <text name="dr_set_defaultInputMode"     text="新建筑输入模式" />
+        <text name="dr_set_defaultInputMode_tt"  text="新建建筑是否接受交付。接受一切是正常的行为。 阻止所有对新建筑的每个输入，这样在您允许产品从高级输入进入之前，任何东西都不会传递给它。 注意：只有在“高级路由”处于打开状态时，“阻止所有”才有效，因为输入阻止是高级路由的一部分，只要您关闭它，它就会被清除。 这只会影响从现在开始放置的建筑物：现有建筑物永远不会改变。" />
+        <text name="dr_set_defaultInputMode_v1"  text="接受一切" />
+        <text name="dr_set_defaultInputMode_v2"  text="阻止一切" />
 
         <text name="dr_set_radius"     text="邻近半径" />
         <text name="dr_set_radius_tt"  text="邻近模式下，消耗方寻找来源的距离。" />
