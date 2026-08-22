@@ -13935,6 +13935,15 @@ function SmartDistribution.registerMenuGui()
     if ok then
         SmartDistribution._menuRegistered = true
         log("consolidated menu registered")
+        -- Let extension mods add their own tabs now the menu exists. Fired HERE
+        -- rather than left to the mods themselves because a mod appending to
+        -- loadMission00Finished may well run BEFORE this function does (mods load
+        -- alphabetically), so it cannot know when the menu became available.
+        -- pcall'd per callback inside fireMenuReady: a mod's tab must never take
+        -- DR's own menu down with it.
+        if SmartDistribution.fireMenuReady ~= nil then
+            pcall(SmartDistribution.fireMenuReady, SmartDistribution._menu)
+        end
         if widenF > 1 then
             print(string.format("[SmartDistribution] layout widened x%.3f for a %.2f:1 display (g_aspectScaleX=%.4f); widest table %.3f -> %.3f of screen width",
                 widenF, (type(g_screenWidth) == "number" and type(g_screenHeight) == "number" and g_screenHeight > 0)

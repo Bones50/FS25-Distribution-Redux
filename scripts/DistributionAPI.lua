@@ -62,7 +62,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 2
+SmartDistribution.API.VERSION = 3
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -237,6 +237,109 @@ function SmartDistribution.feedPlanFor(placeable, allowedFillTypes, poolNeed)
         end
     end
     return nil
+end
+
+-- ===========================================================================
+-- MENU EXTENSION (API v3)
+--
+-- A mod may add its own tab to DR's consolidated menu. TabbedMenu:addPage is a
+-- documented runtime API, so the mechanism is the base game's; what DR adds is
+-- the three things a mod cannot get right on its own.
+--
+--   1. TIMING. DR registers its menu on Mission00.loadMission00Finished, and a
+--      mod that appends to the same hook may run BEFORE it -- Animal Redux does,
+--      because mods load alphabetically and its chunk appends first. So
+--      SmartDistribution._menu does not exist yet at the moment a mod would
+--      naturally reach for it. onMenuReady fires AFTER the menu is built, and
+--      immediately if it already is, so registration order stops mattering.
+--   2. THE ICON. TabbedMenu:addPage takes a texture FILE and UVs, but DR's own
+--      tabs use base-game icon SLICES (addPageTab's fourth argument). A mod
+--      wanting a stock icon cannot express that through addPage.
+--   3. THE LAYOUT. On a display wider than 16:9 DR widens its own design units
+--      (CLAUDE.md 6.15) around its own g_gui:loadGui calls only. A page loaded
+--      by a mod would come out narrow beside every DR tab. loadMenuPage applies
+--      the same treatment.
+--
+-- Additive: v2 planners are untouched, and a mod can feature-detect these by
+-- testing for the function rather than by comparing versions.
+-- ===========================================================================
+
+SmartDistribution._menuReadyCallbacks = SmartDistribution._menuReadyCallbacks or {}
+
+---Call `fn(menu)` once DR's menu exists. Fires immediately if it already does.
+function SmartDistribution.API.onMenuReady(name, fn)
+    if type(name) ~= "string" or name == "" or type(fn) ~= "function" then
+        log("onMenuReady refused: needs (string name, function fn)")
+        return false
+    end
+    local list = SmartDistribution._menuReadyCallbacks
+    for i, e in ipairs(list) do
+        if e.name == name then list[i] = { name = name, fn = fn }; return true end
+    end
+    list[#list + 1] = { name = name, fn = fn }
+
+    -- Already built? Then this registration is late and must not simply be lost.
+    if SmartDistribution._menuRegistered and SmartDistribution._menu ~= nil then
+        local ok, err = pcall(fn, SmartDistribution._menu)
+        if not ok then log("onMenuReady '%s' threw: %s", name, tostring(err)) end
+    end
+    return true
+end
+
+---Fired by registerMenuGui. Each callback is pcall'd: a mod's tab failing to
+-- build must never take DR's own menu down with it.
+function SmartDistribution.fireMenuReady(menu)
+    for _, e in ipairs(SmartDistribution._menuReadyCallbacks) do
+        local ok, err = pcall(e.fn, menu)
+        if ok then
+            log("menu extension '%s' installed", e.name)
+        else
+            log("menu extension '%s' FAILED and was skipped: %s", e.name, tostring(err))
+        end
+    end
+end
+
+---Load a mod's page frame with DR's profiles and DR's ultrawide widening, so it
+-- matches the built-in tabs instead of rendering narrow beside them.
+function SmartDistribution.API.loadMenuPage(pageInstance, guiName, xmlPath)
+    if g_gui == nil or pageInstance == nil or guiName == nil or xmlPath == nil then return false end
+    local widen = SmartDistribution.layoutScaleX ~= nil and SmartDistribution.layoutScaleX() or 1
+    SmartDistribution._layoutScaling = (widen > 1)
+    local ok, err = pcall(g_gui.loadGui, g_gui, xmlPath, guiName, pageInstance, true)
+    SmartDistribution._layoutScaling = false        -- cleared on EVERY path: left set, it
+                                                    -- would widen unrelated base-game menus
+    if not ok then log("loadMenuPage('%s') failed: %s", tostring(guiName), tostring(err)) end
+    return ok
+end
+
+---Add a page as a tab. `sliceId` is a base-game icon slice (e.g.
+-- "gui.icon_ingameMenu_animals"); `title` is the tab's name -- pass it, because
+-- the base game's fallback looks up "ui_<pageName>" in ITS namespace and a mod
+-- key will never be found there.
+function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title, predicate, buttons)
+    if menu == nil or page == nil then return false end
+    local always = function() return true end
+    local ok, err = pcall(function()
+        local pageRoot, actualPosition = menu:registerPage(page, position, predicate or always)
+        menu:addPageTab(page, nil, nil, sliceId)
+        menu.pagingElement:addPage(string.upper(pageRoot.name),
+                                   pageRoot, title or pageRoot.name, actualPosition)
+        if buttons ~= nil and page.setMenuButtonInfo ~= nil then page:setMenuButtonInfo(buttons) end
+        menu:rebuildTabList()
+    end)
+    if not ok then log("addMenuPage failed: %s", tostring(err)) end
+    return ok
+end
+
+---The standard Back button, so a mod's footer matches DR's without guessing at
+-- the input action or the callback.
+function SmartDistribution.API.menuBackButton(menu)
+    return {
+        inputAction = InputAction.MENU_BACK,
+        text = (g_i18n ~= nil and g_i18n:getText("button_back")) or "Back",
+        callback = menu:makeSelfCallback(menu.onClickBack),
+        showWhenPaused = true,
+    }
 end
 
 print("[SmartDistribution] extension API v" .. tostring(SmartDistribution.API.VERSION) .. " available")
