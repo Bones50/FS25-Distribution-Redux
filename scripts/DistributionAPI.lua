@@ -347,6 +347,24 @@ function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title,
         menu.pagingElement:addElement(page)
         undo[#undo + 1] = function() menu.pagingElement:removeElement(page) end
 
+        -- GEOMETRY. addElement parents the page but does not lay it out, so a
+        -- runtime-added page renders at the default position -- observed as the
+        -- whole tab drawn over the tab strip with its header stranded mid-screen.
+        -- The pages the game placed itself (via the FrameReference entries in the
+        -- menu XML) have the right position and size, and a sibling in the same
+        -- parent can simply be given theirs. Copying a known-good element beats
+        -- deriving the geometry, since the paging element's own sizing rules are
+        -- stripped from the shipped source.
+        local ref = nil
+        for _, f in ipairs(menu.pageFrames) do
+            if f ~= page and f.position ~= nil and f.size ~= nil then ref = f; break end
+        end
+        if ref ~= nil then
+            if page.setPosition ~= nil then page:setPosition(ref.position[1], ref.position[2]) end
+            if page.setSize ~= nil then page:setSize(ref.size[1], ref.size[2]) end
+        end
+        if page.updateAbsolutePosition ~= nil then page:updateAbsolutePosition() end
+
         -- Verify the paging element really took it. Without this the failure only
         -- shows up later, inside rebuildTabList, on every frame.
         local pageId = menu.pagingElement:getPageIdByElement(page)
