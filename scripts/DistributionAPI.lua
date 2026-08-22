@@ -29,7 +29,17 @@
 --   SmartDistribution.API.registerFeedPlanner(name, fn)
 --   SmartDistribution.API.unregisterFeedPlanner(name)
 --
---   fn(placeable, allowedFillTypes, poolNeed) -> { [fillTypeIndex] = litres } | nil
+--   fn(placeable, allowedFillTypes, poolNeed) -> plan | nil
+--
+--   A plan is EITHER (v2, preferred)
+--       { { fillTypes = { ftA, ftB }, litres = n }, ... }
+--     where each entry's fillTypes are ALTERNATIVES -- any of them satisfies that
+--     request, and DR chooses by what is actually in stock and nearest. This
+--     matters because a planner cannot see the farm's stock: naming one product
+--     and hoping is how a pig pen starves on maize while its sorghum sits unused.
+--   OR (v1, still accepted)
+--       { [fillTypeIndex] = litres }
+--     normalised internally to one single-alternative entry each.
 --
 --     placeable         the husbandry
 --     allowedFillTypes  array of fill types DR will accept here THIS pass --
@@ -52,7 +62,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 1
+SmartDistribution.API.VERSION = 2
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -107,7 +117,18 @@ function SmartDistribution.API.unregisterFeedPlanner(name)
 end
 
 -- ---------------------------------------------------------------------------
----Validate and normalise a planner's answer. Returns a clean table, or nil.
+---Validate and normalise a planner's answer into the ARRAY form the caller uses:
+--   { { fillTypes = { ft, ... }, litres = n }, ... }
+--
+-- TWO INPUT FORMS ARE ACCEPTED.
+--   v2  an array of { fillTypes = { ... }, litres = n } -- fillTypes are
+--       ALTERNATIVES: any of them satisfies this request, and DR picks by what is
+--       actually in stock and nearest. This exists because a planner cannot know
+--       what the farm holds; naming one product and hoping is how a pig pen ends
+--       up starving on maize while its sorghum sits in a silo.
+--   v1  a flat { [ft] = litres } map, normalised to one single-alternative entry
+--       each. Kept working so an existing planner does not break.
+--
 -- A planner is third-party code running inside the hourly pass, so its output is
 -- treated as a REQUEST, never as fact: unknown fill types are dropped, junk
 -- values are rejected outright, and a plan asking for more than DR offered is
@@ -119,16 +140,41 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
     for _, ft in ipairs(allowed) do ok[ft] = true end
 
     local out, total, badValue, notAllowed = {}, 0, 0, 0
-    for ft, litres in pairs(plan) do
-        if type(ft) ~= "number" or type(litres) ~= "number"
-           or litres ~= litres                       -- NaN
-           or litres == math.huge or litres < 0 then
+
+    local function addEntry(fts, litres)
+        if type(litres) ~= "number" or litres ~= litres           -- NaN
+           or litres == math.huge or litres <= 0 then
             badValue = badValue + 1
-        elseif not ok[ft] then
-            notAllowed = notAllowed + 1              -- blocked / excluded / not accepted here
-        elseif litres > 0 then
-            out[ft] = litres
-            total = total + litres
+            return
+        end
+        local usable = {}
+        for _, ft in ipairs(fts) do
+            if type(ft) ~= "number" then
+                badValue = badValue + 1
+            elseif ok[ft] then
+                usable[#usable + 1] = ft
+            else
+                notAllowed = notAllowed + 1          -- blocked / excluded / not accepted here
+            end
+        end
+        if #usable == 0 then return end              -- nothing DR may deliver for this request
+        out[#out + 1] = { fillTypes = usable, litres = litres }
+        total = total + litres
+    end
+
+    -- v1 values are numbers, v2 entries are tables, so the first element tells the
+    -- forms apart even when fill type index 1 is a legitimate key.
+    if type(plan[1]) == "table" then
+        for _, e in ipairs(plan) do
+            if type(e) == "table" and type(e.fillTypes) == "table" then
+                addEntry(e.fillTypes, e.litres)
+            else
+                badValue = badValue + 1
+            end
+        end
+    else
+        for ft, litres in pairs(plan) do
+            if type(ft) == "number" then addEntry({ ft }, litres) else badValue = badValue + 1 end
         end
     end
 
@@ -144,14 +190,14 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
         log("planner '%s': %d fill type(s) dropped, not accepted by this building "
             .. "(blocked, excluded, or not a food it takes)", who, notAllowed)
     end
-    if total <= 0 then return nil end
+    if total <= 0 or #out == 0 then return nil end
 
     -- Never let a plan exceed what DR asked for: the pool would simply refuse
     -- the surplus at deposit time, but the slots would have competed for
     -- sources they were never going to use.
     if total > poolNeed then
         local scale = poolNeed / total
-        for ft, litres in pairs(out) do out[ft] = litres * scale end
+        for _, e in ipairs(out) do e.litres = e.litres * scale end
     end
     return out
 end

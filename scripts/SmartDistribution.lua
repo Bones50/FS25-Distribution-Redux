@@ -4053,14 +4053,18 @@ local function collectFoodSlots(slots)
                     plan = SmartDistribution.feedPlanFor(p, fts, poolNeed)
                 end
                 if plan ~= nil then
-                    -- DR still does the SOURCING: the planner says what the trough should get,
-                    -- and the allocator decides where it comes from, exactly as for its own plan.
-                    for _, ft in ipairs(fts) do
-                        local want = plan[ft]
-                        if want ~= nil and want > ALLOC_EPS then
-                            local cands = buildSlotCandidates(nil, p, { ft }, x, z, farmId, qmap)
+                    -- DR still does the SOURCING, and that division is the whole point. Each entry
+                    -- names ALTERNATIVES -- any of them satisfies that request -- and
+                    -- buildSlotCandidates gathers across all of them, so the allocator draws from
+                    -- whichever the farm actually holds, nearest first. A planner cannot see the
+                    -- farm's stock; DR can, and this is where it already knows.
+                    for _, entry in ipairs(plan) do
+                        if entry.litres > ALLOC_EPS then
+                            local cands = buildSlotCandidates(nil, p, entry.fillTypes, x, z, farmId, qmap)
+                            -- No candidates means nothing on the farm can serve this request: emit
+                            -- no slot rather than one that can never be filled.
                             if #cands > 0 then
-                                slots[#slots + 1] = { placeable = p, farmId = farmId, need = want,
+                                slots[#slots + 1] = { placeable = p, farmId = farmId, need = entry.litres,
                                                       cands = cands, blocked = {}, deposit = foodDeposit }
                             end
                         end
