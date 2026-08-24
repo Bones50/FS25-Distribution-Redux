@@ -204,7 +204,7 @@
         <text name="dr_class_silo"    text="Silo" />
         <text name="dr_class_barn"    text="Ladugård" />
         <text name="dr_class_storage" text="Förvaring" />
-        <text name="dr_class_pit"     text="Grop" />
+        <text name="dr_class_pit"     text="Slamgbrunn" />
         <text name="dr_class_market"  text="Marknad" />
 
         <!-- ================= MEDDELANDEN OCH SMÅ ETIKETTER =================
@@ -471,7 +471,7 @@
         <text name="dr_role_shed"         text="Pallförråd" />
         <text name="dr_role_production"   text="Produktion" />
         <text name="dr_role_husbandry"    text="Djur" />
-        <text name="dr_role_heap"         text="Grop" />
+        <text name="dr_role_heap"         text="Gödselhög" />
         <text name="dr_role_market"       text="Marknad" />
         <text name="dr_type_linked"       text="Länkad" />
 
