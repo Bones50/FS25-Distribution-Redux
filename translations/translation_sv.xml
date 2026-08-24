@@ -33,16 +33,6 @@
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Konfigurera distribution (närmaste byggnad)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Öppna Distribution Redux-menyn" />
 
-        <!-- ================= TILLFÄLLIGT: penga-prob =================
-             Titlar som skickas till MoneyType.register. Om grundspelets finansskärm
-             visar en rad per registrerad TYPE, är det en av dessa som raden visar;
-             om den visar per sparad BUCKET, visas ingen av dem och pengarna hamnar
-             under en befintlig rad istället. De två är formulerade olika MED AVSIKT
-             så att loggen inte behövs för att se vilken registrering som gav en rad.
-             TA BORT BÅDA när proben tas bort.                                   -->
-        <text name="dr_finance_distributionCost"    text="Distributionskostnader" />
-        <text name="dr_finance_distributionCostCtl" text="Distributionskostnader (kontroll)" />
-
         <!-- ================= sid- och dialogtitlar ================= -->
         <text name="dr_title_overview"        text="Distribution - Översikt" />
         <text name="dr_title_productions"     text="Distribution - Produktioner" />
@@ -66,7 +56,8 @@
         <text name="dr_lbl_filterBy"         text="Filtrera efter" />
         <text name="dr_lbl_show"             text="Visa" />
         <text name="dr_lbl_grouping"         text="Gruppering" />
-        <text name="dr_lbl_modeKeys" text="X / Z: växla valt utmatningsläge" />
+        <text name="dr_lbl_modeKeys"         text="X / Z: växla valt utmatningsläge" />
+        <text name="dr_lbl_sellingOff"       text="FÖRSÄLJNING AV - marknader säljer direkt, oavsett radinställningar" />
         <text name="dr_lbl_overviewPointer"  text="Fullständig uppdelning + leveranskedjor: fliken Översikt" />
 
         <!-- ================= Översikt: FLÖDE-vy kolumnrubriker =================
@@ -154,6 +145,7 @@
         <text name="dr_btn_cycleOutput"      text="Växla utmatning" />
         <text name="dr_btn_advanced"         text="Avancerat" />
         <text name="dr_btn_sellTiming"       text="Säljtidpunkt" />
+        <text name="dr_btn_sellTimingOff"    text="Säljtidpunkt: försäljning avstängd" />
         <text name="dr_btn_sellTimingValue"  text="Sälj vid: %s" />
         <text name="dr_btn_toggleLine"       text="Växla linje" />
         <text name="dr_btn_showSettings"     text="Visa inställningar" />
@@ -312,11 +304,13 @@
              "Omedelbart" säljer så snart den är tillgänglig. dr_market_*-formerna
              visas i fliken Marknaders kolumn UTMATNINGSLÄGE, där Håll betyder att
              marknaden lagrar produkten och säljer inget förrän den blir tillsagd. -->
-        <text name="dr_timing_bestPrice" text="Bästa pris" />
-        <text name="dr_timing_immediate" text="Omedelbart" />
-        <text name="dr_market_hold"      text="Håll" />
-        <text name="dr_market_best"      text="Sälj  -  Bästa pris" />
-        <text name="dr_market_immediate" text="Sälj  -  Omedelbart" />
+        <text name="dr_timing_bestPrice"   text="Bästa pris" />
+        <text name="dr_timing_immediate"   text="Omedelbart" />
+        <text name="dr_market_sellsNow"    text="Säljer nu" />
+        <text name="dr_market_sellsNowSet" text="%s (inställt: %s)" />
+        <text name="dr_market_hold"        text="Håll" />
+        <text name="dr_market_best"        text="Sälj  -  Bästa pris" />
+        <text name="dr_market_immediate"   text="Sälj  -  Omedelbart" />
 
         <!-- ================= ENHETER =================
              Volymer visas i liter under 1 000 och i kiloliter över det, så 1 001 L visas som
@@ -464,6 +458,22 @@
         <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fylls gradvis)" />
         <text name="dr_set_palletSpawnMode_v2"  text="Endast hela pallar" />
         <text name="dr_set_palletSpawnMode_v3"  text="Skapa aldrig pallar" />
+        <text name="dr_set_passThroughStores"     text="Genomströmningslager" />
+        <text name="dr_set_passThroughStores_tt"  text="Vissa moddar lägger till en förvaringsbyggnad med en fejkad produktion kopplad, där varje linje förvandlar en produkt rakt tillbaka till sig själv. Produktionen gör ingenting; den finns bara där så att spelet ska leverera till byggnaden. Behandla som förvaring får Distribution Redux att se den som den silo den verkligen är, så den slutar fråga efter varje liter på gården, och dess riktiga linjer (om den har några) visas fortfarande under Produktioner. Det tredje alternativet stänger också av dessa fejkade linjer i själva spelet - snyggare, men det skrivs in i din sparfil och förblir avstängt om du tar bort denna modd." />
+        <text name="dr_set_passThroughStores_v1"  text="Behandla som produktion" />
+        <text name="dr_set_passThroughStores_v2"  text="Behandla som förvaring" />
+        <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av linjer" />
+         <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
+              pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
+              ett byggnadsnamn i en lista med fast bredd. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="Silo" />
+        <text name="dr_role_shed"         text="Pallförråd" />
+        <text name="dr_role_production"   text="Produktion" />
+        <text name="dr_role_husbandry"    text="Djur" />
+        <text name="dr_role_heap"         text="Grop" />
+        <text name="dr_role_market"       text="Marknad" />
+        <text name="dr_type_linked"       text="Länkad" />
 
         <text name="dr_set_menuRefresh"     text="Uppdateringsfrekvens meny" />
         <text name="dr_set_menuRefresh_tt"  text="Hur ofta den öppna menyn läser om gården. Översikten räknar upp varje byggnad och produkt, så på en stor gård håller en långsammare frekvens menyn responsiv. Manuell stoppar bakgrundsuppdateringen helt - siffrorna uppdateras fortfarande när du väljer något eller trycker på Uppdatera i Översikten." />
