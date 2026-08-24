@@ -458,11 +458,11 @@
         <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fylls gradvis)" />
         <text name="dr_set_palletSpawnMode_v2"  text="Endast hela pallar" />
         <text name="dr_set_palletSpawnMode_v3"  text="Skapa aldrig pallar" />
-        <text name="dr_set_passThroughStores"     text="Genomströmningslager" />
-        <text name="dr_set_passThroughStores_tt"  text="Vissa moddar lägger till en förvaringsbyggnad med en fejkad produktion kopplad, där varje linje förvandlar en produkt rakt tillbaka till sig själv. Produktionen gör ingenting; den finns bara där så att spelet ska leverera till byggnaden. Behandla som förvaring får Distribution Redux att se den som den silo den verkligen är, så den slutar fråga efter varje liter på gården, och dess riktiga linjer (om den har några) visas fortfarande under Produktioner. Det tredje alternativet stänger också av dessa fejkade linjer i själva spelet - snyggare, men det skrivs in i din sparfil och förblir avstängt om du tar bort denna modd." />
+        <text name="dr_set_passThroughStores"     text="Förmedlingslager" />
+        <text name="dr_set_passThroughStores_tt"  text="Vissa moddar lägger till en förvaringsbyggnad med en påkopplad fejkproduktion, där varje produktions linje omvandlar en produkt till sig själv. Produktionen gör ingenting; den finns bara där för att spelet ska kunna leverera till byggnaden. Behandla som förvaring får Distribution Redux att se byggnaden som den silo den egentligen är, så den slutar efterfråga varje liter på gården, och dess riktiga produktions linjer (om den har några) visas fortfarande under Produktioner. Det tredje alternativet stänger även av dessa fejklinjer i själva spelet – snyggare, men ändringen skrivs in i din sparfil och förblir avstängd även om du tar bort modden." />
         <text name="dr_set_passThroughStores_v1"  text="Behandla som produktion" />
         <text name="dr_set_passThroughStores_v2"  text="Behandla som förvaring" />
-        <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av linjer" />
+        <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av produktion" />
          <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
               pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
               ett byggnadsnamn i en lista med fast bredd. -->
