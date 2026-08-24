@@ -32,16 +32,14 @@
         <!-- ================= keybindings (shown in Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="配置分发（最近资产）" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="打开 Distribution Redux 菜单" />
-		
-		<!-- ================= TEMPORARY: money-type probe =================
-			Titles handed to MoneyType.register. If the base finances screen renders a
-			row per registered TYPE, one of these is what that row will read; if it
-			renders per persisted BUCKET, neither appears and the money shows under an
-			existing row instead. The two are worded differently ON PURPOSE so the log
-			is not needed to tell which registration produced a row.
-			DELETE BOTH when the probe goes.                                          -->
-        <text name="dr_finance_distributionCost"    text="分销成本" />
-        <text name="dr_finance_distributionCostCtl" text="分销成本（控制）" />
+
+        <!-- ================= TEMPORARY: money-type probe =================
+             Titles handed to MoneyType.register. If the base finances screen renders a
+             row per registered TYPE, one of these is what that row will read; if it
+             renders per persisted BUCKET, neither appears and the money shows under an
+             existing row instead. The two are worded differently ON PURPOSE so the log
+             is not needed to tell which registration produced a row.
+             DELETE BOTH when the probe goes.                                          -->
 
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview"        text="分发 - 总览" />
@@ -67,6 +65,7 @@
         <text name="dr_lbl_show"             text="显示" />
         <text name="dr_lbl_grouping"         text="分组" />
 		<text name="dr_lbl_modeKeys" text="X/Z：循环选择输出模式" />
+        <text name="dr_lbl_sellingOff"       text="出售已关闭 - 所有市场都会在产品到达时立即出售，无论这些行如何设置" />
         <text name="dr_lbl_overviewPointer"  text="完整明细 + 供应链：总览页签" />
 
         <!-- ================= Overview: FLOW view column headers =================
@@ -154,6 +153,7 @@
         <text name="dr_btn_cycleOutput"      text="切换输出" />
         <text name="dr_btn_advanced"         text="高级" />
         <text name="dr_btn_sellTiming"       text="出售时机" />
+        <text name="dr_btn_sellTimingOff"    text="出售时机：出售已关闭" />
         <text name="dr_btn_sellTimingValue"  text="出售时机：%s" />
         <text name="dr_btn_toggleLine"       text="切换产线" />
         <text name="dr_btn_showSettings"     text="显示设置" />
@@ -312,6 +312,8 @@
              sells nothing until told to. -->
         <text name="dr_timing_bestPrice" text="最佳价格" />
         <text name="dr_timing_immediate" text="立即" />
+        <text name="dr_market_sellsNow"    text="立即出售" />
+        <text name="dr_market_sellsNowSet" text="%s（设置：%s）" />
         <text name="dr_market_hold"      text="保留" />
         <text name="dr_market_best"      text="出售 - 最佳价格" />
         <text name="dr_market_immediate" text="出售 - 立即" />
@@ -461,6 +463,22 @@
         <text name="dr_set_palletSpawnMode_v1"  text="原版（逐步填充）" />
         <text name="dr_set_palletSpawnMode_v2"  text="仅整托盘" />
         <text name="dr_set_palletSpawnMode_v3"  text="永不生成托盘" />
+        <text name="dr_set_passThroughStores"     text="直通式仓储" />
+        <text name="dr_set_passThroughStores_tt"  text="某些模组会为仓储建筑附加虚拟生产线，让每条产线都把产品原样转换回自身。这些生产线没有实际作用，只是为了让游戏能够向该建筑配送。选择视为仓储后，Distribution Redux 会按实际情况将其识别为筒仓，不再向它请求农场中的每一升产品；如果它包含真正的生产线，这些生产线仍会显示在“生产”页签中。第三个选项还会在游戏中关闭这些虚拟产线，界面更整洁，但该设置会写入存档；移除本模组后，产线仍会保持关闭。" />
+        <text name="dr_set_passThroughStores_v1"  text="视为生产设施" />
+        <text name="dr_set_passThroughStores_v2"  text="视为仓储" />
+        <text name="dr_set_passThroughStores_v3"  text="视为仓储 + 关闭产线" />
+        <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
+             pallet store), to tell its halves apart in the building list. Keep them short - they are
+             appended to a building name in a fixed-width list. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="筒仓" />
+        <text name="dr_role_shed"         text="托盘仓库" />
+        <text name="dr_role_production"   text="生产" />
+        <text name="dr_role_husbandry"    text="畜牧" />
+        <text name="dr_role_heap"         text="料坑" />
+        <text name="dr_role_market"       text="市场" />
+        <text name="dr_type_linked"       text="已关联" />
 
         <text name="dr_set_menuRefresh"     text="菜单刷新率" />
         <text name="dr_set_menuRefresh_tt"  text="打开菜单后重新读取农场数据的频率。 总览页会重新枚举每个建筑和产品， 因此大型农场使用较慢频率可保持菜单响应。 仅手动会完全停止后台刷新； 选择项目或在总览页按刷新时， 数值仍会更新。" />
