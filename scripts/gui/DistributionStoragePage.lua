@@ -704,10 +704,10 @@ function DistributionStoragePage:stepRowMode(dir, ...)
     local nxt
     if dir < 0 then
         nxt = (SmartDistribution.cyclePrevForAsset ~= nil)
-              and SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, ft) or cur
+              and SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, ft, self.selectedRole) or cur
     else
         nxt = (SmartDistribution.cycleNextForAsset ~= nil)
-              and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, ft)
+              and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, ft, self.selectedRole)
               or SmartDistribution.cycleNext(cur)
     end
     if nxt == nil or nxt == cur then return end
@@ -745,7 +745,7 @@ function DistributionStoragePage:onCycleSelectedBack()
     if row == nil or self.selectedAsset == nil then return end
     if SmartDistribution.cyclePrevForAsset == nil then return end
     local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
-    local nxt = SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, row.ft)
+    local nxt = SmartDistribution.cyclePrevForAsset(self.selectedAsset, cur, row.ft, self.selectedRole)
     if nxt == nil or nxt == cur then return end
     SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt, false, self.selectedRole)
     if self.detailList ~= nil then self.detailList:reloadData() end
@@ -757,7 +757,7 @@ function DistributionStoragePage:onCycleSelected()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil then return end
     local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
-    local nxt = (SmartDistribution.cycleNextForAsset and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, row.ft))
+    local nxt = (SmartDistribution.cycleNextForAsset and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, row.ft, self.selectedRole))
                 or SmartDistribution.cycleNext(cur)
     SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt, false, self.selectedRole)
     if self.detailList ~= nil then self.detailList:reloadData() end

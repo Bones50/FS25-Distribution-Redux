@@ -1801,7 +1801,13 @@ end
 -- lose its settings) when the player toggles a line.
 function SmartDistribution.productionOwnedFillTypes(p)
     local out = {}
-    if p == nil or not SmartDistribution.treatPassThroughAsStore(p) then return out end
+    if p == nil then return out end
+    -- TWO SHAPES, ONE OWNERSHIP QUESTION. A pass-through store's production half shares the silo's tank;
+    -- a separate-silo building's production owns its own buffer BESIDE the silo. Either way the products
+    -- its CONFIGURED lines make belong to the production and not to the silo -- which is what stops one
+    -- product appearing on two tabs, and what keeps a tank product off the v-mode enum (see usesVMode).
+    if not (SmartDistribution.treatPassThroughAsStore(p)
+            or SmartDistribution.separateSiloRole(p) ~= nil) then return out end
     local pp = getProductionPoint(p)
     if pp == nil then return out end
     for _, line in ipairs(SmartDistribution.configuredProductionLines(pp)) do
@@ -1825,8 +1831,16 @@ end
 function SmartDistribution.usesVMode(p, ft)
     if p == nil or ft == nil then return false end
     if getProductionPoint(p) == nil then return false end
-    if not SmartDistribution.treatPassThroughAsStore(p) then return true end   -- an ordinary production
-    return SmartDistribution.productionOwnedFillTypes(p)[ft] == true
+    -- ...and the same is true of a building whose SILO is a SECONDARY role: its tank products are the
+    -- silo's and run on the asset MODE enum, while only the production's own line outputs carry a
+    -- v-mode. Reported 2026-08-24 -- the Carpathian grainStorage's WHEAT row opened Advanced Outputs
+    -- reading "Distribute" with the DEMAND list built, whatever the tab said, so a product set to Move
+    -- To was offered no store destinations at all. 5.49's fingerprint, third shape.
+    if SmartDistribution.treatPassThroughAsStore(p)
+       or SmartDistribution.separateSiloRole(p) ~= nil then
+        return SmartDistribution.productionOwnedFillTypes(p)[ft] == true
+    end
+    return true   -- an ordinary production: every output carries a v-mode
 end
 
 function SmartDistribution.sharedTankFillTypes(p)
@@ -2086,19 +2100,65 @@ function SmartDistribution.roleOfUid(uid)
     return string.upper(suffix)
 end
 
+-- THE STORAGES A SILO PLACEABLE OWNS IN ITS OWN RIGHT -- spec_silo only. Never pp.storage, never a
+-- folded extension: this answers "what IS the silo half", not "what can this building hold", which is
+-- getAllStorages' much wider question. perFarm-scoped exactly as getRawStorages is, or a public map
+-- silo would sum every farm's stock into one row.
+function SmartDistribution.siloRoleStorages(p)
+    local out = {}
+    local spec = p ~= nil and p.spec_silo or nil
+    if spec == nil or spec.storages == nil then return out end
+    local mine = SmartDistribution._playerFarmId()
+    for _, s in ipairs(spec.storages) do
+        if SmartDistribution.usableStorage(p, s, mine) then out[#out + 1] = s end
+    end
+    return out
+end
+
+-- "SILO" when this building's bulk silo is a facility SEPARATE from the job that decided its class,
+-- else nil. The mirror of productionRoleOf / shedRoleOf.
+--
+-- Reported 2026-08-24 (FS25_CarpathianCountryside_crossplay `grainStorage`): a 1,700,000 L farmSilo tank
+-- with its own load/unload stations, sharing a placeable with a genuine two-line pig-food production.
+-- getAssetClass returns PRODUCTION (correctly -- the recipes are real, so it is not a pass-through
+-- store), and with SILO never added as a secondary role the silo simply had no row anywhere.
+--
+-- RESTRICTED TO A PRODUCTION PRIMARY, and that restriction IS the correctness argument the blanket
+-- `spec_silo ~= nil` rule lacked:
+--   * HEAP      -- a manure or slurry pit IS a silo placeable; every one would sprout a bogus SILO row
+--   * SILO      -- the silo already IS the primary (ordinary silo, DriveIn, pass-through store)
+--   * HUSBANDRY -- effectively unreachable anyway: getAssetClass tests spec_silo BEFORE
+--                  isHusbandryBuilding, so a barn owning one is already classed SILO outright
+--
+-- MEASURED, not reasoned: across the base game (74) and every installed mod (228) -- 302 production
+-- placeables -- exactly ONE declares a <silo> block, and it is the reported building. Zero false
+-- positives. `tools/silorole.lua` pins the gate against nine building shapes.
+--
+-- `p.spec_silo == nil` is tested FIRST because resolveMode reaches this on its miss path: every
+-- ordinary bakery, greenhouse and factory exits on one field check before getAssetClass' unmemoised
+-- spec chain is touched (the roleUid hot-path rule, 5.46 / 5.52). `primary` is passed in by assetRoles,
+-- which has just computed it, so the common caller pays for it once rather than twice.
+function SmartDistribution.separateSiloRole(p, primary)
+    if p == nil or p.spec_silo == nil then return nil end
+    if (primary or SmartDistribution.primaryRole(p)) ~= "PRODUCTION" then return nil end
+    if #SmartDistribution.siloRoleStorages(p) == 0 then return nil end
+    return "SILO"
+end
+
 -- Every role this placeable plays, primary first. Secondary roles are only ever ADDED to the primary, so
 -- a single-role building returns a one-element list and can never mint a suffixed uid.
--- ONLY SHED AND PRODUCTION ARE EVER ADDED, and that restriction is a correctness rule, not a shortcut.
--- A secondary role must be a genuinely SEPARATE facility, never a re-reading of the spec that already
--- decided the primary class. Adding "SILO" for `spec_silo ~= nil` looks obvious and is wrong: a slurry
--- pit and a manure pit are classified HEAP but ARE silo placeables, so every one of them would have
--- sprouted a second, bogus SILO row on the Silos tab. Same for HUSBANDRY.
+-- ONLY SHED, PRODUCTION AND SILO ARE EVER ADDED, and that restriction is a correctness rule, not a
+-- shortcut. A secondary role must be a genuinely SEPARATE facility, never a re-reading of the spec that
+-- already decided the primary class. A blanket "SILO for `spec_silo ~= nil`" is still wrong for exactly
+-- the reason it always was -- a slurry pit and a manure pit are classified HEAP but ARE silo placeables,
+-- so every one would sprout a second, bogus SILO row -- which is why separateSiloRole is gated on a
+-- PRODUCTION primary rather than on the spec alone.
 --
--- These two cover every multi-role building found across the base game and all installed mods:
+-- These three cover every multi-role building found across the base game and all installed mods:
 --   DriveIn VZ       SILO + shed + production      DriveIn Silo   SILO + shed
 --   Mechet Fromage   PRODUCTION + shed             Escargot       PRODUCTION + shed
 --   Mechet bergerie  HUSBANDRY + production
--- If a building ever genuinely needs a secondary bulk tank, that is a new rule with its own evidence.
+--   Carpathian grainStorage   PRODUCTION + silo    <- the first with TWO SEPARATE BULK CONTAINERS
 function SmartDistribution.assetRoles(p)
     if p == nil then return {} end
     local primary = getAssetClass(p)
@@ -2106,6 +2166,7 @@ function SmartDistribution.assetRoles(p)
     local function add(r) if r ~= nil and not seen[r] then seen[r] = true; roles[#roles + 1] = r end end
     if p.spec_objectStorage ~= nil then add("SHED") end
     if SmartDistribution.hasGenuineProductionLines(p) then add("PRODUCTION") end
+    add(SmartDistribution.separateSiloRole(p, primary))
     return roles
 end
 
@@ -2402,6 +2463,21 @@ local function resolveMode(p, ft, role)
             local ra = (ru ~= nil and ru ~= uid) and S.assets[ru] or nil
             if ra ~= nil and ra[ft] ~= nil and ra[ft] ~= MODE.INHERIT then return SmartDistribution.sellMask(ra[ft]) end
         end
+        -- THE MIRROR, for a building whose SILO is the secondary half (separateSiloRole). Its rows write
+        -- under `uid#silo` -- the storage page threads self.selectedRole all the way into applyAssetMode
+        -- -- while every pass-side reader calls resolveMode with NO role. Without this the player could
+        -- set the grain silo to Distribute or Store and the allocator would never see it: stored
+        -- correctly, displayed correctly, silently ignored. Exactly the fault above, one role over.
+        --
+        -- Deliberately BELOW the bare-uid read at the top, so an explicit mode on the production half
+        -- always wins and this can only ever answer a MISS. Reached only by a building that has both a
+        -- production point and a spec_silo, which is one placeable in the whole corpus.
+        local sr = SmartDistribution.separateSiloRole(p)
+        if sr ~= nil then
+            local su = SmartDistribution.roleUid(p, sr)
+            local sa = (su ~= nil and su ~= uid) and S.assets[su] or nil
+            if sa ~= nil and sa[ft] ~= nil and sa[ft] ~= MODE.INHERIT then return SmartDistribution.sellMask(sa[ft]) end
+        end
     end
     -- PUBLIC MAP STORAGE DEFAULTS TO HOLD, not to the global default. Storing in one COSTS money
     -- (costsPerFillLevelAndDay), so turning the setting on must never start moving product into a
@@ -2516,7 +2592,7 @@ end
 -- only bare uids, so every newly-routable role destination is ABSENT from its blocked maps, and absent
 -- means ACTIVE: without this bump a silo the player set to Move To months ago would start pushing into a
 -- pallet store they never chose, on the first load of this build.
-SmartDistribution.ROLE_SEED_VERSION = 3
+SmartDistribution.ROLE_SEED_VERSION = 4
 
 -- The role uids that are valid Move To destinations for (srcP, ft) -- the single seam the repair reads.
 --
@@ -3254,6 +3330,24 @@ function SmartDistribution.isProductionInputOnly(p, ft)
         end
     end
     if isOut then return false end
+    -- ...UNLESS THE PRODUCT ALSO SITS IN A SEPARATE BULK SILO ON THE SAME PLACEABLE. This rule is about a
+    -- production's INPUT BUFFER -- product that was already hauled here once, so pulling it back out
+    -- re-hauls it and bills a second link. On a building whose silo is a SECONDARY role that reasoning
+    -- does not apply: the stock is in the SILO, which is the farm's grain store and an entirely ordinary
+    -- source, and the two tanks are physically separate.
+    --
+    -- Reported 2026-08-24: the Carpathian grainStorage's pig-food lines take WHEAT as an input, so WHEAT
+    -- was "input-only" and gatherSources refused the WHOLE PLACEABLE as a source for it -- stranding a
+    -- 1,700,000 L silo and leaving a grain mill next door with nothing, on Distribute as well as Move To.
+    --
+    -- The production's buffer is still never offered: branch (a) of gatherSources requires ft to be a
+    -- genuine OUTPUT (WHEAT is not), so only branch (b) fires, and that reads getRawStorages -- the silo
+    -- tank. So this frees the silo without reopening the flour-forwarding bug the rule exists to stop.
+    if SmartDistribution.separateSiloRole(p) ~= nil then
+        for _, s in ipairs(SmartDistribution.siloRoleStorages(p)) do
+            if storageFillTypes(s)[ft] ~= nil then return false end
+        end
+    end
     if type(pp.inputFillTypeIds) == "table" and pp.inputFillTypeIds[ft] then return true end
     if type(pp.productions) == "table" then
         for _, prod in ipairs(pp.productions) do
@@ -4810,11 +4904,18 @@ local function storePhase(manager, bill)
             -- whose TANK also holds the product the shed loop was skipped entirely and that half was
             -- never swept -- which is why a mode set on a pallet-store row did nothing. Within a half the
             -- dedupe is still wanted: an extended silo lists the same fill type on several storages.
-            local seenBulk = {}
+            -- THE BULK HALF'S ROLE, for the same reason shedRoleOf exists just below. On a building whose
+            -- SILO is a SECONDARY role (separateSiloRole) the Advanced Outputs dialog writes that half's
+            -- Move To destinations under `uid#silo`, while this sweep used to pass nil -- so storeToAmount
+            -- resolved srcUid to the BARE uid and read a different entry than the one the player wrote.
+            -- MOVE TO IS THE MODE WHERE THAT FAILS CLOSED: destinations are seeded ALL-BLOCKED for loop
+            -- safety, so an absent entry means "nothing may move" and the mode would stall in total
+            -- silence. nil for every other building, so nothing else changes.
+            local bulkRole, seenBulk = SmartDistribution.separateSiloRole(p), {}
             for _, storage in ipairs(getAllStorages(p)) do
                 for ft in pairs(storageFillTypes(storage)) do
                     if not seenBulk[ft] then seenBulk[ft] = true
-                        SmartDistribution.storeToAmount(p, storage, ft, farmId, bill, nil)
+                        SmartDistribution.storeToAmount(p, storage, ft, farmId, bill, bulkRole)
                     end
                 end
             end
@@ -6900,8 +7001,17 @@ function SmartDistribution.storeToTargetValid(srcForm, dst, ft)
         if dst.spec_objectStorage == nil then return false end
         return isPalletShedSink(dst, ft)                      -- object storage that supports + has a free slot
     end
+    -- ...or a building that owns a genuine bulk SILO beside its production. The gate reads the PRIMARY
+    -- class, so the Carpathian grainStorage -- PRODUCTION primary with a 1,700,000 L farmSilo tank --
+    -- was refused outright and could not be picked as a Move To destination by any other silo (reported
+    -- 2026-08-24). Exactly the fault phase 4 fixed for the PALLET branch, one branch over.
+    -- SAFE, and for a specific reason: _bulkStorageFor reads getAllStorages, which on such a building
+    -- returns the SILO's storages and NOT pp.storage -- so a bulk push lands in the silo and can never
+    -- be dumped into the production's input buffer. A plain production has no spec_silo and is still
+    -- refused, so "a production's tank is a demand, not a stockpile" still holds everywhere it did.
     local cls = getAssetClass(dst)
-    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP"
+       and SmartDistribution.separateSiloRole(dst) == nil then return false end
     return SmartDistribution._bulkStorageFor(dst, ft) ~= nil  -- any bulk tank that supports ft
 end
 
@@ -6942,8 +7052,11 @@ function SmartDistribution.storeToTargetPossible(srcForm, dst, ft)
         if not ok then return true end
         return sup and true or false
     end
+    -- MIRRORS storeToTargetValid's widened gate; if these two disagree the loop-safe default develops a
+    -- hole, because a destination that was never seeded is ABSENT, and absent means ACTIVE.
     local cls = getAssetClass(dst)
-    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP" then return false end   -- storage only, never a demand
+    if cls ~= "SILO" and cls ~= "SHED" and cls ~= "HEAP"
+       and SmartDistribution.separateSiloRole(dst) == nil then return false end
     return SmartDistribution._bulkStorageFor(dst, ft) ~= nil
 end
 
@@ -7020,7 +7133,17 @@ function SmartDistribution.storeRoleUid(dst, ft, srcForm)
     if dst == nil then return nil end
     local base = SmartDistribution.assetUid(dst)
     if base == nil then return nil end
-    if srcForm ~= "PALLET" then return base end          -- bulk fills the tank; the primary owns it
+    if srcForm ~= "PALLET" then
+        -- ...unless the tank a bulk push lands in belongs to a SECONDARY silo half. _bulkStorageFor
+        -- resolves to spec_silo.storages there, so the litres go to the SILO -- and the setting must be
+        -- keyed to the half that receives them, or a block set on that row is stored, displayed and
+        -- silently ignored. It also makes the destination uid SUFFIXED, which is what lets
+        -- repairMoveToRoleBlocks block it unambiguously: a pre-upgrade save cannot contain such a key,
+        -- so its absence can only mean "it never existed", never "the player activated it".
+        local sr = SmartDistribution.separateSiloRole(dst)
+        if sr ~= nil then return SmartDistribution.roleUid(dst, sr) end
+        return base                                     -- bulk fills the tank; the primary owns it
+    end
     if dst.spec_objectStorage == nil then return base end
     return SmartDistribution.roleUid(dst, "SHED")
 end
@@ -10345,8 +10468,17 @@ function SmartDistribution.holdLabelFlag(p, ft)
 end
 
 -- store-capable = a valid storePhase SOURCE (production output or husbandry output)
-local function assetCanStore(asset)
-    local c = getAssetClass(asset)
+-- `role` is OPTIONAL and defaults to the building's PRIMARY class, so every existing caller is
+-- byte-identical. It exists because a role IS a class string (the enumerator sets `class = role`), and
+-- on a building whose halves play DIFFERENT classes the per-building answer is wrong for one of them:
+-- the Carpathian grainStorage is PRODUCTION primary, so without this its SILO half was offered Store
+-- (producer semantics) and refused Move To (store semantics) -- the mirror below, inverted.
+--
+-- DELIBERATELY NOT "true if ANY role qualifies". That would offer Move To on the Mechet Fromage's DAIRY
+-- rows because it happens to own a pallet store, which is exactly the pen-showing-Move-To bug 6.23
+-- fixed. The question is per ROW, so the answer must be per ROLE -- not per building.
+local function assetCanStore(asset, role)
+    local c = role or getAssetClass(asset)
     return c == "PRODUCTION" or c == "HUSBANDRY"
 end
 
@@ -10357,8 +10489,8 @@ end
 -- Move To was previously in the ring UNCONDITIONALLY and only filtered by hasStoreToEndpoint, so any
 -- building holding a product that some store could take was offered it. This makes the rule explicit and
 -- symmetrical: producers store, stores move.
-local function assetCanMoveTo(asset)
-    local c = getAssetClass(asset)
+local function assetCanMoveTo(asset, role)
+    local c = role or getAssetClass(asset)
     return c == "SILO" or c == "SHED" or c == "HEAP"
 end
 
@@ -10596,9 +10728,9 @@ end
 -- endpoint-less and enforceValidModes then deleted the player's mode permanently (CLAUDE.md 6.10).
 -- Pallet sheds are covered by the same call: for a palletized output (bread, furniture, bottled milk) a
 -- shed is the ONLY sink, which is why one full shed was enough to lose the setting.
-function SmartDistribution.hasStoreEndpoint(asset, ft)
+function SmartDistribution.hasStoreEndpoint(asset, ft, role)
     if asset == nil or ft == nil or asset.rootNode == nil then return false end
-    if not assetCanStore(asset) then return false end            -- class can't store-cascade at all
+    if not assetCanStore(asset, role) then return false end      -- class can't store-cascade at all
     local farmId = SmartDistribution._ownerFarmId(asset)
     local x, _, z = getWorldTranslation(asset.rootNode)
     return SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, resolveReach(asset))
@@ -10659,9 +10791,9 @@ end
 -- farm can hold the product -- i.e. there is somewhere to push to. It is offered even before the player
 -- has chosen any targets (the outputs indicator tells them none are set yet); what would make it a dead
 -- end is having nowhere at all it could ever push.
-function SmartDistribution.hasStoreToEndpoint(asset, ft)
+function SmartDistribution.hasStoreToEndpoint(asset, ft, role)
     if asset == nil or ft == nil then return false end
-    if not assetCanMoveTo(asset) then return false end     -- producers STORE; only stores MOVE TO
+    if not assetCanMoveTo(asset, role) then return false end -- producers STORE; only stores MOVE TO
     -- Store To is meaningful when some OTHER store can physically receive the product in the SAME form
     -- (bulk->bulk or pallet->pallet). Offered even before targets are chosen; a dead end is having
     -- nowhere it could ever push. Form follows how the source currently holds it; on an empty store we
@@ -10725,28 +10857,28 @@ end
 -- on. With it off, STORE_TO / DISTRIBUTE_STORE_TO report no endpoint, so the mode cycle skips them and
 -- enforceValidModes reverts any existing Move To output back to Hold. That gate already short-circuited
 -- before this change; it is the precedent the rest of the function now follows.
-function SmartDistribution.modeHasEndpoint(asset, ft, m)
+function SmartDistribution.modeHasEndpoint(asset, ft, m, role)
     local M = MODE
     if m == M.HOLD or m == M.INHERIT or m == M.HOLD_INTERNAL then return true end
     if m == M.DISTRIBUTE      then return SmartDistribution.hasDistributeEndpoint(asset, ft) end
     if m == M.SELL            then return SmartDistribution.hasSellEndpoint(asset, ft) end
-    if m == M.STORE           then return SmartDistribution.hasStoreEndpoint(asset, ft) end
+    if m == M.STORE           then return SmartDistribution.hasStoreEndpoint(asset, ft, role) end
     if m == M.TRANSFER_MARKET then return SmartDistribution.hasMarketEndpoint(asset, ft) end
     if m == M.STORE_TO        then
-        return SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
+        return SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft, role)
     end
     if m == M.DISTRIBUTE_SELL then
         return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasSellEndpoint(asset, ft)
     end
     if m == M.DISTRIBUTE_STORE then
-        return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasStoreEndpoint(asset, ft)
+        return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasStoreEndpoint(asset, ft, role)
     end
     if m == M.DISTRIBUTE_MARKET then
         return SmartDistribution.hasDistributeEndpoint(asset, ft) and SmartDistribution.hasMarketEndpoint(asset, ft)
     end
     if m == M.DISTRIBUTE_STORE_TO then
         return SmartDistribution.hasDistributeEndpoint(asset, ft)
-           and SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft)
+           and SmartDistribution.advancedEnabled() and SmartDistribution.hasStoreToEndpoint(asset, ft, role)
     end
     return true
 end
@@ -11379,16 +11511,19 @@ SmartDistribution.log            = log
 SmartDistribution.cycleNext      = cycleNext
 -- Step the ring, skipping any mode with no endpoint for this fill type (so e.g. slurry never lands on a
 -- market mode when no market takes slurry). ft is optional: without it the old, ungated ring is used.
-function SmartDistribution.cycleNextForAsset(asset, m, ft)   -- store-aware + pallet-aware (Hold Internal only where the asset spawns pallets)
+-- `role` is OPTIONAL and nil means the building's primary class, so every existing caller is unchanged.
+-- The building tabs pass self.selectedRole, which is what gives a SILO half sharing a placeable with a
+-- production the STORE-side ring (Move To) instead of the producer-side one (Store).
+function SmartDistribution.cycleNextForAsset(asset, m, ft, role)   -- store-aware + pallet-aware (Hold Internal only where the asset spawns pallets)
     local step = function(cur)
-        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
+        return cycleNext(cur, assetCanStore(asset, role), SmartDistribution.assetHasMarket(asset),
                          palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed(),
-                         assetCanMoveTo(asset))
+                         assetCanMoveTo(asset, role))
     end
     local nxt = step(m)
     if ft == nil then return nxt end
     for _ = 1, 12 do                                          -- ring is 10 long; the cap is a backstop
-        if SmartDistribution.modeHasEndpoint(asset, ft, nxt) then return nxt end
+        if SmartDistribution.modeHasEndpoint(asset, ft, nxt, role) then return nxt end
         nxt = step(nxt)
         if nxt == m then return m end                         -- full lap: nothing else is valid, stay put
     end
@@ -11402,19 +11537,19 @@ end
 -- this cannot, because it IS cycleNext. Cost is one full lap of a <=12 entry ring, and it is called on
 -- a CLICK, never from populate -- modeHasEndpoint scans placeableSystem, which is precisely the shape
 -- 5.46 / 5.52 exist to keep off the menu's hot path.
-function SmartDistribution.validModeRing(asset, ft)
+function SmartDistribution.validModeRing(asset, ft, role)
     local out = {}
     if asset == nil or ft == nil then return out end
     local step = function(cur)
-        return cycleNext(cur, assetCanStore(asset), SmartDistribution.assetHasMarket(asset),
+        return cycleNext(cur, assetCanStore(asset, role), SmartDistribution.assetHasMarket(asset),
                          palletSpawnerFillTypes(asset) ~= nil and SmartDistribution.palletSpawnAllowed(),
-                         assetCanMoveTo(asset))
+                         assetCanMoveTo(asset, role))
     end
     local m, seen = MODE.DISTRIBUTE, {}
     for _ = 1, 14 do                                           -- ring is <=12; the cap is a backstop
         if seen[m] then break end
         seen[m] = true
-        if SmartDistribution.modeHasEndpoint(asset, ft, m) then out[#out + 1] = m end
+        if SmartDistribution.modeHasEndpoint(asset, ft, m, role) then out[#out + 1] = m end
         m = step(m)
     end
     return out
@@ -11424,8 +11559,8 @@ end
 -- If the current mode is not in the ring at all -- which 5.48 makes possible and legitimate, since a
 -- player's mode is never rewritten when its endpoint disappears -- fall back to the last valid entry
 -- rather than refusing to move, so the arrow is never dead.
-function SmartDistribution.cyclePrevForAsset(asset, m, ft)
-    local ring = SmartDistribution.validModeRing(asset, ft)
+function SmartDistribution.cyclePrevForAsset(asset, m, ft, role)
+    local ring = SmartDistribution.validModeRing(asset, ft, role)
     local n = #ring
     if n == 0 then return m end
     for i = 1, n do
@@ -16765,11 +16900,57 @@ end
 -- a silently wrong figure rather than an error, which luac -p cannot catch (5.44 / 5.57).
 -- Capacity / held for ONE sub-building. Both return nil when the role needs no special reading -- an
 -- ordinary single-role building, or the primary half, which keeps answering exactly as it always has.
+-- TWO HALVES WITH TWO PHYSICALLY DISTINCT BULK CONTAINERS -- the storages belonging to ONE of them.
+-- Returns nil when this building is not that shape, which is every building that existed before
+-- separateSiloRole, so the reads below stay byte-identical for all of them.
+--
+-- THIS IS A GENUINELY NEW SHAPE and it is why the reported building needed more than a role. Every
+-- prior multi-role building either shares ONE tank (the DriveIn: silo half and production half both
+-- read pp.storage, which is why roleUsesBuffer / roleBufferCapacity exist) or owns an object storage
+-- (shedCapacityFor / shedStoredLiters answer for it). Here the silo owns spec_silo.storages and the
+-- production owns pp.storage -- two real tanks -- and nothing knew how to tell them apart. Both halves
+-- therefore fell through to the placeable-level read, and since getAllStorages folds spec_silo in while
+-- outputCapacityTotal then adds pp.storage, BOTH rows reported the SUM: 1,715,000 L against a silo of
+-- 1,700,000 and a buffer of 15,000. That is 5.65's rule ("every read behind a role-scoped cell must be
+-- role-scoped too") applied to a container split rather than to a shared tank.
+--
+-- FOLDED EXTENSIONS GO TO THE SILO HALF. No extension exists on the reported building -- its own tank is
+-- excluded from parentExtensionStorages at read time (5.54) -- so this is a forward-looking default, not
+-- something measured. The silo is the likelier owner: on that building the silo's load AND unload
+-- stations declare supportsExtension="true" while the production's selling station declares
+-- supportsExtension="false". Either way the PLACEABLE-level totals are unchanged, so a wrong guess
+-- misplaces a figure between two rows and can never lose it. NOTE this cannot disturb the 5.29c
+-- greenhouse water tank: that building has no spec_silo, so separateSiloRole returns nil and this whole
+-- function is skipped.
+function SmartDistribution.roleStorages(p, role)
+    if role == nil or SmartDistribution.separateSiloRole(p) == nil then return nil end
+    if role == "SILO" then
+        local out = SmartDistribution.siloRoleStorages(p)
+        for _, s in ipairs(parentExtensionStorages(p)) do out[#out + 1] = s end
+        return out
+    end
+    if role == "PRODUCTION" then
+        local pp = getProductionPoint(p)
+        if pp ~= nil and pp.storage ~= nil then return { pp.storage } end
+        return {}
+    end
+    return nil
+end
+
 function SmartDistribution.roleCapacity(p, ft, role)
     if p == nil or role == nil then return nil end
     if #SmartDistribution.assetRoles(p) < 2 then return nil end
     if role == "SHED" then return SmartDistribution.shedCapacityFor(p) end
     if SmartDistribution.roleUsesBuffer(p, role) then return SmartDistribution.roleBufferCapacity(p, ft) end
+    local split = SmartDistribution.roleStorages(p, role)
+    if split ~= nil then
+        local total = 0
+        for _, s in ipairs(split) do
+            local c = storageCapacity(s, ft)
+            if type(c) == "number" and c < math.huge then total = total + c end
+        end
+        return total
+    end
     return nil
 end
 
@@ -16793,6 +16974,15 @@ function SmartDistribution.roleHeld(p, ft, role)
     end
     if SmartDistribution.roleUsesBuffer(p, role) then
         return SmartDistribution.roleBufferLevel(SmartDistribution.roleUid(p, role), ft)
+    end
+    -- HELD MUST BE READ ON THE SAME BASIS AS CAPACITY (5.29b / 5.54c), so this walks exactly the list
+    -- roleCapacity walked -- otherwise the fill percentage and the room left come off two different
+    -- tanks, which is the fault this whole split exists to fix.
+    local split = SmartDistribution.roleStorages(p, role)
+    if split ~= nil then
+        local total = 0
+        for _, s in ipairs(split) do total = total + (getLevel(s, ft) or 0) end
+        return total
     end
     return nil
 end

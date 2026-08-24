@@ -8,8 +8,10 @@ Fixed
 1) Fixed Extensions only adding storage to the Output Section of the UI and blocking incoming material from filling to capacity. 15/8
 2) Fixed Never spawn pallets setting from stopping pallets being bought at stores. 15/8
 3) Distribution costs moved to the "Other" category on the finance page to hopefully make it easier to see. 16/8
-4) (NEW) Fixed status displays being delayed 1 cycle too late. (21/8)
-5) (NEW) Redid the calculation for sell at best price. There was some issues with markets that should now be resolved. 21/8
+4) Fixed status displays being delayed 1 cycle too late. (21/8)
+5) Redid the calculation for sell at best price. There was some issues with markets that should now be resolved. 21/8
+6) (NEW) Fixed modded buildings that are both a silo and a production not showing the silo side in storages.(24/8)
+7) (NEW) Fixed an issue with the advanced output screen when in dual mode outputs (e.g. Distribute + Move To) that prevented you modifying settings on some lines. (24/8)
 
 Added
 1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
@@ -20,13 +22,14 @@ Added
 6) Added arrow keys to the outputs to make changing modes easier. Can now go backwards or forwards through the options. If you have a specific output selected you can also use "Z" and "X" keys to scroll backwards and forwards for the selected output. 16/8
 7) Added Full Chinese Translation 16/8
 8) Added Finnish Translation (All Except User Guide) 16/8
-9) (NEW) Fixed the input default setting resetting all existing buildings to blocked inputs. Was a race condition on savegame load that applied the default before all buildings where loaded. 20/8
-10) (NEW) Added a fix to the base game mechanic that under some circumstances allowed overfilling of silos. (20/8)
-11) (NEW) Status display will now take into account the time period selected. e.g. If month is selected the status will reflect whether the distribution did anything in the last month, hourly if it did anything in the last hourly cycle etc. 21/8
-12) (NEW) Changed how the "Sell" setting modifies how the mod operates. If you turn off sell in the settings, everything will revert to manual transporting to sell only. Markets will revert to pre-mod functionality (Seel immediate). 21/8
+9) Fixed the input default setting resetting all existing buildings to blocked inputs. Was a race condition on savegame load that applied the default before all buildings where loaded. 20/8
+10) Added a fix to the base game mechanic that under some circumstances allowed overfilling of silos. (20/8)
+11) Status display will now take into account the time period selected. e.g. If month is selected the status will reflect whether the distribution did anything in the last month, hourly if it did anything in the last hourly cycle etc. 21/8
+12) Changed how the "Sell" setting modifies how the mod operates. If you turn off sell in the settings, everything will revert to manual transporting to sell only. Markets will revert to pre-mod functionality (Seel immediate). 21/8
+13) (NEW) Added an API Layer to support add-on mods (no gameplay change) 24/8
 
 NEW FEATURES
-1) (NEW) NOTE THIS IS VERY EXPERIMENTAL SO PLEASE TEST ON A COPY OF YOUR SAVEGAME FIRST! Added a new feature to increase support for modded buildings and change how they work with DR to make more sense. 
+1) NOTE THIS IS VERY EXPERIMENTAL SO PLEASE TEST ON A COPY OF YOUR SAVEGAME FIRST! Added a new feature to increase support for modded buildings and change how they work with DR to make more sense. 
 a) All buildings now go through a check to identify whether they are a production, pallet/bale storage or silo, or importantly a combination of any/all of those. DR will treat combo's as individual buildings of each type. For example, where a modded building has a cheese production as well as a pallet store it will show up in DR under productions AND under storage. Each element of the building (Silo, Pallet store, production) will appear in the DR UI in the correct tab and each can be configured individually (with one exception, see below).
 b) Where a building has a production and a silo that use/store the same input, the input is linked (wether it is a linked input is now shown on the input table). Any change made on either page will be represented on the other page. This effectively allows the product to be both an input to the production AND a product that can be stored and moved in the silo (e.g. you can still set output mode for the product in the silo). The silo will feed the production first regardless of the output mode setting on the silo, after feeding the production, the silo output mode will then be applied. For example if the production line is active, and the output on the silo is set to sell, the silo will feed the production first then apply the sell rule.
 b) Many mods add a 1:1 production to a silo to enable distribution, obviously this messes with DR and is no longer needed, so to avoid this, if a silo has 1:1 Production lines the productions are supressed entirely and DR will see it as a standard silo and show it in the storage tab with the standard DR output modes (note at this stage the productions remain on the normal UI but will look at suppressing that later if possible). Note that if you enable a production line that is no longer needed in the base UI, you will get charged a production cost for the hour even though it does nothing, but DR will re-disable that line in the next cycle silently. 

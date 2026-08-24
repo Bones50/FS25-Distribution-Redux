@@ -286,30 +286,69 @@ function DistributionAdvancedDialog:populateCellForItemInSection(list, section, 
     if sc ~= nil and col ~= nil and sc.setTextColor ~= nil then sc:setTextColor(col[1], col[2], col[3], col[4]) end
 end
 
--- Mutually-exclusive selection: selecting in one list clears the other, so only one row is ever
--- highlighted and the buttons always act on that single selection.
+-- WHICH TABLE THE BUTTONS ACT ON. A compound mode (Distribute + Move To) shows demands on the LEFT and
+-- stores on the RIGHT, and the player must be able to pick a row in either and have the button operate
+-- on that row alone.
+--
+-- THE OLD CODE TRIED TO FORCE THE OTHER LIST TO "NO SELECTION" and it did neither thing it claimed:
+--     pcall(self.rightList.setSelectedItem, self.rightList, 1, 0, false)   -- "clear right selection"
+-- SmoothListElement has no clear-selection call. Every base-game caller passes a 1-based index, and the
+-- list's own "nothing selected" sentinel (selectedIndex = 0) is assigned to the FIELD directly, never
+-- through this method -- whose body is stripped from the SDK source (CLAUDE.md 8.1), so index 0 was a
+-- guess. In practice it SELECTED the other list's first row: hence "highlights both rows", and hence the
+-- first row of the demand table appearing permanently stuck.
+--
+-- IT ALSO COULD NOT FIX THE REAL FAULT, which is that this callback does not always fire.
+-- SmoothListElement:mouseEvent computes `wasAlreadySelected = self.selectedIndex == clickedIndex`, and
+-- BOTH lists are constructed on index 1 (new() sets demandIndex/rightIndex to 1; SmoothListElement.lua:83
+-- does the same for its own). So clicking the FIRST row of a table changes no selection and raises no
+-- selection-changed event at all -- and `activeList`, which rebuildRows defaults to "DEMAND" whenever
+-- there are demands, was never moved off it.
+--
+-- Net effect on a fresh Distribute + Move To dialog: clicking the first STORE row did nothing
+-- observable, and Activate then toggled the first DEMAND row instead -- the other table entirely. Which
+-- is exactly "I cannot ever get the storage to be unblocked and the first row of demands is also
+-- locked": one row unreachable, the other being toggled without being asked for.
+--
+-- So selection-changed no longer decides anything. onListClick does -- it is the SmoothList's own
+-- onClickCallback, raised as (list, section, index, element, wasAlreadySelected) from notifyClick, AFTER
+-- the selection has been applied and REGARDLESS of whether it moved. The cross-clearing is deleted
+-- outright; the two lists no longer touch each other at all.
+--
+-- The double HIGHLIGHT is fixed where it belongs, in the XML: `selectedWithoutFocus="false"` on both
+-- lists. That field defaults to TRUE, and it is what setSelected() consults --
+--     element:setSelected(... and (self.selectedWithoutFocus or FocusManager:getFocusedElement() == self))
+-- so with it false only the FOCUSED list draws its highlight, and clicking a list focuses it
+-- (SmoothListElement.lua:1580). The base game's own mechanism, rather than a second one fighting it.
 function DistributionAdvancedDialog:onListSelectionChanged(list, section, index)
     if self._refreshing then return end
     self._notice = nil                      -- any pending message is stale once the selection moves
+    self:noteActiveList(list, index)
+end
+
+-- Fires on EVERY click, including a re-click of the already-selected row -- which is the case
+-- onListSelectionChanged cannot see and the whole reason this exists.
+function DistributionAdvancedDialog:onListClick(list, section, index, element, wasAlreadySelected)
+    if self._refreshing then return end
+    self._notice = nil
+    self:noteActiveList(list, index)
+end
+
+function DistributionAdvancedDialog:noteActiveList(list, index)
     if list == self.demandList then
-        self.demandIndex = index
+        if index ~= nil then self.demandIndex = index end
         self.activeList = "DEMAND"
-        if self.rightList ~= nil and self.rightList.setSelectedItem ~= nil then
-            self._refreshing = true
-            pcall(self.rightList.setSelectedItem, self.rightList, 1, 0, false)   -- clear right selection
-            self._refreshing = false
-        end
     elseif list == self.rightList then
-        self.rightIndex = index
+        if index ~= nil then self.rightIndex = index end
         self.activeList = self.rightKind
-        if self.demandList ~= nil and self.demandList.setSelectedItem ~= nil then
-            self._refreshing = true
-            pcall(self.demandList.setSelectedItem, self.demandList, 1, 0, false)  -- clear left selection
-            self._refreshing = false
-        end
+    else
+        return
     end
     self:updateToggleLabel()
 end
+
+-- The row templates carry these so a click on a CELL is not swallowed before the list sees it; the list
+-- itself now reports the click through onListClick, so these stay empty on purpose.
 function DistributionAdvancedDialog:onClickDemandRow(element) end
 function DistributionAdvancedDialog:onClickRightRow(element) end
 

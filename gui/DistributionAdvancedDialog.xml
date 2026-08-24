@@ -31,7 +31,8 @@
             </Bitmap>
             <GuiElement profile="SDList" position="40px -160px" size="640px 480px">
                 <SmoothList profile="SDList" id="demandList" position="0px 0px" size="640px 480px"
-                            onSelectionChanged="onListSelectionChanged">
+                            onSelectionChanged="onListSelectionChanged" onClick="onListClick"
+                            selectedWithoutFocus="false">
                     <ListItem profile="SDListItem" name="rowTemplate" size="640px 46px" onClick="onClickDemandRow">
                         <Text profile="SDRowCell" position="12px 0px"  size="310px 46px" textSize="17px" name="name" />
                         <Text profile="SDRowCell" position="330px 0px" size="110px 46px" textSize="16px" name="dist" />
@@ -51,7 +52,8 @@
             </Bitmap>
             <GuiElement profile="SDList" position="720px -160px" size="640px 480px">
                 <SmoothList profile="SDList" id="rightList" position="0px 0px" size="640px 480px"
-                            onSelectionChanged="onListSelectionChanged">
+                            onSelectionChanged="onListSelectionChanged" onClick="onListClick"
+                            selectedWithoutFocus="false">
                     <ListItem profile="SDListItem" name="rowTemplate" size="640px 46px" onClick="onClickRightRow">
                         <Text profile="SDRowCell" position="12px 0px"  size="310px 46px" textSize="17px" name="name" />
                         <Text profile="SDRowCell" position="330px 0px" size="110px 46px" textSize="16px" name="dist" />
