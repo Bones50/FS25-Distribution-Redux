@@ -1,0 +1,760 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Russian translation (Русский перевод)
+
+  NOTE TO EDITORS: an XML comment may not contain two hyphens in a row. It is a
+  parse error and the whole file is then ignored. Attribute VALUES below are fine
+  and several deliberately contain a double hyphen; keep them exactly as they are.
+
+  HOW TO ADD A LANGUAGE
+    1. Copy this file to translations/translation_<code>.xml
+       Codes FS25 uses: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Translate ONLY the text="..." values. Never change a name="..." key.
+    3. Open a pull request. You do not need to translate everything: any key you
+       leave out falls back to English, so a partial file is welcome.
+
+  RULES THAT MATTER
+    * Keys ending _tt are TOOLTIPS. They are long and wrap freely, so length is
+      not a problem there.
+    * Keys starting dr_col_ are TABLE COLUMN HEADERS in a fixed width cell. The
+      character budget is given in a comment above each block. A header that
+      overruns is CLIPPED, which has caused a real bug before: an output mode
+      reading "Distribute + S..." looked like plain Distribute and hid a building
+      that was selling everything. Prefer a short word or an accepted abbreviation.
+    * Keys starting dr_btn_ are BUTTONS sharing one footer bar. Keep them short.
+    * "L" is litres and "kL" kilolitres. Volumes are formatted in code, not here.
+    * Leave XML entities alone: &amp; is an ampersand, &quot; a double quote.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= keybindings (shown in Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Настроить распределение (ближайший объект)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Открыть меню Distribution Redux" />
+
+        <!-- ================= TEMPORARY: money-type probe =================
+             Titles handed to MoneyType.register. If the base finances screen renders a
+             row per registered TYPE, one of these is what that row will read; if it
+             renders per persisted BUCKET, neither appears and the money shows under an
+             existing row instead. The two are worded differently ON PURPOSE so the log
+             is not needed to tell which registration produced a row.
+             DELETE BOTH when the probe goes.                                          -->
+
+        <!-- ================= page + dialog titles ================= -->
+        <text name="dr_title_overview"        text="Распределение - Обзор" />
+        <text name="dr_title_productions"     text="Распределение - Производства" />
+        <text name="dr_title_storage"         text="Распределение - Хранилища" />
+        <text name="dr_title_husbandry"       text="Распределение - Животноводство" />
+        <text name="dr_title_markets"         text="Распределение - Рынки" />
+        <text name="dr_title_help"            text="Распределение - Справка" />
+        <text name="dr_title_settings"        text="Распределение - Настройки" />
+        <text name="dr_title_advanced"        text="Дополнительно" />
+        <text name="dr_title_advancedInputs"  text="Дополнительные входы" />
+        <text name="dr_title_spawnPallets"    text="Создать поддоны" />
+
+        <!-- ================= building-list headers (left column, ~40 chars) ================= -->
+        <text name="dr_col_buildings"     text="ЗДАНИЯ" />
+        <text name="dr_col_husbandries"   text="ЖИВОТНОВОДСТВО" />
+        <text name="dr_col_markets"       text="РЫНКИ" />
+        <text name="dr_col_productions"   text="ПРОИЗВОДСТВА" />
+
+        <!-- ================= selector labels above the tables ================= -->
+        <text name="dr_lbl_timescale"        text="Период" />
+        <text name="dr_lbl_filterBy"         text="Фильтр" />
+        <text name="dr_lbl_show"             text="Показать" />
+        <text name="dr_lbl_grouping"         text="Группировка" />
+        <text name="dr_lbl_modeKeys" text="X / Z: переключение режима выхода" />
+        <text name="dr_lbl_sellingOff"       text="ПРОДАЖА ВЫКЛ — каждый рынок продает по прибытии, независимо от настроек" />
+        <text name="dr_lbl_overviewPointer"  text="Полная детализация и цепочки поставок: вкладка «Обзор»" />
+
+        <!-- ================= Overview: FLOW view column headers =================
+             Budget roughly 10 to 16 characters each; these sit at 11px in narrow
+             cells. "(EXP.)" is short for "expected", the recipe's target figure. -->
+        <text name="dr_col_building"      text="ЗДАНИЕ" />
+        <text name="dr_col_product"       text="ПРОДУКТ" />
+        <text name="dr_col_received"      text="ПОЛУЧЕНО" />
+        <text name="dr_col_loaded"        text="ЗАГРУЖЕНО" />
+        <text name="dr_col_consumedExp"   text="РАСХОД (ПЛАН)" />
+        <text name="dr_col_unloaded"      text="ВЫГРУЖЕНО" />
+        <text name="dr_col_heldMax"       text="ЗАПАС (МАКС)" />
+        <text name="dr_col_freeStorage"   text="СВОБОДНО" />
+        <text name="dr_col_producedExp"   text="ПРОИЗВ. (ПЛАН)" />
+        <text name="dr_col_distributed"   text="РАСПРЕДЕЛЕНО" />
+        <text name="dr_col_storedMoved"   text="СКЛАД/ПЕРЕМ." />
+        <text name="dr_col_sold"          text="ПРОДАНО" />
+        <text name="dr_col_distrCost"     text="РАСХ. НА ДОСТ." />
+
+        <!-- ================= Overview: SETTINGS view column headers =================
+             Same budget as above. DEST means "active of total destinations" and is
+             the narrowest cell on the page, about 6 characters. Abbreviate freely. -->
+        <text name="dr_col_storageType"   text="ТИП СКЛАДА" />
+        <text name="dr_col_maxInPctL"     text="МАКС. ВХ. (% - Л)" />
+        <text name="dr_col_heldOfMax"     text="ЗАПАС ИЗ МАКС." />
+        <text name="dr_col_inStatus"      text="СТАТУС ВХОДА" />
+        <text name="dr_col_lines"         text="ЛИНИИ" />
+        <text name="dr_col_outMode"       text="РЕЖИМ ВЫХОДА" />
+        <text name="dr_col_reserve"       text="РЕЗЕРВ" />
+        <text name="dr_col_priority"      text="ПРИОРИТЕТ" />
+        <text name="dr_col_dest"          text="НАЗН." />
+        <text name="dr_col_outStatus"     text="СТАТУС ВЫХОДА" />
+
+        <!-- ================= building-tab table headers =================
+             Shared by Silos / Animal Husbandry / Markets / Productions. -->
+        <text name="dr_col_incomingProducts"  text="ВХОДЯЩИЕ ПРОДУКТЫ" />
+        <text name="dr_col_incomingMaterials" text="ВХОДЯЩИЕ МАТЕРИАЛЫ" />
+        <text name="dr_col_outgoingProducts"  text="ИСХОДЯЩИЕ ПРОДУКТЫ" />
+        <text name="dr_col_heldSlashMax"      text="ЗАПАС / МАКС" />
+        <text name="dr_col_distribution"      text="РАСПРЕДЕЛЕНИЕ" />
+        <text name="dr_col_consumed"          text="РАСХОД" />
+        <text name="dr_col_produced"          text="ПРОИЗВЕДЕНО" />
+        <text name="dr_col_outputMode"        text="РЕЖИМ ВЫХОДА" />
+        <text name="dr_col_status"            text="СТАТУС" />
+        <text name="dr_col_productionLines"   text="ПРОИЗВОДСТВЕННЫЕ ЛИНИИ" />
+        <!-- "/mo" = per month. The figure is the line's monthly target. -->
+        <text name="dr_col_targetMo"          text="ПЛАН /мес" />
+
+        <!-- ================= Advanced Outputs dialog ================= -->
+        <text name="dr_col_demands"   text="ПОТРЕБНОСТИ" />
+        <text name="dr_col_storage"   text="СКЛАД" />
+        <text name="dr_col_distance"  text="ДИСТАНЦИЯ" />
+        <text name="dr_col_order"     text="ПОРЯДОК" />
+
+        <!-- ================= Advanced Inputs dialog ================= -->
+        <text name="dr_col_incomingProduct" text="ВХОДЯЩИЙ ПРОДУКТ" />
+        <text name="dr_col_type"            text="ТИП" />
+        <text name="dr_col_held"            text="ЗАПАС" />
+        <text name="dr_col_maxIn"           text="МАКС. ВХОД" />
+        <text name="dr_col_available"       text="ДОСТУПНО" />
+        <text name="dr_col_fillTarget"      text="ЦЕЛЬ ЗАПОЛН." />
+
+        <!-- ================= buttons =================
+             These share one footer bar, so every extra character squeezes its
+             neighbours. Aim for the length of the English or shorter. -->
+        <text name="dr_btn_priorityUp"    text="Приоритет +" />
+        <text name="dr_btn_priorityDown"  text="Приоритет -" />
+        <text name="dr_btn_toggle"        text="Переключить" />
+        <text name="dr_btn_clear"         text="Очистить" />
+        <text name="dr_btn_blockAll"      text="Блок. все" />
+        <text name="dr_btn_reserveDown"   text="- Резерв" />
+        <text name="dr_btn_reserveUp"     text="+ Резерв" />
+        <text name="dr_btn_maxDown"       text="- Макс" />
+        <text name="dr_btn_maxUp"         text="+ Макс" />
+        <text name="dr_btn_targetDown"    text="- Цель" />
+        <text name="dr_btn_targetUp"      text="+ Цель" />
+        <text name="dr_btn_block"         text="Блокировать" />
+        <text name="dr_btn_spawn"         text="Создать" />
+        <text name="dr_btn_cancel"        text="Отмена" />
+        <text name="dr_btn_close"         text="Закрыть" />
+
+        <!-- ================= FOOTER BUTTONS (set from Lua) =================
+             Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
+             FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
+        <text name="dr_btn_cycleOutput"      text="Сменить режим" />
+        <text name="dr_btn_advanced"         text="Дополнительно" />
+        <text name="dr_btn_sellTiming"       text="Время продажи" />
+        <text name="dr_btn_sellTimingOff"    text="Время продажи: продажа ВЫКЛ" />
+        <text name="dr_btn_sellTimingValue"  text="Время продажи: %s" />
+        <text name="dr_btn_toggleLine"       text="Переключить линию" />
+        <text name="dr_btn_showSettings"     text="Показать настройки" />
+        <text name="dr_btn_showFlows"        text="Показать потоки" />
+        <text name="dr_btn_refresh"          text="Обновить" />
+        <text name="dr_btn_advancedOutputs"  text="Выходы (доп.)" />
+        <text name="dr_btn_activate"         text="Активировать" />
+        <text name="dr_btn_activateAll"      text="Активировать все" />
+        <text name="dr_btn_allow"            text="Разрешить" />
+        <text name="dr_btn_allowAll"         text="Разрешить все" />
+
+        <!-- ================= TIMESCALE SELECTOR =================
+             One in-game hour is one distribution cycle, which is why the building tabs spell it
+             out; the Overview's column is narrower and just says "Hour". -->
+        <text name="dr_period_hourLong" text="Цикл (час)" />
+        <text name="dr_period_hour"     text="Час" />
+        <text name="dr_period_month"    text="Месяц" />
+        <text name="dr_period_year"     text="Год" />
+
+        <!-- ================= OVERVIEW SELECTORS =================
+             "End product (full chain)" shows every building feeding one finished product, back
+             through the whole supply chain. Grouping collapses buildings of the same type into
+             one summed row, labelled e.g. "Bakery x2". -->
+        <text name="dr_filter_nothing"    text="Все (без фильтра)" />
+        <text name="dr_filter_building"   text="Здание" />
+        <text name="dr_filter_product"    text="Продукт" />
+        <text name="dr_filter_endProduct" text="Конечный продукт (вся цепочка)" />
+        <text name="dr_group_off"         text="Выкл (по одному зданию)" />
+        <text name="dr_group_on"          text="Вкл (группировать по типу)" />
+
+        <!-- ================= OVERVIEW SHORT STATUS =================
+             The same three states as dr_status_* above, but the Overview's column is 140px and
+             its header already says IN or OUT, so the qualifier is dropped. Keep these SHORT. -->
+        <text name="dr_statusShort_receiving" text="Прием" />
+        <text name="dr_statusShort_sending"   text="Отправка" />
+        <text name="dr_statusShort_idle"      text="Ожидание" />
+        <text name="dr_statusShort_blocked"   text="Блокировано" />
+
+        <!-- ================= STORAGE TYPE =================
+             Pooled: one tank shared by several products. Individual: a separate tank per
+             product. Shown in the Advanced Inputs dialog and the Overview settings view, which
+             deliberately use identical wording. -->
+        <text name="dr_type_pooled"     text="Общий" />
+        <text name="dr_type_individual" text="Раздельный" />
+        <text name="dr_type_internal"   text="Внутренний" />
+        <text name="dr_type_blocked"    text="БЛОКИРОВАНО" />
+
+        <!-- ================= OUTPUT PRIORITY =================
+             "Distance" is the default: nearest consumer first. "Ranked (n)" means the player
+             has ordered n destinations by hand in Advanced Outputs. -->
+        <text name="dr_priority_ranked"   text="По порядку (%d)" />
+        <text name="dr_priority_distance" text="По дистанции" />
+
+        <!-- ================= BUILDING KIND =================
+             The right-hand column of the building list on the Silos tab. Very narrow. -->
+        <text name="dr_class_silo"    text="Силос" />
+        <text name="dr_class_barn"    text="Загон" />
+        <text name="dr_class_storage" text="Склад" />
+        <text name="dr_class_pit"     text="Яма" />
+        <text name="dr_class_market"  text="Рынок" />
+
+        <!-- ================= NOTICES AND SMALL LABELS =================
+             The blocked notice is the last row of a building's input list when Advanced routing
+             has hidden products the building is not holding. SEPARATE singular and plural keys:
+             English used to make the singular by deleting the final "s", which does not survive
+             translation. If your language needs no distinction, give both the same text. -->
+        <text name="dr_notice_blockedInput"  text="+%d вход заблокирован (см. «Дополнительные входы»)" />
+        <text name="dr_notice_blockedInputs" text="+%d входов заблокировано (см. «Дополнительные входы»)" />
+        <text name="dr_label_off"      text="Выкл" />
+        <text name="dr_label_blocked"  text="Заблокировано" />
+        <text name="dr_label_building" text="Здание" />
+        <!-- Fallback name for a production line the game does not name itself; %d is its number. -->
+        <text name="dr_label_line"     text="Линия %d" />
+
+        <!-- ================= ADVANCED OUTPUTS DIALOG =================
+             %s in the title is the building name. "Active - Invalid" marks a destination that
+             is switched on but would send the product in a circle back to where it started. -->
+        <text name="dr_adv_title"         text="Дополнительно - %s" />
+        <text name="dr_adv_activeInvalid" text="Активно - Ошибка" />
+        <text name="dr_adv_reserve"       text="     Резерв: " />
+        <text name="dr_adv_noCapacity"    text="Нет емкости для резервирования" />
+        <text name="dr_adv_loopOne"       text="Нельзя активировать %s — это закольцует перемещение продукта." />
+        <text name="dr_adv_loopMany"      text="%d пунктов назначения оставлены заблокированными — они закольцуют перемещение продукта." />
+
+        <!-- ================= ADVANCED INPUTS DIALOG =================
+             Subtitle, one of three depending on the building's storage. %s is the pool's total
+             capacity; the %d are how many products share it and how many have a max set. -->
+        <text name="dr_inp_title"        text="Дополнительные входы - %s" />
+        <text name="dr_inp_pooledCapped" text="Общий склад: %s делится между %d продуктами, для %d задан лимит. Продукты без лимита могут использовать весь объем." />
+        <text name="dr_inp_pooled"       text="Общий склад: %s делится между %d продуктами. Каждый может занять весь объем — задайте лимит, чтобы оставить место для остальных." />
+        <text name="dr_inp_individual"   text="Задайте максимум для каждого продукта или заблокируйте его. У этого здания раздельное хранилище для каждого продукта." />
+
+        <!-- ================= SPAWN PALLETS DIALOG =================
+             Quantity word beside the stepper, and the summary line above it. -->
+        <text name="dr_spawn_info"    text="Запас: %s    Поддон: %s    Макс: %d    Создание: %s" />
+        <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
+             name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Поддон" />
+        <!-- Quantity stepper: chosen count, maximum, and the exact litres that count moves.
+             Reads "2 / 3  (2,000 L)". Keep all three placeholders and their order. -->
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= OUTPUT MODES =================
+             What a building does with a product. Shown in the OUTPUT MODE / OUT MODE column
+             on every building tab and on the Overview, and cycled with the "Cycle Output"
+             button. The widest column that holds these fits about 39 characters at the
+             current text size, and "Distribute + Market Supply" is the longest English one.
+
+             The compound modes read "first half + second half" and the ORDER IS MEANINGFUL:
+             the first action always happens first, and product is never sold or shipped to a
+             market until it has been offered to consumers at least once. Keep that sense.
+
+             The numbers are the internal mode ids. Do not renumber them; they are what the
+             save file stores. -->
+        <text name="dr_mode_0"   text="Наследовать" />
+        <text name="dr_mode_1"   text="Хранить" />
+        <text name="dr_mode_2"   text="Распределять" />
+        <text name="dr_mode_3"   text="Распределять + Продавать" />
+        <text name="dr_mode_4"   text="Продавать" />
+        <text name="dr_mode_5"   text="Распределять + На склад" />
+        <text name="dr_mode_6"   text="На склад" />
+        <text name="dr_mode_7"   text="Поставка на рынок" />
+        <text name="dr_mode_8"   text="Распределять + На рынок" />
+        <text name="dr_mode_9"   text="Хранить внутри" />
+        <text name="dr_mode_10"  text="Переместить в" />
+        <text name="dr_mode_11"  text="Распределять + Переместить в" />
+        <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
+             the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
+             and spawns nothing. The distinction is the whole point, so keep them distinct. -->
+        <text name="dr_mode_holdPallets" text="Хранить на поддонах" />
+
+        <!-- ================= LINK STATUS =================
+             The STATUS column. Three states: product actually moved on the last hourly pass,
+             the link is live but nothing needed to move, or it is blocked in Advanced routing.
+             A receiver RECEIVES and a source SENDS, which is the only difference between the
+             two sets. Narrow column, about 20 characters. -->
+        <text name="dr_status_in_ACTIVE"   text="Активно (Прием)" />
+        <text name="dr_status_in_IDLE"     text="Активно (Ожидание)" />
+        <text name="dr_status_in_BLOCKED"  text="Заблокировано" />
+        <text name="dr_status_out_ACTIVE"  text="Активно (Отправка)" />
+        <text name="dr_status_out_IDLE"    text="Активно (Ожидание)" />
+        <text name="dr_status_out_BLOCKED" text="Заблокировано" />
+
+        <!-- ================= PRODUCT ROLE =================
+             Tagged after a product name on the Overview, e.g. "Flour (In)". A building can
+             both receive and supply the same product (a silo), which is what (In/Out) means.
+             VERY tight: it sits inside the product-name cell, so 3 to 7 characters. -->
+        <text name="dr_role_in"    text="Вход" />
+        <text name="dr_role_out"   text="Выход" />
+        <text name="dr_role_inout" text="Вход/Выход" />
+
+        <!-- ================= SELL TIMING =================
+             "Best price" holds the product until its best month before selling; "Immediate"
+             sells as soon as it is available. The dr_market_* forms appear in the Markets
+             tab's OUTPUT MODE column, where Hold means the market stocks the product and
+             sells nothing until told to. -->
+        <text name="dr_timing_bestPrice" text="Лучшая цена" />
+        <text name="dr_timing_immediate" text="Сразу" />
+        <text name="dr_market_sellsNow"    text="Продается сейчас" />
+        <text name="dr_market_sellsNowSet" text="%s (установлено: %s)" />
+        <text name="dr_market_hold"      text="Хранить" />
+        <text name="dr_market_best"      text="Продажа  -  Лучшая цена" />
+        <text name="dr_market_immediate" text="Продажа  -  Сразу" />
+
+        <!-- ================= UNITS =================
+             Volumes read in litres below 1,000 and in kilolitres above it, so 1,001 L shows as
+             "1.001 kL". These are appended to a formatted number and INCLUDE their leading
+             space. Keep the space, and keep them short. -->
+        <text name="dr_unit_litre"      text=" л" />
+        <text name="dr_unit_kilolitre"  text=" тыс. л" />
+
+        <!-- ================= MONEY NOTIFICATIONS =================
+             The on-screen finance popup when DR sells or charges for haulage. Each is a label
+             followed by a money figure, so keep any trailing space and punctuation. -->
+        <text name="dr_money_biogas"    text="Доход от биогаза: " />
+        <text name="dr_money_sales"     text="Продажи продукции: " />
+        <text name="dr_money_distCost"  text="Затраты на доставку: -" />
+
+        <!-- ================= MISC ENGINE LABELS ================= -->
+        <!-- Stands in for the map's water where there is no physical tank to name. -->
+        <text name="dr_label_waterSource"      text="Источник воды" />
+
+        <!-- ================= SETTINGS =================
+             One block per setting: the row title, its tooltip (_tt), then the
+             selector's values (_v1, _v2, ...) IN ORDER. The order is meaningful,
+             because _v1 is the first option the left/right arrows land on and the
+             INDEX is what the save file stores. Translate each value in place;
+             never reorder them, and never drop one. -->
+
+        <text name="dr_set_scope"     text="Охват сети" />
+        <text name="dr_set_scope_tt"  text="Вся ферма: каждый объект доступен в масштабе всей фермы.  Радиус: объекты связываются только с источниками в пределах указанного радиуса." />
+        <text name="dr_set_scope_v1"  text="Вся ферма" />
+        <text name="dr_set_scope_v2"  text="Радиус действия" />
+
+        <text name="dr_set_includeHusbandry"     text="Животноводство" />
+        <text name="dr_set_includeHusbandry_tt"  text="Включить объекты животноводства — коровники, курятники, ульи, а также навозные кучи и цистерны для жидкого навоза — в сеть распределения. «Выкл» полностью исключает их: они не снабжаются кормом, а их продукция (молоко / навоз / жидкий навоз / яйца / шерсть / мёд) не распределяется и не продается." />
+        <text name="dr_set_includeHusbandry_v1"  text="Включено" />
+        <text name="dr_set_includeHusbandry_v2"  text="Отключено" />
+
+        <text name="dr_set_includeSilosSheds"     text="Силосы и склады поддонов" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Включить силосные башни, зернохранилища и склады поддонов/тюков в сеть распределения. «Выкл» исключает их: силосы перестают снабжать производства, а склады поддонов не принимают и не выдают поддоны. (Навозные кучи и цистерны для жидкого навоза управляются настройкой животноводства.)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="Включено" />
+        <text name="dr_set_includeSilosSheds_v2"  text="Отключено" />
+
+        <text name="dr_set_includeMarkets"     text="Рынки и фермерские киоски" />
+        <text name="dr_set_includeMarkets_tt"  text="Включить рынки и фермерские киоски в сеть распределения. «Выкл» исключает их: продукция фермы перестает направляться на них для продажи, а вкладка «Рынки» скрывается." />
+        <text name="dr_set_includeMarkets_v1"  text="Включено" />
+        <text name="dr_set_includeMarkets_v2"  text="Отключено" />
+
+        <text name="dr_set_includeMapStorage"     text="Общественные склады карты" />
+        <text name="dr_set_includeMapStorage_tt"  text="Включить хранилища на карте, которыми вы не владеете, но можете пользоваться (например, железнодорожный элеватор). По умолчанию выключено: такие хранилища обычно берут аренду за каждый литр. При включении они появляются как склады в режиме «Хранить» и ничего не перемещают, пока вы их не настроите." />
+        <text name="dr_set_includeMapStorage_v1"  text="Включено" />
+        <text name="dr_set_includeMapStorage_v2"  text="Отключено" />
+
+        <text name="dr_set_advancedRouting"     text="Расширенная маршрутизация" />
+        <text name="dr_set_advancedRouting_tt"  text="Главный переключатель для расширенных выходов (блокировка со стороны источника / приоритеты / «Переместить в») и расширенных входов (блокировка входов / лимиты / цели заполнения). «Выкл» скрывает эти кнопки и возвращает стандартное распределение по расстоянию. ВНИМАНИЕ: выключение СБРАСЫВАЕТ все текущие расширенные настройки (все блокировки, приоритеты, перемещения, лимиты и цели) — они вернутся к значениям по умолчанию и НЕ восстановятся при повторном включении; настраивать придется заново." />
+        <text name="dr_set_advancedRouting_v1"  text="Включено" />
+        <text name="dr_set_advancedRouting_v2"  text="Отключено" />
+
+        <text name="dr_set_defaultOutputMode"     text="Режим выхода новых зданий" />
+        <text name="dr_set_defaultOutputMode_tt"  text="Режим выхода, назначаемый зданию в момент его РАЗМЕЩЕНИЯ. «Распределять» — стандартное поведение. «Хранить» означает, что новое здание будет удерживать всю произведенную продукцию, пока вы не настроите его вручную. Для зданий с поддонами отображается как «Хранить на поддонах» или «Хранить внутри» (если спавн поддонов отключен). Влияет ТОЛЬКО на здания, размещенные после изменения настройки; существующие здания не изменяются." />
+        <text name="dr_set_defaultOutputMode_v1"  text="Распределять" />
+        <text name="dr_set_defaultOutputMode_v2"  text="Хранить" />
+
+        <text name="dr_set_defaultInputMode"     text="Режим входа новых зданий" />
+        <text name="dr_set_defaultInputMode_tt"  text="Принимает ли вновь РАЗМЕЩЕННОЕ здание поставки ресурсов. «Принимать все» — стандартное поведение. «Блокировать все» блокирует все входы нового здания, поэтому ресурсы не будут доставляться, пока вы не разрешите их в «Дополнительных входах». ПРИМЕЧАНИЕ: «Блокировать все» работает только при включенной расширенной маршрутизации. Влияет ТОЛЬКО на здания, размещенные после изменения настройки." />
+        <text name="dr_set_defaultInputMode_v1"  text="Принимать все" />
+        <text name="dr_set_defaultInputMode_v2"  text="Блокировать все" />
+
+        <text name="dr_set_radius"     text="Радиус действия" />
+        <text name="dr_set_radius_tt"  text="Максимальное расстояние до источников в режиме охвата «Радиус»." />
+        <text name="dr_set_radius_v1"  text="25 м" />
+        <text name="dr_set_radius_v2"  text="50 м" />
+        <text name="dr_set_radius_v3"  text="75 м" />
+        <text name="dr_set_radius_v4"  text="100 м" />
+        <text name="dr_set_radius_v5"  text="150 м" />
+        <text name="dr_set_radius_v6"  text="200 м" />
+        <text name="dr_set_radius_v7"  text="400 м" />
+
+        <text name="dr_set_bufferHours"     text="Буфер потребителя" />
+        <text name="dr_set_bufferHours_tt"  text="Запас сырья (в часах работы), пополняемый у каждого потребителя за один цикл." />
+        <text name="dr_set_bufferHours_v1"  text="1 час" />
+        <text name="dr_set_bufferHours_v2"  text="2 часа" />
+        <text name="dr_set_bufferHours_v3"  text="4 часа" />
+        <text name="dr_set_bufferHours_v4"  text="8 часов" />
+        <text name="dr_set_bufferHours_v5"  text="12 часов" />
+        <text name="dr_set_bufferHours_v6"  text="24 часа" />
+
+        <text name="dr_set_sellEnabled"     text="Продажа" />
+        <text name="dr_set_sellEnabled_tt"  text="Глобальный переключатель для всех режимов автопродажи («Продавать» / «Распределять + Продавать»)." />
+        <text name="dr_set_sellEnabled_v1"  text="Включено" />
+        <text name="dr_set_sellEnabled_v2"  text="Отключено" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Автополив" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Автоматически снабжать водой производства и загоны для животных, потребляющие воду (оплата рассчитывается по расстоянию до ближайшего источника воды)." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Включено" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Отключено" />
+
+        <text name="dr_set_distCostEnabled"     text="Стоимость распределения" />
+        <text name="dr_set_distCostEnabled_tt"  text="Взимать почасовую плату за транспортировку для каждого активного распределения (масштабируется по расстоянию перевозки)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Включено" />
+        <text name="dr_set_distCostEnabled_v2"  text="Отключено" />
+
+        <!-- The $ figures below are game currency per hour. The player's own currency
+             symbol is not substituted here, so translate the "/h" part only. -->
+        <text name="dr_set_distCostBase"     text="Базовый тариф" />
+        <text name="dr_set_distCostBase_tt"  text="Базовая стоимость перевозки в час на короткие расстояния (в пределах базовой дистанции ниже)." />
+        <text name="dr_set_distCostBase_v1"  text="$0 /ч" />
+        <text name="dr_set_distCostBase_v2"  text="$5 /ч" />
+        <text name="dr_set_distCostBase_v3"  text="$10 /ч" />
+        <text name="dr_set_distCostBase_v4"  text="$20 /ч" />
+        <text name="dr_set_distCostBase_v5"  text="$50 /ч" />
+
+        <text name="dr_set_distCostThreshold"     text="Базовая дистанция" />
+        <text name="dr_set_distCostThreshold_tt"  text="Перевозки на это расстояние или ближе оплачиваются по фиксированному базовому тарифу; на большие расстояния стоимость растет линейно." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 м" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 м" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 м" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 м" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 м" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Сезонный резерв урожая" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Культуры в режиме «Распределять + Продавать» сохраняют объем сырья, достаточный для работы производств до следующего урожая; продаются только излишки." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Включено" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Отключено" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Месяцы резерва (до изучения)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="Количество месяцев запаса сырья для культуры до того, как мод зафиксирует реальный период сбора урожая." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 месяцев" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 месяцев" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 месяцев" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 месяцев" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 месяца" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Продажа по лучшей цене" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Главный переключатель: удерживать излишки режимов «Продавать» / «Распределять + Продавать» до месяца с наилучшей ценой. «Отключено»: все продается сразу." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Включено" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Отключено" />
+
+        <text name="dr_set_bestPriceDefault"     text="Время продажи по умолчанию" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Значение по умолчанию для выходов в режиме продажи и всех продуктов на рынке, пока не настроен переключатель конкретного здания. Уже настроенные рынки сохраняют свое значение." />
+        <text name="dr_set_bestPriceDefault_v1"  text="По лучшей цене" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Продавать сразу" />
+
+        <text name="dr_set_palletSpawnMode"     text="Спавн поддонов" />
+        <text name="dr_set_palletSpawnMode_tt"  text="«Только полные поддоны»: загоны накапливают продукцию внутри и создают ПОЛНЫЙ поддон, как производства. «Стандартный»: поддон появляется сразу и наполняется постепенно. «Никогда не спавнить»: поддоны не создаются автоматически, продукция остается во внутреннем хранилище и распределяется, складируется или продается оттуда. Вы всегда можете создать поддон вручную через кнопку «Создать поддоны». Настройка касается только ваших загонов и производств — пасеки продолжают спавнить как обычно (у них нет внутреннего буфера для продажи), а магазины покупки поддонов не затрагиваются." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Стандартный (наполнять постепенно)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Только полные поддоны" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Никогда не спавнить поддоны" />
+        <text name="dr_set_passThroughStores"     text="Склады со сквозным производством" />
+        <text name="dr_set_passThroughStores_tt"  text="Некоторые моды добавляют хранилище с фиктивным производством, где каждая линия превращает продукт обратно в себя (производство ничего не делает, а нужно лишь для доставки игрой). «Как склад» заставляет Distribution Redux видеть его как настоящий силос, поэтому он перестает требовать каждый литр на ферме, а его реальные линии (если есть) по-прежнему отображаются в производствах. Третий вариант также отключает эти фиктивные линии в самой игре (аккуратнее, но записывается в сохранение и останется выключенным при удалении мода)." />
+        <text name="dr_set_passThroughStores_v1"  text="Как производство" />
+        <text name="dr_set_passThroughStores_v2"  text="Как склад" />
+        <text name="dr_set_passThroughStores_v3"  text="Как склад + отключить линии" />
+        <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
+             pallet store), to tell its halves apart in the building list. Keep them short - they are
+             appended to a building name in a fixed-width list. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="Силос" />
+        <text name="dr_role_shed"         text="Склад поддонов" />
+        <text name="dr_role_production"   text="Производство" />
+        <text name="dr_role_husbandry"    text="Животные" />
+        <text name="dr_role_heap"         text="Яма" />
+        <text name="dr_role_market"       text="Рынок" />
+        <text name="dr_type_linked"       text="Связанный" />
+
+        <text name="dr_set_menuRefresh"     text="Частота обновления меню" />
+        <text name="dr_set_menuRefresh_tt"  text="Как часто открытое меню повторно считывает данные фермы. Вкладка «Обзор» заново опрашивает каждое здание и продукт, поэтому на большой ферме более редкое обновление сохраняет отзывчивость интерфейса. «Только вручную» отключает фоновое обновление полностью — значения обновляются при выборе элементов или нажатии «Обновить» на вкладке «Обзор»." />
+        <text name="dr_set_menuRefresh_v1"  text="В реальном времени (0.5с)" />
+        <text name="dr_set_menuRefresh_v2"  text="Обычная (2с)" />
+        <text name="dr_set_menuRefresh_v3"  text="Экономная (10с)" />
+        <text name="dr_set_menuRefresh_v4"  text="Только вручную" />
+
+        <text name="dr_set_debugEnabled"     text="Отладочный лог" />
+        <text name="dr_set_debugEnabled_tt"  text="Записывать детальную активность распределения в log.txt (перемещения, продажи, складирование, долив воды и расходы). Отключите для уменьшения размера лога." />
+        <text name="dr_set_debugEnabled_v1"  text="Включено" />
+        <text name="dr_set_debugEnabled_v2"  text="Отключено" />
+
+
+        <!-- ============ USER GUIDE (generated: gen_guide_l10n.py) ============
+             11 topics, one key per non-blank paragraph. Markers at the start of a
+             value are STRUCTURE, not words, and must be kept exactly as they are:
+               "## "   a heading
+               "### "  a sub heading
+               "- "    a bullet in a list
+             Everything after the marker is ordinary prose. A key you leave out falls
+             back to English, so a topic can be translated a paragraph at a time.
+             DO NOT reorder or renumber these; the numbers are positions in the guide. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Начало работы" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux полностью заменяет стандартную систему распределения базовой игры. Дополнительные размещаемые объекты не требуются. Мод работает со всеми стандартными зданиями, а также с модами зданий, следующими стандартной схеме GIANTS для своего типа объектов. Это сложный мод, и при неправильной настройке можно случайно создать заторы или блокировки. Пожалуйста, внимательно изучите руководство перед использованием." />
+        <text name="dr_guide_gettingStarted_2" text="## Доступ к интерфейсу" />
+        <text name="dr_guide_gettingStarted_3" text="Клавиша обратного слэша: открыть меню Distribution Redux — полноэкранное окно со вкладками для каждого типа зданий, а также данным руководством и настройками." />
+        <text name="dr_guide_gettingStarted_4" text="Клавиша левой квадратной скобки: находясь пешком, посмотрите на точку погрузки или разгрузки здания, чтобы открыть меню прямо на странице этого здания. Подсказка появляется только при взгляде на принадлежащее вам здание, входящее в сеть." />
+        <text name="dr_guide_gettingStarted_5" text="Обе клавиши можно переназначить в меню «Настройки» — «Управление»." />
+        <text name="dr_guide_gettingStarted_6" text="## Основной принцип" />
+        <text name="dr_guide_gettingStarted_7" text="Откройте меню, выберите нужное здание и задайте для каждого продукта режим: «Хранить», «Распределять», «Продавать» и т. д. В этом и заключается весь цикл управления — остальное лишь детали." />
+        <text name="dr_guide_gettingStarted_8" text="## Отличия от базовой игры" />
+        <text name="dr_guide_gettingStarted_9" text="- Позволяет любому зданию, которое хранит, производит, потребляет или продает, участвовать в распределении." />
+        <text name="dr_guide_gettingStarted_10" text="- Доставляет ровно столько, сколько требуется потребителям, вместо попыток заполнить хранилище до предела." />
+        <text name="dr_guide_gettingStarted_11" text="- Взимает плату за доставку в зависимости от расстояния." />
+        <text name="dr_guide_gettingStarted_12" text="- Позволяет продавать продукцию сразу или ждать наступления лучшей цены." />
+        <text name="dr_guide_gettingStarted_13" text="- Позволяет удерживать сезонный резерв для однолетних культур, гарантируя непрерывность производств и продавая только излишки урожая." />
+        <text name="dr_guide_gettingStarted_14" text="- Автоснабжение водой доставляет воду из любого хранилища или ближайшего водоема (например, озера) для покрытия потребностей." />
+        <text name="dr_guide_gettingStarted_15" text="- Позволяет переопределять стандартный механизм распределения: назначать приоритеты, блокировать отдельные входы и выходы, задавать резерв выходов и целевые уровни заполнения входов." />
+        <text name="dr_guide_gettingStarted_16" text="## Что происходит в каждом цикле" />
+        <text name="dr_guide_gettingStarted_17" text="- Распределение — формируется список потребностей от каждого потребителя: сырье производств, корм животных, бункеры роботов-кормораздатчиков, солома, вода для животных. Затем источники сопоставляются с потребителями (начиная с ближайших) с учетом блокировок, приоритетов и лимитов на каждый продукт." />
+        <text name="dr_guide_gettingStarted_18" text="- Перемещение остатков — остатки отправляются в доступные склады, перемещаются на доступные рынки, а также перемещаются между складами с учетом настроенных блокировок, приоритетов и лимитов." />
+        <text name="dr_guide_gettingStarted_19" text="- Расчет затрат — списывается оплата за транспортировку на основе расстояния, а также стандартные почасовые затраты на работу производств (которые иначе терялись бы из-за перехвата почасового цикла модом)." />
+        <text name="dr_guide_gettingStarted_20" text="- Продажа / Поставка на рынок — продаются излишки, продаются товары из рыночных буферов, затем продается прямая продукция (например, электричество, метан) с соблюдением правил сезонного резерва и выбора между немедленной продажей и лучшей ценой." />
+        <text name="dr_guide_gettingStarted_21" text="- Учет — регистрируются объемы производства и потребления животными, рассчитывается разница ручной погрузки/выгрузки, выводится финансовая сводка." />
+
+        <text name="dr_guide_theMenu_title" text="Интерфейс меню" />
+        <text name="dr_guide_theMenu_1" text="Клавиша обратного слэша открывает объединенное меню. В левой части расположены вкладки:" />
+        <text name="dr_guide_theMenu_2" text="## Вкладки" />
+        <text name="dr_guide_theMenu_3" text="- Производства — фабрики, заводы и производственные точки." />
+        <text name="dr_guide_theMenu_4" text="- Хранилища — силосные ямы, зернохранилища, склады поддонов и тюков, а также навозные кучи и цистерны жидкого навоза." />
+        <text name="dr_guide_theMenu_5" text="- Животноводство — коровники, курятники, загоны и ульи." />
+        <text name="dr_guide_theMenu_6" text="- Рынки — фермерские киоски и рынки, размещенные вами на карте." />
+        <text name="dr_guide_theMenu_7" text="- Обзор — подробные данные по каждому зданию и продукту в одной таблице." />
+        <text name="dr_guide_theMenu_8" text="- Руководство — данная справка." />
+        <text name="dr_guide_theMenu_9" text="- Настройки — глобальные параметры мода." />
+        <text name="dr_guide_theMenu_10" text="Каждая вкладка зданий разделена на две панели: список ваших зданий слева, а справа — списки входящих продуктов, производственных линий и исходящей продукции выбранного здания. Какие именно списки отображаются, зависит от типа здания." />
+        <text name="dr_guide_theMenu_11" text="## Период (Timescale)" />
+        <text name="dr_guide_theMenu_12" text="На каждой вкладке зданий и на вкладке «Обзор» сверху расположен переключатель периода: «Час», «Месяц» и «Год». Он пересчитывает показатели движения ресурсов за выбранный промежуток времени: сколько получено, израсходовано, произведено, распределено и продано." />
+        <text name="dr_guide_theMenu_13" text="«Месяц» в Distribution Redux равен 24 почасовым циклам (т. е. примерно одному игровому дню, независимо от настроек длительности месяца в игре). Текущий запас («Запас») никогда не пересчитывается по времени: это состояние запасов, а не поток, поэтому он всегда показывает фактическое количество в здании прямо сейчас." />
+        <text name="dr_guide_theMenu_14" text="Данные за год накапливаются со временем. При загрузке старых сохранений колонка «Год» изначально пуста и заполняется по мере завершения каждого внутриигрового месяца." />
+        <text name="dr_guide_theMenu_15" text="## Скрытые вкладки" />
+        <text name="dr_guide_theMenu_16" text="Вкладки «Хранилища», «Животноводство» и «Рынки» отображаются только тогда, когда соответствующая группа включена в настройках. При отключении группы ее здания полностью исключаются из сети распределения, а вкладка скрывается. Включите группу обратно, чтобы вернуть здания и вкладку." />
+
+        <text name="dr_guide_buildingPages_title" text="Страницы зданий" />
+        <text name="dr_guide_buildingPages_1" text="Вкладки «Производства», «Хранилища», «Рынки» и «Животноводство» имеют одинаковую структуру: выберите здание слева, затем настройте его продукты в правой части. Набор таблиц и колонок может незначительно отличаться в зависимости от типа здания (не каждое здание потребляет или производит сырье)." />
+        <text name="dr_guide_buildingPages_2" text="## Содержимое таблиц" />
+        <text name="dr_guide_buildingPages_3" text="### Входящие продукты" />
+        <text name="dr_guide_buildingPages_4" text="- ПРОДУКТ — наименование и иконка ресурса." />
+        <text name="dr_guide_buildingPages_5" text="- ЗАПАС / МАКС — текущее количество продукта в здании, максимальная вместимость здания и установленный максимальный лимит в скобках (в процентах)." />
+        <text name="dr_guide_buildingPages_6" text="- СВОБОДНО — сколько еще данного продукта может вместить здание с учетом установленного процентного лимита и свободного места." />
+        <text name="dr_guide_buildingPages_7" text="- ПОЛУЧЕНО — сколько продукта было доставлено модом Distribution Redux в это здание за выбранный период времени." />
+        <text name="dr_guide_buildingPages_8" text="- РАСХОД — сколько продукта было потреблено зданием за выбранный период времени (только для производств и животноводства)." />
+        <text name="dr_guide_buildingPages_9" text="- СТАТУС — «Активно (Прием)» или «Активно (Ожидание)» (на основе активности за прошлый цикл), либо «Заблокировано»." />
+        <text name="dr_guide_buildingPages_10" text="### Производственные линии (только Производства)" />
+        <text name="dr_guide_buildingPages_11" text="- ПРОИЗВОДСТВЕННЫЕ ЛИНИИ — производимый продукт с указанием входящего сырья в скобках." />
+        <text name="dr_guide_buildingPages_12" text="- СТАТУС — «Работает», «Ожидание» (включено, но не хватает сырья) или «Выкл»." />
+        <text name="dr_guide_buildingPages_13" text="- ПЛАН /мес — ожидаемый объем производства в месяц при наличии всего необходимого сырья." />
+        <text name="dr_guide_buildingPages_14" text="### Исходящие продукты" />
+        <text name="dr_guide_buildingPages_15" text="- ПРОДУКТ — наименование и иконка." />
+        <text name="dr_guide_buildingPages_16" text="- ЗАПАС (МАКС) — текущее количество готовой продукции в здании с указанием общей вместимости в скобках." />
+        <text name="dr_guide_buildingPages_17" text="- СВОБОДНО — сколько еще продукции может вместить здание." />
+        <text name="dr_guide_buildingPages_18" text="- ПРОИЗВЕДЕНО — объем продукции, произведенный за выбранный период (только для производств и животноводства)." />
+        <text name="dr_guide_buildingPages_19" text="- РАСПРЕДЕЛЕНО — суммарный объем убывшей продукции: распределено, складировано, перемещено и продано, с указанием выручки в скобках при наличии продаж." />
+        <text name="dr_guide_buildingPages_20" text="- РЕЖИМ ВЫХОДА — текущий режим обработки данной исходящей продукции." />
+        <text name="dr_guide_buildingPages_21" text="- СТАТУС — «Активно (Отправка)» или «Активно (Ожидание)» (по результатам последнего цикла), либо «Заблокировано»." />
+        <text name="dr_guide_buildingPages_22" text="## ПРИМЕЧАНИЕ" />
+        <text name="dr_guide_buildingPages_23" text="- Если здание поддерживает как внутреннее хранилище, так и поддоны, отображается сначала внутренний объем, а затем объем продукции на площадке спавна поддонов." />
+        <text name="dr_guide_buildingPages_24" text="- Выбранный период показывает перемещения ресурсов только за указанное время. Если производство только что включено, а выбран «Год», вы увидите объемы с момента запуска." />
+        <text name="dr_guide_buildingPages_25" text="- Подробная информация о маршрутах движения ресурсов доступна на вкладке «Обзор»." />
+        <text name="dr_guide_buildingPages_26" text="- Единица измерения объема переключается на 1 000 литрах. До 999 л значения отображаются в литрах; от 1 000 л и выше — в килолитрах с отбрасыванием лишних нулей, поэтому 1 001 л отображается как 1,001 тыс. л, 123 123 л — как 123,123 тыс. л, а 600 000 л — просто как 600 тыс. л. Три знака после запятой соответствуют ровно одному литру, поэтому при смене единицы измерения ничего не теряется." />
+        <text name="dr_guide_buildingPages_27" text="- Чтобы увидеть результат изменений (например, переход из ожидания в работу), требуется завершение одного почасового цикла (1 час) для обновления колонок интерфейса. При длинных цепочках поставок может потребоваться несколько циклов." />
+        <text name="dr_guide_buildingPages_28" text="## Изменение настроек" />
+        <text name="dr_guide_buildingPages_29" text="- Чтобы включить или выключить производственную линию, выберите ее и нажмите «Вкл/выкл линию»." />
+        <text name="dr_guide_buildingPages_30" text="- Чтобы изменить режим для исходящего продукта, выберите его и нажмите «Сменить режим»." />
+        <text name="dr_guide_buildingPages_31" text="- Кнопка «Дополнительно» открывает детальное управление маршрутизацией продукта (см. «Дополнительные входы и выходы»)." />
+        <text name="dr_guide_buildingPages_32" text="- Кнопка «Время продажи» появляется для продуктов, настроенных на режим продажи." />
+        <text name="dr_guide_buildingPages_33" text="Настройка выходов и линий в этом меню полностью синхронизирована со стандартным экраном производств базовой игры — изменение в одном месте немедленно отражается в другом." />
+
+        <text name="dr_guide_outputModes_title" text="Режимы выхода" />
+        <text name="dr_guide_outputModes_1" text="## Доступные режимы по типам зданий" />
+        <text name="dr_guide_outputModes_2" text="- Производства — «Распределять», «На склад», «Хранить на поддонах», «Хранить внутри», «Продавать», «Поставка на рынок»." />
+        <text name="dr_guide_outputModes_3" text="- Силосы и хранилища — «Распределять», «Переместить в», «Хранить», «Продавать», «Поставка на рынок»." />
+        <text name="dr_guide_outputModes_4" text="- Животноводство — «Распределять», «На склад», «Хранить на поддонах», «Хранить внутри», «Продавать», «Поставка на рынок»." />
+        <text name="dr_guide_outputModes_5" text="- Рынки — только «Продавать» или «Хранить»." />
+        <text name="dr_guide_outputModes_6" text="Не все режимы доступны всегда. Если для режима нет конечного пункта назначения, он скрывается из списка, чтобы не создавать тупиковых настроек (например, если на карте нет рынков, принимающих данный продукт, режим «Поставка на рынок» не отображается)." />
+        <text name="dr_guide_outputModes_7" text="## Описание режимов" />
+        <text name="dr_guide_outputModes_8" text="- Распределять — снабжать близлежащие производства и животных, которым требуется этот продукт (начиная с ближайших потребителей) в объеме их потребностей. Излишки остаются на месте." />
+        <text name="dr_guide_outputModes_9" text="- На склад — перемещать продукцию в любое принимающее хранилище (начиная с ближайшего), переходя к следующему при заполнении (только для производств и животноводства)." />
+        <text name="dr_guide_outputModes_10" text="- Переместить в — перемещать продукт из одного хранилища в другое подходящее хранилище (только для хранилищ, см. предупреждение ниже)." />
+        <text name="dr_guide_outputModes_11" text="- Хранить внутри — удерживать продукт в сыпучем/жидком виде внутри здания; поддоны не создаются автоматически, вы создаете их вручную по мере необходимости (см. «Создание поддонов»)." />
+        <text name="dr_guide_outputModes_12" text="- Хранить на поддонах — оставлять продукцию на площадке спавна в виде поддонов и накапливать ее." />
+        <text name="dr_guide_outputModes_13" text="- Продавать — продавать продукт немедленно либо по достижении лучшей цены (см. «Время продажи»)." />
+        <text name="dr_guide_outputModes_14" text="- Поставка на рынок — доставлять продукцию на размещенный вами рынок или ларек, где она продается с наценкой." />
+        <text name="dr_guide_outputModes_15" text="## Комбинированные режимы" />
+        <text name="dr_guide_outputModes_16" text="- Распределять + Продавать — сначала покрыть все потребности в сырье, а оставшиеся излишки продать." />
+        <text name="dr_guide_outputModes_17" text="- Распределять + На склад — сначала снабдить потребителей, а излишки отправить в хранилища вместо продажи (только для производств и животноводства)." />
+        <text name="dr_guide_outputModes_18" text="- Распределять + Переместить в — сначала покрыть потребности, а излишки переместить в выбранное хранилище (только для хранилищ)." />
+        <text name="dr_guide_outputModes_19" text="- Распределять + На рынок — сначала снабдить производства/животных, а излишки доставить на рынок или ларек." />
+        <text name="dr_guide_outputModes_20" text="Во всех комбинированных режимах первая часть всегда выполняется первой: продукция никогда не продается, не складируется и не отправляется на рынок, пока не удовлетворены заявки всех потребителей." />
+        <text name="dr_guide_outputModes_21" text="Режим «Переместить в» доступен только при включенной расширенной маршрутизации (см. «Расширенная маршрутизация»)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Расширенная маршрутизация и правила" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Расширенная маршрутизация" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Расширенная маршрутизация позволяет детально управлять каждым отдельным входом и выходом любого здания. По умолчанию она включена и может быть отключена в настройках." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Дополнительные входы" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Выберите любой входящий продукт и нажмите «Дополнительные входы»." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Блокировать / Разрешить — запретить или разрешить зданию принимать данный продукт." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Блок. все / Разрешить все — переключить все входы здания одновременно." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Макс. вход — максимальный объем продукта, который разрешено хранить в этом здании. Это критически важно для общих складов (Pooled storage), где несколько продуктов делят один объем. По умолчанию каждый продукт может занять весь склад (как в базовой игре). Из-за этого один массовый продукт может переполнить силос и не оставить места другим. Установка лимита «Макс. вход» резервирует место под другие культуры. Лимиты независимы и не обязаны суммироваться в 100%; незаданные остаются без ограничений." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Цель — желаемый уровень заполнения. Сеть будет стремиться заполнить хранилище до этого уровня и поддерживать его (по сути, формируя входной резерв сырья)." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Дополнительные выходы" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Выберите исходящий продукт и нажмите «Выходы (доп.)»." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Блокировать / Разрешить — запретить или разрешить отправку этого продукта в конкретный пункт назначения." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Приоритет — упорядочить потребителей и хранилища по приоритету, переопределяя стандартную логику доставки «ближайший в первую очередь»." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Резерв (+/-) — минимальный неснижаемый остаток продукта в здании (в литрах). Никакие операции (распределение, продажа, перемещение, рынок) не могут опустить запас ниже этого значения." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### Режим выхода «Переместить в»" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Этот режим доступен в качестве режима выхода только при включенной расширенной маршрутизации для зданий типа «Хранилище»." />
+        <text name="dr_guide_advancedRoutingRules_16" text="- Позволяет перемещать запасы из одного хранилища в другое поддерживаемое хранилище." />
+        <text name="dr_guide_advancedRoutingRules_17" text="- По умолчанию при активации все возможные пункты назначения заблокированы, чтобы предотвратить случайное зацикливание перемещения ресурсов." />
+        <text name="dr_guide_advancedRoutingRules_18" text="- Для настройки выберите выход и нажмите «Выходы (доп.)». Справа появится список поддерживаемых хранилищ (все заблокированы), где можно разрешить нужные здания. Все остальные функции (приоритеты, резерв) также доступны для этого режима." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- По умолчанию режим перемещения пытается максимально заполнить принимающее здание в каждом цикле. Задайте «Макс. вход» на входах принимающего склада, чтобы оставить место для нескольких видов продукции (а не заполнять силос целиком первым же товаром)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Перед отключением расширенной маршрутизации" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Все сделанные расширенные настройки будут удалены (а не просто проигнорированы): блокировки, приоритеты, резервы, лимиты «Макс. вход» и цели. При повторном включении вы получите чистый лист, и настраивать все придется заново." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Расширенные правила" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Эти правила действуют независимо от переключателя расширенной маршрутизации; сезонный резерв и автополив настраиваются в настройках." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Режимы продажи" />
+        <text name="dr_guide_advancedRoutingRules_25" text="Для любого выхода в режиме продажи можно выбрать: продавать сразу или ждать наилучшей цены. При ожидании товар накапливается в здании до наступления пика цен — убедитесь, что в хранилище достаточно места." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Сезонный резерв урожая" />
+        <text name="dr_guide_advancedRoutingRules_27" text="По умолчанию выключено. При включении выход с культурой годового цикла удерживает примерно годовой запас сырья для собственных производств и продает только излишек. Трава и другие многоукосные культуры удерживают трехмесячный запас. Пока мод не зафиксировал дату сбора урожая, он использует параметр «Месяцы резерва»." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### Автоснабжение водой" />
+        <text name="dr_guide_advancedRoutingRules_29" text="При включенном параметре «Автополив» вода автоматически поставляется в любые здания, которым она необходима, из ближайшего источника. Если размещенных водонапорных башен нет, система берет воду из ближайшего открытого водоема карты (учтите: при большом расстоянии затраты на доставку будут выше)." />
+
+        <text name="dr_guide_overviewTab_title" text="Вкладка «Обзор»" />
+        <text name="dr_guide_overviewTab_1" text="Вкладка «Обзор» собирает всю логистическую сеть в одну сводную таблицу: каждое подключенное здание и каждый входящий/исходящий продукт. Это главное место для контроля реального движения ресурсов на ферме." />
+        <text name="dr_guide_overviewTab_2" text="Каждый продукт помечен как (Вход), (Выход) или (Вход/Выход), что позволяет сразу понять его роль. Силосы и склады имеют статус (Вход/Выход) для всех товаров, так как они и принимают, и выдают ресурсы." />
+        <text name="dr_guide_overviewTab_3" text="## Четыре фильтра" />
+        <text name="dr_guide_overviewTab_4" text="- Фильтр — «Все (без фильтра)», «Здание», «Продукт» или «Конечный продукт (вся цепочка)»." />
+        <text name="dr_guide_overviewTab_5" text="- Показать — выбирает конкретное здание или продукт для фильтрации." />
+        <text name="dr_guide_overviewTab_6" text="- Период — «Час», «Месяц» или «Год», как на страницах зданий." />
+        <text name="dr_guide_overviewTab_7" text="- Группировка — «Выкл» (строка на каждое здание) или «Вкл» (объединяет однотипные здания в одну строку, например «Пекарня x2»)." />
+        <text name="dr_guide_overviewTab_8" text="«Конечный продукт (вся цепочка)» — самый полезный фильтр. Выберите готовый продукт (например, торт), и таблица покажет все здания и промежуточные ресурсы всей цепочки поставок, от сырья до готового изделия. Это самый быстрый способ найти узкое место или переизбыток ресурсов в производственной линии." />
+        <text name="dr_guide_overviewTab_9" text="## Колонки таблицы" />
+        <text name="dr_guide_overviewTab_10" text="- ПОЛУЧЕНО — доставлено в это здание модом Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- ЗАГРУЖЕНО — загружено в здание любым другим способом: игроком на прицепе, тюками, наемным рабочим, другим модом." />
+        <text name="dr_guide_overviewTab_12" text="- РАСХОД (ПЛАН) — израсходовано сырья, с плановым значением в скобках." />
+        <text name="dr_guide_overviewTab_13" text="- ВЫГРУЖЕНО — выгружено из здания вручную или сторонними модами (включая увезенные на технике поддоны)." />
+        <text name="dr_guide_overviewTab_14" text="- ЗАПАС (МАКС) — текущий объем в здании с указанием вместимости (не пересчитывается по времени)." />
+        <text name="dr_guide_overviewTab_15" text="- ПРОИЗВ. (ПЛАН) — произведено продукции, с плановым значением в скобках." />
+        <text name="dr_guide_overviewTab_16" text="- РАСПРЕДЕЛЕНО — доставлено потребителям." />
+        <text name="dr_guide_overviewTab_17" text="- СКЛАД/ПЕРЕМ. — отправлено на хранение или перемещено в другой склад." />
+        <text name="dr_guide_overviewTab_18" text="- ПРОДАНО — продано напрямую или через рынки." />
+        <text name="dr_guide_overviewTab_19" text="- РАСХ. НА ДОСТ. — стоимость транспортировки отправленных данным зданием грузов (списывается только со здания-отправителя, поэтому сумма по колонке точно отражает фактически потраченные средства)." />
+        <text name="dr_guide_overviewTab_20" text="## Плановые показатели и цветовая индикация" />
+        <text name="dr_guide_overviewTab_21" text="Колонки РАСХОД и ПРОИЗВЕДЕНО содержат плановые значения в скобках, рассчитанные на основе рецептов включенных линий. Значение подсвечивается зеленым при выполнении плана, оранжевым при небольшом отставании и красным при серьезной нехватке сырья. Для животноводства и силосов плановые значения не отображаются." />
+        <text name="dr_guide_overviewTab_22" text="Красное значение в колонке «ПРОИЗВЕДЕНО» — самый быстрый способ выявить простаивающую линию." />
+        <text name="dr_guide_overviewTab_23" text="## Показать настройки" />
+        <text name="dr_guide_overviewTab_24" text="В нижней части страницы кнопка переключает вид между «Показать потоки» и «Показать настройки». Если производственная линия заблокирована, переключитесь на «Настройки», чтобы сразу увидеть причину блокировки." />
+        <text name="dr_guide_overviewTab_25" text="Двойной клик по строке в обоих режимах сразу открывает страницу соответствующего здания." />
+
+        <text name="dr_guide_palletManagement_title" text="Управление поддонами" />
+        <text name="dr_guide_palletManagement_1" text="Многие виды продукции отгружаются на поддонах — доски, брусья, овощи в ящиках, яйца, шерсть и т. д. Для корректной и надежной работы Distribution Redux логика работы с поддонами была полностью переписана." />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux учитывает как продукцию внутри здания, так и любые поддоны на площадке спавна как для отображения данных, так и для режимов распределения. Распределение всегда сначала забирает товар с поддонов на площадке спавна, а затем из внутреннего буфера. Если зона спавна заблокирована, продукция накапливается во внутреннем хранилище и распределяется оттуда. Поддон, убранный с площадки вручную, сразу вычитается из общего баланса здания." />
+        <text name="dr_guide_palletManagement_3" text="Для зданий без стандартной площадки спавна в 3D-модели (некоторые модовые спавнеры, отдельные пасеки) используется привязка к ближайшему зданию." />
+        <text name="dr_guide_palletManagement_4" text="## Создание поддонов вручную" />
+        <text name="dr_guide_palletManagement_5" text="- Установите режим выхода «Хранить внутри». Как только накопится объем хотя бы для одного полного поддона, станет доступна кнопка «Создать поддоны» (на вкладке «Производства» и в стандартном окне производств игры). Нажмите ее, чтобы открыть окно создания поддонов." />
+        <text name="dr_guide_palletManagement_6" text="- Тип — тип поддона. Если поддерживается один тип, он отображается информационно; если несколько — выберите нужный стрелками." />
+        <text name="dr_guide_palletManagement_7" text="- Количество — сколько поддонов создать. Стрелки меняют по одному, кнопки -10 / +10 — десятками, а общий максимум ограничен запасом в здании." />
+        <text name="dr_guide_palletManagement_8" text="- Кнопка «Создать» выгружает указанное число заполненных поддонов на спавн-площадку и списывает объем из запаса. «Отмена» закрывает окно без создания." />
+        <text name="dr_guide_palletManagement_9" text="Кнопка активна только в режиме «Хранить внутри» при наличии достаточного запаса сырья (меньше одного полного поддона создать нельзя). Здание должно иметь точку спавна поддонов. В сетевой игре создание выполняет хост, поэтому поддоны появляются у всех игроков." />
+        <text name="dr_guide_palletManagement_10" text="## Поддоны в загонах для животных" />
+        <text name="dr_guide_palletManagement_11" text="В стандартной игре загоны каждый час создают поддон и наполняют его тем, что есть, независимо от заполненности (в отличие от производств). Для единообразия в моде загоны настроены аналогично производствам. Это поведение можно изменить в настройках, вернувшись к стандартному режиму игры, однако это может повлиять на точность распределения и учета (не рекомендуется)." />
+        <text name="dr_guide_palletManagement_12" text="Также доступна опция полного отключения спавна поддонов — продукция будет оставаться во внутреннем буфере и распределяться оттуда." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Другие изменения механик базовой игры" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Силосные бункеры" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- При открытии силосной траншеи достаточно нажать клавишу R, и мод полностью снимет всю пленку с силоса (больше никаких неснимаемых остатков пленки)." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- В бункерах силос создается путем загрузки, укрытия, брожения и раскрытия. Поэтому Distribution Redux показывает для них только таблицу выходов и учитывает запас только после раскрытия силоса." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Навозные кучи и цистерны для жидкого навоза" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Навозные кучи и цистерны для жидкого навоза теперь можно размещать в любом месте карты — они НЕ привязываются к загонам автоматически. Чтобы направлять навоз и жижу из загонов в эти хранилища, разместите их и выберите на загоне режим выхода «На склад». Навоз и жижа будут перемещаться в хранилища так же, как и любая другая продукция." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Расширения силосов" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Логика расширений силосов переработана: теперь их можно размещать только в радиусе 50 метров от существующего силоса/хранилища соответствующего типа, и они ТОЛЬКО добавляют объем к этому объекту." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Ручная разгрузка на рынках" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Вы можете привозить и разгружать продукцию на своих рынках/фермерских киосках вручную. Вместо немедленной продажи (как в базовой игре) продукция будет следовать установленному на рынке режиму выхода." />
+
+        <text name="dr_guide_settings_title" text="Настройки" />
+        <text name="dr_guide_settings_1" text="Глобальные настройки расположены на вкладке «Настройки». Они сохраняются вместе с игрой и синхронизируются хостом в сетевой игре. Индивидуальные настройки конкретных зданий всегда имеют приоритет над глобальными." />
+        <text name="dr_guide_settings_2" text="## Список параметров" />
+        <text name="dr_guide_settings_3" text="- Перечислены в порядке расположения на вкладке:" />
+        <text name="dr_guide_settings_4" text="- Охват сети — «Вся ферма» или «Радиус действия»." />
+        <text name="dr_guide_settings_5" text="- Животноводство — включение или исключение загонов, курятников, пасек." />
+        <text name="dr_guide_settings_6" text="- Силосы и склады поддонов — включение или исключение зернохранилищ, складов поддонов/тюков, навозных куч и цистерн для жидкого навоза." />
+        <text name="dr_guide_settings_7" text="- Рынки и ларьки — включение или исключение ваших рынков и торговых точек." />
+        <text name="dr_guide_settings_8" text="- Расширенная маршрутизация — главный переключатель расширенных входов и выходов. Выключение также отключает «Переместить в» и стирает все расширенные настройки (см. «Дополнительные входы и выходы»)." />
+        <text name="dr_guide_settings_9" text="- Радиус действия — дистанция поиска источников в режиме «Радиус» (по умолчанию 50 м)." />
+        <text name="dr_guide_settings_10" text="- Буфер потребителя — запас сырья в часах работы, пополняемый за цикл (по умолчанию 2 ч)." />
+        <text name="dr_guide_settings_11" text="- Продажа — глобальное включение/выключение всех видов автопродажи. При отключении ничего не продается, независимо от настроек отдельных зданий." />
+        <text name="dr_guide_settings_12" text="- Автополив — автоматическое снабжение водой зданий, потребляющих воду." />
+        <text name="dr_guide_settings_13" text="- Стоимость распределения — взимание платы за транспортировку ресурсов." />
+        <text name="dr_guide_settings_14" text="- Базовый тариф — базовая ставка платы за линию в час (по умолчанию 10)." />
+        <text name="dr_guide_settings_15" text="- Базовая дистанция — шаг расстояния для расчета стоимости (по умолчанию 50 м)." />
+        <text name="dr_guide_settings_16" text="- Сезонный резерв урожая — удержание сырья до следующего урожая с продажей только излишков (по умолчанию выкл)." />
+        <text name="dr_guide_settings_17" text="- Месяцы резерва (до изучения) — число месяцев запаса до фиксации реального окна уборки (по умолчанию 13)." />
+        <text name="dr_guide_settings_18" text="- Продажа по лучшей цене — продажа в пиковый месяц либо сразу. При отключении все продается сразу." />
+        <text name="dr_guide_settings_19" text="- Время продажи по умолчанию — поведение по умолчанию для новых выходов (ждать пика или продавать сразу)." />
+        <text name="dr_guide_settings_20" text="- Спавн поддонов — «Стандартный», «Только полные поддоны» (по умолчанию) или «Никогда не спавнить»." />
+        <text name="dr_guide_settings_21" text="- Частота обновления меню — регулировка частоты опроса для устранения задержек интерфейса. «Только вручную» активирует кнопку обновления на вкладке «Обзор»." />
+        <text name="dr_guide_settings_22" text="- Отладочный лог — запись подробного журнала распределения в log.txt. Отключите для уменьшения лога." />
+
+        <text name="dr_guide_support_title" text="Поддержка и устранение неполадок" />
+        <text name="dr_guide_support_1" text="## Устранение неполадок" />
+        <text name="dr_guide_support_2" text="- Здание не отображается в меню. Проверьте охват сети и переключатели групп зданий в настройках: при режиме «Радиус» здание может быть слишком далеко, а при отключении группы зданий вкладка скрывается." />
+        <text name="dr_guide_support_3" text="- Ресурсы не доставляются. Убедитесь, что на источнике выбран режим «Распределять» (а не «Хранить»), производственная линия потребителя включена, и оба здания находятся в пределах досягаемости сети." />
+        <text name="dr_guide_support_4" text="- Выход «Переместить в» ничего не перемещает. В этом режиме изначально все пункты назначения заблокированы. Откройте «Выходы (доп.)» и активируйте нужный склад. Если пункт назначения подсвечен красным («Активно — Ошибка»), его включение приведет к зацикливанию." />
+        <text name="dr_guide_support_5" text="- Товар поступил, но не продался в этот же час. Это нормальное поведение: вновь прибывший товар ждет один цикл, чтобы потребители сырья имели первоочередное право на его использование." />
+        <text name="dr_guide_support_6" text="- Загон не отгружает яйца или шерсть. При настройке «Только полные поддоны» загон накапливает продукцию до формирования целого поддона. Потребители могут забирать сырье из буфера во время наполнения, а продажа и складирование ждут готовности поддона." />
+        <text name="dr_guide_support_7" text="- Фабрика не получает воду. Проверьте, включен ли параметр «Автополив» в настройках." />
+        <text name="dr_guide_support_8" text="- Нет подсказки у здания. Подсказка по клавише [ появляется только для зданий, входящих в сеть. Если группа этого здания выключена в настройках, подсказка не отображается." />
+        <text name="dr_guide_support_9" text="- Мод работает некорректно. Не используйте данный мод одновременно с другими модами на переработку логистики/распределения — они перехватывают одни и те же функции игры и будут конфликтовать. Мод протестирован на стандартных зданиях и модах, соблюдающих схему GIANTS; некоторые нестандартные модовые здания могут работать иначе." />
+        <text name="dr_guide_support_10" text="## Руководства и видеообзоры" />
+        <text name="dr_guide_support_11" text="Обзоры и руководства доступны на YouTube-канале автора: @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Сообщения об ошибках" />
+        <text name="dr_guide_support_13" text="Об ошибках, предложениях и вопросах совместимости можно сообщить в репозитории на GitHub:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="История изменений" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Многочисленные исправления ошибок (подробности в GitHub README)." />
+        <text name="dr_guide_changelog_3" text="2. Многочисленные улучшения удобства игры (QoL)." />
+        <text name="dr_guide_changelog_4" text="3. Добавлена совместимость со многими модами, улучшена общая стабильность кода." />
+        <text name="dr_guide_changelog_5" text="4. Добавлена вкладка «Обзор», позволяющая видеть всю активность и настройки распределения для всех зданий в одном месте (включает фильтры и режим отображения полной цепочки поставок для выбранного продукта)." />
+        <text name="dr_guide_changelog_6" text="5. Добавлено расширенное управление входами и выходами (блокировка, приоритеты, резервирование запаса, цели наполнения, лимиты входа)." />
+        <text name="dr_guide_changelog_7" text="6. Добавлена возможность перемещать и сортировать продукцию между хранилищами (силосы, склады поддонов и т. д.)." />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Переименование зданий — каждому объекту в сети распределения теперь можно задать собственное имя через меню строительства базовой игры (включая силосы, склады, ямы и рынки). Мод использует это имя во всем интерфейсе, отображая оригинальное название ниже для справки." />
+        <text name="dr_guide_changelog_10" text="2. Исправление навозных куч и цистерн для жидкого навоза — ранее они отображали продукты друг друга. Теперь навозная куча показывает только навоз, а цистерна — только жидкий навоз." />
+        <text name="dr_guide_changelog_11" text="3. Исправление входящих продуктов для навозных куч и цистерн для жидкого навоза — теперь отображаются фактически поступающие ресурсы." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. Улучшения интерфейса и единообразия, добавлены полосы прокрутки, скорректированы таблицы, добавлена стоимость проданных продуктов в колонку продаж." />
+        <text name="dr_guide_changelog_14" text="2. Добавлены рынки и ларьки в сеть распределения — появился режим «Поставка на рынок». Продажи через свои рынки дают 20% бонус к цене, хотя оптовые продажи снижают цену, как в базовой игре." />
+        <text name="dr_guide_changelog_15" text="3. Исправление продажи по лучшей цене — при отсутствии истории цен продажа происходила раньше времени; теперь используется график цен базовой игры, пока не накопятся собственные данные." />
+        <text name="dr_guide_changelog_16" text="4. Добавлен режим «Хранить внутри» и ручной спавн поддонов — продукцию можно накапливать в сыпучем виде и создавать поддоны вручную через диалоговое окно с выбором типа и количества." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Добавлена возможность выбора времени продажи: сразу или по достижении лучшей цены." />
+        <text name="dr_guide_changelog_19" text="2. Полностью переработан интерфейс, объединены настройки, справка и вкладки распределения." />
+        <text name="dr_guide_changelog_20" text="3. Переработаны расширения силосов: теперь они размещаются рядом с основным силосом и расширяют его объем." />
+        <text name="dr_guide_changelog_21" text="4. Склады поддонов и тюков теперь отображают все активные поддоны в сети для предварительной настройки до их поступления. Добавлена функция резервирования." />
+        <text name="dr_guide_changelog_22" text="5. Исправлено взаимодействие со складами поддонов: взгляд на иконку загрузки открывает страницу распределения здания напрямую." />
+        <text name="dr_guide_changelog_23" text="6. Исправлена проблема с небольшим остатком продукции в источнике после распределения." />
+        <text name="dr_guide_changelog_24" text="7. Исправлен биогазовый комплекс: продажа метана и электричества теперь учитывает сложность игры, а дигестат корректно записывается в доходы БГА в таблице финансов." />
+        <text name="dr_guide_changelog_25" text="8. Настройки стали более гибкими: возможность раздельного включения силосов/складов и животноводства." />
+        <text name="dr_guide_changelog_26" text="9. Изменение названий режимов: «Хранить» теперь удерживает товары в здании, «На склад» перемещает в хранилища." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Предварительная версия." />
+
+        <!-- ============ end USER GUIDE ============ -->
+    </texts>
+</l10n>
