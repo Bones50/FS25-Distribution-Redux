@@ -1050,7 +1050,30 @@ function SmartDistribution.isGrazingPasture(p)
     -- must NOT be treated as a pasture -- exclude any pallet-spawner husbandry here (spec_husbandryPallets
     -- / spec_beehivePalletSpawner).  Type names are kept as a secondary match in case the structural test
     -- ever misses; all known pastures also match by name below.
-    if p.spec_husbandryMeadow ~= nil and p.spec_husbandryLiquidManure == nil
+    -- THE MEADOW MUST BE GRAZEABLE, not merely present. Reported 2026-08-26: a HORSE BARN would accept no
+    -- straw at all, by hand or through DR. The base horse barn declares a <meadow> that is pure scenery --
+    -- a paddock with `createTask` / `decoFoliage` and NO <fruitType> -- while horses produce solid manure
+    -- and so carry no slurry spec and no pallet spawner. It therefore matched every condition of the old
+    -- structural test and was classified a grazing pasture.
+    --
+    -- THE DAMAGE WAS NOT THE ATTACH REFUSAL, it was registerPastureManureStorage: that ZEROES every
+    -- non-manure capacity on the husbandry's own storage, so the barn's own STRAW capacity became 0 and
+    -- there was nowhere for straw to go. A destructive mutation of base-game state off a wrong guess.
+    --
+    -- A real grazing pasture declares fruit types its animals actually eat
+    -- (<meadow><fruitType name="GRASS" eatableStartGrowthState=.../>), which the base game parses into
+    -- spec.fruitTypeInfos (PlaceableHusbandryMeadow, 60% blank but this half survives). A cosmetic paddock
+    -- leaves that table empty. MEASURED across the base game plus every installed mod: 37 husbandries have
+    -- a cosmetic meadow (horse barns, chicken barns, pig barns) and 70 a grazeable one -- and every genuine
+    -- pasture (cowHusbandryPastureFeed / horseHusbandryPastureFeed / sheepHusbandryFeed) is grazeable, so
+    -- the type-name backstop below and this test agree on all three.
+    --
+    -- This also makes the CHICKEN case robust rather than incidental. 4.4 records coops matching this test
+    -- and being saved only by the pallet-spawner exclusion; their meadows are cosmetic too, so they now
+    -- fail on the meadow itself and would be safe even without pallets.
+    local ms = p.spec_husbandryMeadow
+    local grazeable = ms ~= nil and type(ms.fruitTypeInfos) == "table" and next(ms.fruitTypeInfos) ~= nil
+    if grazeable and p.spec_husbandryLiquidManure == nil
        and p.spec_husbandryPallets == nil and p.spec_beehivePalletSpawner == nil then return true end
     local tn = p.typeName
     if type(tn) == "string" then

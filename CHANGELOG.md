@@ -14,6 +14,7 @@ Fixed
 7) Fixed an issue with the advanced output screen when in dual mode outputs (e.g. Distribute + Move To) that prevented you modifying settings on some lines. (24/8)
 8) (NEW) Fixed animal husbandries showing only the total food amount rather than the individual food amounts stored. (26/8)
 9) (NEW) Fixed an issue with building icons not showing in the UI due to no building menu icon being defined in mods. Now checks and has multiple fallback options. (26/8)
+10) (NEW) Fixed Horse Barns not accpeting Straw. (26/8)
 
 Added
 1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
