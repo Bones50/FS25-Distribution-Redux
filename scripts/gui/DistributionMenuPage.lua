@@ -229,6 +229,26 @@ function DistributionMenuPage:update(dt)
         end
     end
 
+    -- A BLOCK CHANGED WHICH ROWS EXIST, so the row DATA has to be rebuilt and not merely repopulated.
+    -- 5.57 hides a product that is blocked and holding nothing, and the periodic refresh below only
+    -- reloads the lists -- it never re-runs buildDetailRows -- so a newly blocked product stayed on
+    -- screen until the player left the tab and came back (reported 2026-08-24).
+    --
+    -- Runs even under "Manual only", for the same reason the v-mode check above does: this is not a stale
+    -- FIGURE, it is a row that should no longer be there, and acting on it is a real mis-click. Guarded on
+    -- the page actually having a builder, so a page without one (the Settings and User Guide tabs do no
+    -- realtime work at all) is untouched.
+    if self._realtimeLists ~= nil and SmartDistribution ~= nil and self.buildDetailRows ~= nil then
+        local rep = SmartDistribution._rowsEpoch or 0
+        if self._rowsEpochSeen ~= rep then
+            self._rowsEpochSeen = rep
+            pcall(function()
+                self:buildDetailRows()
+                self:refreshRealtimeLists()
+            end)
+        end
+    end
+
     local every = DistributionMenuPage.refreshSeconds()      -- nil = Manual only: no background refresh
     if self._realtimeLists ~= nil and every ~= nil then
         local now = (getTimeSec ~= nil) and getTimeSec() or nil

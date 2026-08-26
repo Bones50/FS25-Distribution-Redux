@@ -61,11 +61,17 @@ end
 
 -- ---- BLOCKED-PRODUCT NOTICE (twin of the DistributionStoragePage helpers; keep the two in step) -------
 local NOTICE_CELLS = { "name", "amount", "remainingText", "received", "consumed", "produced", "distr",
-                       "method", "statusText", "status", "prodMo" }
+                       "method", "statusText", "status", "prodMo",
+                       "barHeld", "barCap" }
 
 local function renderNoticeRow(cell, hidden, what)
     local icon = cell:getAttribute("fillIcon")
     if icon ~= nil and icon.setVisible ~= nil then icon:setVisible(false) end
+    -- ...and the BAR. Cells are RECYCLED, so without this the notice row keeps whatever bar the product
+    -- row that last used this slot drew. Its two LABELS need no special case -- they are in NOTICE_CELLS
+    -- with every other text cell.
+    local bar = cell:getAttribute("barBg")
+    if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
     -- SmoothList RECYCLES cells: clear every column or this row inherits the last product row in the slot
     for _, k in ipairs(NOTICE_CELLS) do
         local c = cell:getAttribute(k)
@@ -286,7 +292,12 @@ local function setOutputStatusCell(cell, placeable, ft, window, role)
     if c == nil then return end
     local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
         and SmartDistribution.outputLinkStatus(placeable, ft, window, role) or nil
-    if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
+    if c.setText ~= nil then
+        local base = (st ~= nil) and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or ""
+        local suffix = (base ~= "" and SmartDistribution.outputDestCountText ~= nil)
+            and (SmartDistribution.outputDestCountText(placeable, ft, role, st) or "") or ""
+        c:setText(base .. suffix)
+    end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
     elseif c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
@@ -310,6 +321,80 @@ local function setIcon(cell, ft)
     elseif iconCell.setVisible ~= nil then
         iconCell:setVisible(false)
     end
+end
+
+-- A LABEL PER PRODUCTION LINE, and a guarantee that no two lines on one building read alike.
+--
+-- The label is normally DERIVED from the products -- "<outputs> (<inputs>)" -- which is more useful in a
+-- distribution mod than the line's own name, because it says what the line moves. But two lines can
+-- differ only in AMOUNTS: a mod ships a single-batch line and a double-batch variant over the same
+-- inputs and the same outputs, and the derived label is then identical for both. Reported 2026-08-26
+-- against a fishing pack whose young-trout and young-salmon lines each have a "( *2)" twin: "the ( *2)
+-- are not shown in DR, so you can not see what production line you actually have active."
+--
+-- The distinguishing text is in the line's OWN name, which the game builds from the #name and #params
+-- attributes (ProductionPoint.registerXMLPaths: "Optional parameters formatted into #name"). DR already
+-- carries it as line.name and was using it only when a line had no outputs at all.
+--
+-- SO: derive as before, and fall back to the declared name ONLY where the derived label would be
+-- ambiguous. A building whose lines are already distinct is completely unaffected -- which is most of
+-- them, including the Carpathian fish farm, whose two trout lines differ by an input (Fish Food) and so
+-- never collide. If the declared names are identical too, the lines are numbered rather than left
+-- indistinguishable: a label that cannot tell you which line is which has failed at its one job.
+local function lineLabels(lines)
+    local parts, derived = {}, {}
+    for i, line in ipairs(lines) do
+        local outNames, oSeen = {}, {}
+        for _, o in ipairs(line.outputs or {}) do
+            if not oSeen[o.ft] then oSeen[o.ft] = true; outNames[#outNames + 1] = o.name end
+        end
+        local inNames = {}
+        for _, inp in ipairs(line.inputs or {}) do inNames[#inNames + 1] = inp.name end
+        local head = table.concat(outNames, " + ")
+        if head == "" then head = line.name or "" end
+        if head == "" then head = string.format(SmartDistribution.l10n("dr_label_line", "Line %d"), i) end
+        local tail = table.concat(inNames, " + ")
+        parts[i] = { head = head, tail = tail }
+        local key = head .. "|" .. tail
+        derived[key] = (derived[key] or 0) + 1
+    end
+
+    -- Substitute the declared name ONLY where it actually resolves the ambiguity. If the colliding lines
+    -- share a declared name too, it resolves nothing and using it would throw away the product info for
+    -- no gain ("Batch (Wheat)" tells you less than "Flour (Wheat)"), so the derived label stands and the
+    -- numbering below does the work instead.
+    local resolves = {}
+    for i, line in ipairs(lines) do
+        local key = parts[i].head .. "|" .. parts[i].tail
+        if (derived[key] or 0) > 1 then
+            local g = resolves[key]
+            if g == nil then g = { names = {}, ok = true }; resolves[key] = g end
+            local nm = (type(line.name) == "string" and line.name ~= "") and line.name or nil
+            if nm == nil or g.names[nm] then g.ok = false else g.names[nm] = true end
+        end
+    end
+
+    local labels, seen = {}, {}
+    for i, line in ipairs(lines) do
+        local pt   = parts[i]
+        local key  = pt.head .. "|" .. pt.tail
+        local head = pt.head
+        local g    = resolves[key]
+        if g ~= nil and g.ok then
+            head = line.name                     -- ambiguous, and the declared names tell them apart
+        end
+        labels[i] = (pt.tail ~= "") and (head .. " (" .. pt.tail .. ")") or head
+        seen[labels[i]] = (seen[labels[i]] or 0) + 1
+    end
+    -- last resort: identical declared names too, so number every member of the colliding group
+    local n = {}
+    for i = 1, #labels do
+        if (seen[labels[i]] or 0) > 1 then
+            n[labels[i]] = (n[labels[i]] or 0) + 1
+            labels[i] = string.format("%s #%d", labels[i], n[labels[i]])
+        end
+    end
+    return labels
 end
 
 function DistributionProductionsPage.new(target, custom_mt)
@@ -405,19 +490,11 @@ function DistributionProductionsPage:buildSections()
         i.consumed = e.consumed or 0
     end
 
-    -- 2) lines: one row per production line, labelled "<outputs> (<inputs>)"
-    for _, line in ipairs(lines) do
-        local outNames, oSeen = {}, {}
-        for _, o in ipairs(line.outputs or {}) do
-            if not oSeen[o.ft] then oSeen[o.ft] = true; outNames[#outNames + 1] = o.name end
-        end
-        local inNames = {}
-        for _, i in ipairs(line.inputs or {}) do inNames[#inNames + 1] = i.name end
-        local outStr = table.concat(outNames, " + ")
-        local inStr  = table.concat(inNames, " + ")
-        local label  = outStr
-        if label == "" then label = line.name or string.format(SmartDistribution.l10n("dr_label_line", "Line %d"), #self.lines + 1) end
-        if inStr ~= "" then label = label .. " (" .. inStr .. ")" end
+    -- 2) lines: one row per production line, labelled "<outputs> (<inputs>)" -- and disambiguated by the
+    -- line's own declared name where two lines would otherwise read alike. See lineLabels.
+    local labels = lineLabels(lines)
+    for li, line in ipairs(lines) do
+        local label = labels[li]
         -- representative monthly production = first output's per-month amount
         local perMonth = 0
         if line.outputs ~= nil and line.outputs[1] ~= nil then perMonth = line.outputs[1].perMonth or 0 end
@@ -588,13 +665,13 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
         setc("name", inp.name)
         setc("received", fmtV(inp.received))
         setc("consumed", fmtV(inp.consumed))
-        -- "619 L / 50,000 L (50%)": held, the ceiling the Advanced Inputs percentage sets, and that
-        -- percentage. Same form as the other tabs' input lists. Falls back to the raw buffer if unresolved.
-        local maxL, pct = inputMaxLiters(self.selectedAsset, inp.ft)
-        setc("amount", maxL ~= nil
-            and (fmtV(inp.held) .. " / " .. fmtV(maxL) .. (pct ~= nil and string.format(" (%d%%)", pct) or ""))
-            or amountText(inp.held, inp.capacity))
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, inp.ft), maxL)
+        -- The BAR replaces the held/max text and the free-storage cell: green for what is held, red for
+        -- what other products are taking, grey for what is left, with the MAX and TARGET marks. Inputs
+        -- get those two because a fill target only binds where the receiver PULLS (fillTargetApplies) --
+        -- a production line asks for what it needs, so "fill to 60%" is a real instruction here.
+        if SmartDistribution.drawStorageBar ~= nil then
+            SmartDistribution.drawStorageBar(cell, self.selectedAsset, inp.ft, self.selectedRole, "input")
+        end
         setStatusCell(cell, self.selectedAsset, inp.ft, self:currentWindow(), self.selectedRole)
         setIcon(cell, inp.ft)
         return
@@ -620,12 +697,17 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
     setc("produced", fmtV(o.produced))
     -- one column now: everything that left, with the sale value in brackets when any of it sold
     setc("distr", soldWithMoney(o.outTotal, o.sold > 0.5 and o.money or nil))
-    setc("amount", amountText(o.held, o.capacity) .. palletPart(o.heldPalletLitres, o.heldPallets))
-    -- REMAINING for an output is a straight capacity - held. o.capacity is the production BUFFER's, which
-    -- is what the amount cell brackets, so the two figures describe the same tank.
-    setRemainingCell(cell,
-        (type(o.capacity) == "number" and o.capacity > 0) and math.max(0, o.capacity - (o.held or 0)) or nil,
-        o.capacity)
+    -- The BAR replaces the amount text and the free-storage cell. An OUTPUT gets the RESERVE mark and
+    -- not max/target: a reserve is a floor the building keeps back, while a max or a target means nothing
+    -- on something the building is trying to get RID of.
+    --
+    -- HELD IS HANDED IN, not re-derived. o.held is the buffer and o.heldPalletLitres the pad, and this
+    -- page is the thing that knows the difference -- outputBarValues taking its own reading would create
+    -- a second basis for one quantity, which this codebase has paid for repeatedly (5.27 / 5.28 / 5.54c).
+    if SmartDistribution.drawStorageBar ~= nil then
+        SmartDistribution.drawStorageBar(cell, self.selectedAsset, o.ft, self.selectedRole, "output",
+                                         (o.held or 0) + (o.heldPalletLitres or 0))
+    end
     local method = o.modeName or "-"
     if o.sellTiming ~= nil then method = method .. " - " .. o.sellTiming end
     setc("method", method)

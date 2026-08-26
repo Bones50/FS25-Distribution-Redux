@@ -40,84 +40,103 @@
                   text="$l10n_dr_lbl_modeKeys" />
         </Bitmap>
 
-        <!-- right: INCOMING PRODUCTS (inputs). Same products the building can hold, with the Animal
-             Husbandry column set; rows are selectable, ready for the input drill-down. -->
+        <!-- ONE TABLE. Incoming and outgoing used to be two lists, and getNumberOfItemsInSection has
+             always returned the SAME `self.rows` for both: on a silo receiverInputFillTypes delegates to
+             assetMenuFillTypes (5.65), so the two tables were one product list drawn twice with different
+             columns. The storage BAR is what made merging possible: it carries held, capacity, what
+             other products occupy and the configured ceiling, so the old HELD (MAX) and FREE STORAGE
+             columns (220 + 84 = 304px) are no longer needed beside it.
+             STORAGE TYPE was dropped to fund the merge. Nothing is lost. storageTypeLabel is untouched
+             and still drawn on the Overview's settings view, which is where the Linked / Pooled /
+             Individual distinction now lives. To bring the column back here, find ~108px.
+             STATUS carries BOTH directions in one cell, "in / out". See setCombinedStatusCell.
+             Everything tiles to exactly 1090px with an 8px gutter, per 5.55. -->
         <Bitmap profile="SDList" id="inputHeaderRow" position="390px -92px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="200px 40px" textSize="11px" text="$l10n_dr_col_incomingProducts" />
-            <Text profile="SDHeaderLeft" position="252px 0px" size="100px 40px" textSize="11px" text="$l10n_dr_col_storageType" />
-            <Text profile="SDHeaderLeft" position="360px 0px" size="240px 40px" textSize="11px" text="$l10n_dr_col_heldSlashMax" />
-            <Text profile="SDHeaderLeft" position="608px 0px" size="115px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="731px 0px" size="140px 40px" textSize="11px" text="$l10n_dr_col_received" />
-            <Text profile="SDHeaderLeft" position="879px 0px" size="211px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
-            <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
-        </Bitmap>
-        <GuiElement profile="SDList" id="inputPanel" position="390px -136px" size="1090px 280px">
-            <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 280px"
-                        onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
-                <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickInputRow">
-                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
-                    <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
-                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="200px 42px" textSize="12px" name="fillName" />
-                    <Text profile="SDRowCell" position="252px 0px" size="100px 42px" textSize="12px" name="typeText" />
-                    <Text profile="SDRowCell" position="360px 0px" size="240px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="608px 0px" size="115px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="731px 0px" size="140px 42px" textSize="12px" name="recvText" />
-                    <Text profile="SDRowCell" position="879px 0px" size="211px 42px" textSize="12px" name="statusText" />
-                </ListItem>
-            </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 272px" dataElementId="inputList" id="inputSlider" />
-            </ThreePartBitmap>
-        </GuiElement>
-
-        <!-- OUTGOING PRODUCTS. DISTRIBUTED is everything that left: distributed + stored/moved + sold,
-             with the sale value in brackets. A silo produces nothing, so there is no PRODUCED column. -->
-        <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
-            <Text profile="SDHeaderLeft" position="44px 0px"  size="185px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
-            <Text profile="SDHeaderLeft" position="237px 0px" size="220px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
-            <!-- FREE STORAGE and DISTRIBUTED each gave up width (110 to 84, 130 to 96) to fund the
-                 in-row mode arrows. They carry a single short figure; the MODE cell keeps its full
-                 235px of text, so the 5.55 truncation fix ("Distribute + S..." reading as plain
-                 Distribute) is not reopened. The 60px comes out of the flow columns, never the mode. -->
-            <Text profile="SDHeaderLeft" position="465px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="557px 0px" size="96px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
-            <Text profile="SDHeaderLeft" position="661px 0px" size="295px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
-            <Text profile="SDHeaderLeft" position="964px 0px" size="126px 40px" textSize="11px" text="$l10n_dr_col_status" />
+            <Text profile="SDHeaderLeft"   position="44px 0px"  size="114px 40px" textSize="11px" text="$l10n_dr_col_products" />
+            <Text profile="SDHeaderLeft"   position="166px 0px" size="48px 40px"  textSize="11px" text="$l10n_dr_col_type" />
+            <Text profile="SDHeaderLeft"   position="222px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
+            <Text profile="SDHeaderCenter" position="530px 0px" size="90px 40px"  textSize="11px" text="$l10n_dr_col_received" />
+            <Text profile="SDHeaderCenter" position="628px 0px" size="90px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderLeft"   position="726px 0px" size="230px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
+            <Text profile="SDHeaderLeft"   position="964px 0px" size="126px 40px" textSize="11px" text="$l10n_dr_col_statusInOut" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">
-            <SmoothList profile="SDList" id="detailList" position="0px 0px" size="1090px 340px"
+        <GuiElement profile="SDList" id="inputPanel" position="390px -136px" size="1090px 672px">
+            <SmoothList profile="SDList" id="detailList" position="0px 0px" size="1090px 672px"
                         focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickDetailRow">
                     <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
                     <Text profile="SDRowCell" position="44px 0px" size="1030px 42px" textSize="12px" name="noticeText" visible="false" />
                     <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                    <Text profile="SDRowCell" position="44px 0px"  size="185px 42px" textSize="12px" name="fillName" />
-                    <Text profile="SDRowCell" position="237px 0px" size="220px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="465px 0px" size="84px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="557px 0px" size="96px 42px" textSize="12px" name="distText" />
-                    <!-- MODE carries the mode AND its sell timing ("Distribute + Sell - Sell Immediately"),
-                         so it needs real room: at 180px/14px text it truncated to "Distribute + S...", which
-                         reads as plain Distribute and hid a silo that was actually selling everything it
-                         received. 235px at 12px is ~39 characters, clear of that string, and the arrows
-                         either side were funded from the flow columns rather than from this.
+                    <Text profile="SDRowCell" position="44px 0px" size="114px 42px" textSize="12px" name="fillName" />
+                    <!-- STORAGE TYPE, abbreviated: Pool / Ind / Link. Restored after the merged table
+                         dropped it, in the 56px taken off the product name. It sits BEFORE the bar so
+                         the row reads "what it is, then how it shares the tank, then how full it is".
+                         Everything from 222px rightwards is untouched, so the table still ends at
+                         exactly 1090px. -->
+                    <Text profile="SDRowCell" position="166px 0px" size="48px 42px" textSize="12px" name="typeText" />
 
-                         THE ARROWS STEP THE MODE BOTH WAYS, IN PLACE. A click on one is consumed by the
-                         button, and SmoothList only treats a click as row-selection when no child used it
-                         (SmoothListElement:mouseEvent calls its superclass FIRST and gates its own
-                         handling on `not eventUsed`), so pressing an arrow does not also re-select the
-                         row. They are hidden on the "+N blocked" notice row. Cells are RECYCLED, so that
-                         has to be done actively on every populate or the notice row inherits them. -->
-                    <Button profile="fs25_multiTextOptionLeft"  position="661px 0px" name="modePrev" onClick="onModePrev" />
-                    <Text   profile="SDRowCell"       position="691px 0px" size="235px 42px" textSize="12px" name="modeText" />
-                    <Button profile="SDRowArrowRight" position="930px 0px" name="modeNext" onClick="onModeNext" />
-                    <Text profile="SDRowCell" position="964px 0px" size="126px 42px" textSize="12px" name="statusText" />
+                    <!-- STORAGE BAR. Track = the whole tank; GREEN this product, RED what else occupies
+                         it, ORANGE line the configured "Max in" (pinned left when blocked). Segments are
+                         sized at populate time from the track's own absSize, so no px to normalised
+                         arithmetic and it follows 6.15's widening for free. OTHERS is drawn FIRST and
+                         SELF over it, both anchored left, so only the max line is ever positioned.
+                         Geometry copied from fillIcon: 24px at y=9 would centre it, but the label line
+                         needs the room, so the WIDGET is centred instead (bar 4..22, labels 23..38). -->
+                    <Bitmap position="222px 4px" size="300px 18px" name="barBg"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                        <Bitmap position="0px 0px" size="300px 18px" name="barOthers"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.72 0.20 0.17 0.95" />
+                        <Bitmap position="0px 0px" size="300px 18px" name="barSelf"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+                        <!-- THE THREE CONFIGURED MARKS, declared AFTER the fills so they draw on top,
+                             and in the order reserve -> target -> max so the ceiling wins where two
+                             coincide. Each is positioned at runtime by setMark(); target and reserve
+                             hide themselves when the player has not set one.
+                             Colours are deliberately BRIGHTER than the fills they sit on, because the
+                             held fill is already green (0.31 0.72 0.31) and the others fill already red
+                             (0.72 0.20 0.17). A line in the same shade as the fill beneath it would
+                             be invisible exactly where it matters most.
+                             NOTE no double hyphen anywhere in this comment: it is an XML parse error
+                             and the whole page then fails to load (CLAUDE.md 5.10 / 5.60). -->
+                        <Bitmap position="0px 0px" size="2px 18px" name="barReserve"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.32 0.92 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barTarget"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.25 0.72 1 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barMax"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 0.62 0.10 1" />
+                    </Bitmap>
+                    <Text profile="SDBarLabel"      position="222px 23px" size="180px 15px" name="barHeld" />
+                    <Text profile="SDBarLabelRight" position="342px 23px" size="180px 15px" name="barCap" />
+
+                    <Text profile="SDRowCellCenter" position="530px 0px" size="90px 42px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCellCenter" position="628px 0px" size="90px 42px" textSize="12px" name="distText" />
+
+                    <!-- MODE keeps its full 235px of text: 5.55 records a real bug from truncating it
+                         ("Distribute + S..." read as plain Distribute and hid a silo selling everything).
+                         The arrows step it in place; a click on one is consumed by the button, and
+                         SmoothList only treats a click as row-selection when no child used it, so
+                         pressing an arrow does not also re-select the row (5.64). Hidden on the notice
+                         row, actively, because cells are recycled. -->
+                    <Button profile="fs25_multiTextOptionLeft"  position="726px 0px" name="modePrev" onClick="onModePrev" />
+                    <Text   profile="SDRowCell"       position="756px 0px" size="170px 42px" textSize="12px" name="modeText" />
+                    <Button profile="SDRowArrowRight" position="926px 0px" name="modeNext" onClick="onModeNext" />
+
+                    <!-- STATUS, IN / OUT, as THREE cells because a Text carries one colour and the two
+                         halves need their own: a row whose input is blocked while its output is sending
+                         is not one state, and painting the whole string red said it was.
+                         FIXED SUB-COLUMNS rather than flowing text: an element cannot size itself to its
+                         content here, so the separator would drift with the word before it. Anchoring
+                         all three means the "/" lands in the same place on every row and the column
+                         reads down. 49px is ~8 characters at 12px, and "Blocked" is the longest word. -->
+                    <Text profile="SDRowCellRight"  position="964px 0px"  size="46px 42px" textSize="12px" name="statusIn" />
+                    <Text profile="SDRowCellCenter" position="1010px 0px" size="10px 42px" textSize="12px" name="statusSep" />
+                    <Text profile="SDRowCell"       position="1020px 0px" size="70px 42px" textSize="12px" name="statusOut" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 332px" dataElementId="detailList" id="detailSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 672px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 664px" dataElementId="detailList" id="detailSlider" />
             </ThreePartBitmap>
         </GuiElement>
     </GuiElement>

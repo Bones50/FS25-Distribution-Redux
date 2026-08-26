@@ -15,8 +15,8 @@ NOTE: If modhub has not yet been updated to the latest release, when in game the
 1) Go to the "Code" Option at the top right and download zip
 2) Go to where the zip downloaded and unzip it.
 3) Navigate through the folders until you get to the folder with 3 files and 3 folders in it.
-4) Delete the readme.md file
-5) Select the 2 remaining files and the 3 folders (gui, scripts, translations) and zip it back up.
+4) Delete any files there other than the modDesc.xml, icon_DistributionRedux.dds and the 3 folders (gui, scripts and translations).
+5) Select the remaining files and the 3 folders and zip it back up.
 6) Rename the ZIP file to FS25_Distribution_Redux.
 7) Copy the new zip file to your FS25 Mods folder (replace the existing one if you have a previous version already installed)
 NOTE: When in game the mod will show as requiring update. Do NOT update as it will revert to the previous modhub version.

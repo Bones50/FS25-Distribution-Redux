@@ -21,6 +21,41 @@
             <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_title_advanced" position="0px -30px" />
             <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""        position="0px -78px" />
 
+            <!-- OUTPUT RESERVE, TYPED EXACTLY, where the reserve FIGURE used to be printed. The footer
+                 +/- buttons step a 20-point ring of 5%-of-capacity, which is a coarse instrument on a
+                 large store: one press against a 500,000 L silo moves 25,000 L, so most exact figures
+                 were simply unreachable. This field takes the litres directly. The buttons are KEPT for
+                 quick coarse moves, and both routes write through the same DistributionControlEvent, so
+                 they cannot disagree.
+
+                 LAYOUT, and the first attempt got this wrong twice. Placed DIRECTLY in
+                 fs25_dialogContentContainer, neither element honoured the position it was given: the
+                 label did not render at all and the box drew ~390px wide at the far left. Both bring
+                 their own anchoring from their profiles, so an absolute x/y in that container means
+                 nothing to them. This now mirrors the pattern THIS FILE ALREADY USES for its list
+                 headers. a Bitmap profile="SDList" positioned in the content container, children
+                 positioned inside it. which is demonstrably placed correctly four times above.
+
+                 It sits RIGHT OF CENTRE on the subtitle band. The subtitle is CENTRE-anchored (x=0 is
+                 the middle of a 1400px box) and reads about 250px wide, so it cannot reach x=960; the
+                 pair therefore never collides with it and nothing else had to move. A long transient
+                 notice appended to the subtitle could still reach across, but it is momentary.
+
+                 The box is narrowed by SDReserveInput, a DR profile over the stock one. 5.64 says to
+                 override a stock profile's ANCHORING and not its geometry. that was about atlas-
+                 sampled arrow art, which re-samples wrongly when resized. A text input's background is
+                 a ThreePartBitmap, which exists to stretch, so sizing it is the intended use.
+                 enterWhenClickOutside commits on a click elsewhere, and TextInputElement only raises
+                 that while the field is actually active, so an ordinary click is not read as an edit. -->
+            <Bitmap profile="SDList" position="960px -76px" size="400px 36px">
+                <Text profile="SDHeaderLeft" position="8px 0px" size="86px 36px" text="$l10n_dr_lbl_reserveLitres" />
+                <TextInput profile="SDReserveInput" id="reserveInput" position="98px 1px"
+                           onEnterPressed="onReserveEntered" onEscPressed="onReserveEscaped"
+                           enterWhenClickOutside="true" maxCharacters="12">
+                    <ThreePartBitmap profile="fs25_textInputBg" />
+                </TextInput>
+            </Bitmap>
+
             <!-- LEFT: demands -->
             <Bitmap profile="SDList" position="40px -122px" size="640px 34px">
                 <Text profile="SDHeaderLeft" position="12px 0px"  text="$l10n_dr_col_demands" />
@@ -62,26 +97,27 @@
                     </ListItem>
                 </SmoothList>
             </GuiElement>
+
         </GuiElement>
 
         <!-- action buttons -->
         <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
-            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityUp"   onClick="onMoveUp"    id="upButton"     inputActionName="MENU_EXTRA_1" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityUp"   onClick="onMoveUp"    id="upButton"     inputAction="MENU_EXTRA_1" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityDown" onClick="onMoveDown"  id="downButton"   inputActionName="MENU_EXTRA_2" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_priorityDown" onClick="onMoveDown"  id="downButton"   inputAction="MENU_EXTRA_2" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_toggle"        onClick="onToggle"    id="toggleButton" inputActionName="MENU_ACCEPT" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_toggle"        onClick="onToggle"    id="toggleButton" inputAction="MENU_ACCEPT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_clear"         onClick="onClear"     id="clearButton"  inputActionName="MENU_ACTIVATE" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_clear"         onClick="onClear"     id="clearButton"  inputAction="MENU_ACTIVATE" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll"     onClick="onToggleAll" id="toggleAllButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll"     onClick="onToggleAll" id="toggleAllButton" inputAction="MENU_CANCEL" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <!-- Output reserve: how much of this product the building always keeps back. Deliberately no
                  inputActionName (mouse-only), like the all-toggle buttons: a 7th/8th bound action
                  scrambles the key glyphs on the others. -->
-            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveDown"     onClick="onReserveDown" id="reserveDownButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveDown"     onClick="onReserveDown" id="reserveDownButton" inputAction="MENU_PAGE_PREV" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveUp"     onClick="onReserveUp"   id="reserveUpButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_reserveUp"     onClick="onReserveUp"   id="reserveUpButton" inputAction="MENU_PAGE_NEXT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <Button profile="buttonBack" text="$l10n_dr_btn_close"         onClick="onClickBack" id="noButton" />
         </BoxLayout>

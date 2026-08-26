@@ -179,8 +179,11 @@ function DistributionAdvancedDialog:refresh()
         self.dialogTitleElement:setText(string.format(SmartDistribution.l10n("dr_adv_title", "Advanced - %s"), tostring(nm)))
     end
     if self.dialogTextElement ~= nil then
+        -- The reserve is no longer PRINTED here: it is the editable field beside this line, which is
+        -- both the display and the control. Keeping a second read-only copy in the subtitle would be a
+        -- figure that has to be kept in step with the box for no benefit, and it is the width this
+        -- centred line gives back that lets the field sit in the left margin at all.
         local line = string.format("%s  (%s)", tostring(self.outName), tostring(self.modeName))
-        line = line .. SmartDistribution.l10n("dr_adv_reserve", "     Reserve: ") .. self:reserveLabel()
         -- A transient notice (e.g. a refused loopback activation) is shown HERE, inside the dialog.
         -- g_currentMission:showBlinkingWarning draws behind an open menu, so it stays invisible until
         -- every window is closed -- useless for feedback on a button press.
@@ -189,6 +192,14 @@ function DistributionAdvancedDialog:refresh()
     end
     if self.rightHeaderElement ~= nil then
         self.rightHeaderElement:setText(self.rightKind == "MARKET" and "MARKETS" or "STORAGE")
+    end
+    -- The typed reserve field follows the stored value -- EXCEPT while the player is actually typing
+    -- in it. refresh() runs on every selection change and after every button press, so without the
+    -- isCapturingInput guard a half-typed figure would be wiped out from under them mid-entry.
+    if self.reserveInput ~= nil and self.reserveInput.setText ~= nil
+       and self.reserveInput.isCapturingInput ~= true then
+        local cur = self:currentReserve()
+        self.reserveInput:setText((cur ~= nil and cur > 0) and tostring(math.floor(cur + 0.5)) or "")
     end
     self:updateToggleLabel()
     self:updateToggleAllLabel()
@@ -205,9 +216,15 @@ end
 -- and shown is plain litres.
 DistributionAdvancedDialog.RESERVE_STEPS = 20     -- 20 presses from empty to full capacity
 
+-- The ceiling a reserve is measured against, and what the typed field clamps to. ROLE-SCOPED:
+-- outputCapacityTotal takes a role and this was not passing one, so on a multi-role building it
+-- answered for the PLACEABLE -- a pallet-store row clamped against the silo half's tank. That is the
+-- 5.65 rule (every read behind a role-scoped figure must be role-scoped) missed on one call.
+-- Returns 0 when nothing resolves, and BOTH callers treat 0 as "no ceiling known": the ring refuses to
+-- step and the typed field skips the clamp rather than snapping the value to zero.
 function DistributionAdvancedDialog:reserveCapacity()
     if self.asset == nil or self.ft == nil or SmartDistribution.outputCapacityTotal == nil then return 0 end
-    local ok, c = pcall(SmartDistribution.outputCapacityTotal, self.asset, self.ft)
+    local ok, c = pcall(SmartDistribution.outputCapacityTotal, self.asset, self.ft, self.role)
     return (ok and type(c) == "number" and c < math.huge) and c or 0
 end
 
@@ -229,12 +246,6 @@ local function litres(v)
     local k
     repeat s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2") until k == 0
     return s .. " L"
-end
-
-function DistributionAdvancedDialog:reserveLabel()
-    local cur = self:currentReserve()
-    if cur ~= nil and cur > 0 then return litres(cur) end
-    return SmartDistribution.l10n("dr_label_off", "Off")
 end
 
 function DistributionAdvancedDialog:onReserveDelta(dir)
@@ -260,8 +271,110 @@ function DistributionAdvancedDialog:onReserveDelta(dir)
     self._notice = nil
     self:refresh()
 end
+-- ---- FOOTER KEYS -----------------------------------------------------------
+-- A ButtonElement's input action is DISPLAY ONLY -- it draws the key glyph and nothing acts on it
+-- (grepped: the only readers in the engine are ButtonElement and InputGlyphElementUI). A dialog that
+-- wants the key to work has to handle it itself, the way YesNoDialog:inputEvent does.
+--
+-- Reported 2026-08-26 as "every footer button shows the Enter glyph". TWO faults, and the second is why
+-- the first mattered:
+--   * the XML attribute ButtonElement reads is `#inputAction`; DR wrote `inputActionName`, which is
+--     never read. So every button fell through to the buttonOK PROFILE's action and drew the same glyph.
+--   * and no dialog overrode inputEvent, so NONE of the keys did anything anyway. The glyphs were not
+--     merely identical, they were claiming keys that did not exist.
+-- This also retires 5.4's "5th/6th-action key-glyph scramble": that was never a limit on how many
+-- actions a footer could carry, it was this typo making every extra button look the same.
+--
+-- OUR ACTIONS ARE HANDLED BEFORE THE SUPERCLASS CALL, and that is not cosmetic ordering. The first
+-- version delegated first and acted only on `not eventUsed` -- and MENU_PAGE_NEXT never arrived, so
+-- "+ Reserve" did nothing while "- Reserve" (MENU_PAGE_PREV) worked. Something above consumes NEXT and
+-- not PREV. Claiming ours first sidesteps whatever that is, and passing eventUsed=true down still tells
+-- the base the event is spoken for. Safe here because these are MessageDialogs: no tabs to page, and the
+-- lists use MENU_LIST_PAGE_* rather than MENU_PAGE_*.
+--
+-- MENU_BACK is deliberately NOT claimed -- the close button owns it (Esc). MENU_CANCEL is Backspace, far
+-- enough from an accidental press for the bulk "all" button.
+--
+-- Worth keeping even though it is no longer used: a profile declaring an EMPTY inputAction fails the
+-- InputAction[name] lookup in ButtonElement:loadProfile and leaves a button with NO glyph at all --
+-- confirmed in game 2026-08-26. That is the way to make a footer button genuinely mouse-only.
+function DistributionAdvancedDialog:inputEvent(action, value, eventUsed)
+    if not eventUsed and action ~= nil and InputAction ~= nil then
+        if     action == InputAction.MENU_EXTRA_1  then self:onMoveUp();      eventUsed = true
+        elseif action == InputAction.MENU_EXTRA_2  then self:onMoveDown();    eventUsed = true
+        elseif action == InputAction.MENU_ACCEPT   then self:onToggle();      eventUsed = true
+        elseif action == InputAction.MENU_ACTIVATE then self:onClear();       eventUsed = true
+        elseif action == InputAction.MENU_CANCEL   then self:onToggleAll();   eventUsed = true
+        elseif action == InputAction.MENU_PAGE_PREV then self:onReserveDown(); eventUsed = true
+        elseif action == InputAction.MENU_PAGE_NEXT then self:onReserveUp();   eventUsed = true
+        end
+    end
+    return DistributionAdvancedDialog:superClass().inputEvent(self, action, value, eventUsed)
+end
+
 function DistributionAdvancedDialog:onReserveDown() self:onReserveDelta(-1) end
 function DistributionAdvancedDialog:onReserveUp()   self:onReserveDelta( 1) end
+
+-- ---- typed reserve ---------------------------------------------------------
+-- Parse what the player typed into litres. Forgiving about the shapes the mod itself PRINTS, because
+-- the obvious thing to do is read the figure off the screen and type it back: "12,500", "12500 L" and
+-- "12.5 kL" all mean the same number, and 5.56 made kL the mod's own display unit above 999 L.
+-- Returns nil for anything that is not a number, and 0 for a deliberate clear.
+-- A FILE-LOCAL declared ABOVE its first use (CLAUDE.md 5.44 / 5.57): a local used above its
+-- declaration compiles clean and throws a nil-global at call time, inside a GUI callback.
+local function parseLitres(s)
+    if type(s) ~= "string" then return nil end
+    s = s:gsub("%s", ""):gsub(",", "")
+    if s == "" then return 0 end                      -- empty field clears the reserve
+    local mult = 1
+    local body = s:match("^(.-)[kK][lL]$")            -- kilolitres, the mod's own display unit
+    if body ~= nil then mult, s = 1000, body
+    else s = s:gsub("[lL]$", "") end                  -- a trailing plain "L" is decoration
+    local n = tonumber(s)
+    if n == nil or n ~= n or n == math.huge or n == -math.huge then return nil end
+    if n < 0 then return nil end
+    return n * mult
+end
+
+-- Commit the typed value. Same uid resolution and same event as the +/- ring, deliberately: two ways
+-- to set one number must not become two ways to store it.
+function DistributionAdvancedDialog:onReserveEntered()
+    if self.reserveInput == nil or self.asset == nil or self.ft == nil then return end
+    local raw = (self.reserveInput.getText ~= nil) and self.reserveInput:getText() or nil
+    -- NOT named `litres`: that is the file-local FORMATTER used two lines below, and shadowing it here
+    -- would turn litres(cap) into an attempt to call a number.
+    local want = parseLitres(raw)
+    if want == nil then
+        self._notice = SmartDistribution.l10n("dr_adv_reserveBad", "Reserve: type a number of litres")
+        self:refresh()                                -- refresh puts the stored value back in the field
+        return
+    end
+
+    -- Clamp to what the building can actually hold, and SAY SO rather than silently shrinking the
+    -- figure: a reserve above capacity would read as accepted while behaving as "reserve everything".
+    local cap = self:reserveCapacity()
+    if cap > 0 and want > cap then
+        want = cap
+        self._notice = string.format(
+            SmartDistribution.l10n("dr_adv_reserveClamped", "Reserve capped at capacity: %s"), litres(cap))
+    else
+        self._notice = nil
+    end
+
+    local uid = SmartDistribution.settingUid(self.asset, self.ft, self.role) or SmartDistribution.assetUid(self.asset)
+    if uid == nil then return end
+    local amount = math.floor(want + 0.5)
+    if DistributionControlEvent ~= nil and DistributionControlEvent.send ~= nil then
+        DistributionControlEvent.send(DistributionControlEvent.ACT.OUTPUT_RESERVE, uid, self.ft, "", 0, false, amount)
+    end
+    self:refresh()
+end
+
+-- ESC abandons the edit rather than committing it, and refresh() restores the stored figure.
+function DistributionAdvancedDialog:onReserveEscaped()
+    self._notice = nil
+    self:refresh()
+end
 
 -- ---- list data ------------------------------------------------------------
 function DistributionAdvancedDialog:getNumberOfItemsInSection(list, section)

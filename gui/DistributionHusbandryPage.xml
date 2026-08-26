@@ -44,10 +44,9 @@
         <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="163px 40px" textSize="11px" text="$l10n_dr_col_incomingProducts" />
             <Text profile="SDHeaderLeft" position="215px 0px" size="100px 40px" textSize="11px" text="$l10n_dr_col_storageType" />
-            <Text profile="SDHeaderLeft" position="323px 0px" size="225px 40px" textSize="11px" text="$l10n_dr_col_heldSlashMax" />
-            <Text profile="SDHeaderLeft" position="556px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="674px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_received" />
-            <Text profile="SDHeaderLeft" position="792px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_consumed" />
+            <Text profile="SDHeaderLeft" position="323px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
+            <Text profile="SDHeaderCenter" position="674px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_received" />
+            <Text profile="SDHeaderCenter" position="792px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_consumed" />
             <Text profile="SDHeaderLeft" position="910px 0px" size="180px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
@@ -60,10 +59,24 @@
                     <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
                     <Text profile="SDRowCell" position="44px 0px"  size="163px 42px" textSize="12px" name="fillName" />
                     <Text profile="SDRowCell" position="215px 0px" size="100px 42px" textSize="12px" name="typeText" />
-                    <Text profile="SDRowCell" position="323px 0px" size="225px 42px" textSize="12px" name="heldText" />
+                    <Bitmap position="323px 4px" size="300px 18px" name="barBg"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                        <Bitmap position="0px 0px" size="300px 18px" name="barOthers"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.72 0.20 0.17 0.95" />
+                        <Bitmap position="0px 0px" size="300px 18px" name="barSelf"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barReserve"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.32 0.92 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barTarget"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.25 0.72 1 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barMax"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 0.62 0.10 1" />
+                    </Bitmap>
+                    <Text profile="SDBarLabel"      position="323px 23px" size="180px 15px" name="barHeld" />
+                    <Text profile="SDBarLabelRight" position="443px 23px" size="180px 15px" name="barCap" />
                     <Text profile="SDRowCell" position="556px 0px" size="110px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="674px 0px" size="110px 42px" textSize="12px" name="recvText" />
-                    <Text profile="SDRowCell" position="792px 0px" size="110px 42px" textSize="12px" name="consumedText" />
+                    <Text profile="SDRowCellCenter" position="674px 0px" size="110px 42px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCellCenter" position="792px 0px" size="110px 42px" textSize="12px" name="consumedText" />
                     <Text profile="SDRowCell" position="910px 0px" size="180px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
@@ -76,14 +89,13 @@
              with the sale value in brackets. -->
         <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
-            <Text profile="SDHeaderLeft" position="207px 0px" size="210px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
+            <Text profile="SDHeaderLeft" position="207px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
             <!-- the three flow columns each gave up width (100->84, 95->79, 115->87) to fund the in-row
                  mode arrows; the MODE cell keeps its full 215px of text, so nothing truncates. -->
-            <Text profile="SDHeaderLeft" position="425px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
-            <Text profile="SDHeaderLeft" position="517px 0px" size="79px 40px"  textSize="11px" text="$l10n_dr_col_produced" />
-            <Text profile="SDHeaderLeft" position="604px 0px" size="87px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
+            <Text profile="SDHeaderCenter" position="517px 0px" size="79px 40px"  textSize="11px" text="$l10n_dr_col_produced" />
+            <Text profile="SDHeaderCenter" position="604px 0px" size="87px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
             <Text profile="SDHeaderLeft" position="699px 0px" size="275px 40px" textSize="11px" text="$l10n_dr_col_outputMode" />
-            <Text profile="SDHeaderLeft" position="982px 0px" size="108px 40px" textSize="11px" text="$l10n_dr_col_status" />
+            <Text profile="SDHeaderLeft" position="992px 0px" size="98px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
         <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">
@@ -96,17 +108,30 @@
                     <Text profile="SDRowCell" position="44px 0px"  size="155px 42px" textSize="12px" name="fillName" />
                     <!-- HELD sits next to the product and takes the widest slot: it is the only cell that
                          carries three figures ("473 L (150,000 L) + 3,000 L (3p)") and it was truncating. -->
-                    <Text profile="SDRowCell" position="207px 0px" size="210px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCell" position="425px 0px" size="84px 42px" textSize="12px" name="remainingText" />
-                    <Text profile="SDRowCell" position="517px 0px" size="79px 42px" textSize="12px" name="prodText" />
-                    <Text profile="SDRowCell" position="604px 0px" size="87px 42px" textSize="12px" name="distText" />
+                    <Bitmap position="207px 4px" size="300px 18px" name="barBg"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                        <Bitmap position="0px 0px" size="300px 18px" name="barOthers"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.72 0.20 0.17 0.95" />
+                        <Bitmap position="0px 0px" size="300px 18px" name="barSelf"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barReserve"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.32 0.92 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barTarget"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.25 0.72 1 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barMax"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 0.62 0.10 1" />
+                    </Bitmap>
+                    <Text profile="SDBarLabel"      position="207px 23px" size="180px 15px" name="barHeld" />
+                    <Text profile="SDBarLabelRight" position="327px 23px" size="180px 15px" name="barCap" />
+                    <Text profile="SDRowCellCenter" position="517px 0px" size="79px 42px" textSize="12px" name="prodText" />
+                    <Text profile="SDRowCellCenter" position="604px 0px" size="87px 42px" textSize="12px" name="distText" />
                     <!-- mode AND its sell timing share this cell ("Distribute + Sell - Sell Immediately"),
                          with arrows either side to step it both ways in place. See the Silos page for why
                          a click on an arrow does not also re-select the row. -->
                     <Button profile="fs25_multiTextOptionLeft"  position="699px 0px" name="modePrev" onClick="onModePrev" />
                     <Text   profile="SDRowCell"       position="729px 0px" size="215px 42px" textSize="12px" name="modeText" />
                     <Button profile="SDRowArrowRight" position="948px 0px" name="modeNext" onClick="onModeNext" />
-                    <Text profile="SDRowCell" position="982px 0px" size="108px 42px" textSize="12px" name="statusText" />
+                    <Text profile="SDRowCell" position="992px 0px" size="98px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">

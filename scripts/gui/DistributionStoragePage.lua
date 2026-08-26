@@ -62,7 +62,9 @@ end
 -- accessor that reaches for a product treats it as absent -- see selectedDetailRow.
 local NOTICE_CELLS = { "typeText", "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
                        "consumedText", "consumed", "prodText", "produced", "distText", "distr",
-                       "modeText", "method", "statusText", "status" }
+                       "modeText", "method", "statusText", "status",
+                       "barHeld", "barCap",
+                       "statusIn", "statusSep", "statusOut" }
 
 local function renderNoticeRow(cell, hidden, what)
     local icon = cell:getAttribute("fillIcon")
@@ -76,6 +78,11 @@ local function renderNoticeRow(cell, hidden, what)
             if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
         end
     end
+    -- ...and the BAR itself. Cells are RECYCLED, so without this the notice row inherits whatever bar
+    -- the product row that last used this slot drew (5.57's colour trap, one widget over). Its two
+    -- LABELS need no special case: they are in NOTICE_CELLS with every other text cell.
+    local bar = cell:getAttribute("barBg")
+    if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
     local n = cell:getAttribute("noticeText")
     if n == nil then return end
     if n.setVisible ~= nil then n:setVisible(true) end
@@ -302,6 +309,29 @@ end
 -- "12,000 L / 50,000 L" is where the eye already goes to ask it. FREE STORAGE therefore stays plain white.
 -- Cells are RECYCLED by SmoothList, so BOTH the nil path and the plain cell must actively reset to white or
 -- a row inherits whatever colour the previous row left behind.
+-- ---- THE STORAGE BAR -----------------------------------------------------------------------------
+-- Draws one product's row of a tank: the WHOLE tank as the track, this product GREEN, everything else
+-- RED behind it, and the player's configured "Max in" ceiling as an ORANGE line. Replaces the old
+-- HELD / MAX and FREE STORAGE text columns, whose 240px and 115px it occupies.
+--
+-- DECLARED ABOVE ITS CALLER ON PURPOSE. A `local function` used before its declaration compiles clean
+-- and resolves to a nil GLOBAL at runtime, which inside a GUI populate aborts the page mid render and
+-- shows an EMPTY LIST, a symptom nothing like its cause (5.44 / 5.57 -- twice each).
+--
+-- NO PX TO NORMALISED ARITHMETIC ANYWHERE. The track's own absSize is already laid out and already
+-- normalised, so every segment is a fraction of it -- which also means the bar follows 6.15's
+-- resolution widening for free instead of having to be told about it.
+--
+-- OTHERS IS DRAWN FIRST AND SELF OVER THE TOP, both anchored left, so `others` carries the TOTAL fill
+-- and `self` covers its left-hand part. That renders green from 0 and red beyond it with no positioning
+-- at all; only the max line is positioned.
+-- THE SHARE, AS A WHOLE PERCENT, with one floor: a holding that is not zero never reads as "0%".
+--
+local function setStorageBar(cell, placeable, ft, role, side, held)
+    if SmartDistribution.drawStorageBar == nil then return end
+    SmartDistribution.drawStorageBar(cell, placeable, ft, role, side or "both", held)
+end
+
 local function setRemainingCell(cell, remaining, capacity)
     local c = cell:getAttribute("remainingText")
     if c ~= nil then
@@ -331,6 +361,84 @@ local function inputStatusLabel(placeable, ft, window, role)
     if uid == nil then return "" end
     local st = SmartDistribution.inputLinkStatus(uid, ft, window)
     return (SmartDistribution.LINK_LABEL or {})[st] or ""
+end
+
+-- BOTH DIRECTIONS IN ONE CELL, for the merged table: "in / out", e.g. "Recv / Send".
+--
+-- The two statuses are different facts (is anything arriving; is anything leaving) and the merged table
+-- has one 131px column for them, so the long forms ("Active (Receiving)") do not fit side by side. Short
+-- words, the same vocabulary the Overview settles on for its own narrow column (5.37).
+--
+-- ONE COLOUR FOR TWO STATES, resolved by SEVERITY: red if EITHER side is blocked, green if either is
+-- actively moving, else orange. Blocked outranks active because it is the state the player has to act on,
+-- and a row that is receiving while blocked outbound is not "fine". Cells are RECYCLED by SmoothList, so
+-- the colour is set on every path and never left to inherit the previous row's (the 5.7 trap).
+local SHORT_STATUS = { ACTIVE_IN = "dr_status_short_recv", ACTIVE_OUT = "dr_status_short_send",
+                       IDLE = "dr_status_short_idle", BLOCKED = "dr_status_short_blocked" }
+local SHORT_FALLBACK = { ACTIVE_IN = "Recv", ACTIVE_OUT = "Send", IDLE = "Idle", BLOCKED = "Blocked" }
+-- `sold` names the market case. Nothing is SENT from a market -- its buffer never feeds the network back
+-- (5.36), so the only way product leaves is a sale, and "Send" claimed a movement that cannot happen.
+-- Only the ACTIVE_OUT word changes: Idle and Blocked mean the same on a market as anywhere else.
+local function shortStatus(st, dir, sold)
+    if st == nil then return SmartDistribution.l10n("dr_status_short_none", "-") end
+    if sold and st == "ACTIVE" and dir == "OUT" then
+        return SmartDistribution.l10n("dr_status_short_sold", "Sold")
+    end
+    local k = (st == "ACTIVE") and ("ACTIVE_" .. dir) or st
+    local key, fb = SHORT_STATUS[k], SHORT_FALLBACK[k]
+    if key == nil then return SmartDistribution.l10n("dr_status_short_none", "-") end
+    return SmartDistribution.l10n(key, fb)
+end
+
+local function setCombinedStatusCell(cell, placeable, ft, window, role)
+    local cIn  = cell:getAttribute("statusIn")
+    local cSep = cell:getAttribute("statusSep")
+    local cOut = cell:getAttribute("statusOut")
+    if cIn == nil and cOut == nil then return end
+    local inSt, outSt = nil, nil
+    if placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.assetUid ~= nil then
+        local uid = SmartDistribution.assetUid(placeable)
+        if uid ~= nil then
+            -- a product BLOCKED on Advanced Inputs is refused at the door whatever the source side says
+            if SmartDistribution.isInputBlocked ~= nil and SmartDistribution.isInputBlocked(
+                   (SmartDistribution.settingUid ~= nil)
+                       and SmartDistribution.settingUid(placeable, ft, role) or uid, ft) then
+                inSt = "BLOCKED"
+            elseif SmartDistribution.inputLinkStatus ~= nil then
+                inSt = SmartDistribution.inputLinkStatus(uid, ft, window)
+            end
+            if SmartDistribution.outputLinkStatus ~= nil then
+                outSt = SmartDistribution.outputLinkStatus(placeable, ft, window, role)
+            end
+        end
+    end
+    -- EACH HALF CARRIES ITS OWN COLOUR. One cell could not: a row whose input is blocked while its
+    -- output is sending is two states, and painting the whole string red asserted it was one. The
+    -- separator stays neutral so it reads as punctuation rather than as a third status.
+    -- Cells are RECYCLED by SmoothList, so every part is written and coloured on EVERY populate --
+    -- never left to inherit the previous row's (the trap 5.7 and 5.57 both hit).
+    local COL = (SmartDistribution.LINK_COLOR or {})
+    local isMkt = (SmartDistribution.isMarket ~= nil) and SmartDistribution.isMarket(placeable) or false
+    local function paint(c, st, dir)
+        if c == nil then return end
+        -- the OUT half also says how many destinations are live: "Send (1/4)". A market has none, so
+        -- outputDestCountText returns nothing there and the word itself becomes "Sold".
+        local suffix = ""
+        if dir == "OUT" and SmartDistribution.outputDestCountText ~= nil then
+            suffix = SmartDistribution.outputDestCountText(placeable, ft, role, st) or ""
+        end
+        if c.setText ~= nil then c:setText(shortStatus(st, dir, isMkt) .. suffix) end
+        if c.setTextColor == nil then return end
+        local col = (st ~= nil) and COL[st] or nil
+        if col ~= nil then c:setTextColor(col[1], col[2], col[3], col[4] or 1)
+        else c:setTextColor(1, 1, 1, 1) end
+    end
+    paint(cIn,  inSt,  "IN")
+    paint(cOut, outSt, "OUT")
+    if cSep ~= nil then
+        if cSep.setText ~= nil then cSep:setText("/") end
+        if cSep.setTextColor ~= nil then cSep:setTextColor(1, 1, 1, 1) end
+    end
 end
 
 -- write the status into a row cell AND colour it: green feeding, orange idle, red blocked
@@ -365,7 +473,12 @@ local function setOutputStatusCell(cell, placeable, ft, window, role)
     if c == nil then return end
     local st = (placeable ~= nil and ft ~= nil and SmartDistribution ~= nil and SmartDistribution.outputLinkStatus ~= nil)
         and SmartDistribution.outputLinkStatus(placeable, ft, window, role) or nil
-    if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or "") end
+    if c.setText ~= nil then
+        local base = (st ~= nil) and ((SmartDistribution.OUT_LINK_LABEL or {})[st] or "") or ""
+        local suffix = (base ~= "" and SmartDistribution.outputDestCountText ~= nil)
+            and (SmartDistribution.outputDestCountText(placeable, ft, role, st) or "") or ""
+        c:setText(base .. suffix)
+    end
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
     if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
     elseif c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
@@ -399,7 +512,9 @@ function DistributionStoragePage:onGuiSetupFinished()
     end
     -- rows that fit each frame at the 42px SDListItemStats pitch (340/42 = 8, 280/42 = 6); this only
     -- hides the scrollbar track when the list does NOT overflow its frame
-    self._scrollMap = { { "detailSlider", "detailList", 8 }, { "inputSlider", "inputList", 6 } }
+    -- ONE list now, 672px at the 42px row pitch = 16 rows. The count is "rows that fit the frame", so it
+    -- has to move with the height or the scrollbar track hides on a list that does overflow (5.55).
+    self._scrollMap = { { "detailSlider", "detailList", 16 } }
 end
 
 -- which configurable assets belong on this tab
@@ -458,8 +573,10 @@ function DistributionStoragePage:selectAsset(index)
     self.inputIndex = 1
     if self.detailList ~= nil then
         self.detailList:reloadData()
-        if self.detailList.setSelectedIndex ~= nil then
-            pcall(function() self.detailList:setSelectedIndex(1) end)
+        -- setSelectedItem, not setSelectedIndex (see selectRowByFt): the latter does not exist on a
+        -- SmoothList, so this silently did nothing and a newly selected building kept the old row index.
+        if self.detailList.setSelectedItem ~= nil then
+            pcall(self.detailList.setSelectedItem, self.detailList, 1, 1)
         end
     end
     if self.inputList ~= nil then self.inputList:reloadData() end
@@ -468,7 +585,7 @@ end
 
 function DistributionStoragePage:onFrameOpen()
     DistributionStoragePage:superClass().onFrameOpen(self)
-    self._realtimeLists = { "inputList", "detailList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
+    self._realtimeLists = { "detailList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
     self:selectAsset(1)
@@ -508,7 +625,7 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     local row = self.rows[index]
     if row == nil then return end
     if row.notice ~= nil then
-        renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        renderNoticeRow(cell, row.notice, "inputs")   -- one table, one notice; blocking is input-side
         setModeArrows(cell, nil)                       -- notice row has no mode: hide the arrows
         return
     end
@@ -530,36 +647,24 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         if c ~= nil and c.setText ~= nil then c:setText(text or "") end
     end
 
-    -- INCOMING view: the same products, shown as what flows in (received / held / distribution status)
-    if list == self.inputList then
-        applyRowHighlight(cell, (self._focusRole or "output") == "input")
-        setc("fillName", row.name)
-        local e = self:windowStats(row.ft)
-        local held = (SmartDistribution.roleHeld ~= nil)
-        and SmartDistribution.roleHeld(self.selectedAsset, row.ft, self.selectedRole) or nil
-    if held == nil then
-        held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-    end
-        setc("recvText", fmtV(e.received))
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held, self.selectedRole))
-        setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
-            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
-        setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
-        return
-    end
-
-    applyRowHighlight(cell, (self._focusRole or "output") ~= "input")
+    -- ONE ROW PER PRODUCT, carrying both directions. The two lists used to draw this same `self.rows`
+    -- twice with different columns; the storage BAR replaced HELD (MAX) and FREE STORAGE, which is what
+    -- freed the width to put received, distributed, the mode and both statuses on one line.
+    -- heldText / remainingText / typeText no longer exist in this layout, so their setters are gone
+    -- rather than writing into nil cells. Husbandry and Productions keep their own two-list layouts and
+    -- their own populate overrides, so nothing there is touched.
+    applyRowHighlight(cell, true)
     setc("fillName", row.name)
+    -- STORAGE TYPE, abbreviated. Role-scoped like every other read on this row: without the role a
+    -- building that is a silo AND a pallet store answers the silo's rows from the SHED pool (5.65 /
+    -- 6.30). Already listed in NOTICE_CELLS, so the notice row clears it like every other cell.
+    setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
+        and (SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole, true) or "") or "")
 
-    local held = (SmartDistribution.roleHeld ~= nil)
-        and SmartDistribution.roleHeld(self.selectedAsset, row.ft, self.selectedRole) or nil
-    if held == nil then
-        held = (SmartDistribution.assetHeld ~= nil) and SmartDistribution.assetHeld(self.selectedAsset, row.ft) or 0
-    end
-    setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held, self.selectedRole))
-    setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held, self.selectedRole))
-    setc("distText", outTotalText(self:windowStats(row.ft)))
+    local e = self:windowStats(row.ft)
+    setc("recvText", fmtV(e.received))
+    setc("distText", outTotalText(e))
+    setStorageBar(cell, self.selectedAsset, row.ft, self.selectedRole)
     -- Arrows are shown for every real output row WITHOUT asking whether the mode can actually be
     -- stepped. Answering that means validModeRing -> modeHasEndpoint, i.e. a placeableSystem scan per
     -- row per refresh -- exactly the cost 5.46 / 5.52 removed from this path. A building with only one
@@ -578,7 +683,8 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
         if timing ~= nil then text = text .. "  -  " .. timing end
         modeCell:setText(text)
     end
-    setOutputStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
+    -- BOTH directions in the one status cell now that there is one row per product
+    setCombinedStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
 end
 
 function DistributionStoragePage:onListSelectionChanged(list, section, index)
@@ -647,7 +753,6 @@ function DistributionStoragePage:updateSellTimingButton()
     local label = self:currentSellTimingLabel()
     -- The single "Advanced" button is CONTEXTUAL: it acts on whichever list last had focus. With an input
     -- row focused it becomes "Advanced Inputs"; with an output/detail row focused it's "Advanced Outputs".
-    local focus = self._focusRole or "output"
     local row = self:selectedDetailRow()
     -- Advanced routing master switch (Settings): off hides both Advanced buttons entirely.
     local adv = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
@@ -668,12 +773,13 @@ function DistributionStoragePage:updateSellTimingButton()
         if b._role == "sellTiming" then
             if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
             elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
-        elseif b._role == "advanced" then
-            if focus == "input" then
-                if showAdvancedIn then b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b end
-            else
-                if showAdvancedOut then b.text = SmartDistribution.l10n("dr_btn_advancedOutputs", "Advanced Outputs"); vis[#vis + 1] = b end
-            end
+        -- TWO BUTTONS, EACH SHOWN ON ITS OWN MERIT. The single contextual button dispatched on which list
+        -- was last touched, and the merged table has one list -- so there is nothing left to infer from.
+        -- Each still hides when it would open on nothing, which is what the two flags below decide.
+        elseif b._role == "advancedIn" then
+            if showAdvancedIn then vis[#vis + 1] = b end
+        elseif b._role == "advancedOut" then
+            if showAdvancedOut then vis[#vis + 1] = b end
         else
             vis[#vis + 1] = b
         end
@@ -690,7 +796,35 @@ function DistributionStoragePage:onAdvancedContextual()
     end
 end
 
--- In-row arrows: step this product's mode one place either way, without touching the selection.
+-- SELECT THE ROW AN ARROW WAS PRESSED ON, so the line the player just changed is the highlighted one
+-- and the footer's Sell Timing / Advanced buttons act on it too.
+--
+-- The arrows do not select on their own, by construction: SmoothList treats a click as row-selection
+-- only when no CHILD consumed it (mouseEvent calls its superclass first and gates on `not eventUsed`),
+-- and the button consumes it. That is what stops an arrow press from also toggling the selection -- so
+-- the selection has to be set here, explicitly.
+--
+-- setSelectedItem, NOT setSelectedIndex. The latter has no definition anywhere in the shipped source and
+-- its only two base-game call sites are on the paging TAB list, a different element class; every caller
+-- on a SmoothList uses setSelectedItem(section, index). DR has eleven pcall-wrapped setSelectedIndex
+-- calls that are therefore silent no-ops -- the one on this path is corrected below, the rest are left
+-- alone rather than changed blind, since "fixing" them would start moving selections that currently
+-- stay put.
+function DistributionStoragePage:selectRowByFt(ft)
+    if ft == nil then return end
+    local rows, list = self.rows, self.detailList
+    if list == nil and self.outputList ~= nil then rows, list = self.outputRows, self.outputList end
+    if rows == nil or list == nil or list.setSelectedItem == nil then return end
+    for i, r in ipairs(rows) do
+        if r ~= nil and r.ft == ft then
+            self.detailIndex = i                       -- what selectedDetailRow reads
+            pcall(list.setSelectedItem, list, 1, i)
+            return
+        end
+    end
+end
+
+-- In-row arrows: step this product's mode one place either way, and select that row.
 -- Shares applyMode with the footer "Cycle Output" so all three routes behave identically (same MP
 -- replication, same refresh, same sell-timing button update).
 function DistributionStoragePage:onModePrev(...) self:stepRowMode(-1, ...) end
@@ -716,6 +850,7 @@ function DistributionStoragePage:stepRowMode(dir, ...)
     -- page actually has, rather than making each subclass override this the way onCycleSelected has to.
     if self.detailList ~= nil then self.detailList:reloadData() end
     if self.outputList ~= nil then self.outputList:reloadData() end
+    self:selectRowByFt(ft)          -- AFTER the reload, so it lands on the rebuilt cells
     self:updateSellTimingButton()
 end
 
@@ -750,6 +885,7 @@ function DistributionStoragePage:onCycleSelectedBack()
     SmartDistribution.applyAssetMode(self.selectedAsset, row.ft, nxt, false, self.selectedRole)
     if self.detailList ~= nil then self.detailList:reloadData() end
     if self.outputList ~= nil then self.outputList:reloadData() end
+    -- no selectRowByFt here: this acts on the row that is ALREADY selected
     self:updateSellTimingButton()
 end
 
@@ -871,6 +1007,51 @@ function DistributionAnimalHusbandryPage.new(target, custom_mt)
 end
 
 -- two detail lists: INPUTS (demand) on top, OUTPUTS on the bottom.
+-- HUSBANDRY'S FOOTER IS THE PRODUCTIONS ONE, not the base class's. The base was rewritten for the
+-- MERGED Silos / Markets table, where a single row carries both directions so a contextual Advanced
+-- button has nothing to infer from and had to become two explicit ones (advancedIn / advancedOut).
+-- A pen keeps TWO lists, so the contextual button works exactly as it always did -- and without this
+-- override the inherited filter would not match the "advanced" role at all, dropping it into the
+-- catch-all `else` and showing it unconditionally, past both visibility gates AND the Advanced master
+-- switch. Same trap the Productions page is one rename away from; see the note in DistributionMenu.
+--
+-- Deliberately a near-copy of DistributionProductionsPage's version: the two pages are meant to be
+-- aligned (author, 2026-08-26), so they should read alike. Change them together.
+function DistributionAnimalHusbandryPage:updateSellTimingButton()
+    local all = self._allButtons
+    if all == nil then return end
+    local label = self:currentSellTimingLabel()
+    local row   = self:selectedDetailRow()
+    local adv   = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
+    local showAdvancedOut = adv and row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
+        and SmartDistribution.modeConfigurable ~= nil
+        and SmartDistribution.modeConfigurable(self.selectedAsset, row.ft, self.selectedRole)
+    local showAdvancedIn = adv and self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
+        and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
+    -- Shared CANCEL slot: "Spawn Pallets" for a Hold Internal pallet output holding a full pallet's worth
+    -- (coops / sheep), else "Sell Timing" for a sell output, else hidden. The two never overlap.
+    local spawnReady = row ~= nil and row.ft ~= nil and self.selectedAsset ~= nil
+        and SmartDistribution.palletSpawnReady ~= nil
+        and SmartDistribution.palletSpawnReady(self.selectedAsset, row.ft)
+    local focus = self._focusRole or "output"
+    local vis = {}
+    for _, b in ipairs(all) do
+        if b._role == "sellTiming" then
+            if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
+            elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
+        elseif b._role == "advanced" then
+            if focus == "input" then
+                if showAdvancedIn then b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b end
+            else
+                if showAdvancedOut then b.text = SmartDistribution.l10n("dr_btn_advancedOutputs", "Advanced Outputs"); vis[#vis + 1] = b end
+            end
+        else
+            vis[#vis + 1] = b
+        end
+    end
+    self:applyFooterButtons(vis)
+end
+
 function DistributionAnimalHusbandryPage:onGuiSetupFinished()
     DistributionStoragePage.onGuiSetupFinished(self)   -- sets up assetList (this layout has no detailList)
     if self.inputList ~= nil then
@@ -961,10 +1142,11 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
         local held = (SmartDistribution.husbandryInputHeld ~= nil) and SmartDistribution.husbandryInputHeld(self.selectedAsset, row.ft) or 0
         setc("recvText", fmtV(e.received))
         setc("consumedText", fmtV(e.consumed))
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, held, self.selectedRole))
         setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
-            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
+            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole, true) or "")
+        -- The BAR replaces the held/max text and the free-storage cell, with the MAX and TARGET marks.
+        -- A pen PULLS its feed, so a fill target binds here and is worth showing.
+        setStorageBar(cell, self.selectedAsset, row.ft, self.selectedRole, "input")
         setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
     elseif list == self.outputList then
         local row = self.outputRows[index]; if row == nil then return end
@@ -981,8 +1163,10 @@ function DistributionAnimalHusbandryPage:populateCellForItemInSection(list, sect
     end
         setc("prodText", fmtV(e.produced))
         setc("distText", outTotalText(e))
-        setc("heldText", heldWithPallets(self.selectedAsset, row.ft, held, self.selectedRole))
-        setRemainingCell(cell, outputRemaining(self.selectedAsset, row.ft, held, self.selectedRole))
+        -- The BAR replaces the held text and the free-storage cell. An OUTPUT gets the RESERVE mark and
+        -- not max/target. `held` is handed in because assetHeld already folds a pen's pallets AND its
+        -- pending queue into one figure (5.21) -- outputBarValues re-reading it would be a second basis.
+        setStorageBar(cell, self.selectedAsset, row.ft, self.selectedRole, "output", held)
         local modeCell = cell:getAttribute("modeText")
         if modeCell ~= nil then
             -- palletizable flag passed so a pallet output reads "Hold Pallets" rather than a bare "Hold",
@@ -1091,15 +1275,12 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
     local row = self.rows[index]
     if row == nil then return end
     if row.notice ~= nil then
-        renderNoticeRow(cell, row.notice, (list == self.inputList) and "inputs" or "outputs")
+        renderNoticeRow(cell, row.notice, "inputs")   -- one table, one notice; blocking is input-side
         setModeArrows(cell, nil)                       -- notice row has no timing: hide the arrows
         return
     end
     hideNoticeRow(cell)
-    -- Only the OUTGOING list carries a timing, and only its template has the arrow buttons -- on an
-    -- input row these resolve to nil and the call is a no-op. Cells are RECYCLED, so this has to run on
-    -- every populate rather than once (5.7 / 5.57).
-    if list ~= self.inputList then setModeArrows(cell, row.ft) end
+    setModeArrows(cell, row.ft)   -- one table, so every real row carries the timing arrows
     local iconCell = cell:getAttribute("fillIcon")
     if iconCell ~= nil then
         local file = fillIconFile(row.ft)
@@ -1113,34 +1294,22 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
         local c = cell:getAttribute(name)
         if c ~= nil and c.setText ~= nil then c:setText(text or "") end
     end
-    -- INCOMING view: what the market is receiving, with the distribution link status
-    if list == self.inputList then
-        setc("fillName", row.name)
-        local e = self:windowStats(row.ft)
-        local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-        setc("recvText", fmtV(e.received))
-        -- was the bare held figure, with no ceiling beside it -- the one input list in the mod that did not
-        -- say what it could take. A market resolves through inputProductCapacity -> marketCap like any other
-        -- receiver (5.36), so the shared helper works here and the column now matches every other tab.
-        setc("heldText", heldOfMaxText(self.selectedAsset, row.ft, buffer, self.selectedRole))
-        setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
-            and SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole) or "")
-        setRemainingCell(cell, inputRemaining(self.selectedAsset, row.ft, self.selectedRole), inputMaxLiters(self.selectedAsset, row.ft, self.selectedRole))
-        setStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
-        return
-    end
+    -- ONE ROW PER PRODUCT. A market's buffer IS its own storage, and it resolves through
+    -- inputProductCapacity -> marketCap like any other receiver (5.36), so the same bar helper draws it:
+    -- green is what the market is holding, the track is marketCap. There is no red, because a market has
+    -- no pool -- each product gets its own slice -- which is the honest answer rather than a missing one.
     setc("fillName", row.name)
-    local buffer = (SmartDistribution.marketBufferOf ~= nil) and SmartDistribution.marketBufferOf(self.selectedAsset, row.ft) or 0
-    local mktCap = (SmartDistribution.marketCap ~= nil and SmartDistribution.marketCap(self.selectedAsset))
-                   or SmartDistribution.MARKET_CAP or 200000
-    -- HELD (MAX), the same bracket form every other OUTGOING list uses -- this was the last "a / b" ratio left
-    setc("heldText", fmtV(buffer) .. " (" .. fmtV(mktCap) .. ")")
-    -- This column exists in the XML and was never populated, so it sat blank while every other table filled
-    -- it. A market's buffer is its own ceiling (marketCap), so the figure is a straight cap - buffer and the
-    -- colour lands on HELD like everywhere else.
-    setRemainingCell(cell, (type(mktCap) == "number" and mktCap > 0)
-        and math.max(0, mktCap - buffer) or nil, mktCap)
-    setc("distText", outTotalText(self:windowStats(row.ft)))
+    -- STORAGE TYPE. This page has its OWN populate, so it does not inherit the base one that fills this
+    -- cell -- the column was added to both XMLs and wired in one place only, and a market showed a blank
+    -- (reported 2026-08-26). It reads "Ind": a market has no Storage at all, its stock is DR's virtual
+    -- buffer and each product gets its own marketCap slice (5.36), so the products genuinely do not
+    -- share a tank.
+    setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
+        and (SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole, true) or "") or "")
+    local e = self:windowStats(row.ft)
+    setc("recvText", fmtV(e.received))
+    setc("distText", outTotalText(e))
+    setStorageBar(cell, self.selectedAsset, row.ft, self.selectedRole)
     local modeCell = cell:getAttribute("modeText")
     if modeCell ~= nil and SmartDistribution.marketModeDisplay ~= nil then
         -- Shows what the market is DOING, and the player's own setting after it when the two differ
@@ -1158,6 +1327,8 @@ function DistributionMarketsPage:populateCellForItemInSection(list, section, ind
             and SmartDistribution.marketProductLabel(self.selectedAsset, row.ft)
             or SmartDistribution.l10n("dr_market_immediate", "Sell  -  Immediate"))
     end
+    -- both directions in one cell, as on the Silos tab
+    setCombinedStatusCell(cell, self.selectedAsset, row.ft, self:currentWindow(), self.selectedRole)
 end
 
 -- In-row arrows. The asset-mode version in the base class would write a meaningless asset mode over a
@@ -1170,6 +1341,7 @@ function DistributionMarketsPage:stepRowMode(dir, ...)
     if ft == nil or self.selectedAsset == nil or SmartDistribution.marketCycleTiming == nil then return end
     SmartDistribution.marketCycleTiming(self.selectedAsset, ft, dir < 0)
     if self.detailList ~= nil then self.detailList:reloadData() end
+    self:selectRowByFt(ft)          -- AFTER the reload, so it lands on the rebuilt cells
     self:updateTimingButton()
 end
 
@@ -1241,19 +1413,18 @@ function DistributionMarketsPage:updateTimingButton()
                 b.text = SmartDistribution.l10n("dr_btn_sellTimingOff", "Sell Timing: selling is OFF")
                 vis[#vis + 1] = b
             elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end   -- hidden while the product is Held
-        elseif b._role == "advanced" then
+        elseif b._role == "advancedIn" then
             -- A market is the exact OPPOSITE of what this used to say ("sell endpoints (no inputs)"): its
             -- buffer never feeds the network back (5.7), so there is no outgoing routing to arrange, while
-            -- every source on the farm delivers INTO it. So the Advanced button always means Advanced
-            -- Inputs here -- unconditionally, not contextually, since there is no output side to switch to.
-            -- Hidden when the Advanced routing master switch (Settings) is off, or when the market resolves
-            -- no input fill types at all.
+            -- every source on the farm delivers INTO it. Hidden when the Advanced routing master switch
+            -- (Settings) is off, or when the market resolves no input fill types at all.
             local advOK = SmartDistribution.advancedEnabled == nil or SmartDistribution.advancedEnabled()
             local hasIn = self.selectedAsset ~= nil and SmartDistribution.receiverInputFillTypes ~= nil
                 and next(SmartDistribution.receiverInputFillTypes(self.selectedAsset)) ~= nil
-            if advOK and hasIn then
-                b.text = SmartDistribution.l10n("dr_title_advancedInputs", "Advanced Inputs"); vis[#vis + 1] = b
-            end
+            if advOK and hasIn then vis[#vis + 1] = b end
+        elseif b._role == "advancedOut" then
+            -- ...and there is genuinely no output side to configure, so this one is DROPPED on a market
+            -- rather than shown and doing nothing. That is the whole reason markets get their own footer.
         else
             vis[#vis + 1] = b
         end

@@ -1864,21 +1864,63 @@ end
 --   Linked     -- one pool of stock shared with the in-building production; its setting is shared too
 --   Pooled     -- capacity shared between PRODUCTS in one tank
 --   Individual -- this product has its own capacity
-function SmartDistribution.storageTypeLabel(p, ft, role)
+-- `short` gives the abbreviated forms (Pool / Ind / Link) the narrow building-tab column uses. The
+-- ABBREVIATIONS ARE THEIR OWN l10n KEYS rather than a truncation of the long ones: cutting a translated
+-- word to four characters produces nonsense in most languages, and the translator is the only one who
+-- can pick a sensible short form.
+--
+-- THERE IS NO POOL NUMBER, and that is a measured decision rather than an omission. DR models at most
+-- ONE pool per (building, role) -- _computePooledInputCapacity returns on the first qualifying storage
+-- and folds only OVERLAPPING storages into it -- so a "Pool 1 / Pool 2" label would read "Pool 1" on
+-- every row in the game. Checked whether real buildings even have two disjoint multi-product tanks:
+-- across the base game plus 37 installed mods (21,164 zip entries streamed, 2,984 XML files, 122
+-- declaring a <storage>) the answer is ZERO. Pool vs Ind already says which products share a tank,
+-- which is the question a number would have answered.
+function SmartDistribution.storageTypeLabel(p, ft, role, short)
     if p == nil or ft == nil then return nil end
     -- LINKED is only ever true of the two halves that read the TANK -- the silo and the in-building
     -- production. A pallet store has its own container (spec_objectStorage) and shares nothing with
     -- either, so its rows must never claim it however the tank is arranged.
     if role ~= "SHED" and SmartDistribution.sharedTankFillTypes(p)[ft] then
-        return SmartDistribution.l10n("dr_type_linked", "Linked")
+        return short and SmartDistribution.l10n("dr_type_linkedShort", "Link")
+                     or SmartDistribution.l10n("dr_type_linked", "Linked")
     end
-    local pool = SmartDistribution.pooledInputCapacity(p)
+    -- ROLE-SCOPED, like every other read behind a role-scoped cell (5.65). Without the role this asked
+    -- the PLACEABLE, so on a building that is a silo AND a pallet store the silo's rows were answered by
+    -- the SHED pool: the 8 products the store happens to support read "Pooled" and every other product
+    -- read "Individual", on one and the same tank. That is the reported "some pooled, some individual".
+    local pool = SmartDistribution.pooledInputCapacity(p, role)
     if pool ~= nil then
         for _, pf in ipairs(pool.fts) do
-            if pf == ft then return SmartDistribution.l10n("dr_type_pooled", "Pooled") end
+            if pf == ft then
+                -- WHICH TANK(S). A building with several pooled tanks is unreadable without this: every
+                -- row said "Pool" and nothing said what was pooled WITH what. Extension groups are left
+                -- out -- they add space to one product and are not a pool anyone shares.
+                local tanks = {}
+                if type(pool.groups) == "table" and type(pool.groupsOf) == "table" then
+                    for _, gi in ipairs(pool.groupsOf[ft] or {}) do
+                        local g = pool.groups[gi]
+                        if g ~= nil and not g.extension then tanks[#tanks + 1] = tostring(gi) end
+                    end
+                end
+                -- A building with ONE tank keeps the plain word: numbering a set of one is noise, and it
+                -- keeps every ordinary silo reading exactly as it did.
+                local nTanks = 0
+                if type(pool.groups) == "table" then
+                    for _, g in ipairs(pool.groups) do if not g.extension then nTanks = nTanks + 1 end end
+                end
+                if nTanks > 1 and #tanks > 0 then
+                    return string.format(short and SmartDistribution.l10n("dr_type_poolNShort", "P%s")
+                                               or SmartDistribution.l10n("dr_type_poolN", "Pool %s"),
+                                         table.concat(tanks, "+"))
+                end
+                return short and SmartDistribution.l10n("dr_type_pooledShort", "Pool")
+                             or SmartDistribution.l10n("dr_type_pooled", "Pooled")
+            end
         end
     end
-    return SmartDistribution.l10n("dr_type_individual", "Individual")
+    return short and SmartDistribution.l10n("dr_type_individualShort", "Ind")
+                 or SmartDistribution.l10n("dr_type_individual", "Individual")
 end
 
 -- THE KEY ONE PRODUCT'S SETTINGS LIVE UNDER, for a given role. Per FILL TYPE, not per role, because
@@ -2865,6 +2907,51 @@ local function fillHudIconFile(ft)
     return nil
 end
 
+-- ---------------------------------------------------------------------------
+-- BUILDING ICON: AN ORDERED FALLBACK CHAIN, because a DECLARED image is not a
+-- PRESENT one. Reported 2026-08-25: four Montana 4X productions (bakery, flour
+-- mill, oil plant, whiskey plant) drew a solid WHITE SQUARE on the building
+-- lists. NOT DR's doing -- all four declare
+--     <image>$data/store/store_empty.png</image>
+-- which is the BASE GAME'S OWN BLANK PLACEHOLDER tile, and DR handed it straight
+-- to setImageFilename. Measured across every placeable in that map: 4 of 4 blank
+-- rows declare it, 0 of 6 working rows do. An exact split, so the diagnosis is a
+-- correlation rather than a plausible story.
+--
+-- The old gate was only "is the string non-empty", so the primary-product
+-- fallback -- written for buildings shipping a literally EMPTY <image> -- could
+-- never fire for a placeholder, which is a perfectly valid non-empty string.
+--
+-- TWO RULES make this a chain rather than one more special case:
+--   * a KNOWN BLANK PLACEHOLDER counts as NO image at all; and
+--   * every candidate is VERIFIED with textureFileExists() where the engine
+--     offers it. That is the base game's own validate-then-fall-back pattern
+--     (VehicleConfigurationItem.lua:87, Bale.lua:1033, InlineBale.lua:147), and
+--     it generalises past the one placeholder we happen to know about: a mod
+--     naming an image it forgot to ship now falls through instead of drawing a
+--     white box. A MISSING global counts as PASS, so a build that does not
+--     expose it behaves exactly as before rather than losing every icon.
+-- ---------------------------------------------------------------------------
+SmartDistribution.ICON_PLACEHOLDER_NAMES = {
+    store_empty = true,   -- $data/store/store_empty -- the base game's "no image" tile
+}
+
+-- Fields, not top-level locals (CLAUDE.md 1.1 -- the main chunk is at 199/200).
+function SmartDistribution.iconFileUsable(f)
+    if type(f) ~= "string" or f == "" then return false end
+    -- Compare on the BASENAME WITHOUT EXTENSION, case-insensitively: the XML declares
+    -- .png while the shipped file is .dds (confirmed on disk -- store_empty.dds), and a
+    -- resolved path may carry either separator.
+    local base = f:match("([^/\\]+)$") or f
+    base = base:gsub("%.[^%.]*$", ""):lower()
+    if SmartDistribution.ICON_PLACEHOLDER_NAMES[base] then return false end
+    if textureFileExists ~= nil then
+        local ok, exists = pcall(textureFileExists, f)
+        if ok and exists == false then return false end   -- ONLY a definite "no" rejects
+    end
+    return true
+end
+
 -- A representative fill type for a building that has no store image -- used so preplaced productions
 -- whose base-game storeData ships an EMPTY <image> (e.g. the map biogas plant) still show something:
 -- the primary product (else the first output) of the building's first production line.
@@ -2893,22 +2980,11 @@ function SmartDistribution.setAssetIcon(cell, placeable)
     if cell == nil or cell.getAttribute == nil then return end
     local iconCell = cell:getAttribute("assetIcon")
     if iconCell == nil then return end
-    local file = nil
-    if placeable ~= nil then
-        local si = placeable.storeItem
-        if type(si) ~= "table" and g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil then
-            local cfg = placeable.configFileName or placeable.xmlFilename
-            if cfg ~= nil then
-                local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager, cfg)
-                if ok then si = item end
-            end
-        end
-        if type(si) == "table" then
-            local img = si.imageFilename or si.imageFilenameSmall
-            if type(img) == "string" and img ~= "" then file = img end
-        end
-        if file == nil then file = fillHudIconFile(placeablePrimaryProduct(placeable)) end   -- no store image: primary-product fallback
-    end
+    -- Resolved by the ONE chain (SmartDistribution.assetIconFile, further down the file).
+    -- A FIELD call, so it resolves at CALL time and the forward reference is fine -- a
+    -- LOCAL used above its declaration would compile clean and throw a nil-global
+    -- mid-populate, showing as an EMPTY list (CLAUDE.md 5.44 / 5.57).
+    local file = placeable ~= nil and SmartDistribution.assetIconFile(placeable) or nil
     if file ~= nil and iconCell.setImageFilename ~= nil then
         iconCell:setImageFilename(file)
         if iconCell.setVisible ~= nil then iconCell:setVisible(true) end
@@ -11979,13 +12055,11 @@ function SmartDistribution.salesByAsset(window)
         if si ~= nil and type(si.name) == "string" and si.name ~= "" then return si.name end
         return "Unknown asset"
     end
+    -- The third copy of this question; delegated for the same reason as setAssetIcon.
+    -- It gains the placeholder rejection and the product fallback, so a notification
+    -- naming one of these buildings shows an icon rather than a blank.
     local function assetIcon(p)
-        local si = storeItemOf(p)
-        if si ~= nil then
-            local f = si.imageFilename or si.iconFilename
-            if type(f) == "string" and f ~= "" then return f end
-        end
-        return nil
+        return SmartDistribution.assetIconFile(p)
     end
 
     local out = {}
@@ -13049,6 +13123,16 @@ end
 -- held / capacity for a husbandry INPUT. Animal food is a single SHARED pool (spec_husbandryFood):
 -- every food fill type reports the same total food level and the shared food capacity. Straw / water
 -- read their own husbandry fill levels.
+-- The BARN's total food across every type -- what the base game's own info panel shows (getTotalFood).
+-- Kept separate from husbandryInputHeld, which answers the per-product question.
+function SmartDistribution.husbandryFoodTotal(p)
+    local fs = p ~= nil and p.spec_husbandryFood or nil
+    if fs == nil or fs.fillLevels == nil then return 0 end
+    local t = 0
+    for _, lvl in pairs(fs.fillLevels) do t = t + (lvl or 0) end
+    return t
+end
+
 function SmartDistribution.husbandryInputHeld(p, ft)
     if p == nil or ft == nil then return 0 end
     if SmartDistribution.feedingRobotOf(p) ~= nil and SmartDistribution.robotBunkerFillTypes(p)[ft] then
@@ -13056,9 +13140,21 @@ function SmartDistribution.husbandryInputHeld(p, ft)
     end
     local fs = p.spec_husbandryFood
     if fs ~= nil and fs.supportedFillTypes ~= nil and fs.supportedFillTypes[ft] and ft ~= waterFillType() then
-        local total = 0
-        if fs.fillLevels ~= nil then for _, lvl in pairs(fs.fillLevels) do total = total + (lvl or 0) end end
-        return total
+        -- THE PER-FOOD LEVEL, not the barn's total. This summed every food type and returned the same
+        -- figure for all of them, so a Cow Barn holding 1,458 L of food showed "1,458 L (4%)" on its
+        -- Silage row, its Grass row, its Hay row AND its TMR row -- four identical numbers that told the
+        -- player nothing about what the barn actually had (reported 2026-08-26 with the food bars, which
+        -- made four identical bars impossible to miss).
+        --
+        -- spec.fillLevels IS per fill type: PlaceableHusbandryFood saves one <fillLevel fillType=...>
+        -- element each and network-syncs them individually, and getTotalFood() is defined as the SUM of
+        -- them. So the per-product figure was always there; DR was throwing it away.
+        --
+        -- The barn total is still available where it is genuinely wanted -- husbandryFoodTotal below --
+        -- and the CAPACITY stays the pool's, because the foods really do share one tank. Green is now
+        -- this food, red is the other foods, grey is free space: the same reading as a silo.
+        if fs.fillLevels ~= nil then return fs.fillLevels[ft] or 0 end
+        return 0
     end
     if p.getHusbandryFillLevel ~= nil then
         local ok, lvl = pcall(p.getHusbandryFillLevel, p, ft); if ok and type(lvl) == "number" then return lvl end
@@ -14117,11 +14213,11 @@ end
 -- an individual section.
 -- `role` addresses ONE HALF of a building that does two jobs. Its blocks and caps are stored under that
 -- half's own key, so blocking wheat on a DriveIn's pallet store no longer blocks it on the silo beside it.
-function SmartDistribution.receiverInputRows(p, role)
+function SmartDistribution.receiverInputRows(p, role)   -- role-scoped: see storageTypeLabel
     local rows = {}
     if p == nil then return rows end
     -- keyed per row below (settingUid), not once here: a LINKED product shares the silo's entry
-    local pool = SmartDistribution.pooledInputCapacity(p)
+    local pool = SmartDistribution.pooledInputCapacity(p, role)
     local poolSet = {}
     if pool ~= nil then for _, ft in ipairs(pool.fts) do poolSet[ft] = true end end
     -- WITH THE ROLE, or the dialog lists the wrong half's inputs: on the Mechet Fromage's PALLET STORE
@@ -14456,6 +14552,66 @@ function SmartDistribution.openMenu()
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- THE MENU KEY IN A VEHICLE. Requested 2026-08-26: players wanted the DR menu reachable without getting
+-- out. It was never deliberately blocked -- installInteraction registers only into
+-- PlayerInputComponent.INPUT_CONTEXT_NAME, so entering a vehicle switches context and DR's actions
+-- simply are not part of it.
+--
+-- Vehicle:registerActionEvents is the mirror image of the player one and is appended to the same way.
+-- Read from source, not assumed: it opens Vehicle.INPUT_CONTEXT_NAME itself and calls
+-- endActionEventsModification BEFORE returning, so an appended call lands OUTSIDE that scope and has to
+-- re-open it -- exactly the caveat installInteraction already documents for the player component.
+--
+-- ONLY THE MENU KEY (backslash). The other action, "Configure distribution" (left bracket), resolves the
+-- building the player is LOOKING AT from the on-foot camera; in a vehicle that reference is not the
+-- player's, so it would act on the wrong building or on nothing. It stays on foot until it is worth
+-- giving it a vehicle-aware target.
+--
+-- NO KEYBIND CONFLICT, checked rather than assumed: the base game's own keyboard defaults
+-- (profileTemplate/inputBindingDefault_KeyboardMouse.xml) bind NONE of the bracket or backslash keys, so
+-- nothing in the vehicle context wants this one.
+--
+-- REGISTERED ONLY FOR THE VEHICLE THE PLAYER IS ACTUALLY OPERATING. This runs for every vehicle that
+-- re-registers its events, so without the isActiveForInput gate every vehicle on the map would add its
+-- own copy of the action.
+-- A FIELD, not a `local function`: the main chunk sits at the 200-local ceiling and adding one here
+-- tipped it straight over ("too many local variables (limit is 200) in main function"), which is a
+-- FATAL compile error -- the whole mod fails to load (CLAUDE.md 1.1). luac -p caught it before a restart.
+function SmartDistribution.installVehicleInteraction()
+    if Vehicle == nil or Vehicle.registerActionEvents == nil then
+        log("Vehicle.registerActionEvents not found [VERIFY]")
+        return
+    end
+    Vehicle.registerActionEvents = Utils.appendedFunction(
+        Vehicle.registerActionEvents,
+        function(self, ...)
+            if self == nil or g_inputBinding == nil or InputAction == nil then return end
+            if InputAction.DISTREDUX_OPEN_MANAGER == nil then return end
+            -- the controlled vehicle only; `true` ignores which implement is SELECTED, so the key works
+            -- whatever the player currently has highlighted
+            local okA, active = pcall(self.getIsActiveForInput, self, true)
+            if not okA or not active then return end
+            g_inputBinding:beginActionEventsModification(Vehicle.INPUT_CONTEXT_NAME)
+            local ok, _, eventId = pcall(g_inputBinding.registerActionEvent, g_inputBinding,
+                InputAction.DISTREDUX_OPEN_MANAGER, self, SmartDistribution.onOpenManagerAction,
+                false, true, false, true, nil, true)
+            if ok and eventId ~= nil then
+                pcall(function()
+                    g_inputBinding:setActionEventText(eventId,
+                        SmartDistribution.l10n("dr_input_openManager", "Distribution menu"))
+                    -- hidden in the vehicle's input help: that panel is already crowded with the
+                    -- vehicle's own actions, and the key still works. Flip to true if players ask.
+                    g_inputBinding:setActionEventTextVisibility(eventId, false)
+                end)
+            else
+                print("[SmartDistribution] vehicle manager register FAILED [VERIFY]: " .. tostring(eventId))
+            end
+            g_inputBinding:endActionEventsModification()
+        end)
+    log("menu key installed for the vehicle context")
+end
+
 -- register the key in the player's on-foot context. registerActionEvents re-runs
 -- on every context setup; target is the player component (self) so the event is
 -- cleaned up with the player's own events on teardown - no duplicate/leak.
@@ -14506,7 +14662,7 @@ local function installInteraction()
                     false, true, false, true, nil, true)
                 if ok3 and eventId3 ~= nil then
                     pcall(function()
-                        g_inputBinding:setActionEventText(eventId3, "Distribution menu")
+                        g_inputBinding:setActionEventText(eventId3, SmartDistribution.l10n("dr_input_openManager", "Distribution menu"))
                         g_inputBinding:setActionEventTextVisibility(eventId3, true)
                     end)
                     log("manager action registered (eventId=%s)", tostring(eventId3))
@@ -16016,6 +16172,7 @@ function SmartDistribution.installPassThroughSuppression()
 end
 
 installInteraction()
+SmartDistribution.installVehicleInteraction()
 installHusbandryPatch()
 SmartDistribution.installHoldInternalPalletSuppression()
 SmartDistribution.installManualTransferTracking()
@@ -16229,7 +16386,7 @@ end
 -- it -- this walks getAllStorages, iterates every storage's fillLevels and allocates an `fts` array as long
 -- as the number of products the building supports, and it was being called several times per product per
 -- product (see the memo note below).
-function SmartDistribution._computePooledInputCapacity(p)
+function SmartDistribution._computePooledInputCapacity(p, role)
     if p == nil then return nil end
     -- Feeding-robot barns take ingredients into INDIVIDUAL per-fill-type bunkers (unloadingSpots), each with
     -- its own capacity. They also carry a generic spec_husbandryFood pool whose supported types include
@@ -16245,8 +16402,20 @@ function SmartDistribution._computePooledInputCapacity(p)
     -- -- and inputAcceptableLiters would then throttle it to a number that means nothing. The pallet half
     -- is not lost, it is simply not this building's receiver yet: it becomes separately addressable when
     -- roles land, and this guard goes with them.
+    -- THE SHED POOL BELONGS TO THE SHED HALF ONLY. This branch fires on `spec_objectStorage` alone, so on
+    -- a building that is a bulk SILO *and* a pallet store it answered for the SILO's rows too -- handing
+    -- them the STORE's slot capacity. Measured by sdBarProbe 2026-08-24 on the Drive-In SILO:
+    --     role=SILO  roles=SILO+SHED  pool=SHED liters=350000 fts=8
+    -- so every silo product that happens to be one of the shed's 8 types reported 350 kL and read
+    -- "Pooled", while the rest missed the pool entirely and fell through to a per-product sum -- which is
+    -- exactly the reported "some individual, some pooled, some 350kL and everything in between".
+    -- PRE-EXISTING, not introduced by the bar: inputProductCapacity has always resolved this way, and the
+    -- bar is simply the first thing to show the total on every row at once.
+    --
+    -- `role == nil` KEEPS THE OLD ANSWER, deliberately: that is every allocator call, so what DR moves is
+    -- untouched and only a caller that explicitly names a non-shed half sees the change.
     local spec = p.spec_objectStorage
-    if spec ~= nil and not SmartDistribution.treatPassThroughAsStore(p) then
+    if spec ~= nil and (role == nil or role == "SHED") and not SmartDistribution.treatPassThroughAsStore(p) then
         local slots = spec.capacity or 0
         if slots <= 0 then return nil end                     -- unlimited: no meaningful cap
         local fts = {}
@@ -16308,11 +16477,17 @@ function SmartDistribution._computePooledInputCapacity(p)
         end
         if #fts >= 2 then
             local cap = fs.capacity or 0
-            -- sharedLevel: every food type reports the SAME pool total through husbandryInputHeld -- the
-            -- barn holds "33,750 L of food", not 33,750 L of each. Unique among the pool kinds (a hall's
-            -- bays, a shed's slots, a production buffer and a market buffer all report per-product), so
-            -- anything that sums held ACROSS a pool has to know the difference. See inputEffectiveMaxLiters.
-            if cap > 0 then return { liters = cap, fts = fts, kind = "FOOD", sharedLevel = true } end
+            -- NO LONGER sharedLevel. That flag existed because husbandryInputHeld returned the barn's
+            -- TOTAL for every food type, so summing held across the pool multiplied one figure by the
+            -- number of foods -- which is what made a cow barn report "100% (0 L)" on a food capped at
+            -- 100% (5.43). It was a suppression, not a fix: the per-food levels were in spec.fillLevels
+            -- the whole time and husbandryInputHeld now returns them.
+            --
+            -- With genuinely per-product levels the FOOD pool is an ORDINARY pool -- several products
+            -- sharing one capacity, each with its own level, exactly like a silo tank -- so the normal
+            -- contention maths applies and needs no special case. The sharedLevel MACHINERY is kept in
+            -- poolAggregates / inputEffectiveMaxLiters as a general facility; nothing sets it today.
+            if cap > 0 then return { liters = cap, fts = fts, kind = "FOOD" } end
         end
         return nil   -- a husbandry's non-food inputs (straw, water) are individual, never pooled
     end
@@ -16335,82 +16510,82 @@ function SmartDistribution._computePooledInputCapacity(p)
     -- a folded extension only ever contributes LITRES. A valid 200,000 L extension from a mod pack that
     -- happens to support 113 fill types used to drag all 113 into a 10-crop silo's pool, because this
     -- unioned the fill types of every overlapping storage (reported 2026-08-06).
+    -- ONE GROUP PER TANK. A <storage> supporting 2+ of this building's OWN products IS a pool: its
+    -- capacity is shared among exactly those products. A placeable may declare several, and they may
+    -- OVERLAP -- the WobbyTec Drive-In declares three (170 types @ 10,000,000, 29 @ 5,000,000 and
+    -- 12 @ 10,000,000).
+    --
+    -- WHAT THIS REPLACED, AND WHY. The old walk took the FIRST qualifying storage as "the pool" and
+    -- folded every overlapping storage's litres into one scalar. Three separate reports came out of that
+    -- single simplification:
+    --   * every product read the merged 25,000,000 L;
+    --   * a product living only in the 2nd or 3rd tank was not a member at all, so SILAGE_ADDITIVE read
+    --     "Individual" when it genuinely shares a 5,000,000 L tank with 28 other products;
+    --   * contention was charged POOL-WIDE, so POTATO -- which is in tank 1 alone -- was charged for
+    --     stock sitting in tank 2 that it could never have used. On screen: a bar filled entirely red.
+    --     That one only became visible once poolShares started reporting held correctly at all, which is
+    --     a reminder that fixing one term can expose the next rather than finish the job.
+    --
+    -- Groups answer all three from one structure: capOf sums only the tanks that actually hold a product,
+    -- groupsOf names them (so the UI can say "Pool 1+2"), and poolShares charges contention per tank.
+    --
+    -- TWO PHASES, not one gate, because a single gate is ORDER-DEPENDENT: getAllStorages returns silo
+    -- extensions before the heap, so an extension met BEFORE the tank it extends would be dropped (5.61).
     local ownFts = SmartDistribution.ownStorageFillTypes(p)
-    local pool = nil
-    for _, s in ipairs(getAllStorages(p)) do
-        -- exposed products: only those the building supports itself
+    local groups = {}
+    for _, st in ipairs(getAllStorages(p)) do
         local fts = {}
-        for ft in pairs(storageFillTypes(s)) do if ownFts[ft] then fts[#fts + 1] = ft end end
-        -- TWO DIFFERENT QUESTIONS, and conflating them cost an extension's whole capacity.
-        --
-        -- "Is this storage a POOL?" genuinely needs 2+ products sharing one tank -- that is what pooled
-        -- MEANS, and a single-product tank must never create a pool where none existed.
-        -- "May this storage FOLD ITS LITRES into a pool that already exists?" only needs it to share ONE
-        -- product with that pool. An extension adds SPACE, not products (5.54b), so demanding two from it
-        -- was asking the wrong question of the wrong storage.
-        --
-        -- REPORTED 2026-08-15 (slurry pit): the extension raised the OUTPUT capacity but not the INPUT
-        -- capacity, and DR then behaved as though the extra space did not exist. A Slurry Pit is a
-        -- spec_silo, so it comes down this branch; its own tank holds LIQUIDMANURE + DIGESTATE and forms
-        -- the pool, while the extension holds LIQUIDMANURE alone -- one product -- and was skipped.
-        -- assetCapacity (the output side) has no such gate, which is exactly why the two disagreed.
-        --
-        -- NOT COSMETIC: inputHeldLevel falls through to assetHeld, which DOES sum the extension. So held
-        -- counted space that capacity did not, the fill percentage ran past 100%, and inputAcceptableLiters
-        -- then refused to deliver into the extension at all.
-        --
-        -- GENERAL, not slurry-specific: it hit manure pits and any SINGLE-crop silo extension too. A
-        -- multi-crop extension overlaps on 2+ products and always worked, which is why 5.29b looked
-        -- complete. Verified by simulation across all five shapes (extpool.lua, scratchpad): the fixed
-        -- input figure now equals the output figure in every case, and the two already-working cases are
-        -- unchanged.
-        -- Written as an explicit two-phase walk below rather than one gate, because a single gate is
-        -- ORDER-DEPENDENT: a one-product storage met BEFORE the pool-forming one would still be dropped.
-        -- getAllStorages returns silo extensions before the heap, so a manure pit carrying a slurry-type
-        -- siloExtension would have hit exactly that.
+        for ft in pairs(storageFillTypes(st)) do if ownFts[ft] then fts[#fts + 1] = ft end end
         if #fts >= 2 then
-            -- CAPACITY IS STATIC -- read it as such. This used to compute `sum of all levels + free`,
-            -- which is arithmetically the same thing ONLY while every litre counted is in this storage
-            -- and nowhere else. With a silo extension attached that stops holding: product physically in
-            -- the extension is reported by the extension AND is included where the station aggregates,
-            -- so it is added twice and the pool GROWS as the silo fills.
-            --
-            -- MEASURED (sdExtFold, 2026-08-06, Barley Collector + a 200,000 L LDC extension): at 400,000 L
-            -- held the pool read a correct 600,000, and at 600,000 L held -- the same two storages, the
-            -- same 200,000 L extension -- it read 800,000. A capacity that moves with the fill level is
-            -- the tell; nothing about the tanks changed between those two runs.
-            --
-            -- storageCapacity answers from capacities[ft], then getCapacity(), and only then falls back to
-            -- level+free for a tank that declares neither -- so an honest declaration is used where it
-            -- exists and the old formulation survives exactly where it was actually needed. It is also the
-            -- SAME function assetCapacity uses, which is the point: input MAX and output MAX are two DR
-            -- figures for one quantity and must not disagree (5.27 / 5.28). Output read 600,000 correctly
-            -- throughout this whole investigation; input is now on that basis too.
-            local cap = storageCapacity(s, fts[1]) or 0
-            if cap > 0 and cap < INF and pool == nil then
-                pool = { liters = cap, fts = fts, kind = "BULK", storage = s, _set = {}, _seen = { [s] = true } }
-                for _, ft in ipairs(fts) do pool._set[ft] = true end
+            local cap = storageCapacity(st, fts[1]) or 0
+            if cap > 0 and cap < INF then
+                local set = {}
+                for _, ft in ipairs(fts) do set[ft] = true end
+                groups[#groups + 1] = { storage = st, cap = cap, fts = fts, set = set }
             end
         end
     end
-    -- PHASE 2: fold the LITRES of every other storage that shares a product with the pool. One shared
-    -- product is enough -- an extension adds space, not products -- and the pool's fts list is NOT
-    -- widened, so a folded storage can never put a new row on the building's input list (5.54b).
-    if pool ~= nil then
-        for _, s in ipairs(getAllStorages(p)) do
-            if not pool._seen[s] then
-                local shares, first = false, nil
-                for ft in pairs(storageFillTypes(s)) do
-                    if ownFts[ft] and pool._set[ft] then shares = true; first = ft; break end
+    if #groups == 0 then return nil end
+
+    local pool = { kind = "BULK", groups = groups, storage = groups[1].storage,
+                   liters = 0, fts = {}, capOf = {}, groupsOf = {} }
+    local seen, inPool = {}, {}
+    for gi, g in ipairs(groups) do
+        seen[g.storage] = true
+        pool.liters = pool.liters + g.cap
+        for _, ft in ipairs(g.fts) do
+            if not inPool[ft] then inPool[ft] = true; pool.fts[#pool.fts + 1] = ft end
+            pool.capOf[ft]    = (pool.capOf[ft] or 0) + (storageCapacity(g.storage, ft) or g.cap)
+            pool.groupsOf[ft] = pool.groupsOf[ft] or {}
+            local l = pool.groupsOf[ft]; l[#l + 1] = gi
+        end
+    end
+
+    -- PHASE 2: a storage carrying exactly ONE of this building's products, and sharing it with a tank, is
+    -- an EXTENSION. It adds space to that product alone and never joins the product list (5.54b). It is
+    -- still recorded as a group so its LEVEL is counted -- a slurry pit's extension holds real litres --
+    -- but it is flagged, because naming it in a "Pool 1+2" label would be noise.
+    for _, st in ipairs(getAllStorages(p)) do
+        if not seen[st] then
+            local only, many = nil, false
+            for ft in pairs(storageFillTypes(st)) do
+                if ownFts[ft] then
+                    if only ~= nil then many = true; break end
+                    only = ft
                 end
-                if shares then
-                    pool._seen[s] = true
-                    local cap = storageCapacity(s, first) or 0
-                    if cap > 0 and cap < INF then pool.liters = pool.liters + cap end
+            end
+            if only ~= nil and not many and inPool[only] then
+                seen[st] = true
+                local c = storageCapacity(st, only) or 0
+                if c > 0 and c < INF then
+                    pool.capOf[only] = (pool.capOf[only] or 0) + c
+                    pool.liters      = pool.liters + c
+                    groups[#groups + 1] = { storage = st, cap = c, fts = { only },
+                                            set = { [only] = true }, extension = true }
+                    local l = pool.groupsOf[only]; l[#l + 1] = #groups
                 end
             end
         end
-        pool._set, pool._seen = nil, nil
     end
     return pool
 end
@@ -16433,19 +16608,28 @@ end
 --
 -- The returned table must be treated as READ-ONLY by callers; every existing caller already only reads
 -- .fts / .liters / .kind / .sharedLevel (audited).
-function SmartDistribution.pooledInputCapacity(p)
+-- `role` is OPTIONAL, and omitting it is byte-identical to every call that existed before -- which is
+-- every allocator call. See the SHED gate in _computePooledInputCapacity for why an explicit role matters.
+function SmartDistribution.pooledInputCapacity(p, role)
     if p == nil then return nil end
+    local key = role or "_"
     local now = SmartDistribution.memoNow()
     -- no clock, or the A/B switch is on: always rebuild, which IS the pre-fix behaviour
     if now == nil or SmartDistribution._legacyInputMath then
-        return SmartDistribution._computePooledInputCapacity(p)
+        return SmartDistribution._computePooledInputCapacity(p, role)
     end
     local m = SmartDistribution._poolMemo[p]
-    if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
-        return m.pool                                   -- nil is a legitimate cached answer (p has no pool)
+    if m ~= nil and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL
+       and m.byRole ~= nil then
+        local e = m.byRole[key]
+        if e ~= nil then return e.pool end              -- nil is a legitimate cached answer (p has no pool)
     end
-    local pool = SmartDistribution._computePooledInputCapacity(p)
-    SmartDistribution._poolMemo[p] = { pool = pool, at = now, epoch = SmartDistribution._memoEpoch }
+    local pool = SmartDistribution._computePooledInputCapacity(p, role)
+    if m == nil or m.epoch ~= SmartDistribution._memoEpoch or (now - m.at) >= SmartDistribution.MEMO_TTL then
+        m = { at = now, epoch = SmartDistribution._memoEpoch, byRole = {} }
+        SmartDistribution._poolMemo[p] = m
+    end
+    m.byRole[key] = { pool = pool }
     return pool
 end
 
@@ -16464,13 +16648,29 @@ end
 --
 -- Returns nil when p has no pool. Read-only; pass `pool` in when you already have it so the memo cannot
 -- be matched against a pool rebuilt between the two calls.
-function SmartDistribution.poolShares(p, pool)
-    pool = pool or SmartDistribution.pooledInputCapacity(p)
+-- ROLE-SCOPED. Every read in here was asking the PLACEABLE, which is wrong on any building with more
+-- than one role and is the whole of the bug reported 2026-08-25: on a WobbyTec Drive-In silo WHEAT drew a
+-- pure GREEN bar with no red band while its neighbours drew green + red. Measured by the [DR pool] probe,
+-- which prints the bar's own arithmetic term by term:
+--     WHEAT  held=9,817,571  shHeld=0  totHeld=109,000  others=0
+-- `held` (inputHeldLevel WITH the role) was right; `shHeld` (this function, WITHOUT it) was zero. The bar
+-- then computes others = totHeld - held, so the two sides came off DIFFERENT BASES and the subtraction
+-- went negative and clamped to nothing. An ordinary single-role silo printed held == shHeld and behaved
+-- correctly throughout, which is exactly why this only ever showed on multi-role buildings.
+--
+-- NOT COSMETIC. poolAggregates feeds inputEffectiveMaxLiters, so DR was deciding how much a product may
+-- accept from a held of ZERO on every such building.
+--
+-- This is the 5.65 rule once more -- if a figure is role-scoped, every read behind it must be too -- and
+-- the memo has to carry the role as well, or the silo half and the pallet-store half of one placeable
+-- share a single cached answer.
+function SmartDistribution.poolShares(p, pool, role)
+    pool = pool or SmartDistribution.pooledInputCapacity(p, role)
     if pool == nil or type(pool.fts) ~= "table" then return nil end
     local now = SmartDistribution.memoNow()
     local live = SmartDistribution.memoReadable()
     local m = SmartDistribution._shareMemo[p]
-    if now ~= nil and live and m ~= nil and m.pool == pool
+    if now ~= nil and live and m ~= nil and m.pool == pool and m.role == role
        and m.epoch == SmartDistribution._memoEpoch and (now - m.at) < SmartDistribution.MEMO_TTL then
         return m.shares
     end
@@ -16479,9 +16679,15 @@ function SmartDistribution.poolShares(p, pool)
     local n = #pool.fts
     -- pass 1: blocked flags (still needed -- a blocked product is excluded from the pool's aggregates)
     local blocked, active = {}, 0
+    -- settingUid, not getUid: it names the half that actually receives this product, and collapses a
+    -- LINKED product (one tank seen from two tabs) onto the tank's own key -- so these agree with the
+    -- Advanced Inputs dialog, which stores through the same function.
+    local uidOfFt = {}
     for i = 1, n do
         local f = pool.fts[i]
-        local b = (uid ~= nil) and SmartDistribution.isInputBlocked(uid, f) or false
+        local u = SmartDistribution.settingUid(p, f, role) or uid
+        uidOfFt[f] = u
+        local b = (u ~= nil) and SmartDistribution.isInputBlocked(u, f) or false
         blocked[f] = b
         if not b then active = active + 1 end
     end
@@ -16491,18 +16697,45 @@ function SmartDistribution.poolShares(p, pool)
     local dflt = 100
     -- pass 2: each member's effective % and what it is actually holding
     local T = SmartDistribution.control.inputCapPct
-    local C = (advanced and uid ~= nil and T ~= nil) and T[uid] or nil
     local pct, held = {}, {}
     for i = 1, n do
         local f  = pool.fts[i]
+        local C  = (advanced and T ~= nil and uidOfFt[f] ~= nil) and T[uidOfFt[f]] or nil
         local ex = (C ~= nil) and C[f] or nil          -- 0 is a valid explicit value, so test against nil
         pct[f]   = (ex ~= nil) and ex or dflt
-        held[f]  = SmartDistribution.inputHeldLevel(p, f) or 0
+        held[f]  = SmartDistribution.inputHeldLevel(p, f, role) or 0
     end
-    local shares = { pool = pool, pct = pct, held = held, blocked = blocked, active = active, default = dflt }
+    -- PER-TANK CONTENTION. "What are the OTHER products taking" is only meaningful about products that
+    -- can occupy the SAME tank. Summing it pool-wide charged a product for stock it could never have
+    -- displaced: on the Drive-In, POTATO (tank 1 only) was charged for wheat sitting in tank 2, which
+    -- filled its whole bar red. Computed per group, then summed over just the groups that hold this
+    -- product. O(S x F) once per building, not per product.
+    local othersOf = nil
+    if type(pool.groups) == "table" and #pool.groups > 0 and type(pool.groupsOf) == "table" then
+        othersOf = {}
+        local gHeld, gLvl = {}, {}
+        for gi, g in ipairs(pool.groups) do
+            local sum, lv = 0, {}
+            for _, f in ipairs(g.fts) do
+                local l = getLevel(g.storage, f) or 0
+                lv[f] = l
+                sum   = sum + l
+            end
+            gHeld[gi], gLvl[gi] = sum, lv
+        end
+        for i = 1, n do
+            local f, o = pool.fts[i], 0
+            for _, gi in ipairs(pool.groupsOf[f] or {}) do
+                o = o + math.max(0, (gHeld[gi] or 0) - ((gLvl[gi] or {})[f] or 0))
+            end
+            othersOf[f] = o
+        end
+    end
+    local shares = { pool = pool, pct = pct, held = held, blocked = blocked, active = active,
+                     default = dflt, othersOf = othersOf }
     if now ~= nil and live then
         SmartDistribution._shareMemo[p] =
-            { shares = shares, pool = pool, at = now, epoch = SmartDistribution._memoEpoch }
+            { shares = shares, pool = pool, role = role, at = now, epoch = SmartDistribution._memoEpoch }
     end
     return shares
 end
@@ -16521,17 +16754,30 @@ end
 -- from quadratic to linear in F. Cached on the shares table (and so under the same memo), with the cap it
 -- was built for, so a caller passing a different capacity rebuilds rather than reading a wrong answer.
 function SmartDistribution.poolAggregates(pool, sh, cap)
-    if sh._agg ~= nil and sh._aggCap == cap then return sh._agg end
+    -- EACH MEMBER IS JUDGED AGAINST ITS OWN CEILING once the pool carries per-product capacities, so
+    -- `over` stops depending on the caller's `cap` at all -- which is what keeps this O(F) per BUILDING
+    -- rather than O(F) per PRODUCT.
+    --
+    -- That distinction is the whole reason for the sentinel key. The result used to be cached against
+    -- the `cap` argument, which was safe only while every member shared one figure. With per-product
+    -- capacities a plain `cap` key would MISS on nearly every call -- consecutive products carry
+    -- different ceilings -- and the O(F) loop would run once per product: exactly the O(F^2) middle step
+    -- 5.46 removed, and 5.46c is the reminder that such a regression is invisible because it degrades to
+    -- CORRECT, only slow.
+    local perFt = type(pool.capOf) == "table"
+    local key   = perFt and "*" or cap
+    if sh._agg ~= nil and sh._aggCap == key then return sh._agg end
     local shared = pool.sharedLevel == true
     local totalHeld, over = 0, {}
     for _, f in ipairs(pool.fts) do
         local held = sh.held[f] or 0
         local fPct = sh.pct[f] or 100
-        over[f]   = held > (cap * fPct / 100) + 0.5        -- tolerance: litres are fractional
+        local fCap = perFt and (pool.capOf[f] or cap) or cap
+        over[f]   = held > (fCap * fPct / 100) + 0.5       -- tolerance: litres are fractional
         totalHeld = totalHeld + held
     end
     sh._agg    = { shared = shared, totalHeld = totalHeld, over = over }
-    sh._aggCap = cap
+    sh._aggCap = key
     return sh._agg
 end
 
@@ -16564,9 +16810,17 @@ function SmartDistribution.inputProductCapacity(p, ft, role)
     if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then
         return SmartDistribution.marketCap(p) or 0, nil
     end
-    local pool = SmartDistribution.pooledInputCapacity(p)
+    local pool = SmartDistribution.pooledInputCapacity(p, role)
     if pool ~= nil then
-        for _, pf in ipairs(pool.fts) do if pf == ft then return pool.liters, pool end end
+        -- capOf is this product's own ceiling across the storages that hold it; pool.liters is the
+        -- whole pool and is only a fallback for a pool kind that does not compute capOf (FOOD, SHED,
+        -- PRODIN, HALL all report one shared figure by construction).
+        for _, pf in ipairs(pool.fts) do
+            if pf == ft then
+                local c = (type(pool.capOf) == "table") and pool.capOf[ft] or nil
+                return (type(c) == "number" and c > 0) and c or pool.liters, pool
+            end
+        end
     end
     -- Production input (individual per-ft buffer): this input's own slot in pp.storage, PLUS any silo
     -- extension folded onto the production's stations (the supplementary Water Tank on a greenhouse).
@@ -16596,7 +16850,17 @@ function SmartDistribution.inputProductCapacity(p, ft, role)
     -- The objectStorage exclusion is there because a pallet shed's capacity is SLOTS, resolved by the
     -- pooled branch above -- but it also locked out a pass-through store that happens to own one, which
     -- then fell through to `return 0` for every product in a 111-crop tank.
-    if p ~= nil and (p.spec_objectStorage == nil or SmartDistribution.treatPassThroughAsStore(p)) then
+    -- ...OR AN EXPLICIT NON-SHED ROLE. The objectStorage exclusion stops a pallet SHED's products being
+    -- answered by a tank sum, which is right -- but on a building that is a silo AND a store it also
+    -- locked the SILO's rows out of their own tanks, so any silo product the pool does not list resolved
+    -- ZERO: no capacity, no bar, and a "Individual" label with nothing behind it.
+    -- Measured on the Drive-In SILO 2026-08-24: it has THREE silo tanks, and SILAGE_ADDITIVE lives only
+    -- in the second (5,000,000 L across 29 explicit types). The pool is formed from the FIRST tank and
+    -- `pool.fts` is fixed at creation (5.61), so tank 2's extra products are folded for LITRES but never
+    -- become pool members -- leaving them with this branch as their only route to a capacity.
+    -- `role == nil` is untouched, so every allocator call behaves exactly as before.
+    if p ~= nil and (p.spec_objectStorage == nil or SmartDistribution.treatPassThroughAsStore(p)
+                     or (role ~= nil and role ~= "SHED")) then
         local total = 0
         for _, s in ipairs(getAllStorages(p)) do
             if storageFillTypes(s)[ft] ~= nil then
@@ -16654,6 +16918,16 @@ end
 -- ---- input block ----------------------------------------------------------
 function SmartDistribution.setInputBlocked(rcvUid, ft, blocked)
     SmartDistribution.invalidateMenuMemos()   -- a block changes every share in the pool; show it at once
+    -- ...AND IT CHANGES WHICH ROWS EXIST. 5.57 hides a product that is blocked and holding nothing, so a
+    -- block does not merely restyle a row, it removes one -- and the row DATA is built by buildDetailRows,
+    -- which the periodic refresh never re-runs (it only repopulates cells). So the page kept showing the
+    -- blocked products until the player navigated away and back. Reported 2026-08-24.
+    --
+    -- BUMPED HERE RATHER THAN ON THE DIALOG CLOSING, which is what was asked for but is the weaker seam:
+    -- this is the single funnel every block passes through, so it covers Block All, an undo, and a change
+    -- arriving from ANOTHER PLAYER in multiplayer (DistributionControlEvent's applyLocal calls this too).
+    -- The page is behind a modal dialog while the player works, so the visible effect is the same.
+    SmartDistribution._rowsEpoch = (SmartDistribution._rowsEpoch or 0) + 1
     local C = SmartDistribution.control
     C.inputBlock = C.inputBlock or {}
     local B = C.inputBlock
@@ -17147,6 +17421,304 @@ function SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
     return eff
 end
 
+-- ---- THE STORAGE BAR --------------------------------------------------------------------------------
+-- The four figures one product's bar draws, for a receiver row. Returns nil when there is no capacity to
+-- draw against, and the caller then simply shows nothing rather than inventing a denominator.
+--
+--   total  -- the WHOLE tank, regardless of what else is in it. On a pooled store every product's bar is
+--             the same length (a Farma 400 draws 400 kL for wheat, barley and corn alike), which is the
+--             point: the bar shows the shared space being competed for, not a per-product slice.
+--   held   -- this product's litres           -> the GREEN fill
+--   others -- everything else in the tank     -> the RED fill behind it
+--   capL   -- the player's CONFIGURED ceiling -> the ORANGE line
+--
+-- capL IS DELIBERATELY *NOT* inputEffectiveMaxLiters. That figure is ELASTIC: 5.53b clamps it to
+-- `cap - othersHeld`, so on the example silo (400 kL holding 100 k wheat + 300 k of other crops) wheat's
+-- effective max is 100 kL and the line would sit exactly on top of the green fill, telling the player
+-- nothing they cannot already see. The CONFIGURED ceiling (capacity x "Max in %") is the setting they
+-- actually chose, it sits at the far right until they change it, and the elastic limit remains readable
+-- anyway as the point where green meets red.
+--
+-- A SHARED-LEVEL POOL REPORTS `others = 0`, and that is honest rather than lazy: a husbandry FOOD pool
+-- returns the SAME pool total for every food type (5.43), so no litre in it is attributable to one
+-- product and any split would be invented. The green fill then reads as "the pool", which is what the
+-- building actually knows.
+-- ---------------------------------------------------------------------------
+-- THE OUTPUT SIDE OF THE BAR. storageBarValues answers the INPUT question ("how much may come in, and
+-- what is already taking the space"); a production's or pen's OUTPUT row is a different question, so it
+-- gets its own resolver rather than a flag on that one.
+--
+-- `held` is taken FROM THE CALLER, deliberately. Both pages already compute it, and each does so
+-- correctly for its own building kind -- a pen folds pallets and the pending queue in through assetHeld
+-- (5.21) while a production's buffer and pad are separate figures. Re-deriving it here would create a
+-- SECOND basis for one quantity, which is the single most expensive bug shape in this codebase
+-- (5.27 / 5.28 / 5.54c). The bar must show the number printed beside it.
+--
+-- NO RED BAND ON AN OUTPUT ROW, and that is a deliberate omission rather than an oversight. On a silo the
+-- red means "another product is physically occupying this tank", which is answerable because the pool
+-- machinery knows the tank's other members. A production's outputs are not a shared pool in that sense --
+-- pallets sit on a pad, a pen's stock sits in its own queue -- so any red drawn here would be a figure DR
+-- cannot justify. Under-stating is the safe direction (5.45b); if a genuinely shared output buffer turns
+-- up, it gets added with evidence.
+function SmartDistribution.outputBarValues(p, ft, role, held)
+    if p == nil or ft == nil then return nil end
+    local total = SmartDistribution.outputCapacityTotal ~= nil
+                  and SmartDistribution.outputCapacityTotal(p, ft, role) or nil
+    if type(total) ~= "number" or total <= 0 or total >= INF then return nil end
+    held = (type(held) == "number" and held > 0) and held or 0
+
+    -- The RESERVE, read the way the Advanced Outputs dialog writes it (settingUid, role-aware), so the
+    -- mark and the dialog can never disagree. See the note in storageBarValues about the pass reading
+    -- this at the bare uid -- unchanged here, and tracked separately.
+    local reserve = nil
+    if SmartDistribution.advancedEnabled() and SmartDistribution.getOutputReserve ~= nil then
+        local ruid = SmartDistribution.settingUid(p, ft, role) or SmartDistribution.assetUid(p)
+        if ruid ~= nil then
+            local r = SmartDistribution.getOutputReserve(ruid, ft)
+            if type(r) == "number" and r > 0 then reserve = r end
+        end
+    end
+    return { total = total, held = held, others = 0, capL = nil, pct = 100,
+             blocked = false, target = nil, reserve = reserve }
+end
+
+-- ---------------------------------------------------------------------------
+-- ONE DRAWING ROUTINE FOR EVERY BAR IN THE MOD. It lived as a local in DistributionStoragePage and would
+-- otherwise have had to be copied into DistributionProductionsPage -- the duplication CLAUDE.md 4 records
+-- as this project's established pattern for that page, and CLAUDE.md 6.18 records three separate
+-- regressions from. A widget this fiddly (three marks, cell recycling, a clamp per mark) is exactly the
+-- kind that drifts, so it is a field here and both pages call it.
+--
+-- `side` selects which marks are meaningful, which is the whole reason it is a parameter:
+--   "input"  -> MAX (orange) and TARGET (blue). A fill target only binds where the receiver PULLS.
+--   "output" -> RESERVE (dark blue). A floor the building keeps back; max/target mean nothing here.
+-- The mark colours are chosen AGAINST THE FILLS they sit on, not for their own sake: the held fill is
+-- green and the others fill is red, so a green or red line disappears exactly where it matters most.
+-- That is why MAX is orange rather than red and TARGET is blue rather than green (2026-08-26).
+--   "both"   -> all three, for the merged Silos/Markets table where one row IS both directions.
+function SmartDistribution.drawStorageBar(cell, p, ft, role, side, held)
+    if cell == nil or cell.getAttribute == nil then return end
+    local bg = cell:getAttribute("barBg")
+    if bg == nil then return end                       -- a layout without the widget: nothing to do
+    local heldT, capT = cell:getAttribute("barHeld"), cell:getAttribute("barCap")
+    local function label(c, t) if c ~= nil and c.setText ~= nil then c:setText(t) end end
+
+    side = side or "both"
+    local v = (side == "output") and SmartDistribution.outputBarValues(p, ft, role, held)
+                                  or SmartDistribution.storageBarValues(p, ft, role)
+    -- No resolvable capacity: hide the widget rather than draw an empty tank, which would read as
+    -- "this holds nothing" when the truth is "DR cannot say". Same rule as the capacity bracket (5.21).
+    if v == nil or v.total == nil or v.total <= 0 then
+        if bg.setVisible ~= nil then bg:setVisible(false) end
+        label(heldT, ""); label(capT, "")
+        return
+    end
+    if bg.setVisible ~= nil then bg:setVisible(true) end
+
+    -- absSize once laid out; size is the same figure before that and is the safe fallback, since a cell
+    -- can be populated before its absolute position has been resolved.
+    local full = (bg.absSize ~= nil and bg.absSize[1] or 0)
+    if full <= 0 then full = (bg.size ~= nil and bg.size[1] or 0) end
+    if full <= 0 then return end
+
+    local function frac(x) return math.max(0, math.min(1, (x or 0) / v.total)) end
+    local selfB, othersB = cell:getAttribute("barSelf"), cell:getAttribute("barOthers")
+    if othersB ~= nil and othersB.setSize ~= nil then
+        othersB:setSize(full * frac(v.held + (v.others or 0)), nil)   -- TOTAL fill; self covers its start
+    end
+    if selfB ~= nil and selfB.setSize ~= nil then
+        selfB:setSize(full * frac(v.held), nil)
+    end
+
+    -- Cells are RECYCLED by SmoothList, so a mark that does not apply must be actively HIDDEN rather
+    -- than skipped, or it keeps the position of whatever row last used that slot (the trap 5.7 hit with
+    -- colours and 5.57 with the notice row). `show` carries that: false hides unconditionally.
+    local function setMark(name, litres, show, alwaysShow)
+        local m = cell:getAttribute(name)
+        if m == nil then return end
+        if not show or (litres == nil and not alwaysShow) then
+            if m.setVisible ~= nil then m:setVisible(false) end
+            return
+        end
+        if m.setPosition ~= nil then
+            -- keep the line INSIDE the track: at 100% it would otherwise straddle the right-hand edge
+            local w = (m.size ~= nil and m.size[1] or 0)
+            m:setPosition(math.min(full * frac(litres or 0), math.max(0, full - w)), nil)
+        end
+        if m.setVisible ~= nil then m:setVisible(true) end
+    end
+    local wantIn  = (side ~= "output")
+    local wantOut = (side ~= "input")
+    -- XML declaration order is reserve, target, max, so where two coincide the ceiling stays visible.
+    setMark("barReserve", v.reserve, wantOut, false)
+    setMark("barTarget",  v.target,  wantIn,  false)
+    -- MAX is drawn even when unset: an unconfigured product still HAS a ceiling (the full tank) and the
+    -- player should see it exists before moving it. A target or reserve never set has nothing to point at.
+    setMark("barMax",     v.capL,    wantIn,  true)
+
+    -- FULL LITRES, then the share in brackets. NOT the mod's kL rule (5.56) -- a deliberate exception,
+    -- asked for twice: the bar already carries the magnitude, and this label is where the exact litre
+    -- figure lives. Grouping is done here rather than through formatVolume for that reason.
+    local function grouped(n)
+        local t = tostring(math.floor((n or 0) + 0.5))
+        local k
+        repeat t, k = t:gsub("^(-?%d+)(%d%d%d)", "%1,%2") until k == 0
+        return t
+    end
+    local pc = math.floor(frac(v.held) * 100 + 0.5)
+    local pctText
+    if pc <= 0 and v.held > 0 then pctText = SmartDistribution.l10n("dr_pct_lessThanOne", "<1%")
+    else pctText = string.format("%d%%", pc) end
+    label(heldT, string.format("%s L (%s)", grouped(v.held), pctText))
+    label(capT,  string.format("%s L", grouped(v.total)))
+end
+
+-- " (1/4)" -- how many of this output's routable destinations are ACTIVE, of all of them. Appended to the
+-- OUT status on the building tabs so a partly-blocked output says so where the player is already looking;
+-- the Overview settings view has carried the same figure in its own DEST column since 5.37.
+--
+-- outputDestinationsForMode returns the destinations relevant to this product's CURRENT mode, each
+-- carrying `.blocked`, and deliberately mirrors DistributionAdvancedDialog -- so this is the same set the
+-- Advanced Outputs dialog lists, not a second opinion. It is memoised per (asset, ft) (5.46 / 5.52), which
+-- is what makes a per-row call affordable.
+--
+-- EMPTY WHEN THE STATUS IS ALREADY BLOCKED, and that is a width decision as much as a sense one:
+-- outputLinkStatus returns BLOCKED precisely when every destination is blocked (5.46b), so "(0/4)" would
+-- restate it -- and "Blocked (0/4)" is the one string that does not fit the cell. Also empty when a mode
+-- routes nowhere (plain Sell lists no destinations), where a count would be meaningless rather than zero.
+function SmartDistribution.outputDestCountText(p, ft, role, status)
+    if p == nil or ft == nil or status == "BLOCKED" then return "" end
+    -- A MARKET HAS NO OUTGOING DESTINATIONS. Its buffer never feeds the network back (5.36) -- the only
+    -- way product leaves is a SALE. Reported 2026-08-26: a Farmers Market showed "Send (4/4)", "Idle
+    -- (2/2)", "Idle (5/5)" and so on, with a different count per product.
+    --
+    -- Cause: outputDestinationsForMode asks resolvedAssetMode, and a market has no stored ASSET mode --
+    -- its "Sell - Best price" / "Hold" column is the market TIMING enum, a different thing entirely. So it
+    -- fell through to the global Distribute default, modeDistributes said yes, and the function listed
+    -- every building on the farm that ACCEPTS that product. The counts were real buildings; they were
+    -- just answering a question a market never asks. Products with no consumer anywhere showed no count
+    -- at all, which is what made the numbers look meaningful.
+    if SmartDistribution.isMarket ~= nil and SmartDistribution.isMarket(p) then return "" end
+    if SmartDistribution.outputDestinationsForMode == nil then return "" end
+    local ok, dests = pcall(SmartDistribution.outputDestinationsForMode, p, ft, role)
+    if not ok or type(dests) ~= "table" or #dests == 0 then return "" end
+    local active = 0
+    for _, d in ipairs(dests) do if not d.blocked then active = active + 1 end end
+    return string.format(" (%d/%d)", active, #dests)
+end
+
+function SmartDistribution.storageBarValues(p, ft, role)
+    if p == nil or ft == nil then return nil end
+    -- HELD FIRST, on the role's own basis, so every other figure here is read against the same container.
+    local held = SmartDistribution.inputHeldLevel(p, ft, role) or 0
+    local total, others = nil, 0
+
+    local cap, pool = SmartDistribution.inputProductCapacity(p, ft, role)
+
+    if pool ~= nil and type(pool.fts) == "table" then
+        -- (1) A GENUINE POOL. It answers both, and pool.liters is a STATIC capacity (5.54c).
+        total = cap
+        if #pool.fts > 1 then
+            local sh  = SmartDistribution.poolShares(p, pool, role)
+            local agg = SmartDistribution.poolAggregates(pool, sh, total)
+            -- per-tank where the pool knows its tanks; the pool-wide difference is the fallback for
+            -- the kinds that report one shared figure by construction (FOOD / SHED / PRODIN / HALL)
+            if not agg.shared then
+                if sh.othersOf ~= nil and sh.othersOf[ft] ~= nil then others = sh.othersOf[ft]
+                else others = math.max(0, (agg.totalHeld or 0) - held) end
+            end
+        end
+
+    elseif (role == "SHED")
+        or (role == nil and p.spec_objectStorage ~= nil and not SmartDistribution.treatPassThroughAsStore(p)) then
+        -- (2) A PALLET STORE. Its capacity is SLOTS, and roleCapacity answers that directly for a
+        -- multi-role building -- which returns NO pool, so branch (1) never runs and `others` stayed 0.
+        -- Reported 2026-08-24: the DriveIn's pallet store "shows held but not space taken by other
+        -- goods", while a STANDALONE pallet shed was fine (that one has no role, so it reaches the SHED
+        -- pool in branch 1). The slots are shared, so the rest of the shed's stock genuinely competes.
+        total = (SmartDistribution.shedCapacityFor ~= nil) and (SmartDistribution.shedCapacityFor(p) or 0) or 0
+        if SmartDistribution.shedStoredFillTypes ~= nil and shedStoredLiters ~= nil then
+            local sum = 0
+            for f in pairs(SmartDistribution.shedStoredFillTypes(p) or {}) do
+                sum = sum + (shedStoredLiters(p, f) or 0)
+            end
+            others = math.max(0, sum - held)
+        end
+
+    else
+        -- (3) ANYTHING ELSE: take inputProductCapacity's own answer, unchanged.
+        --
+        -- REVERTED 2026-08-24, AND DELIBERATELY LEFT REVERTED UNTIL MEASURED. This branch briefly read
+        -- the capacity STATICALLY (summing storageCapacity over the role's storages) and derived
+        -- `others = total - held - free`, to fix a DriveIn silo drawing a bar on only some of its rows.
+        -- It made things WORSE in game: totals came out inconsistent across rows (350 kL, 20,000 kL and
+        -- everything between, some reading Individual and some Pooled) and output free-storage figures
+        -- moved too. A missing bar is a cosmetic gap; wrong figures are the failure this project treats
+        -- as strictly worse (5.45b), so the safe behaviour goes back in and the theory waits for data.
+        --
+        -- WHAT IS ACTUALLY KNOWN, so the next attempt does not re-derive it:
+        --   * _computePooledInputCapacity bails on `if perFt then return nil end`, and the DriveIn tank
+        --     declares 111 EXPLICIT per-fillType capacities all equal to 4,000,000 (the whole tank), so
+        --     DR reads it as individual buffers and no pool is returned.
+        --   * so this branch receives `getLevel(ft) + getFree(ft)`, which on a SHARED tank is not a
+        --     capacity at all: getFree is the whole pool's remainder, so the figure drifts down as other
+        --     products fill it and reaches 0 for a product holding nothing in a full tank. That is the
+        --     missing bars, and the bars that do draw have a track that moves as the tank fills.
+        --   * the static rewrite must therefore be wrong about WHICH storages back a row, or about
+        --     double counting a shared capacity across several of them. The [DR bar] probe that
+        --     established the role-aware pool fix has been stripped now that that question is closed;
+        --     re-add one rather than guessing a third time if this branch is revisited.
+        -- The allocator's pooling is NOT the place to fix this (5.53 / 5.53b / 5.61): that `perFt` test is
+        -- correct for a bakery, whose FLOUR and WATER genuinely are separate slots.
+        total = cap
+    end
+
+    if type(total) ~= "number" or total <= 0 or total >= INF then return nil end
+    others = math.max(0, math.min(others, math.max(0, total - held)))   -- never promise past the track
+
+    -- A BLOCKED PRODUCT PINS THE MAX LINE TO ZERO, which is a second, unmissable statement of the same
+    -- fact the STATUS cell makes in words: nothing may come in. Blocking is independent of the cap (a
+    -- product can be blocked while still carrying a 100% Max in), so it needs its own test -- the
+    -- percentage alone would leave the line sitting at the far right on a product that accepts nothing.
+    -- The GREEN and RED fills are deliberately still drawn: a blocked product may well be holding
+    -- stock, and that stock is real and still occupies the tank (5.57 keeps such a row visible for
+    -- exactly this reason).
+    local blocked = false
+    local uid = SmartDistribution.settingUid(p, ft, role)
+    if uid ~= nil and SmartDistribution.isInputBlocked ~= nil then
+        blocked = SmartDistribution.isInputBlocked(uid, ft) == true
+    end
+    local pct  = SmartDistribution.inputCapPct(p, ft, role) or 100
+    local capL = blocked and 0 or (total * pct / 100)
+
+    -- THE TWO CONFIGURED MARKS, both nil when unset so the bar simply does not draw them.
+    -- inputTargetLiters is already litres and already role-scoped, and it returns a share of the
+    -- MAX-IN ceiling rather than of the whole tank -- so the target mark can never sit right of the
+    -- max mark, which is what makes the two readable together.
+    local target = (SmartDistribution.inputTargetLiters ~= nil)
+                   and SmartDistribution.inputTargetLiters(p, ft, role) or nil
+
+    -- THE RESERVE IS READ THE WAY THE DIALOG WRITES IT, and that is a deliberate choice rather than an
+    -- oversight. SmartDistribution.outputReserveLiters -- what the PASS uses -- resolves getUid(p), the
+    -- BARE uid, while DistributionAdvancedDialog stores through settingUid(asset, ft, role). On an
+    -- ordinary building settingUid collapses to the bare uid and the two agree; on a SECONDARY role they
+    -- diverge, so a reserve set on a pallet-store row is stored and shown but never enforced (the same
+    -- shape 6.29 parks for a pass-wide audit of the source-side keys). This mark must agree with the
+    -- dialog the player set it in, so it mirrors the dialog. FIXING THE ENFORCEMENT IS AN ENGINE CHANGE
+    -- and belongs with that audit, not with a bar widget.
+    local reserve = nil
+    if SmartDistribution.advancedEnabled() and SmartDistribution.getOutputReserve ~= nil then
+        local ruid = SmartDistribution.settingUid(p, ft, role) or SmartDistribution.assetUid(p)
+        if ruid ~= nil then
+            local r = SmartDistribution.getOutputReserve(ruid, ft)
+            if type(r) == "number" and r > 0 then reserve = r end
+        end
+    end
+
+    return { total = total, held = held, others = others, capL = capL, pct = pct,
+             blocked = blocked, target = target, reserve = reserve }
+end
+
 function SmartDistribution.inputEffectiveMaxLiters(p, ft, role)
     if SmartDistribution._legacyInputMath then
         return SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
@@ -17157,7 +17729,7 @@ function SmartDistribution.inputEffectiveMaxLiters(p, ft, role)
     -- what turned an O(F^2) call into an O(F) one; see poolShares. `pool` is handed in so the shares can
     -- never be matched against a differently-built pool.
     local sh = (pool ~= nil and type(pool.fts) == "table" and #pool.fts >= 2)
-        and SmartDistribution.poolShares(p, pool) or nil
+        and SmartDistribution.poolShares(p, pool, role) or nil
     local pct = (sh ~= nil and sh.pct[ft]) or SmartDistribution.inputCapPct(p, ft) or 100
     local nominal = cap * pct / 100
     if sh == nil then return nominal end
@@ -17174,7 +17746,10 @@ function SmartDistribution.inputEffectiveMaxLiters(p, ft, role)
     -- TWO clamps, and only two. A cap is a PRIVATE CEILING on this product's own holding (5.53), not a
     -- slice of a partition -- so what is left for it is simply its own ceiling, minus nothing, bounded only
     -- by the space the other products have not physically taken.
-    local othersHeld = a.shared and 0 or (a.totalHeld - (sh.held[ft] or 0))
+    local othersHeld
+    if a.shared then othersHeld = 0
+    elseif sh.othersOf ~= nil and sh.othersOf[ft] ~= nil then othersHeld = sh.othersOf[ft]
+    else othersHeld = a.totalHeld - (sh.held[ft] or 0) end
     local freeForFt = math.max(0, cap - othersHeld)             -- never promise space the others occupy
     return math.min(nominal, freeForFt)
 end
@@ -17398,8 +17973,22 @@ function SmartDistribution.priorityOrder(sourceUid, ft, claims, uidOf)
 end
 
 -- ---- Production Redux introspection (read-only network model) ---------------
+-- THE one building-icon resolver. Every DR surface goes through this -- the building
+-- lists, the Overview, sinksFor/sourcesFor and the money notification -- so the tabs
+-- can never drift about what picture a building has (the "two functions answering one
+-- question" shape CLAUDE.md 6.18 records three separate regressions for).
+-- Ordered; first USABLE candidate wins. ADDING A SOURCE IS ONE `if` -- that is the point.
 function SmartDistribution.assetIconFile(p)
     if p == nil then return nil end
+    local usable = SmartDistribution.iconFileUsable
+
+    -- (1) THE PLAYER'S / MAPPER'S OWN CUSTOM IMAGE. Base Placeable:getImageFilename()
+    -- prefers this over the store image (Placeable.lua:1226) and DR ignored it outright,
+    -- so a building given a custom picture showed the stock one on every DR tab. It is
+    -- savegame-persisted and network-synced, so it is correct on an MP client too.
+    if usable(p.customImageFilename) then return p.customImageFilename end
+
+    -- (2) THE STORE IMAGE -- the shop picture, and what a building normally shows.
     local si = p.storeItem
     if type(si) ~= "table" and g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil then
         local cfg = p.configFileName or p.xmlFilename
@@ -17409,9 +17998,27 @@ function SmartDistribution.assetIconFile(p)
         end
     end
     if type(si) == "table" then
-        local img = si.imageFilename or si.imageFilenameSmall
-        if type(img) == "string" and img ~= "" then return img end
+        -- Checked ONE AT A TIME, not as an ipairs over a table literal: a nil in the
+        -- middle would truncate that list silently and skip every later candidate.
+        if usable(si.imageFilename)      then return si.imageFilename end
+        if usable(si.imageFilenameSmall) then return si.imageFilenameSmall end
+        if usable(si.iconFilename)       then return si.iconFilename end
     end
+
+    -- (3) WHATEVER THE PRODUCTION POINT ITSELF CARRIES -- the icon the base game's own
+    -- productions UI draws. SPECULATIVE, deliberately: objects/ProductionPoint.lua is
+    -- 78% stripped and gameSource ships NO production GUI file at all, so the field
+    -- cannot be READ and an absence there proves nothing (CLAUDE.md 8.1). These reads
+    -- are free and cannot misfire -- a field that does not exist is nil, and a value
+    -- that does not resolve to a real texture is rejected by usable(). If the base UI
+    -- turns out to read some other field, it slots in HERE as one more line.
+    local pp = getProductionPoint(p)
+    if type(pp) == "table" then
+        if usable(pp.imageFilename) then return pp.imageFilename end
+        if usable(pp.iconFilename)  then return pp.iconFilename end
+    end
+
+    -- (4) THE PRIMARY PRODUCT'S HUD ICON -- never blank if the building makes anything.
     return fillHudIconFile(placeablePrimaryProduct(p))
 end
 

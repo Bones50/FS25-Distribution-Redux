@@ -32,6 +32,7 @@
         <!-- ================= keybindings (shown in Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Configure distribution (nearest asset)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Open Distribution Redux menu" />
+        <text name="dr_input_openManager" text="Distribution menu" />
 
         <!-- ================= TEMPORARY: money-type probe =================
              Titles handed to MoneyType.register. If the base finances screen renders a
@@ -81,6 +82,7 @@
         <text name="dr_col_freeStorage"   text="FREE STORAGE" />
         <text name="dr_col_producedExp"   text="PRODUCED (EXP.)" />
         <text name="dr_col_distributed"   text="DISTRIBUTED" />
+        <text name="dr_col_sold"          text="SOLD" />
         <text name="dr_col_storedMoved"   text="STORED/MOVED" />
         <text name="dr_col_sold"          text="SOLD" />
         <text name="dr_col_distrCost"     text="DISTR. COST" />
@@ -104,12 +106,22 @@
         <text name="dr_col_incomingProducts"  text="INCOMING PRODUCTS" />
         <text name="dr_col_incomingMaterials" text="INCOMING MATERIALS" />
         <text name="dr_col_outgoingProducts"  text="OUTGOING PRODUCTS" />
-        <text name="dr_col_heldSlashMax"      text="HELD / MAX" />
         <text name="dr_col_distribution"      text="DISTRIBUTION" />
         <text name="dr_col_consumed"          text="CONSUMED" />
         <text name="dr_col_produced"          text="PRODUCED" />
         <text name="dr_col_outputMode"        text="OUTPUT MODE" />
         <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_products"          text="PRODUCTS" />
+        <text name="dr_pct_lessThanOne"       text="&lt;1%" />
+        <text name="dr_btn_advIn"             text="Adv Inputs" />
+        <text name="dr_btn_advOut"            text="Adv Outputs" />
+        <text name="dr_col_statusInOut"       text="STATUS (IN / OUT)" />
+        <text name="dr_status_short_recv"     text="Recv" />
+        <text name="dr_status_short_send"     text="Send" />
+        <text name="dr_status_short_sold"     text="Sold" />
+        <text name="dr_status_short_idle"     text="Idle" />
+        <text name="dr_status_short_blocked"  text="Blocked" />
+        <text name="dr_status_short_none"     text="-" />
         <text name="dr_col_productionLines"   text="PRODUCTION LINES" />
         <!-- "/mo" = per month. The figure is the line's monthly target. -->
         <text name="dr_col_targetMo"          text="TARGET /mo" />
@@ -138,6 +150,7 @@
         <text name="dr_btn_blockAll"      text="Block All" />
         <text name="dr_btn_reserveDown"   text="- Reserve" />
         <text name="dr_btn_reserveUp"     text="+ Reserve" />
+        <text name="dr_lbl_reserveLitres" text="Reserve:" />
         <text name="dr_btn_maxDown"       text="- Max" />
         <text name="dr_btn_maxUp"         text="+ Max" />
         <text name="dr_btn_targetDown"    text="- Target" />
@@ -150,7 +163,6 @@
         <!-- ================= FOOTER BUTTONS (set from Lua) =================
              Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
              FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
-        <text name="dr_btn_cycleOutput"      text="Cycle Output" />
         <text name="dr_btn_advanced"         text="Advanced" />
         <text name="dr_btn_sellTiming"       text="Sell Timing" />
         <text name="dr_btn_sellTimingOff"    text="Sell Timing: selling is OFF" />
@@ -198,6 +210,11 @@
              deliberately use identical wording. -->
         <text name="dr_type_pooled"     text="Pooled" />
         <text name="dr_type_individual" text="Individual" />
+        <text name="dr_type_pooledShort"     text="Pool" />
+        <text name="dr_type_poolN"          text="Pool %s" />
+        <text name="dr_type_poolNShort"     text="P%s" />
+        <text name="dr_type_individualShort" text="Ind" />
+        <text name="dr_type_linkedShort"     text="Link" />
         <text name="dr_type_internal"   text="Internal" />
         <text name="dr_type_blocked"    text="BLOCKED" />
 
@@ -233,8 +250,9 @@
              is switched on but would send the product in a circle back to where it started. -->
         <text name="dr_adv_title"         text="Advanced - %s" />
         <text name="dr_adv_activeInvalid" text="Active - Invalid" />
-        <text name="dr_adv_reserve"       text="     Reserve: " />
         <text name="dr_adv_noCapacity"    text="No capacity to reserve against" />
+        <text name="dr_adv_reserveBad"     text="Reserve: type a number of litres" />
+        <text name="dr_adv_reserveClamped" text="Reserve capped at capacity: %s" />
         <text name="dr_adv_loopOne"       text="Cannot activate %s - it would loop the product back here." />
         <text name="dr_adv_loopMany"      text="%d destination(s) left blocked - they would loop the product back here." />
 

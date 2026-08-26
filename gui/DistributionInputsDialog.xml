@@ -49,17 +49,17 @@
 
         <!-- action buttons -->
         <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
-            <Button profile="buttonOK"   text="$l10n_dr_btn_maxDown"   onClick="onCapDown"     id="capDownButton" inputActionName="MENU_EXTRA_1" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_maxDown"   onClick="onCapDown"     id="capDownButton" inputAction="MENU_EXTRA_1" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_maxUp"   onClick="onCapUp"       id="capUpButton"   inputActionName="MENU_EXTRA_2" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_maxUp"   onClick="onCapUp"       id="capUpButton"   inputAction="MENU_EXTRA_2" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_targetDown" onClick="onTargetDown" id="targetDownButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_targetDown" onClick="onTargetDown" id="targetDownButton" inputAction="MENU_PAGE_PREV" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_targetUp" onClick="onTargetUp"   id="targetUpButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_targetUp" onClick="onTargetUp"   id="targetUpButton" inputAction="MENU_PAGE_NEXT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_block"   onClick="onToggleBlock" id="blockButton"   inputActionName="MENU_ACCEPT" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_block"   onClick="onToggleBlock" id="blockButton"   inputAction="MENU_ACCEPT" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
-            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll" onClick="onToggleAllBlock" id="blockAllButton" />
+            <Button profile="buttonOK"   text="$l10n_dr_btn_blockAll" onClick="onToggleAllBlock" id="blockAllButton" inputAction="MENU_CANCEL" />
             <Bitmap profile="fs25_dialogButtonBoxSeparator" />
             <Button profile="buttonBack" text="$l10n_dr_btn_close"   onClick="onClickBack"   id="noButton" />
         </BoxLayout>

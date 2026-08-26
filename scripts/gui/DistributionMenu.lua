@@ -46,14 +46,28 @@ function DistributionMenu:setupPages()
     -- NOTE: there is deliberately no "Cycle All": endpoints are per (building, product), so one product
     -- can have a valid market/consumer while another does not, and a single building-wide mode could not
     -- honour both. Cycling the selected output only is unambiguous.
-    -- THE FOOTER IS DELIBERATELY UNCHANGED. A "cycle backward" entry was added here and then removed on
-    -- request: the footer is full, and the backward step is handled by a raw key on the page instead
-    -- (see DistributionStoragePage:keyEvent), with an on-page hint naming both keys.
+    -- CYCLE OUTPUT IS GONE, and the in-row arrows are why: every output row carries a pair (5.64), so a
+    -- footer entry that steps the SELECTED row was doing the same job one step further from the thing it
+    -- acts on. Removing it frees a slot, which is what lets both Advanced buttons be shown.
+    --
+    -- IT TOOK THE `x` KEY WITH IT. That key was MENU_EXTRA_1's binding, not a raw key, so it dies with
+    -- the button -- and `z` (backward) is read raw at the menu and would have survived alone, leaving a
+    -- documented pair half working. `x` is now read raw beside it (see keyEvent), so both still step the
+    -- selected row and the on-page hint stays true.
+    --
+    -- TWO EXPLICIT ADVANCED BUTTONS replace the single contextual one. That button dispatched on
+    -- _focusRole -- which list you last touched -- and the merged Silos / Markets table has only ONE
+    -- list, so there was nothing left to infer the direction from. Naming both is also simply clearer on
+    -- Animal Husbandry, which keeps its two lists.
+    -- MENU_ACCEPT is free on these pages (Productions already uses it for its own Advanced button), so
+    -- this fits without stealing MENU_ACTIVATE, which a focused list swallows for row activation.
     local function storageButtonsFor(getPage)
         return {
             back,
-            btn(InputAction.MENU_EXTRA_1, SmartDistribution.l10n("dr_btn_cycleOutput", "Cycle Output"), function() local p = getPage(); if p ~= nil then p:onCycleSelected() end end),
-            btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_advanced", "Advanced"), function() local p = getPage(); if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+            btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_advIn", "Adv Inputs"),
+                function() local p = getPage(); if p ~= nil and p.onAdvancedInputs ~= nil then p:onAdvancedInputs() end end, "advancedIn"),
+            btn(InputAction.MENU_ACCEPT,  SmartDistribution.l10n("dr_btn_advOut", "Adv Outputs"),
+                function() local p = getPage(); if p ~= nil and p.onAdvanced ~= nil then p:onAdvanced() end end, "advancedOut"),
             btn(InputAction.MENU_CANCEL,  SmartDistribution.l10n("dr_btn_sellTiming", "Sell Timing"), function() local p = getPage(); if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
         }
     end
@@ -63,10 +77,26 @@ function DistributionMenu:setupPages()
     -- Timing shows only for sell-mode / Hold-Internal outputs; it shares no slot now that Advanced is one.
     local productionsButtons = {
         back,
-        btn(InputAction.MENU_EXTRA_1, SmartDistribution.l10n("dr_btn_cycleOutput", "Cycle Output"), function() local p = self.pageProductions; if p ~= nil then p:onCycleSelected() end end),
         btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_toggleLine", "Toggle Line"), function() local p = self.pageProductions; if p ~= nil and p.onToggleLine ~= nil then p:onToggleLine() end end),
         btn(InputAction.MENU_ACCEPT,  SmartDistribution.l10n("dr_btn_advanced", "Advanced"), function() local p = self.pageProductions; if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
         btn(InputAction.MENU_CANCEL,  SmartDistribution.l10n("dr_btn_sellTiming", "Sell Timing"), function() local p = self.pageProductions; if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
+    }
+
+    -- ANIMAL HUSBANDRY MATCHES PRODUCTIONS, minus Toggle Line (which is a production-line control and has
+    -- no husbandry equivalent). Both pages keep TWO lists -- a pen's inputs are feed and its outputs are
+    -- milk / manure / eggs, genuinely different products -- so the single CONTEXTUAL Advanced button has
+    -- a direction to infer from and is the right control for them.
+    --
+    -- It previously used storageButtonsFor, which was rewritten for the MERGED Silos / Markets table: one
+    -- row there carries both directions, so a contextual button had nothing left to dispatch on and had
+    -- to become two explicit ones. Husbandry inherited that purely by sharing the list, and the reason
+    -- for the change never applied to it. Reported 2026-08-26.
+    local husbandryButtons = {
+        back,
+        btn(InputAction.MENU_ACCEPT,  SmartDistribution.l10n("dr_btn_advanced", "Advanced"),
+            function() local p = self.pageHusbandry; if p ~= nil and p.onAdvancedContextual ~= nil then p:onAdvancedContextual() end end, "advanced"),
+        btn(InputAction.MENU_CANCEL,  SmartDistribution.l10n("dr_btn_sellTiming", "Sell Timing"),
+            function() local p = self.pageHusbandry; if p ~= nil then p:onSellTimingOrSpawn() end end, "sellTiming"),
     }
 
     -- a page shows only while its asset class is in the network (Settings toggles). nil/true -> show.
@@ -86,7 +116,7 @@ function DistributionMenu:setupPages()
     local pages = {
         { self.pageProductions, "gui.icon_ingameMenu_productionChains", productionsButtons, always },
         { self.pageStorage,     "gui.icon_construction_buildings",      storageButtonsFor(function() return self.pageStorage end),   showSilos },
-        { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          storageButtonsFor(function() return self.pageHusbandry end), showHusbandry },
+        { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          husbandryButtons, showHusbandry },
         { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
         -- Overview carries one action beside Back: swap the flow figures for the Advanced Inputs / Outputs
         -- settings behind the same rows. The label flips with the view (updateViewButton).
@@ -166,6 +196,26 @@ end
 -- pre-empted this. Acting first also guarantees no double-step: the page-level keyEvent overrides can
 -- no longer see Z, because this returns before propagation.
 function DistributionMenu:keyEvent(unicode, sym, modifier, isDown, eventUsed)
+    -- `x` is read raw HERE now, not as an input action: its footer button (Cycle Output) was removed, and
+    -- an action with no button has no binding. `z` was always raw. Both go through the same modifier
+    -- guard, which tests the ctrl/alt/shift BITS -- every menu key press arrives with modifier = 4096, a
+    -- Num Lock bit, so `modifier == 0` would reject everything (5.64, and it cost two builds).
+    -- THE KEYS ARE NOW THE ONLY KEYBOARD ROUTE, on every page. "Cycle Output" was a footer entry that
+    -- stepped the SELECTED row -- the same job the in-row arrows do, one step further from the thing it
+    -- acts on -- so it is gone from Productions and Animal Husbandry as well (2026-08-26). The player
+    -- steps the mode by clicking an arrow, or with `x` / `z` on the selected row.
+    --
+    -- That also removes the double-step hazard the BINDS_CYCLE_ACTION flag guarded: `x` IS MENU_EXTRA_1's
+    -- binding, so while a page carried that button the key fired the action AND this handler. With no
+    -- page binding it, the flag has nothing left to exclude and is gone with the buttons.
+    if isDown and Input ~= nil and Input.KEY_x ~= nil and sym == Input.KEY_x
+       and not realModifierHeld(modifier) then
+        local p = self.currentPage
+        if p ~= nil and p.MODE_KEYS_ENABLED ~= false and p.onCycleSelected ~= nil then
+            p:onCycleSelected()
+            return true
+        end
+    end
     if isDown and Input ~= nil and Input.KEY_z ~= nil and sym == Input.KEY_z
        and not realModifierHeld(modifier) then                         -- never swallow Ctrl+Z etc.
         local p = self.currentPage

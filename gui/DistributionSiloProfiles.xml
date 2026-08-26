@@ -65,6 +65,47 @@
         <textAlignment value="left" />
     </Profile>
 
+    <!-- STORAGE BAR labels: the held litres with their share on the left, the tank's capacity on the
+         right, on a line under the bar.
+         NO `with` ANCHOR, AND THAT IS THE WHOLE POINT. These first extended SDRowCell, which carries
+         anchorStretchingYLeft, so each label STRETCHED from its own y down to the bottom of the 42px row
+         and centred its text in whatever band was left. That is what put them roughly three quarters of
+         a line too low and made the widget look unaligned with its row. Extending baseReference with no
+         anchor honours the 15px box, and textVerticalAlignment centres the text inside THAT.
+         RIGHT alignment is the one place DR still wants it. 5.22 flipped every DATA column to the left so
+         a table reads as one block, but the capacity is tied to the right hand END OF A BAR rather than
+         to a column, so it must sit flush against it however long the figure is. Kept here so alignment
+         stays in one file, exactly as 5.22 left it. -->
+    <Profile name="SDBarLabel" extends="baseReference">
+        <textBold value="false" />
+        <textSize value="11px" />
+        <textAlignment value="left" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textSelectedColor value="$preset_fs25_colorMainDark" />
+    </Profile>
+    <Profile name="SDBarLabelRight" extends="SDBarLabel">
+        <textAlignment value="right" />
+    </Profile>
+
+    <!-- CENTRED numeric columns (RECEIVED / DISTRIBUTED on the merged storage table) and their headers.
+         5.22 flipped every DATA column to the left so a table reads as one block, and that still holds
+         for the wide cells; these two carry a single short figure in a narrow column, where centring
+         keeps the header sitting over its own numbers instead of drifting left of them.
+         The header and the row cell share x and width, so centring both lines them up exactly. -->
+    <Profile name="SDRowCellCenter" extends="SDRowCell">
+        <textAlignment value="center" />
+    </Profile>
+    <Profile name="SDHeaderCenter" extends="SDHeaderLeft">
+        <textAlignment value="center" />
+    </Profile>
+
+    <!-- RIGHT-aligned data cell. Used by the IN half of the combined status so it hugs the "/" and the
+         gap either side of the separator is the same on every row, whatever the word length. -->
+    <Profile name="SDRowCellRight" extends="SDRowCell">
+        <textAlignment value="right" />
+    </Profile>
+
     <!-- Fill percentage (green like the base production screen). -->
     <Profile name="SDRowCellPct" extends="SDRowCell">
         <textAlignment value="left" />
@@ -105,6 +146,14 @@
         <size value="720px 560px" />
     </Profile>
     <!-- wider box for the Advanced window (two lists side by side) -->
+    <!-- The reserve entry box. The stock dialog text input is sized for a dialog built around it
+         (~390px); a reserve is at most nine digits, so this is cut to 170px and left-anchored to sit
+         inside the header-style bar that carries it. Anchoring is overridden as well as size because
+         the stock profile places itself, which is why an absolute position on the element alone was
+         ignored. -->
+    <Profile name="SDReserveInput" extends="fs25_dialogTextInput" with="anchorStretchingYLeft">
+        <size value="170px 34px" />
+    </Profile>
     <Profile name="SDAdvDialogBox" extends="fs25_dialogBg">
         <size value="1400px 780px" />
     </Profile>

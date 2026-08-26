@@ -10,8 +10,10 @@ Fixed
 3) Distribution costs moved to the "Other" category on the finance page to hopefully make it easier to see. 16/8
 4) Fixed status displays being delayed 1 cycle too late. (21/8)
 5) Redid the calculation for sell at best price. There was some issues with markets that should now be resolved. 21/8
-6) (NEW) Fixed modded buildings that are both a silo and a production not showing the silo side in storages.(24/8)
-7) (NEW) Fixed an issue with the advanced output screen when in dual mode outputs (e.g. Distribute + Move To) that prevented you modifying settings on some lines. (24/8)
+6) Fixed modded buildings that are both a silo and a production not showing the silo side in storages.(24/8)
+7) Fixed an issue with the advanced output screen when in dual mode outputs (e.g. Distribute + Move To) that prevented you modifying settings on some lines. (24/8)
+8) (NEW) Fixed animal husbandries showing only the total food amount rather than the individual food amounts stored. (26/8)
+9) (NEW) Fixed an issue with building icons not showing in the UI due to no building menu icon being defined in mods. Now checks and has multiple fallback options. (26/8)
 
 Added
 1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
@@ -26,7 +28,9 @@ Added
 10) Added a fix to the base game mechanic that under some circumstances allowed overfilling of silos. (20/8)
 11) Status display will now take into account the time period selected. e.g. If month is selected the status will reflect whether the distribution did anything in the last month, hourly if it did anything in the last hourly cycle etc. 21/8
 12) Changed how the "Sell" setting modifies how the mod operates. If you turn off sell in the settings, everything will revert to manual transporting to sell only. Markets will revert to pre-mod functionality (Seel immediate). 21/8
-13) (NEW) Added an API Layer to support add-on mods (no gameplay change) 24/8
+13) Added an API Layer to support add-on mods (no gameplay change) 24/8
+14) (NEW) Reworked the UI's to be more user friendly. This is the first cut of the new UI, feedback welcome, i have described the new storage bar included in the UI below as a new feature (It's complicated!). (26/8)
+15) (NEW) You can now open the DR menu while in a vehicle. (26/8)
 
 NEW FEATURES
 1) NOTE THIS IS VERY EXPERIMENTAL SO PLEASE TEST ON A COPY OF YOUR SAVEGAME FIRST! Added a new feature to increase support for modded buildings and change how they work with DR to make more sense. 
@@ -34,6 +38,11 @@ a) All buildings now go through a check to identify whether they are a productio
 b) Where a building has a production and a silo that use/store the same input, the input is linked (wether it is a linked input is now shown on the input table). Any change made on either page will be represented on the other page. This effectively allows the product to be both an input to the production AND a product that can be stored and moved in the silo (e.g. you can still set output mode for the product in the silo). The silo will feed the production first regardless of the output mode setting on the silo, after feeding the production, the silo output mode will then be applied. For example if the production line is active, and the output on the silo is set to sell, the silo will feed the production first then apply the sell rule.
 b) Many mods add a 1:1 production to a silo to enable distribution, obviously this messes with DR and is no longer needed, so to avoid this, if a silo has 1:1 Production lines the productions are supressed entirely and DR will see it as a standard silo and show it in the storage tab with the standard DR output modes (note at this stage the productions remain on the normal UI but will look at suppressing that later if possible). Note that if you enable a production line that is no longer needed in the base UI, you will get charged a production cost for the hour even though it does nothing, but DR will re-disable that line in the next cycle silently. 
 c) I have also added the ability to move product between a silo and a pallet store where the product is palletisable using the move to output mode (and yes, if a building is both a silo and a pallet store you can move product between the different storages).
+2) Added a new storage indicator on all UI elements. This replace the old number fields and consolidates them into a total view of what is happening with that storage. 
+a) For each input and output there is a green bar that shows the amount of that product stored as a ratio fo the total storage available (see note below on storage types). That will be followed by a red bar that shows how much of other products is taking up space in that storage. The remaining gray part of the bar represents how much more of that product you could put in there.
+b) For inputs, if you set a max amount in advanced inputs an orange line on the bar will indicate the max you set for that product (ie the green fill bar will never exceed that line), similarly if you set a target amount (not applicable to silo's) a light blue line will indicate the amount you set as the target.
+c) For outputs, if you set a reserve amount for that output, that will be indicated by a dark blue line on the bar for that output.
+NOTE: Storage type becomes very important to understanding this bar. Some storages are Pooled (ie there is an amount of total storage and any of the products placed in there will consume that storage). Then there are individual storages where the storage space is defined per product (you will never see a red bar on these). In some cases, advanced or modded buildings will have multiple storages and product can go into multiple storage types (e.g. Drive-In mod has 1 liquid and 2 general storages with some products able to go into all three). The UI will show this in the Storage Type column, e.g. Pool 1+2. The bar will represent the totals and fill levels for both of those pooled storages for the product. If some numbers seem off, check the storage type. EXAMPLE: The Drive-In Mod Silo has 25M litre total storage, but it is broken into 3 sub-storages. It has a general storage that takes pretty much everything (10M L), a smaller 5M L silo that holds a subset of those products (no idea why, ask the mod maker lol), and a 10M litre liquid store. Milk is flagged as being able to be stored by both the general storage and the liquid storage (again no idea why) so is marked Pool 1+3 with a total storage of 20M L (only the small 5M L tank cannot be used). Sugar beet on the other hand can only use the general storage so shows Pool 1 and only has a max capacity of 10M L.
 
 <h2><b>V1.1.0.0 Release</b></h2>
 

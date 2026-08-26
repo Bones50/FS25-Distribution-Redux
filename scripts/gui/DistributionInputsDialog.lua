@@ -130,6 +130,7 @@ function DistributionInputsDialog:refresh()
     end
     self:updateBlockLabel()
     self:updateBlockAllLabel()
+    self:updateTargetButtons()
     self._refreshing = false
 end
 
@@ -195,6 +196,9 @@ function DistributionInputsDialog:onListSelectionChanged(list, section, index)
     if self._refreshing then return end
     self.rowIndex = index
     self:updateBlockLabel()
+    -- ...and the target buttons, which are per-ROW: a dialog whose rows differ in whether a fill
+    -- target can bind must re-evaluate them on every selection, not only on refresh.
+    self:updateTargetButtons()
 end
 function DistributionInputsDialog:onClickInputRow(element) end
 
@@ -203,6 +207,25 @@ function DistributionInputsDialog:selectedRow()
 end
 
 -- Relabel the block button for the selected row: blocked -> "Allow", else "Block".
+-- A FILL TARGET only means something where the receiver PULLS: a production line or a husbandry asks
+-- for what it needs, so "fill to 60%" is a real instruction. A silo, pallet store, heap or market is
+-- filled by PUSH, so a target there would either do nothing or merely duplicate Max in % -- which is
+-- why SmartDistribution.fillTargetApplies exists and why onTargetDelta already refuses to step one.
+-- The buttons were still drawn as though they were live, though, so on a silo the dialog offered two
+-- controls that could not do anything. Reported 2026-08-25.
+--
+-- DISABLED, not hidden: they sit in a BoxLayout with separator bitmaps between them, so removing two
+-- entries mid-row would leave a gap or reflow the whole footer. Greying them states "not applicable
+-- here" without touching the layout, and it is per SELECTION, so a dialog whose rows differ is right
+-- on every row.
+function DistributionInputsDialog:updateTargetButtons()
+    local r = self:selectedRow()
+    local off = (r == nil) or (r.targetApplies == false)
+    for _, b in ipairs({ self.targetDownButton, self.targetUpButton }) do
+        if b ~= nil and b.setDisabled ~= nil then b:setDisabled(off) end
+    end
+end
+
 function DistributionInputsDialog:updateBlockLabel()
     if self.blockButton == nil or self.blockButton.setText == nil then return end
     local r = self:selectedRow()
@@ -311,6 +334,46 @@ function DistributionInputsDialog:onTargetDelta(dir)
         self:apply(A.INPUT_TARGET, r.ft, (newIdx - 1) * TARGET_STEP, false)
     end
 end
+-- ---- FOOTER KEYS -----------------------------------------------------------
+-- A ButtonElement's input action is DISPLAY ONLY -- it draws the key glyph and nothing acts on it
+-- (grepped: the only readers in the engine are ButtonElement and InputGlyphElementUI). A dialog that
+-- wants the key to work has to handle it itself, the way YesNoDialog:inputEvent does.
+--
+-- Reported 2026-08-26 as "every footer button shows the Enter glyph". TWO faults, and the second is why
+-- the first mattered:
+--   * the XML attribute ButtonElement reads is `#inputAction`; DR wrote `inputActionName`, which is
+--     never read. So every button fell through to the buttonOK PROFILE's action and drew the same glyph.
+--   * and no dialog overrode inputEvent, so NONE of the keys did anything anyway. The glyphs were not
+--     merely identical, they were claiming keys that did not exist.
+-- This also retires 5.4's "5th/6th-action key-glyph scramble": that was never a limit on how many
+-- actions a footer could carry, it was this typo making every extra button look the same.
+--
+-- OUR ACTIONS ARE HANDLED BEFORE THE SUPERCLASS CALL, and that is not cosmetic ordering. The first
+-- version delegated first and acted only on `not eventUsed` -- and MENU_PAGE_NEXT never arrived, so
+-- "+ Reserve" did nothing while "- Reserve" (MENU_PAGE_PREV) worked. Something above consumes NEXT and
+-- not PREV. Claiming ours first sidesteps whatever that is, and passing eventUsed=true down still tells
+-- the base the event is spoken for. Safe here because these are MessageDialogs: no tabs to page, and the
+-- lists use MENU_LIST_PAGE_* rather than MENU_PAGE_*.
+--
+-- MENU_BACK is deliberately NOT claimed -- the close button owns it (Esc). MENU_CANCEL is Backspace, far
+-- enough from an accidental press for the bulk "all" button.
+--
+-- Worth keeping even though it is no longer used: a profile declaring an EMPTY inputAction fails the
+-- InputAction[name] lookup in ButtonElement:loadProfile and leaves a button with NO glyph at all --
+-- confirmed in game 2026-08-26. That is the way to make a footer button genuinely mouse-only.
+function DistributionInputsDialog:inputEvent(action, value, eventUsed)
+    if not eventUsed and action ~= nil and InputAction ~= nil then
+        if     action == InputAction.MENU_EXTRA_1  then self:onCapDown();      eventUsed = true
+        elseif action == InputAction.MENU_EXTRA_2  then self:onCapUp();        eventUsed = true
+        elseif action == InputAction.MENU_ACCEPT   then self:onToggleBlock();  eventUsed = true
+        elseif action == InputAction.MENU_CANCEL   then self:onToggleAllBlock(); eventUsed = true
+        elseif action == InputAction.MENU_PAGE_PREV then self:onTargetDown();  eventUsed = true
+        elseif action == InputAction.MENU_PAGE_NEXT then self:onTargetUp();    eventUsed = true
+        end
+    end
+    return DistributionInputsDialog:superClass().inputEvent(self, action, value, eventUsed)
+end
+
 function DistributionInputsDialog:onTargetDown() self:onTargetDelta(-1) end
 function DistributionInputsDialog:onTargetUp()   self:onTargetDelta( 1) end
 
