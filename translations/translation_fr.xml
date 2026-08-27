@@ -40,8 +40,6 @@
              existing row instead. The two are worded differently ON PURPOSE so the log
              is not needed to tell which registration produced a row.
              DELETE BOTH when the probe goes.                                          -->
-        <text name="dr_finance_distributionCost" text="Coûts de distribution" />
-        <text name="dr_finance_distributionCostCtl" text="Coûts de distribution (contrôle)" />
 
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview" text="Distribution - Aperçu" />
@@ -105,7 +103,6 @@
         <text name="dr_col_incomingProducts" text="PRODUITS ENTRANTS" />
         <text name="dr_col_incomingMaterials" text="MATÉRIAUX ENTRANTS" />
         <text name="dr_col_outgoingProducts" text="PRODUITS SORTANTS" />
-        <text name="dr_col_heldSlashMax" text="STOCKÉ / MAX" />
         <text name="dr_col_distribution" text="DISTRIBUTION" />
         <text name="dr_col_consumed" text="CONSOMMÉ" />
         <text name="dr_col_produced" text="PRODUIT" />
@@ -151,7 +148,6 @@
         <!-- ================= FOOTER BUTTONS (set from Lua) =================
              Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
              FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
-        <text name="dr_btn_cycleOutput" text="Changer de mode" />
         <text name="dr_btn_advanced" text="Avancé" />
         <text name="dr_btn_sellTiming" text="Moment de vente" />
         <text name="dr_btn_sellTimingValue" text="Moment de vente : %s" />
@@ -233,7 +229,6 @@
              is switched on but would send the product in a circle back to where it started. -->
         <text name="dr_adv_title" text="Avancé - %s" />
         <text name="dr_adv_activeInvalid" text="Actif - Invalide" />
-        <text name="dr_adv_reserve" text="     Réserve : " />
         <text name="dr_adv_noCapacity" text="Aucune capacité à réserver" />
         <text name="dr_adv_loopOne" text="Impossible d'activer %s : cela créerait une boucle vers ce bâtiment." />
         <text name="dr_adv_loopMany" text="%d destination(s) restent bloquées : cela créerait une boucle vers ce bâtiment." />
@@ -415,15 +410,18 @@
         <text name="dr_set_distCostEnabled_v1" text="Activé" />
         <text name="dr_set_distCostEnabled_v2" text="Désactivé" />
 
-        <!-- The $ figures below are game currency per hour. The player's own currency
-             symbol is not substituted here, so translate the "/h" part only. -->
+        <!-- The amounts below are game currency per hour. "%s" is the amount, formatted by the GAME
+             in the player's own currency, so DO NOT write a currency symbol here: FS25 takes the
+             currency from the SAVEGAME rather than the language, and a baked-in symbol would be wrong
+             for anyone playing this language with a different one. Translate the "/h" part only,
+             and keep the "%s". -->
         <text name="dr_set_distCostBase" text="Coût horaire" />
         <text name="dr_set_distCostBase_tt" text="Coût horaire de base pour un trajet court, inférieur ou égal au seuil de distance ci-dessous." />
-        <text name="dr_set_distCostBase_v1" text="$0 /h" />
-        <text name="dr_set_distCostBase_v2" text="$5 /h" />
-        <text name="dr_set_distCostBase_v3" text="$10 /h" />
-        <text name="dr_set_distCostBase_v4" text="$20 /h" />
-        <text name="dr_set_distCostBase_v5" text="$50 /h" />
+        <text name="dr_set_distCostBase_v1" text="%s /h" />
+        <text name="dr_set_distCostBase_v2" text="%s /h" />
+        <text name="dr_set_distCostBase_v3" text="%s /h" />
+        <text name="dr_set_distCostBase_v4" text="%s /h" />
+        <text name="dr_set_distCostBase_v5" text="%s /h" />
 
         <text name="dr_set_distCostThreshold" text="Seuil de distance" />
         <text name="dr_set_distCostThreshold_tt" text="Les trajets inférieurs ou égaux à ce seuil paient le tarif de base ; les trajets plus longs voient leur coût augmenter linéairement." />

@@ -123,6 +123,14 @@
     <Profile name="SDListItemStats" extends="SDListItem">
         <height value="42px"/>
     </Profile>
+    <!-- 42px INFO rows: same pitch as SDListItemStats, but never highlighted. The Advanced Inputs dialog
+         now has TWO lists, and only the upper one is an action target. The Block / Max / Target buttons
+         act on its selected row, so that highlight must stay visible even when the list is not focused.
+         A second highlighted row in the lower table would make it ambiguous which one the buttons mean. -->
+    <Profile name="SDListItemStatsInfo" extends="SDListItemStats">
+        <imageSelectedColor value="$preset_fs25_colorGrey" />
+        <imageFocusedColor value="$preset_fs25_colorGrey" />
+    </Profile>
     <!-- Info-only rows (top / Inputs section): compact + never show a selection/focus highlight. -->
     <Profile name="SDListItemInfo" extends="SDListItemData">
         <imageSelectedColor value="$preset_fs25_colorGrey" />
@@ -156,6 +164,13 @@
     </Profile>
     <Profile name="SDAdvDialogBox" extends="fs25_dialogBg">
         <size value="1400px 780px" />
+    </Profile>
+    <!-- Advanced INPUTS only. It carries two stacked tables: the input products, and the potential
+         sources for whichever one is selected, so it needs more height than the Advanced OUTPUTS
+         dialog, which shares SDAdvDialogBox and must NOT grow with it. Its own profile rather than a
+         bigger shared one, so a change here can never move a dialog it was not aimed at. -->
+    <Profile name="SDInputsDialogBox" extends="SDAdvDialogBox">
+        <size value="1400px 900px" />
     </Profile>
     <!-- dropdown / stepper selector (left/right arrows + text) for the spawn pop-up.
          anchorBottomCenter + positive-Y positions is the base-game dialog convention. -->

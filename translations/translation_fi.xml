@@ -74,7 +74,6 @@
         <text name="dr_col_incomingProducts"  text="SAAPUVAT TUOTTEET" />
         <text name="dr_col_incomingMaterials" text="SAAPUVAT MATERIAALIT" />
         <text name="dr_col_outgoingProducts"  text="LÄHTEVÄT TUOTTEET" />
-        <text name="dr_col_heldSlashMax"      text="MÄÄRÄ / MAX" />
         <text name="dr_col_distribution"      text="JAKELU" />
         <text name="dr_col_consumed"          text="KULUTETTU" />
         <text name="dr_col_produced"          text="TUOTETTU" />
@@ -115,7 +114,6 @@
         <text name="dr_btn_close"         text="Sulje" />
 
         <!-- ================= FOOTER BUTTONS (set from Lua) ================= -->
-        <text name="dr_btn_cycleOutput"      text="Vaihda tila" />
         <text name="dr_btn_advanced"         text="Lisäasetukset" />
         <text name="dr_btn_sellTiming"       text="Myyntiajoitus" />
         <text name="dr_btn_sellTimingValue"  text="Myyntiajoitus: %s" />
@@ -177,7 +175,6 @@
         <!-- ================= ADVANCED OUTPUTS DIALOG ================= -->
         <text name="dr_adv_title"         text="Lisäasetukset - %s" />
         <text name="dr_adv_activeInvalid" text="Aktiivinen - Virheellinen" />
-        <text name="dr_adv_reserve"       text="     Varaus: " />
         <text name="dr_adv_noCapacity"    text="Ei kapasiteettia varattavaksi" />
         <text name="dr_adv_loopOne"       text="Kohdetta %s ei voi aktivoida - tuote palaisi silmukkana takaisin tänne." />
         <text name="dr_adv_loopMany"      text="%d kohdetta jätetty estetyksi - ne veisivät tuotteen silmukkana takaisin tänne." />
@@ -308,11 +305,11 @@
 
         <text name="dr_set_distCostBase"     text="Kuluhinta" />
         <text name="dr_set_distCostBase_tt"  text="Peruskuljetuskulu tunnissa lyhyelle matkalle (alla olevan kulumatkan sisällä tai sen alle)." />
-        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
-        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
-        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
-        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
-        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+        <text name="dr_set_distCostBase_v1"  text="%s /h" />
+        <text name="dr_set_distCostBase_v2"  text="%s /h" />
+        <text name="dr_set_distCostBase_v3"  text="%s /h" />
+        <text name="dr_set_distCostBase_v4"  text="%s /h" />
+        <text name="dr_set_distCostBase_v5"  text="%s /h" />
 
         <text name="dr_set_distCostThreshold"     text="Kulumatka" />
         <text name="dr_set_distCostThreshold_tt"  text="Tätä etäisyyttä lyhyemmät tai yhtä pitkät kuljetukset maksavat tasan perushinnan; pidemmät kuljetukset kasvavat lineaarisesti." />

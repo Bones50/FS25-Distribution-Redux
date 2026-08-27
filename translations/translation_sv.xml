@@ -96,7 +96,6 @@
         <text name="dr_col_incomingProducts"  text="INKOMMANDE PRODUKTER" />
         <text name="dr_col_incomingMaterials" text="INKOMMANDE MATERIAL" />
         <text name="dr_col_outgoingProducts"  text="UTGÅENDE PRODUKTER" />
-        <text name="dr_col_heldSlashMax"      text="INNEHAV / MAX" />
         <text name="dr_col_distribution"      text="DISTRIBUTION" />
         <text name="dr_col_consumed"          text="FÖRBRUKAT" />
         <text name="dr_col_produced"          text="PRODUCERAT" />
@@ -142,7 +141,6 @@
         <!-- ================= SIDFOTSKNAPPAR (sätts från Lua) =================
              Samma sidfot som dr_btn_-nycklarna ovan, samma längdbegränsning. Sell Timing är en
              FORMAT-sträng: %s är aktuell tidpunkt ("Bästa pris" / "Omedelbart"). -->
-        <text name="dr_btn_cycleOutput"      text="Växla utmatning" />
         <text name="dr_btn_advanced"         text="Avancerat" />
         <text name="dr_btn_sellTiming"       text="Säljtidpunkt" />
         <text name="dr_btn_sellTimingOff"    text="Säljtidpunkt: försäljning avstängd" />
@@ -226,7 +224,6 @@
              är påslagen men skulle skicka produkten i en cirkel tillbaka dit den kom ifrån. -->
         <text name="dr_adv_title"         text="Avancerat - %s" />
         <text name="dr_adv_activeInvalid" text="Aktiv - Ogiltig" />
-        <text name="dr_adv_reserve"       text="     Reserv: " />
         <text name="dr_adv_noCapacity"    text="Ingen kapacitet att reservera mot" />
         <text name="dr_adv_loopOne"       text="Kan inte aktivera %s - det skulle skicka produkten i en cirkel tillbaka hit." />
         <text name="dr_adv_loopMany"      text="%d destination(er) förblev blockerade - de skulle skicka produkten i en cirkel tillbaka hit." />
@@ -416,11 +413,11 @@
              ersätts inte här, så översätt endast "/h"-delen. -->
         <text name="dr_set_distCostBase"     text="Kostnadstakt" />
         <text name="dr_set_distCostBase_tt"  text="Bas transportkostnad per timme för en kort transport (vid eller under kostnadsavståndet nedan)." />
-        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
-        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
-        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
-        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
-        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+        <text name="dr_set_distCostBase_v1"  text="%s /h" />
+        <text name="dr_set_distCostBase_v2"  text="%s /h" />
+        <text name="dr_set_distCostBase_v3"  text="%s /h" />
+        <text name="dr_set_distCostBase_v4"  text="%s /h" />
+        <text name="dr_set_distCostBase_v5"  text="%s /h" />
 
         <text name="dr_set_distCostThreshold"     text="Kostnadsavstånd" />
         <text name="dr_set_distCostThreshold_tt"  text="Transporter på eller under detta avstånd betalar den fasta bastakten; längre transporter skalas linjärt uppåt." />

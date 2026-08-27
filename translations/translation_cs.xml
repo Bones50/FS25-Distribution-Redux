@@ -104,7 +104,6 @@
         <text name="dr_col_incomingProducts"  text="输入产品" />
         <text name="dr_col_incomingMaterials" text="输入物料" />
         <text name="dr_col_outgoingProducts"  text="输出产品" />
-        <text name="dr_col_heldSlashMax"      text="持有/最大" />
         <text name="dr_col_distribution"      text="分发" />
         <text name="dr_col_consumed"          text="已消耗" />
         <text name="dr_col_produced"          text="已生产" />
@@ -150,7 +149,6 @@
         <!-- ================= FOOTER BUTTONS (set from Lua) =================
              Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
              FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
-        <text name="dr_btn_cycleOutput"      text="切换输出" />
         <text name="dr_btn_advanced"         text="高级" />
         <text name="dr_btn_sellTiming"       text="出售时机" />
         <text name="dr_btn_sellTimingOff"    text="出售时机：出售已关闭" />
@@ -233,7 +231,6 @@
              is switched on but would send the product in a circle back to where it started. -->
         <text name="dr_adv_title"         text="高级 - %s" />
         <text name="dr_adv_activeInvalid" text="启用 - 无效" />
-        <text name="dr_adv_reserve"       text="     预留：" />
         <text name="dr_adv_noCapacity"    text="没有可用于预留的容量" />
         <text name="dr_adv_loopOne"       text="无法启用 %s - 这会让产品循环回到这里。" />
         <text name="dr_adv_loopMany"      text="%d 个目的地保持阻止 - 它们会让产品循环回到这里。" />
@@ -417,15 +414,18 @@
         <text name="dr_set_distCostEnabled_v1"  text="启用" />
         <text name="dr_set_distCostEnabled_v2"  text="禁用" />
 
-        <!-- The $ figures below are game currency per hour. The player's own currency
-             symbol is not substituted here, so translate the "/h" part only. -->
+        <!-- The amounts below are game currency per hour. "%s" is the amount, formatted by the GAME
+             in the player's own currency, so DO NOT write a currency symbol here: FS25 takes the
+             currency from the SAVEGAME rather than the language, and a baked-in symbol would be wrong
+             for anyone playing this language with a different one. Translate the "/h" part only,
+             and keep the "%s". -->
         <text name="dr_set_distCostBase"     text="成本费率" />
         <text name="dr_set_distCostBase_tt"  text="短途运输（不超过下方成本距离）的每小时基础运输成本。" />
-        <text name="dr_set_distCostBase_v1"  text="$0 /小时" />
-        <text name="dr_set_distCostBase_v2"  text="$5 /小时" />
-        <text name="dr_set_distCostBase_v3"  text="$10 /小时" />
-        <text name="dr_set_distCostBase_v4"  text="$20 /小时" />
-        <text name="dr_set_distCostBase_v5"  text="$50 /小时" />
+        <text name="dr_set_distCostBase_v1"  text="%s /小时" />
+        <text name="dr_set_distCostBase_v2"  text="%s /小时" />
+        <text name="dr_set_distCostBase_v3"  text="%s /小时" />
+        <text name="dr_set_distCostBase_v4"  text="%s /小时" />
+        <text name="dr_set_distCostBase_v5"  text="%s /小时" />
 
         <text name="dr_set_distCostThreshold"     text="成本距离" />
         <text name="dr_set_distCostThreshold_tt"  text="不超过此距离的运输按固定基础费率计费；更远距离会线性增加。" />

@@ -12,9 +12,12 @@ Fixed
 5) Redid the calculation for sell at best price. There was some issues with markets that should now be resolved. 21/8
 6) Fixed modded buildings that are both a silo and a production not showing the silo side in storages.(24/8)
 7) Fixed an issue with the advanced output screen when in dual mode outputs (e.g. Distribute + Move To) that prevented you modifying settings on some lines. (24/8)
-8) (NEW) Fixed animal husbandries showing only the total food amount rather than the individual food amounts stored. (26/8)
-9) (NEW) Fixed an issue with building icons not showing in the UI due to no building menu icon being defined in mods. Now checks and has multiple fallback options. (26/8)
-10) (NEW) Fixed Horse Barns not accpeting Straw. (26/8)
+8) Fixed animal husbandries showing only the total food amount rather than the individual food amounts stored. (26/8)
+9) Fixed an issue with building icons not showing in the UI due to no building menu icon being defined in mods. Now checks and has multiple fallback options. (26/8)
+10) Fixed Horse Barns not accpeting Straw. (26/8)
+11) (NEW) DR will now remember the last DR cycle activity across a save and reload, and all statuses will reflect that rather than having to run a cycle to see what's happening. (27/8)
+12) (NEW) Audited the whole l10n and fixed some missing/duplicated translation keys. (27/8)
+13) (NEW) DR will now use base game currency everywhere rather than being hardcoded. (27/8)
 
 Added
 1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
@@ -30,8 +33,10 @@ Added
 11) Status display will now take into account the time period selected. e.g. If month is selected the status will reflect whether the distribution did anything in the last month, hourly if it did anything in the last hourly cycle etc. 21/8
 12) Changed how the "Sell" setting modifies how the mod operates. If you turn off sell in the settings, everything will revert to manual transporting to sell only. Markets will revert to pre-mod functionality (Seel immediate). 21/8
 13) Added an API Layer to support add-on mods (no gameplay change) 24/8
-14) (NEW) Reworked the UI's to be more user friendly. This is the first cut of the new UI, feedback welcome, i have described the new storage bar included in the UI below as a new feature (It's complicated!). (26/8)
-15) (NEW) You can now open the DR menu while in a vehicle. (26/8)
+14) Reworked the UI's to be more user friendly. This is the first cut of the new UI, feedback welcome, i have described the new storage bar included in the UI below as a new feature (It's complicated!). (26/8)
+15) You can now open the DR menu while in a vehicle. (26/8)
+16) (NEW) Added an updated indication of how many sources/outputs did (Actually fed material), could have (could but didn't send due to closer sources or lack of product) or could not (Blocked or out of range) feed the input/output demand (Example- 1/2/1 means 1 source actively feeding, 2 sources could feed but aren't and 1 that is blocked or out of range).(27/8)
+17) (NEW) Re-did the advanced input page to show, for the selected product, all the possible sources and their status (such as whether blocked, distance, how much stored material etc ).(27/8)
 
 NEW FEATURES
 1) NOTE THIS IS VERY EXPERIMENTAL SO PLEASE TEST ON A COPY OF YOUR SAVEGAME FIRST! Added a new feature to increase support for modded buildings and change how they work with DR to make more sense. 

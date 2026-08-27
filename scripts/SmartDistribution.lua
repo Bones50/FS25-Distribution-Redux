@@ -7912,6 +7912,12 @@ function SmartDistribution.runHourly(manager)
     if DistributionStatsEvent ~= nil and DistributionStatsEvent.broadcast ~= nil then
         DistributionStatsEvent.broadcast()                    -- MP: push the rolling /mo aggregate to clients
     end
+    -- ...and the per-LINK log of the pass just published, which the stats event cannot carry (it is
+    -- per-(uid, ft), and this is per-(consumer, ft, source)). AFTER the stats push, because the monthly
+    -- push is what marks the peer as a client and the feed readers key off that flag.
+    if DistributionFeedEvent ~= nil and DistributionFeedEvent.broadcast ~= nil then
+        DistributionFeedEvent.broadcast()
+    end
     snapshotCropLevels()                                      -- remember post-cycle crop levels for harvest detection
     -- Money summary: when the ProductionDistributeSell add-on is loaded it sells the output surplus in an
     -- appended pass right after this one (same hourly tick) and flushes the summary at the end of THAT
@@ -8284,6 +8290,37 @@ local function saveOverrides(missionInfo)
             ci = ci + 1
         end
     end
+    -- THE LAST PASS'S LINK LOG: which source fed which consumer, and how much, on the last completed
+    -- cycle. S.lastCycle rides along in the monthly ring above (the newest slot IS it), but the per-LINK
+    -- facts live only here -- and they are what "Active (Receiving)" / "Sending" / "Feeding" and the
+    -- source count are answered from. Without this block every one of those read Idle after a reload
+    -- until a full in-game hour had passed. Requested 2026-08-27.
+    --
+    -- ONLY THE CONSUMER SIDE IS WRITTEN. _fedOutPrev is derived from it on load (rebuildFedOut) because
+    -- recordFeed populates both from one call with the same litres, so storing it too would be a second
+    -- copy of the same fact, free to drift.
+    --
+    -- ADDITIVE, so no PERSIST_VERSION bump: an older save simply has no <feed> block and behaves exactly
+    -- as before, and an older build reading a newer save ignores the element. Fill types go by NAME, like
+    -- the monthly ring, so a changed index cannot silently re-point a link at another product.
+    local fi = 0
+    for cu, byFt in pairs(SmartDistribution._feedPrev or {}) do
+        for ft, bySrc in pairs(byFt) do
+            local ftn = fillTypeName(ft)
+            if ftn ~= nil then
+                for su, litres in pairs(bySrc) do
+                    if type(litres) == "number" and litres > 0 then
+                        local lk = string.format("smartDistribution.feed.link(%d)", fi)
+                        setXMLString(xml, lk .. "#uniqueId", tostring(cu))
+                        setXMLString(xml, lk .. "#fillType", ftn)
+                        setXMLString(xml, lk .. "#source",   tostring(su))
+                        setXMLFloat(xml,  lk .. "#litres",   litres)
+                        fi = fi + 1
+                    end
+                end
+            end
+        end
+    end
     -- rolling 12-month window behind the Overview tab's Year view (owned by DistributionStats.lua)
     if SmartDistribution.saveYearWindow ~= nil then pcall(SmartDistribution.saveYearWindow, xml) end
     saveXMLFile(xml)
@@ -8600,6 +8637,54 @@ local function loadOverrides()
         end
         if next(snap) ~= nil then monthlyRing[slot] = snap; mloaded = mloaded + 1 end
         ci = ci + 1
+    end
+    -- THE LAST COMPLETED CYCLE WAS ALREADY IN THE FILE; nothing ever read it back.
+    -- runHourly does `S.lastCycle = cycleAcc` and `monthlyRing[slot] = cycleAcc` -- the SAME TABLE -- so
+    -- the newest ring slot IS the last cycle, and the ring plus monthlyPos are both persisted. Without
+    -- this, every Hour-scale figure and the Hour fallback in both link statuses came back empty after a
+    -- reload and stayed empty until a full in-game hour had passed. Requested 2026-08-27.
+    --
+    -- monthlyPos is "next slot to overwrite", so the newest is the one before it, wrapping at 24.
+    -- BY REFERENCE, not a copy: at runtime those two names are one table, and recordCycleStat writes
+    -- through `cycleAcc or S.lastCycle` expecting a change to land in the month as well. Copying would
+    -- silently break that aliasing for the first out-of-pass sale after a load.
+    local newest = ((monthlyPos - 1 + MONTHLY_CYCLES) % MONTHLY_CYCLES) + 1
+    S.lastCycle = monthlyRing[newest]
+    if S.lastCycle ~= nil then
+        log("restored last cycle from monthly slot %d", newest)
+    end
+    -- ...and the per-LINK log of that same cycle, which is what the status words are answered from.
+    -- Restored into _feedPrev (what the UI reads), NOT _feed (the pass about to run): the next
+    -- beginFeedPass clears _feed and publishFeedPass then overwrites _feedPrev with the real new pass,
+    -- so this survives exactly until DR has something more current to say. _fedOutPrev is derived.
+    local feed, fl = {}, 0
+    local li = 0
+    while true do
+        local lk = string.format("smartDistribution.feed.link(%d)", li)
+        local cu = getXMLString(xml, lk .. "#uniqueId")
+        if cu == nil then break end
+        local ftName = getXMLString(xml, lk .. "#fillType")
+        local su     = getXMLString(xml, lk .. "#source")
+        local litres = getXMLFloat(xml,  lk .. "#litres") or 0
+        if ftName ~= nil and su ~= nil and litres > 0 and g_fillTypeManager ~= nil then
+            local ft = g_fillTypeManager:getFillTypeIndexByName(ftName)
+            if ft ~= nil then
+                local c = feed[cu];  if c == nil then c = {}; feed[cu] = c end
+                local t = c[ft];     if t == nil then t = {}; c[ft] = t end
+                t[su] = (t[su] or 0) + litres
+                fl = fl + 1
+            end
+        end
+        li = li + 1
+    end
+    -- ASSIGNED UNCONDITIONALLY, even when the save has no <feed> block at all. The mod chunk RE-RUNS on
+    -- every mission load and its file-scope initialiser is `_feedPrev or {}`, which KEEPS whatever the
+    -- previously loaded savegame left in memory -- so guarding this on `fl > 0` would show one save's
+    -- links on another save's buildings. Loading a world replaces the world.
+    SmartDistribution._feedPrev   = feed
+    SmartDistribution._fedOutPrev = SmartDistribution.rebuildFedOut(feed)
+    if fl > 0 then
+        log("restored %d feed link(s) from the last completed cycle", fl)
     end
     -- rolling 12-month window behind the Overview tab's Year view (owned by DistributionStats.lua)
     if SmartDistribution.loadYearWindow ~= nil then pcall(SmartDistribution.loadYearWindow, xml) end
@@ -11811,7 +11896,14 @@ function SmartDistribution.productionLines(p)
         local id = prod.id
         local enabled = id ~= nil and activeSet[id] == true
         local st = enabled and (activeStatus[id] or prod.status) or nil
-        local status = (not enabled) and "Off" or (st == RUN and "Running" or "Idle")
+        -- TRANSLATED. These three were the one genuine miss the 2026-08-27 l10n audit turned up: phase 3
+        -- localised the mode names and both link-status maps and never reached the production LINE
+        -- status, so the Productions tab printed "Off" / "Running" / "Idle" in English in every language.
+        -- Looked up per call, not at chunk load, because l10n may not be up when this file runs.
+        local status
+        if not enabled       then status = SmartDistribution.l10n("dr_lineStatus_off",     "Off")
+        elseif st == RUN     then status = SmartDistribution.l10n("dr_lineStatus_running", "Running")
+        else                      status = SmartDistribution.l10n("dr_lineStatus_idle",    "Idle") end
         local cpm = prod.cyclesPerMonth or (prod.cyclesPerHour ~= nil and prod.cyclesPerHour * 24) or 1440
         local cph = prod.cyclesPerHour
         if (cph == nil or cph == 0) and prod.cyclesPerMonth ~= nil then
@@ -12340,6 +12432,134 @@ function DistributionStatsEvent.broadcast(targetConnection)
             first = false
         until i > total
     end
+end
+
+-- ============================================================================
+-- MULTIPLAYER: the per-LINK feed log (server -> clients)
+--
+-- DistributionStatsEvent carries per-(uid, ft) FLOWS, which is what the Overview's columns need. It
+-- cannot answer "WHICH source fed this consumer", because that is a per-(consumer, ft, source) fact and
+-- has never left the server. So on a client fedBy() returned 0 for everything: "Active (Receiving)" and
+-- "Sending" fell back to the window totals and mostly still looked right, but the 5.77 source drill-down
+-- could never show FEEDING and its count read 0/N on every row. Found while adding save/restore of the
+-- last cycle 2026-08-27; the gap itself shipped with 5.76.
+--
+-- SHAPE MIRRORS DistributionStatsEvent deliberately: chunked at STATS_MAX_PER_EVENT with a clearFirst
+-- flag on the first chunk, and it sends PLACEABLES via writeNodeObject rather than uid strings -- so the
+-- client resolves identity through its own getUid, which carries the client-side remap that 5.49 / 5.50
+-- exist for. Sending the server's uid string would reintroduce exactly that bug.
+--
+-- The SOURCE side is accumulated on arrival rather than sent, the same reason the savegame omits it:
+-- recordFeed derives both from one call, so a second copy on the wire could only drift.
+-- ============================================================================
+DistributionFeedEvent = {}
+-- A FIELD, not `local DistributionFeedEvent_mt` -- the main chunk is at Lua's 200-local ceiling
+-- (CLAUDE.md 1.1) and one more top-level local does not compile. Class() returns the metatable either
+-- way, so this is the same object under a different name.
+DistributionFeedEvent._mt = Class(DistributionFeedEvent, Event)
+InitEventClass(DistributionFeedEvent, "DistributionFeedEvent")   -- register network id (server + client)
+
+function DistributionFeedEvent.emptyNew()
+    return Event.new(DistributionFeedEvent._mt)
+end
+function DistributionFeedEvent.new(entries, clearFirst)
+    local self = DistributionFeedEvent.emptyNew()
+    self.entries    = entries or {}
+    self.clearFirst = clearFirst and true or false
+    return self
+end
+function DistributionFeedEvent:writeStream(streamId, connection)
+    streamWriteBool(streamId, self.clearFirst)
+    streamWriteUIntN(streamId, #self.entries, 8)                 -- <=255 per event; chunked well under
+    for _, en in ipairs(self.entries) do
+        NetworkUtil.writeNodeObject(streamId, en.c)              -- consumer
+        NetworkUtil.writeNodeObject(streamId, en.s)              -- source
+        streamWriteUIntN(streamId, en.ft, FillTypeManager.SEND_NUM_BITS)
+        streamWriteFloat32(streamId, en.l)
+    end
+end
+function DistributionFeedEvent:readStream(streamId, connection)
+    self.clearFirst = streamReadBool(streamId)
+    local n = streamReadUIntN(streamId, 8)
+    self.entries = {}
+    for i = 1, n do
+        local c  = NetworkUtil.readNodeObject(streamId)
+        local s  = NetworkUtil.readNodeObject(streamId)
+        local ft = streamReadUIntN(streamId, FillTypeManager.SEND_NUM_BITS)
+        local l  = streamReadFloat32(streamId)
+        self.entries[i] = { c = c, s = s, ft = ft, l = l }
+    end
+    self:run(connection)
+end
+function DistributionFeedEvent:run(connection)
+    -- server -> client only; never relayed onward
+    if self.clearFirst or SmartDistribution._clientFeed == nil then
+        SmartDistribution._clientFeed   = {}
+        SmartDistribution._clientFedOut = {}
+    end
+    local feed, fedOut = SmartDistribution._clientFeed, SmartDistribution._clientFedOut
+    for _, en in ipairs(self.entries) do
+        if en.c ~= nil and en.s ~= nil then
+            local cu, su = getUid(en.c), getUid(en.s)
+            if cu ~= nil and su ~= nil then
+                local a = feed[cu];  if a == nil then a = {}; feed[cu] = a end
+                local t = a[en.ft];  if t == nil then t = {}; a[en.ft] = t end
+                t[su] = (t[su] or 0) + en.l
+                local o = fedOut[su]; if o == nil then o = {}; fedOut[su] = o end
+                o[en.ft] = (o[en.ft] or 0) + en.l
+            end
+        end
+    end
+end
+
+-- server: push the last completed pass's link log. targetConnection set -> only that joining client;
+-- nil -> broadcast to everyone. No-op in single-player, where the host reads _feedPrev directly.
+--
+-- _feedPrev holds UIDS, and the wire wants PLACEABLES, so the map is built from ONE placeableSystem walk
+-- per broadcast rather than resolving each entry through placeableByUid -- which is itself a full scan,
+-- and would make this O(links x placeables). It also has to be a walk rather than a table kept by
+-- recordFeed, because after a savegame restore _feedPrev is repopulated from uids alone with no
+-- placeables anywhere. A uid that no longer resolves (the building was demolished) is simply skipped.
+function DistributionFeedEvent.broadcast(targetConnection)
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    local dyn = g_currentMission.missionDynamicInfo
+    if dyn == nil or dyn.isMultiplayer ~= true or g_server == nil then return end
+    local byUid = {}
+    local ps = g_currentMission.placeableSystem
+    if ps ~= nil then
+        for _, p in ipairs(ps.placeables) do
+            if p.rootNode ~= nil then
+                local u = getUid(p)
+                if u ~= nil then byUid[u] = p end
+            end
+        end
+    end
+    local list = {}
+    for cu, byFt in pairs(SmartDistribution._feedPrev or {}) do
+        local cp = byUid[cu]
+        if cp ~= nil then
+            for ft, bySrc in pairs(byFt) do
+                for su, litres in pairs(bySrc) do
+                    local sp = byUid[su]
+                    if sp ~= nil and type(litres) == "number" and litres > 0 then
+                        list[#list + 1] = { c = cp, s = sp, ft = ft, l = litres }
+                    end
+                end
+            end
+        end
+    end
+    -- ALWAYS SEND AT LEAST ONE EVENT, even with an empty list: clearFirst is what tells the client to
+    -- drop last hour's links, and a cycle in which nothing moved is exactly when they must go.
+    local i, total, first = 1, #list, true
+    repeat
+        local slice = {}
+        while #slice < STATS_MAX_PER_EVENT and i <= total do
+            slice[#slice + 1] = list[i]; i = i + 1
+        end
+        local ev = DistributionFeedEvent.new(slice, first)
+        if targetConnection ~= nil then targetConnection:sendEvent(ev) else g_server:broadcastEvent(ev) end
+        first = false
+    until i > total
 end
 
 -- ============================================================================
@@ -17625,9 +17845,23 @@ function SmartDistribution.outputDestCountText(p, ft, role, status)
     if SmartDistribution.outputDestinationsForMode == nil then return "" end
     local ok, dests = pcall(SmartDistribution.outputDestinationsForMode, p, ft, role)
     if not ok or type(dests) ~= "table" or #dests == 0 then return "" end
-    local active = 0
-    for _, d in ipairs(dests) do if not d.blocked then active = active + 1 end end
-    return string.format(" (%d/%d)", active, #dests)
+    -- THE MIRROR OF THE INPUT COUNT (2026-08-27): receiving / could receive / can't.
+    --   RECEIVING  it took product from THIS building on the last completed pass. outputDestinations has
+    --              already resolved that per destination (fedBy against this source) and left it in
+    --              `status`, so it is read rather than recomputed -- and its own header explains why that
+    --              lookup uses the BASE uid while the block uses the ROLE uid.
+    --   COULD      listed for the current mode, not blocked, simply not the one being used.
+    --   CANT       blocked. There is no mode or range bucket on this side: the destination list is built
+    --              FOR the current mode and only from buildings DR can actually reach, so anything that
+    --              would fall in those buckets is not in the list at all.
+    local L = SmartDistribution.LINK
+    local recv, could, cant = 0, 0, 0
+    for _, d in ipairs(dests) do
+        if d.status == L.ACTIVE then recv = recv + 1
+        elseif d.blocked then        cant = cant + 1
+        else                         could = could + 1 end
+    end
+    return string.format(" (%d/%d/%d)", recv, could, cant)
 end
 
 function SmartDistribution.storageBarValues(p, ft, role)
@@ -18241,6 +18475,106 @@ function SmartDistribution.canProvide(p, ft)
     return false
 end
 
+-- COULD this building ever supply ft -- structurally, ignoring its mode and its current level?
+--
+-- canProvide answers a NARROWER question and always has: it applies the MODE gate (canSourceDistribute)
+-- and, on its bunker / pallet / shed branches, a LEVEL test. That is right for "is this a source right
+-- now", and it is why a silo set to Hold, or an empty one, was not a candidate at all.
+--
+-- The three-way source count (2026-08-27) needs the wider set, because two of its three buckets are
+-- reasons a building ISN'T supplying: "could but isn't" has to include an empty silo, and "can't" has to
+-- include one whose mode does not distribute. Neither is enumerable from canProvide.
+--
+-- STILL EXCLUDED, because these can NEVER supply and are not "reasons", they are non-candidates:
+--   * a MARKET -- its buffer is sell-only and never feeds the network back (5.36)
+--   * a globally EXCLUDED fill type -- a farm-wide setting, not a property of any building
+--   * a building not ENROLLED in DR at all
+-- isProductionInputOnly is deliberately NOT tested here; it is recorded per candidate instead, because
+-- the caller that wants the Advanced Inputs list and the caller that wants the count differ on it.
+function SmartDistribution.couldHoldFillType(p, ft)
+    if p == nil or ft == nil then return false end
+    if SmartDistribution.isMarket(p) then return false end
+    if not isEnrolled(p) then return false end
+    if S.global.excludedFillTypes[ft] then return false end
+    -- a bunker supplies its DECLARED output and nothing else, whatever its bays currently hold
+    if SmartDistribution.isBunkerSiloPlaceable(p) then
+        return SmartDistribution.bunkerOutputFillType(p) == ft
+    end
+    local pp = getProductionPoint(p)
+    if pp ~= nil and type(pp.outputFillTypeIds) == "table" and pp.outputFillTypeIds[ft] then return true end
+    for _, s in ipairs(getRawStorages(p, ft)) do if storageSupports(s, ft) then return true end end
+    -- STRUCTURAL for pallets, where canProvide is level-based: what the spawner CAN emit, not what is
+    -- standing on the pad. An empty coop is exactly the "could but isn't" case bucket 2 exists for.
+    if isPalletSpawnerAsset(p) and SmartDistribution.isStructuralPalletOutput ~= nil
+       and SmartDistribution.isStructuralPalletOutput(p, ft) then return true end
+    if p.spec_objectStorage ~= nil and p.getObjectStorageSupportsFillType ~= nil then
+        local ok, sup = pcall(p.getObjectStorageSupportsFillType, p, ft)
+        if ok and sup then return true end
+    end
+    return false
+end
+
+-- Does p physically hold some ft RIGHT NOW -- i.e. would gatherSources emit a candidate for it this pass?
+--
+-- WHY THIS IS NOT canProvide. canProvide answers "could this building ever supply ft" and is deliberately
+-- capability-shaped: its BULK branch tests storageSupports, not getLevel, and its production branch tests
+-- pp.outputFillTypeIds, not the buffer. Its bunker / pallet / shed branches DO test stock, which is what
+-- makes the omission easy to miss. So an EMPTY silo is in sourcesFor today, and the input-side count
+-- ("1 of 4 silos is feeding me") could not honour "empty ones drop out" without this.
+--
+-- IT IS A LINE-FOR-LINE MIRROR OF gatherSources' LEVEL TESTS. If one changes, change both -- the same
+-- standing rule hasAnySink carries against sinksFor. Two deliberate differences:
+--   * no VIRTUAL branch (a2). _virtualStock is per-pass scratch, cleared between passes, so reading it
+--     from a menu would answer 0 for a source that supplies perfectly well. Such an output is not in
+--     canProvide either, so it never reaches this function.
+--   * no MODE gate. Every caller comes through canProvide, which already applied canSourceDistribute.
+--
+-- DISPLAY ONLY. The allocator does not read this; gatherSources does its own level tests inline.
+--
+-- STORAGES ARE DEDUPED BY IDENTITY, and that is not belt-and-braces. On a PASS-THROUGH STORE the silo
+-- half and the production half read ONE physical tank (5.65), and its identity lines make every product
+-- an "output" -- so `pp.storage` and `passThroughStorage(p)` (returned by getRawStorages) are the same
+-- object and a naive sum would report DOUBLE the litres. gatherSources has the same shape and does not
+-- care, because a duplicate CANDIDATE just drains empty the second time; a duplicate in a SUM is a wrong
+-- number on screen.
+function SmartDistribution.providableLiters(p, ft)
+    if p == nil or ft == nil then return 0 end
+    -- a bunker supplies its DECLARED output from uncovered bays only, and owns no Storage
+    if SmartDistribution.isBunkerSiloPlaceable(p) then
+        return SmartDistribution.bunkerPlaceableSilage(p) or 0
+    end
+    local total, seen = 0, {}
+    local function addStorage(s)
+        if s ~= nil and not seen[s] then seen[s] = true; total = total + (getLevel(s, ft) or 0) end
+    end
+    local pp = getProductionPoint(p)
+    local prodCovered = pp ~= nil and pp.storage ~= nil and type(pp.outputFillTypeIds) == "table"
+                        and pp.outputFillTypeIds[ft] == true
+    if prodCovered then
+        -- buffer AND pad, the two pools makeProductionSourceProxy drains (5.40)
+        addStorage(pp.storage)
+        if isPalletSpawnerAsset(p) and palletFillLevel ~= nil then
+            total = total + (palletFillLevel(p, ft) or 0)
+        end
+    end
+    for _, s in ipairs(getRawStorages(p, ft)) do addStorage(s) end
+    -- a pen's stock is pad + queue (5.25 / 5.30), so the queue counts even with an empty pad. Skipped
+    -- when the production branch already took the pad, exactly as gatherSources' own prodCovered does.
+    if not prodCovered and isPalletSpawnerAsset(p) and palletFillLevel ~= nil then
+        total = total + (palletFillLevel(p, ft) or 0) + (SmartDistribution.releasableLiters(p, ft) or 0)
+    end
+    if p.spec_objectStorage ~= nil and shedStoredLiters ~= nil then
+        total = total + (shedStoredLiters(p, ft) or 0)
+    end
+    return total
+end
+
+-- The boolean the source COUNT wants. One definition of "how much could this building hand over", asked
+-- two ways -- a second predicate written separately would be free to drift from the figure beside it.
+function SmartDistribution.providesStockNow(p, ft)
+    return SmartDistribution.providableLiters(p, ft) > 0
+end
+
 -- All network sources that could feed ft to the consumer (uid), each flagged blocked
 -- per the current control state. consumerUid is excluded from its own source list.
 --
@@ -18255,19 +18589,94 @@ function SmartDistribution._computeSourcesFor(consumerUid, ft)
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil then return out end
     local myFarm = SmartDistribution._playerFarmId()
+    -- The consumer is found IN THIS WALK, never through placeableByUid. That function is itself an
+    -- O(placeables) linear scan, so calling it here would make one cold sourcesFor cost TWO full walks --
+    -- and on the Overview settings view every row is a distinct (uid, ft) and therefore a memo miss, so
+    -- it would be a scan PER ROW: exactly the O(rows x placeables) shape 5.52 removed from this page.
+    -- Reach is decided afterwards, in a second loop over the CANDIDATES only (a handful, not the map).
+    --
+    -- Matched on the BASE uid the way placeableByUid does, so a role uid still finds its building.
+    local baseCu = (SmartDistribution.baseUidOf ~= nil) and SmartDistribution.baseUidOf(consumerUid)
+                   or consumerUid
+    local cx, cz = nil, nil
     for _, p in ipairs(ps.placeables) do
         if p.rootNode ~= nil then
             local of = SmartDistribution._ownerFarmId(p)
             local u = getUid(p)
+            if u == baseCu and cx == nil then
+                local ok, x, _, z = pcall(getWorldTranslation, p.rootNode)
+                if ok and x ~= nil then cx, cz = x, z end
+            end
             -- same farm-scoping the engine uses: neutral (nil owner) allowed, other farms excluded
+            --
+            -- THE MODE GATE IS RECORDED, NOT APPLIED. This used to test canProvide, which refuses a
+            -- building whose mode does not distribute -- so a silo full of wheat set to Hold was not a
+            -- candidate at all, and could not be counted as a REASON the mill is unfed. The three-way
+            -- count (2026-08-27) needs it, so candidacy is now the structural question and every
+            -- consumer filters for itself: inputLinkStatus keeps the old, narrower set.
             if u ~= consumerUid and SmartDistribution._farmCanUse(p, myFarm)
-               and SmartDistribution.canProvide(p, ft) then
+               and SmartDistribution.couldHoldFillType(p, ft) then
+                -- These extra facts are recorded HERE rather than by the caller because this walk is
+                -- MEMOISED and a caller asking per row would re-derive them per row. All are
+                -- display-only and purely additive -- inputSources copies named fields, so nothing
+                -- downstream is disturbed by their presence.
+                --
+                -- Position is captured for EVERY candidate, not only proximity-reach ones: the second
+                -- loop needs it for inReach, and the Advanced Inputs drill-down shows the distance
+                -- itself, which is just as real for a farm-wide source.
+                local px, pz = nil, nil
+                local ok2, a, _, b = pcall(getWorldTranslation, p.rootNode)
+                if ok2 and a ~= nil then px, pz = a, b end
                 out[#out + 1] = {
                     uid = u, name = placeableName(p), icon = SmartDistribution.assetIconFile(p),
                     blocked = SmartDistribution.isSourceBlocked(consumerUid, ft, u),
+                    -- The building itself, so a caller that wants a LIVE figure (the drill-down reads
+                    -- litres fresh rather than from this memo) does not have to resolve uid -> placeable,
+                    -- which is the O(placeables) scan this walk exists to avoid. Carrying a placeable in
+                    -- a cached record is the established pattern here (gatherSinks, the Overview's rows),
+                    -- and this store is dropped whole on every epoch bump, so nothing is held for long.
+                    placeable = p,
+                    farWide = resolveReach(p) == REACH.FARM_WIDE,
+                    -- LEVEL-DEPENDENT, and so subject to this memo's TTL: a silo that empties can read
+                    -- "stocked" for up to DEST_MEMO_TTL. That was already true of canProvide's own
+                    -- bunker / pallet / shed branches, and it moves no product -- only a display count.
+                    stocked = SmartDistribution.providesStockNow(p, ft),
+                    -- Is its MODE one that feeds consumers at all? canSourceDistribute is the engine's
+                    -- own answer -- every DISTRIBUTE* variant, so "Distribute + Store" and "Distribute +
+                    -- Market Supply" both count, while plain Store, plain Market Supply, Sell and Hold
+                    -- do not: those genuinely never hand product to a consumer.
+                    canDistribute = canSourceDistribute(p, ft),
+                    inReach = true,                      -- resolved below; fails OPEN if it cannot be
+                    dist = nil,                          -- ...and so is this
+                    _px = px, _pz = pz,
+                    -- A bakery STOCKING flour is not a flour source (5.12). gatherSources drops it,
+                    -- canProvide does not. Recorded as its OWN fact rather than folded into inReach --
+                    -- they exclude a candidate for entirely different reasons, and a field named for
+                    -- distance must not quietly also mean "wrong kind of building".
+                    inputOnly = SmartDistribution.isProductionInputOnly ~= nil
+                                and SmartDistribution.isProductionInputOnly(p, ft) or false,
                 }
             end
         end
+    end
+    -- IN REACH: gatherSources' own gate, mirrored -- farm-wide reach, else inside the distribution
+    -- radius of THIS consumer. sourcesFor has never had a distance test and still does not for listing
+    -- purposes: a silo well out of range stays in the Advanced Inputs dialog (you must be able to block
+    -- it), and only the COUNT consults this flag. An unresolvable consumer position or radius fails
+    -- OPEN -- every candidate counts as in reach, which is the previous behaviour, and can only
+    -- over-state the denominator rather than hide a building the player can see.
+    local r = (S ~= nil and S.global ~= nil and S.global.radius) or nil
+    local r2 = (r ~= nil) and (r * r) or nil
+    for _, e in ipairs(out) do
+        if cx ~= nil and e._px ~= nil then
+            local dx, dz = e._px - cx, e._pz - cz
+            local d2 = dx * dx + dz * dz
+            e.dist = math.sqrt(d2)               -- metres, for the drill-down; buildings do not move
+            -- A FARM-WIDE source is in reach at any distance, so the radius never applies to it -- but
+            -- its distance is still shown and still what the haulage bill is computed from.
+            if r2 ~= nil and not e.farWide then e.inReach = d2 <= r2 end
+        end
+        e._px, e._pz = nil, nil
     end
     table.sort(out, function(a, b) return tostring(a.name) < tostring(b.name) end)
     return out
@@ -18304,6 +18713,147 @@ function SmartDistribution.sourcesFor(consumerUid, ft)
     if byFt == nil then byFt = {}; M.byUid[consumerUid] = byFt end
     byFt[ft] = { srcs = srcs, at = now }
     return srcs
+end
+
+-- "How many buildings ARE feeding me this, of how many COULD?" -- returns feeding, available.
+--
+-- Requested 2026-08-27: a production taking wheat from the nearest of four wheat silos should read 1/4;
+-- block one silo's wheat output and it reads 1/3; empty another and it reads 1/2.
+--
+-- FREE, because sourcesFor is memoised and inputLinkStatus already asks for it on every input row. The
+-- only added work is one fedBy lookup per candidate.
+--
+-- THE DENOMINATOR IS NOT #srcs. sourcesFor answers the CAPABILITY question, which is right for the
+-- Advanced Inputs list (you must be able to block a silo that happens to be empty today) and wrong for a
+-- count that claims to say what could supply you now. Three filters close the gap, all recorded on the
+-- entry by _computeSourcesFor: not blocked, holds stock, in reach and not an input-only stocker.
+--
+-- ...AND A SOURCE THAT IS FEEDING IS AVAILABLE BY DEMONSTRATION, whatever the other three say. Without
+-- that guard a silo handing over its last litres reads "1/0", and the memo TTL makes the window for it
+-- real rather than theoretical.
+--
+-- NUMERATOR = THE LAST COMPLETED PASS, which is the only per-source data that exists: the feed log is
+-- rebuilt every pass (beginFeedPass), so there is no windowed per-source history to read. The status WORD
+-- beside it falls back to windowed stats, so on the Month timescale a row can legitimately read
+-- "Active (Receiving) (0/3)" -- something arrived this month, nothing this hour. That is the honest
+-- reading of "who is feeding me right now", which is what the count was asked to say.
+-- THREE BUCKETS, author's definition 2026-08-27:
+--   FEEDING  it moved product into this consumer on the last completed pass
+--   COULD    its mode WOULD feed a consumer, it is in range and not blocked -- it simply is not the one
+--            being drawn from, or it is empty. "Empty" belongs HERE, not in the third bucket: nothing is
+--            stopping it supplying, it just has nothing to supply this instant.
+--   CANT     blocked, or its mode does not feed consumers at all (Hold / Sell / plain Store / plain
+--            Market Supply), or it is beyond the distribution radius. Distance sits here because no
+--            setting can fix it.
+-- Precedence is FEEDING first (demonstrated, so never labelled by a reason it might not be), then the
+-- CANT reasons, then COULD as the remainder -- so the three always sum to the candidate count.
+function SmartDistribution.inputSourceCounts(consumerUid, ft)
+    if consumerUid == nil or ft == nil then return 0, 0, 0 end
+    local feeding, could, cant = 0, 0, 0
+    for _, s in ipairs(SmartDistribution.sourcesFor(consumerUid, ft)) do
+        -- a bakery STOCKING flour is not a flour source at all (5.12): not a candidate, not a reason
+        if not s.inputOnly then
+            if SmartDistribution.fedBy(consumerUid, ft, s.uid) > 0 then
+                feeding = feeding + 1
+            elseif s.blocked or not s.canDistribute or not s.inReach then
+                cant = cant + 1
+            else
+                could = could + 1
+            end
+        end
+    end
+    return feeding, could, cant
+end
+
+-- The suffix appended to an input row's status word: " (1/2/3)" -- feeding / could / can't. Deliberately
+-- the same shape as outputDestCountText, so an input row and an output row on one table read alike.
+--
+-- THE BLOCKED-ROW SUPPRESSION IS GONE, and that reversal is the point of the third number. With two
+-- numbers an all-blocked row collapsed to "(0/0)", which said strictly less than the word "Blocked"
+-- beside it. With three it reads "(0/0/4)" -- four buildings could supply this and every one is blocked,
+-- which is the most useful thing the cell can say.
+--
+-- STILL NOTHING when no building on the farm could hold the product at all: there is no ratio to state,
+-- and "(0/0/0)" on a product nobody stocks is noise.
+--
+-- Returns the text AND the feeding count, so a caller that also wants to COLOUR on "nobody is feeding me"
+-- does not have to ask twice (both pages do). feeding is nil exactly when no text is returned, which is
+-- what lets the caller write `if feeding == 0 then red end` without a second suppression test of its own.
+function SmartDistribution.inputSourceCountText(consumerUid, ft, status)
+    if consumerUid == nil or ft == nil then return "", nil end
+    local feeding, could, cant = SmartDistribution.inputSourceCounts(consumerUid, ft)
+    if (feeding + could + cant) == 0 then return "", nil end
+    return string.format(" (%d/%d/%d)", feeding, could, cant), feeding
+end
+
+-- ---- the input drill-down (Advanced Inputs, lower table) -------------------
+-- Every building that could supply ONE product to ONE receiver, with the reason it is or is not doing
+-- so. This is the "(future) input drill-down" inputSources was written for and never wired to anything.
+--
+-- FIVE STATUSES, RESOLVED MOST-FUNDAMENTAL-FIRST, and the order is the design:
+--   FEEDING       it moved product into this receiver on the last completed pass. Demonstrated, so it
+--                 outranks everything -- a source that is visibly working is never labelled by a reason
+--                 it might not.
+--   OUT_OF_RANGE  outside the distribution radius (and not farm-wide reach). Ranked ABOVE Blocked
+--                 deliberately: a block is a setting the player can undo, distance is not, so reporting
+--                 "Blocked" on a silo 900 m away would send them to press a button that changes nothing.
+--   BLOCKED       this source has blocked this receiver in its own Advanced Outputs. The actionable one.
+--   NO_STOCK      in range, allowed, holds none of it right now.
+--   STANDBY       ready and allowed, simply not the one being drawn from -- the ordinary state of every
+--                 silo but the nearest. This is the case the request's four statuses did not name.
+--
+-- LITRES ARE READ LIVE, not taken from the memo. sourcesFor caches for up to DEST_MEMO_TTL (30 s), which
+-- is right for a per-row count on a page refreshing every 2 s and wrong for a drill-down a player is
+-- reading -- so `stocked` is ignored here and providableLiters is asked again. NO_STOCK therefore always
+-- agrees with the litres printed beside it, which is the invariant that matters on this table. The
+-- consequence to know: the tab's "(1/3)" can lag this dialog by up to the TTL. Self-correcting.
+--
+-- INPUT-ONLY STOCKERS ARE EXCLUDED ENTIRELY. A bakery holding flour is not a flour source (5.12), so it
+-- is not a "potential source" and listing it with any of the five words above would be a lie -- there is
+-- no setting that would ever make it supply.
+function SmartDistribution.inputSourceRows(consumerUid, ft)
+    local out = {}
+    if consumerUid == nil or ft == nil then return out end
+    for _, s in ipairs(SmartDistribution.sourcesFor(consumerUid, ft)) do
+        if not s.inputOnly then
+            local liters = (s.placeable ~= nil) and SmartDistribution.providableLiters(s.placeable, ft) or 0
+            local status
+            if SmartDistribution.fedBy(consumerUid, ft, s.uid) > 0 then status = "FEEDING"
+            -- the three CANT reasons first, most-fundamental first: distance is not a setting, a block
+            -- is one the player made here, and the mode is one they made on the source itself
+            elseif not s.inReach then                                  status = "OUT_OF_RANGE"
+            elseif s.blocked then                                      status = "BLOCKED"
+            elseif not s.canDistribute then                            status = "NOT_DISTRIBUTING"
+            -- ...then the two COULD states. NO_STOCK sits on this side of the line: nothing is stopping
+            -- this building supplying, it simply has nothing to supply this instant.
+            elseif liters <= 0 then                                    status = "NO_STOCK"
+            else                                                       status = "STANDBY" end
+            -- A COPY, never the memoised entry decorated in place: sourcesFor hands back a SHARED table
+            -- and writing per-consumer state into it would poison the cache for every other reader (the
+            -- trap inputSources' own header records).
+            out[#out + 1] = {
+                uid = s.uid, name = s.name, icon = s.icon,
+                dist = s.dist, farWide = s.farWide,
+                liters = liters, status = status,
+                fed = SmartDistribution.fedBy(consumerUid, ft, s.uid),
+            }
+        end
+    end
+    -- Feeding first, then the ones that could step in, then the reasons they cannot -- so the top of the
+    -- table answers "who is supplying me" and the bottom answers "why isn't anyone else". Distance breaks
+    -- ties within a status, which is the order the allocator itself would draw them in (nearest first).
+    -- Bucket order: the one that IS feeding, then the two that could, then the three that cannot.
+    -- Reading down the table therefore walks the same three groups the count states left to right.
+    local rank = { FEEDING = 1, STANDBY = 2, NO_STOCK = 3,
+                   BLOCKED = 4, NOT_DISTRIBUTING = 5, OUT_OF_RANGE = 6 }
+    table.sort(out, function(a, b)
+        local ra, rb = rank[a.status] or 9, rank[b.status] or 9
+        if ra ~= rb then return ra < rb end
+        local da, db = a.dist or math.huge, b.dist or math.huge
+        if da ~= db then return da < db end
+        return tostring(a.name) < tostring(b.name)
+    end)
+    return out
 end
 
 -- ---- Advanced window data --------------------------------------------------
@@ -18699,6 +19249,26 @@ function SmartDistribution.publishFeedPass()
     SmartDistribution._fedOutPrev = SmartDistribution._fedOut or {}
 end
 
+-- Derive the SOURCE-side log from the consumer-side one. recordFeed writes both from a single call with
+-- the same litres, so this reproduces _fedOutPrev exactly rather than approximating it -- which is why
+-- neither the savegame nor the network payload has to carry it. Used by the load path and by a client
+-- receiving DistributionFeedEvent.
+function SmartDistribution.rebuildFedOut(feed)
+    local out = {}
+    if type(feed) ~= "table" then return out end
+    for _, byFt in pairs(feed) do
+        for ft, bySrc in pairs(byFt) do
+            for su, litres in pairs(bySrc) do
+                if type(litres) == "number" and litres > 0 then
+                    local o = out[su]; if o == nil then o = {}; out[su] = o end
+                    o[ft] = (o[ft] or 0) + litres
+                end
+            end
+        end
+    end
+    return out
+end
+
 function SmartDistribution.recordFeed(consumer, ft, source, litres)
     if consumer == nil or ft == nil or source == nil or (litres or 0) <= 0 then return end
     local cu, su = getUid(consumer), getUid(source)
@@ -18719,16 +19289,33 @@ function SmartDistribution.recordFeed(consumer, ft, source, litres)
     o[su][ft] = (o[su][ft] or 0) + litres
 end
 
+-- WHICH LOG TO READ. A client runs no hourly pass, so _feedPrev / _fedOutPrev are never populated there;
+-- what it has is whatever DistributionFeedEvent last pushed. `clientMonthly ~= nil` is the whole file's
+-- "this peer is a client" flag (5.8), and the monthly stats push is deliberately the thing that sets it,
+-- so it is already true by the time any feed event arrives.
+--
+-- Before this, all three of these answered 0 on a client: the two link statuses survived it by falling
+-- back to their window totals, but the 5.77 source drill-down could never report FEEDING and its count
+-- read 0/N on every row.
+function SmartDistribution._feedLog()
+    if clientMonthly ~= nil then return SmartDistribution._clientFeed end
+    return SmartDistribution._feedPrev
+end
+function SmartDistribution._fedOutLog()
+    if clientMonthly ~= nil then return SmartDistribution._clientFedOut end
+    return SmartDistribution._fedOutPrev
+end
+
 -- litres this source pushed to anyone for ft on the last completed pass
 function SmartDistribution.fedOutTotal(sourceUid, ft)
-    local o = SmartDistribution._fedOutPrev
+    local o = SmartDistribution._fedOutLog()
     local a = o ~= nil and o[sourceUid] or nil
     return (a ~= nil and a[ft]) or 0
 end
 
 -- litres a given source moved into a consumer for ft on the last completed pass (0 if none)
 function SmartDistribution.fedBy(consumerUid, ft, sourceUid)
-    local f = SmartDistribution._feedPrev
+    local f = SmartDistribution._feedLog()
     local c = f ~= nil and f[consumerUid] or nil
     local t = c ~= nil and c[ft] or nil
     return (t ~= nil and t[sourceUid]) or 0
@@ -18736,7 +19323,7 @@ end
 
 -- total litres a consumer received for ft on the last completed pass
 function SmartDistribution.fedTotal(consumerUid, ft)
-    local f = SmartDistribution._feedPrev
+    local f = SmartDistribution._feedLog()
     local c = f ~= nil and f[consumerUid] or nil
     local t = c ~= nil and c[ft] or nil
     local sum = 0
@@ -18769,14 +19356,20 @@ end
 function SmartDistribution.inputLinkStatus(consumerUid, ft, window)
     local L = SmartDistribution.LINK
     if consumerUid == nil or ft == nil then return L.IDLE end
+    -- ONLY THE DISTRIBUTING CANDIDATES. sourcesFor was widened to structural candidacy so the three-way
+    -- count can report "wrong mode" as a reason (2026-08-27); this test predates that and means "every
+    -- building that WOULD feed me has blocked me". Counting a Hold silo here would make allBlocked false
+    -- and silently stop a genuinely all-blocked row reading BLOCKED. Restoring the old membership is one
+    -- condition, and it keeps this function's behaviour byte-identical to before the widening.
     local srcs = SmartDistribution.sourcesFor(consumerUid, ft)
-    if #srcs > 0 then
-        local allBlocked = true
-        for _, s in ipairs(srcs) do
+    local considered, allBlocked = 0, true
+    for _, s in ipairs(srcs) do
+        if s.canDistribute and not s.inputOnly then
+            considered = considered + 1
             if not s.blocked then allBlocked = false; break end
         end
-        if allBlocked then return L.BLOCKED end
     end
+    if considered > 0 and allBlocked then return L.BLOCKED end
     if SmartDistribution.fedTotal(consumerUid, ft) > 0 then return L.ACTIVE end
     -- ...and over the selected window, the same way the output side does. RECEIVED is the receiver's
     -- counterpart of dist/stored; `moved` covers a building fed by its own other half.

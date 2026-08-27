@@ -24,6 +24,16 @@
 -- The % is shown with its live litre equivalent ("50%  (125,000 L)") so the player
 -- always sees the real number, and because it's a PERCENT it rides capacity changes
 -- (a silo extension) with no re-tuning. Every edit goes through DistributionControlEvent.
+--
+-- SECOND TABLE (2026-08-27): beneath the products sits the SOURCE DRILL-DOWN -- for whichever product
+-- is selected, every building that could supply it, with its picture, range, the litres it could
+-- actually hand over, and one of five statuses. It answers the question the product list cannot:
+-- "why is nothing arriving?" Data comes from SmartDistribution.inputSourceRows; the statuses and the
+-- order they resolve in are documented there.
+--
+-- TWO LISTS, ONE DELEGATE. Every list callback branches on `list`. The one that matters is
+-- onListSelectionChanged: an unguarded assignment there would let the lower table repoint rowIndex and
+-- so aim the Block / Max / Target buttons at a row other than the one they highlight.
 -- ============================================================================
 
 DistributionInputsDialog = {}
@@ -58,10 +68,47 @@ local function fmtV(n)
     return fmtL(n) .. " L"
 end
 
+-- Same format the Advanced OUTPUTS dialog uses for its destination distances, so the two windows state
+-- a range identically. A local copy per the established GUI-helper duplication (CLAUDE.md 4).
+local function fmtDist(d)
+    if d == nil then return "" end
+    return string.format("%dm", math.floor(d + 0.5))
+end
+
+-- The five statuses of a potential source, and the colour each carries. GREEN is supplying, ORANGE is
+-- ready but not being drawn from, RED is the one the player set and can unset; the two grey states are
+-- facts rather than faults, so they sit back and let the eye go to the actionable rows.
+local SRC_DIM = { 0.62, 0.62, 0.62, 1 }
+local SRC_STATUS = {
+    FEEDING          = { key = "dr_srcst_feeding",    fb = "Feeding" },
+    STANDBY          = { key = "dr_srcst_standby",    fb = "Standby" },
+    NO_STOCK         = { key = "dr_srcst_noStock",    fb = "No Stock" },
+    BLOCKED          = { key = "dr_srcst_blocked",    fb = "Blocked" },
+    NOT_DISTRIBUTING = { key = "dr_srcst_notDist",    fb = "Not Distributing" },
+    OUT_OF_RANGE     = { key = "dr_srcst_outOfRange", fb = "Out of Range" },
+}
+
+-- Colour a cell so SELECTION AND FOCUS CANNOT OVERRIDE IT. TextElement:getColor prefers
+-- textFocusedSelectedColor / textSelectedColor / textFocusedColor over textColor whenever the row is in
+-- those states (read from the base source, TextElement.lua ~907), and SDRowCell defines a selected
+-- colour -- so setTextColor alone would lose the status colour on whichever row the list has selected,
+-- which on a fresh list is row 1: the FEEDING row, the one most worth seeing green. All four setters are
+-- public and are called through pcall so a build lacking one degrades to the base colour.
+local function setSrcColor(c, rgba)
+    if c == nil then return end
+    local r, g, b, a = 1, 1, 1, 1
+    if rgba ~= nil then r, g, b, a = rgba[1], rgba[2], rgba[3], rgba[4] end
+    for _, fn in ipairs({ "setTextColor", "setTextSelectedColor", "setTextFocusedColor",
+                          "setTextFocusedSelectedColor" }) do
+        if c[fn] ~= nil then pcall(c[fn], c, r, g, b, a) end
+    end
+end
+
 function DistributionInputsDialog.new(target, custom_mt)
     local self = MessageDialog.new(target, custom_mt or Dlg_mt)
     self.rows = {}
     self.rowIndex = 1
+    self.sourceRows = {}
     return self
 end
 
@@ -83,16 +130,82 @@ function DistributionInputsDialog:rebuildRows()
     if self.rowIndex > #self.rows then self.rowIndex = math.max(1, #self.rows) end
 end
 
+-- The lower table: every building that could supply the SELECTED input, and why it is or is not.
+-- Rebuilt on open, on every selection change and after every action -- this is a modal dialog with no
+-- update tick, so it is a SNAPSHOT rather than a live feed. Accepted: it is read for a few seconds at a
+-- time, and every button that could change an answer rebuilds it. The one figure that can go stale
+-- unaided is a source filling or emptying while the window sits open.
+function DistributionInputsDialog:rebuildSourceRows()
+    self.sourceRows = {}
+    local r = self:selectedRow()
+    -- the read-only "Internal" row carries no fill type, so there is nothing to find sources for
+    if r == nil or r.ft == nil or r.readOnly then return end
+    if SmartDistribution == nil or SmartDistribution.inputSourceRows == nil then return end
+    -- THE BASE UID, deliberately -- NOT rcvUid(). That returns the SETTING key, which on a multi-role
+    -- building is role-suffixed (`uid#shed`), and it is right for the block and cap this dialog writes.
+    -- It is wrong here: the feed log is keyed by getUid(consumer) (6.24) and source-side blocks by
+    -- getUid(consumerPlaceable) (gatherSources), so a role key would find no feeder and no block --
+    -- every row would read Standby. "Which buildings could supply this building" is the same answer for
+    -- either half in any case. Every other caller of sourcesFor passes the base uid too.
+    if SmartDistribution.assetUid == nil then return end
+    local uid = SmartDistribution.assetUid(self.asset)
+    if uid == nil then return end
+    local ok, rows = pcall(SmartDistribution.inputSourceRows, uid, r.ft)
+    if ok and type(rows) == "table" then self.sourceRows = rows end
+end
+
+-- Rebuild + redraw the LOWER table only. Kept separate from refresh() because the selection handler must
+-- be able to update it without reloading the input list under the player's cursor.
+function DistributionInputsDialog:refreshSources()
+    self:rebuildSourceRows()
+    if self.sourceList ~= nil then self.sourceList:reloadData() end
+    -- An empty table under a live header reads as a bug; a sentence reads as an answer. Shown only for a
+    -- row that HAS a fill type: on the read-only Internal row no question is being asked, so neither the
+    -- rows nor the message belong there.
+    local t = self.noSourcesText
+    if t ~= nil and t.setVisible ~= nil then
+        local r = self:selectedRow()
+        local askable = (r ~= nil) and (r.ft ~= nil) and not r.readOnly
+        if t.setText ~= nil then
+            t:setText(SmartDistribution.l10n("dr_inp_noSources",
+                "No building on this farm can supply this product."))
+        end
+        t:setVisible(askable and #self.sourceRows == 0)
+    end
+end
+
 function DistributionInputsDialog:onOpen()
     DistributionInputsDialog:superClass().onOpen(self)
     if self.inputList ~= nil then self.inputList:setDataSource(self); self.inputList:setDelegate(self) end
-    self:refresh()
+    if self.sourceList ~= nil then self.sourceList:setDataSource(self); self.sourceList:setDelegate(self) end
+    self:refresh()          -- ...which builds and draws the source table too, via refreshSources
+    -- THE LIST'S OWN SELECTION SURVIVES A CLOSE; setup()'s rowIndex does not agree with it.
+    -- The dialog object and its SmoothList are created once and REUSED, so selectedIndex is still
+    -- whatever the player left it on last time, while setup() has just reset self.rowIndex to 1. Nothing
+    -- reconciled the two, so on reopen the highlight sat on one row while rowIndex -- and therefore the
+    -- source table beneath -- answered for another. Reported 2026-08-27 as "the information is stale, you
+    -- have to click another line and back": clicking is what synchronised them.
+    --
+    -- It was harmless before this build (the buttons read rowIndex and simply acted on a row other than
+    -- the highlighted one, which nobody had noticed), and the fix was already known here -- apply()
+    -- pushes the selection into the list for exactly this reason. onOpen never did.
+    --
+    -- AFTER refresh(), deliberately: the list must hold its rows before an index can be selected in it,
+    -- and _refreshing must be false or the callback this raises would be swallowed.
+    if self.inputList ~= nil and self.inputList.setSelectedItem ~= nil then
+        pcall(self.inputList.setSelectedItem, self.inputList, 1, self.rowIndex or 1, true)
+    end
+    -- ...and rebuild for whatever is now genuinely selected, in case that callback was not raised.
+    self:refreshSources()
+    self:updateBlockLabel()
+    self:updateTargetButtons()
 end
 
 function DistributionInputsDialog:refresh()
     if self._refreshing then return end
     self._refreshing = true
     if self.inputList ~= nil then self.inputList:reloadData() end
+    self:refreshSources()
     if self.dialogTitleElement ~= nil and self.asset ~= nil then
         local nm = (self.asset.getName ~= nil) and self.asset:getName() or SmartDistribution.l10n("dr_label_building", "Building")
         self.dialogTitleElement:setText(string.format(SmartDistribution.l10n("dr_inp_title", "Advanced Inputs - %s"), tostring(nm)))
@@ -135,11 +248,56 @@ function DistributionInputsDialog:refresh()
 end
 
 -- ---- list data ------------------------------------------------------------
+-- TWO LISTS SHARE ONE DELEGATE, so every callback must branch on `list`. Answering #self.rows for both
+-- would size the source table by the input table.
 function DistributionInputsDialog:getNumberOfItemsInSection(list, section)
+    if list == self.sourceList then return #self.sourceRows end
     return #self.rows
 end
 
+-- One row of the lower table: thumbnail, name, range, litres it could hand over, and why it is or is not.
+function DistributionInputsDialog:populateSourceCell(index, cell)
+    local function setc(name, text)
+        local c = cell:getAttribute(name)
+        if c ~= nil and c.setText ~= nil then c:setText(text or "") end
+    end
+    local s = self.sourceRows[index]
+    if s == nil then return end
+    setc("srcName",  s.name)
+    setc("srcRange", fmtDist(s.dist))
+    -- litres it could actually hand over, not its total contents: providableLiters answers for the pools
+    -- the allocator would really draw from. A dash where there is none, so a zero never reads as a figure.
+    setc("srcHolds", (s.liters or 0) > 0 and fmtV(s.liters) or "-")
+    local st = SRC_STATUS[s.status]
+    setc("srcStatus", st ~= nil and SmartDistribution.l10n(st.key, st.fb) or "")
+    -- Cells are RECYCLED by SmoothList, so every one is written and coloured on EVERY populate -- never
+    -- left to inherit the previous row's (the 5.7 / 5.57 trap).
+    -- COLOURED BY BUCKET, so the table reads as the three numbers in the status column beside it:
+    -- green = feeding, orange = could feed but isn't (standby OR merely empty), grey = can't. RED is
+    -- reserved within that last group for BLOCKED, the only one of the three the player set and can
+    -- unset -- painting "Out of Range" red would be alarming about plain geography.
+    local COL = (SmartDistribution.LINK_COLOR or {})
+    local rgba = SRC_DIM
+    if     s.status == "FEEDING"  then rgba = COL.ACTIVE
+    elseif s.status == "STANDBY"  then rgba = COL.IDLE
+    elseif s.status == "NO_STOCK" then rgba = COL.IDLE
+    elseif s.status == "BLOCKED"  then rgba = COL.BLOCKED end
+    setSrcColor(cell:getAttribute("srcStatus"), rgba)
+    -- the building's own picture, resolved through the ONE chain (5.71) with its blank-placeholder and
+    -- file-exists fallbacks; setAssetIcon hides the element when nothing resolves
+    local ic = cell:getAttribute("assetIcon")
+    if ic ~= nil then
+        if s.icon ~= nil and ic.setImageFilename ~= nil then
+            ic:setImageFilename(s.icon)
+            if ic.setVisible ~= nil then ic:setVisible(true) end
+        elseif ic.setVisible ~= nil then
+            ic:setVisible(false)
+        end
+    end
+end
+
 function DistributionInputsDialog:populateCellForItemInSection(list, section, index, cell)
+    if list == self.sourceList then return self:populateSourceCell(index, cell) end
     local function setc(name, text)
         local c = cell:getAttribute(name)
         if c ~= nil and c.setText ~= nil then c:setText(text or "") end
@@ -194,7 +352,16 @@ end
 
 function DistributionInputsDialog:onListSelectionChanged(list, section, index)
     if self._refreshing then return end
+    -- THE SOURCE LIST MUST NEVER MOVE rowIndex. It is informational, but it shares this delegate, so an
+    -- unguarded assignment here would repoint the Block / Max / Target buttons at whatever row of the
+    -- LOWER table happened to be selected -- a control acting on something other than the row it
+    -- highlights. It is not wired to onSelectionChanged in the XML either; this is the belt to that brace.
+    if list == self.sourceList then return end
     self.rowIndex = index
+    -- The lower table answers for the SELECTED product, so it follows the selection. Deliberately NOT a
+    -- full refresh(): that reloads the INPUT list too, which would rebuild the very rows the player is
+    -- selecting between and can move the highlight out from under them.
+    self:refreshSources()
     self:updateBlockLabel()
     -- ...and the target buttons, which are per-ROW: a dialog whose rows differ in whether a fill
     -- target can bind must re-evaluate them on every selection, not only on refresh.

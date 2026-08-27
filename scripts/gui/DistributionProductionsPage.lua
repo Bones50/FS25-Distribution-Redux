@@ -280,10 +280,37 @@ local function setStatusCell(cell, placeable, ft, window, role)
         if bc ~= nil and c.setTextColor ~= nil then c:setTextColor(bc[1], bc[2], bc[3], bc[4]) end
         return
     end
-    local st  = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft, window) or nil
-    if c.setText ~= nil then c:setText(st ~= nil and ((SmartDistribution.LINK_LABEL or {})[st] or "") or "") end
+    local st   = uid ~= nil and SmartDistribution.inputLinkStatus(uid, ft, window) or nil
+    local base = (st ~= nil) and ((SmartDistribution.LINK_LABEL or {})[st] or "") or ""
+    -- "N of M buildings are feeding me this" -- appended exactly the way the OUTPUT side already appends
+    -- its destination count (setOutputStatusCell / outputDestCountText), so both directions read alike.
+    -- Suppressed on a blocked row and where nothing on the farm could supply it; see the engine function.
+    -- This is the twin of DistributionStoragePage's setStatusCell (CLAUDE.md 4): change both together.
+    local suffix, feeding = "", nil
+    if base ~= "" and uid ~= nil and SmartDistribution.inputSourceCountText ~= nil then
+        suffix, feeding = SmartDistribution.inputSourceCountText(uid, ft, st)
+        suffix = suffix or ""
+    end
+    if c.setText ~= nil then c:setText(base .. suffix) end
+    -- RED WHEN NOTHING IS FEEDING while something could -- the silent-stall signal 5.37 added DEST for.
+    -- It OUTRANKS the status word's own colour, ACTIVE included: on a Month window a row can read
+    -- "Active (Receiving) (0/3)" because something arrived this month and nothing this pass, and the
+    -- count is the half worth acting on. feeding is nil whenever no count is shown, so this cannot fire
+    -- on a row that has no ratio to report.
     local col = st ~= nil and (SmartDistribution.LINK_COLOR or {})[st] or nil
-    if col ~= nil and c.setTextColor ~= nil then c:setTextColor(col[1], col[2], col[3], col[4]) end
+    -- RED ONLY ON A ROW THAT IS NOT ALREADY ACTIVE. Red means "something could feed me and nothing is",
+    -- which is a claim DR itself contradicts when the status word beside it reads Active (Receiving) --
+    -- and the two are answered on DIFFERENT TIME BASES, so they legitimately disagree: the word can come
+    -- from the selected WINDOW's ledger while the count is the last completed pass only (the only
+    -- per-source data that exists). Reported 2026-08-27 as "Active (Receiving)" painted red at 0/2.
+    -- An idle row with sources standing by still goes red, which is the stall this was added to surface.
+    if feeding == 0 and st ~= "ACTIVE" then col = (SmartDistribution.LINK_COLOR or {}).BLOCKED end
+    -- Cells are RECYCLED by SmoothList, so the colour is written on EVERY path rather than left to
+    -- inherit the previous row's (the 5.7 / 5.57 trap) -- which matters more now one of them is red.
+    if c.setTextColor ~= nil then
+        if col ~= nil then c:setTextColor(col[1], col[2], col[3], col[4])
+        else c:setTextColor(1, 1, 1, 1) end
+    end
 end
 
 -- OUTGOING (source-side) status for an output row: Active (Sending) / Active (Idle) / Blocked, same colours.

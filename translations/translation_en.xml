@@ -84,7 +84,6 @@
         <text name="dr_col_distributed"   text="DISTRIBUTED" />
         <text name="dr_col_sold"          text="SOLD" />
         <text name="dr_col_storedMoved"   text="STORED/MOVED" />
-        <text name="dr_col_sold"          text="SOLD" />
         <text name="dr_col_distrCost"     text="DISTR. COST" />
 
         <!-- ================= Overview: SETTINGS view column headers =================
@@ -139,6 +138,11 @@
         <text name="dr_col_maxIn"           text="MAX IN" />
         <text name="dr_col_available"       text="AVAILABLE" />
         <text name="dr_col_fillTarget"      text="FILL TARGET" />
+        <!-- Lower table on the same dialog: every building that could supply the SELECTED input.
+             The first header doubles as the section title, so keep it readable as a heading.
+             Budget: POTENTIAL SOURCES 500px, RANGE 110px, HELD is reused from above, STATUS 226px. -->
+        <text name="dr_col_potentialSources" text="POTENTIAL SOURCES" />
+        <text name="dr_col_range"            text="RANGE" />
 
         <!-- ================= buttons =================
              These share one footer bar, so every extra character squeezes its
@@ -263,6 +267,31 @@
         <text name="dr_inp_pooledCapped" text="Pooled storage: %s shared by %d products, %d capped. Anything uncapped may use the whole pool." />
         <text name="dr_inp_pooled"       text="Pooled storage: %s shared by %d products. Each may use all of it - set a max to reserve room for the others." />
         <text name="dr_inp_individual"   text="Set each product's max, or block it. This building has individual per-product storage." />
+        <!-- Shown in place of the source rows when nothing on the farm could supply the selected
+             product. An empty table under a header reads as a bug; a sentence reads as an answer. -->
+        <text name="dr_inp_noSources"    text="No building on this farm can supply this product." />
+        <!-- STATUS of one potential source, in a 226px cell at 12px: about 30 characters.
+             These are the three buckets the status column counts, in order.
+             FEEDING
+               Feeding         it moved product here on the last pass
+             COULD FEED, BUT ISN'T
+               Standby         ready and allowed, just not the one being drawn from
+               No Stock        allowed and in range, but holds none of it this instant
+             CAN'T FEED
+               Blocked         this source has blocked this receiver in its own Advanced Outputs
+               Not Distributing its mode does not feed consumers (Hold, Sell, plain Store...)
+               Out of Range    beyond the distribution radius, so no setting can make it supply -->
+        <!-- STATUS of one PRODUCTION LINE on the Productions tab: switched off, running, or on but
+             not currently producing (starved of an input, or its output buffer is full). -->
+        <text name="dr_lineStatus_off"     text="Off" />
+        <text name="dr_lineStatus_running" text="Running" />
+        <text name="dr_lineStatus_idle"    text="Idle" />
+        <text name="dr_srcst_feeding"    text="Feeding" />
+        <text name="dr_srcst_standby"    text="Standby" />
+        <text name="dr_srcst_noStock"    text="No Stock" />
+        <text name="dr_srcst_blocked"    text="Blocked" />
+        <text name="dr_srcst_notDist"    text="Not Distributing" />
+        <text name="dr_srcst_outOfRange" text="Out of Range" />
 
         <!-- ================= SPAWN PALLETS DIALOG =================
              Quantity word beside the stepper, and the summary line above it. -->
@@ -435,15 +464,19 @@
         <text name="dr_set_distCostEnabled_v1"  text="Enabled" />
         <text name="dr_set_distCostEnabled_v2"  text="Disabled" />
 
-        <!-- The $ figures below are game currency per hour. The player's own currency
-             symbol is not substituted here, so translate the "/h" part only. -->
         <text name="dr_set_distCostBase"     text="Cost rate" />
         <text name="dr_set_distCostBase_tt"  text="Base transport cost per hour for a short haul (at or under the cost distance below)." />
-        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
-        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
-        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
-        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
-        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+        <!-- MONEY VALUES: "%s" is the amount, formatted by the GAME in the player's own currency.
+             DO NOT write a currency symbol here. FS25 takes the currency from the SAVEGAME rather than
+             the language, so a symbol baked into any translation would be wrong for anyone playing that
+             language with a different currency. Translate only the "/h" (per hour) part, and keep the
+             "%s". The five are identical in English on purpose; a language needing different word order
+             per amount can still vary them. -->
+        <text name="dr_set_distCostBase_v1"  text="%s /h" />
+        <text name="dr_set_distCostBase_v2"  text="%s /h" />
+        <text name="dr_set_distCostBase_v3"  text="%s /h" />
+        <text name="dr_set_distCostBase_v4"  text="%s /h" />
+        <text name="dr_set_distCostBase_v5"  text="%s /h" />
 
         <text name="dr_set_distCostThreshold"     text="Cost distance" />
         <text name="dr_set_distCostThreshold_tt"  text="Hauls at or under this distance pay the flat base rate; longer hauls scale up linearly." />

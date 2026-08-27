@@ -58,7 +58,23 @@ function DistributionSettingsPage:onGuiSetupFinished()
             if SmartDistribution ~= nil and SmartDistribution.l10n ~= nil then
                 labels = {}
                 for i = 1, #def.strings do
-                    labels[i] = SmartDistribution.l10n(string.format("dr_set_%s_v%d", id, i), def.strings[i])
+                    local s = SmartDistribution.l10n(string.format("dr_set_%s_v%d", id, i), def.strings[i])
+                    -- A MONEY-VALUED setting carries a "%s" and the AMOUNT is formatted by the GAME, so
+                    -- the player sees their own currency. FS25 takes the currency from the SAVEGAME, not
+                    -- the language, so baking a symbol into any translation would be wrong even for an
+                    -- English player using euros. Reported 2026-08-27 against "$10 /h".
+                    -- pcall'd and guarded on the "%s" actually being there: a translation that drops the
+                    -- placeholder then shows the unsubstituted string rather than throwing mid-populate.
+                    if def.money and def.values ~= nil and def.values[i] ~= nil and s:find("%%s") then
+                        local amount = tostring(def.values[i])
+                        if SmartDistribution.formatMoney ~= nil then
+                            local ok, m = pcall(SmartDistribution.formatMoney, def.values[i])
+                            if ok and type(m) == "string" and m ~= "" then amount = m end
+                        end
+                        local ok2, out = pcall(string.format, s, amount)
+                        if ok2 and type(out) == "string" then s = out end
+                    end
+                    labels[i] = s
                 end
             end
             element:setTexts(labels)

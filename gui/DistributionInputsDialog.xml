@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
 <!-- Distribution Redux: Advanced Inputs window, scoped to ONE receiving building.
-     A single list: one row per input product the building can hold. Each row shows the
-     product, whether its storage is Pooled or Individual, how much is held, and its max
-     (as a % with the live litre equivalent, or BLOCKED). Buttons act on the selected row.
+     TWO STACKED TABLES.
+       UPPER  one row per input product the building can hold: the product, whether its storage is
+              Pooled / Individual / Linked, how much is held, and its max (a % with the live litre
+              equivalent, or BLOCKED). The BUTTONS ACT ON THIS LIST'S selected row.
+       LOWER  for that selected product, every building that could supply it: picture, name, range,
+              litres it could hand over, and its status (Feeding / Standby / No Stock / Blocked /
+              Out of Range). Informational only, and it uses a non-highlighting row profile so there
+              is never a second highlighted row competing to look like the buttons' target.
+     Both tables use the MAIN UI's metrics (42px rows, 12px cells, 11px headers).
 
      LAYOUT NOTE: the SDList profile is anchorStretchingYLeft + pivotTopLeft, so list
      elements are positioned from the BOX'S LEFT EDGE with POSITIVE X. Only the centre-
@@ -12,7 +18,7 @@
     <GuiElement type="empty" profile="newLayer" />
     <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
 
-    <GuiElement profile="SDAdvDialogBox" id="dialogElement">
+    <GuiElement profile="SDInputsDialogBox" id="dialogElement">
         <ThreePartBitmap profile="fs25_dialogBgMiddleSmall" />
         <ThreePartBitmap profile="fs25_dialogBgTopSmall" />
         <ThreePartBitmap profile="fs25_dialogBgBottom" />
@@ -21,30 +27,83 @@
             <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_title_advancedInputs" position="0px -30px" />
             <Text profile="fs25_dialogText"  id="dialogTextElement"  text=""                position="0px -78px" />
 
-            <!-- single list: input products -->
+            <!-- UPPER LIST: input products.
+                 Row metrics match the MAIN UI tabs exactly (5.55): profile SDListItemStats for the 42px
+                 pitch (the pitch comes from the PROFILE's height, not the instance size, so both are
+                 set and the profile is the one that moves the rows), 12px cells, 11px headers, and a
+                 24px fill icon centred at y=9 in a 42px row. Column x/width are UNCHANGED from the 46px
+                 layout: at 12px a character is ~6px against ~8px at 16px, so every cell has more room
+                 than before, not less. 6 rows visible; it scrolls. -->
             <Bitmap profile="SDList" position="40px -122px" size="1120px 34px">
-                <Text profile="SDHeaderLeft" position="12px 0px"  size="240px 34px"  text="$l10n_dr_col_incomingProduct" />
-                <Text profile="SDHeaderLeft" position="296px 0px" size="90px 34px"   text="$l10n_dr_col_type" />
-                <Text profile="SDHeaderLeft" position="392px 0px" size="150px 34px"  text="$l10n_dr_col_held" />
-                <Text profile="SDHeaderLeft" position="548px 0px" size="195px 34px"  text="$l10n_dr_col_maxIn" />
-                <Text profile="SDHeaderLeft" position="749px 0px" size="150px 34px"  text="$l10n_dr_col_available" />
-                <Text profile="SDHeaderLeft" position="905px 0px" size="215px 34px"  text="$l10n_dr_col_fillTarget" />
+                <Text profile="SDHeaderLeft" position="12px 0px"  size="240px 34px" textSize="11px" text="$l10n_dr_col_incomingProduct" />
+                <Text profile="SDHeaderLeft" position="296px 0px" size="90px 34px"  textSize="11px" text="$l10n_dr_col_type" />
+                <Text profile="SDHeaderLeft" position="392px 0px" size="150px 34px" textSize="11px" text="$l10n_dr_col_held" />
+                <Text profile="SDHeaderLeft" position="548px 0px" size="195px 34px" textSize="11px" text="$l10n_dr_col_maxIn" />
+                <Text profile="SDHeaderLeft" position="749px 0px" size="150px 34px" textSize="11px" text="$l10n_dr_col_available" />
+                <Text profile="SDHeaderLeft" position="905px 0px" size="215px 34px" textSize="11px" text="$l10n_dr_col_fillTarget" />
                 <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
             </Bitmap>
-            <GuiElement profile="SDList" position="40px -160px" size="1120px 480px">
-                <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1120px 480px"
+            <GuiElement profile="SDList" position="40px -160px" size="1120px 252px">
+                <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1120px 252px"
                             onSelectionChanged="onListSelectionChanged">
-                    <ListItem profile="SDListItem" name="rowTemplate" size="1120px 46px" onClick="onClickInputRow">
-                        <Bitmap position="12px 11px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
-                        <Text profile="SDRowCell" position="48px 0px"  size="230px 46px" textSize="17px" name="name" />
-                        <Text profile="SDRowCell" position="296px 0px" size="90px 46px"  textSize="16px" name="kind" />
-                        <Text profile="SDRowCell" position="392px 0px" size="150px 46px" textSize="16px" name="held" />
-                        <Text profile="SDRowCell" position="548px 0px" size="195px 46px" textSize="16px" name="cap" />
-                        <Text profile="SDRowCell" position="749px 0px" size="150px 46px" textSize="16px" name="avail" />
-                        <Text profile="SDRowCell" position="905px 0px" size="215px 46px" textSize="16px" name="target" />
+                    <ListItem profile="SDListItemStats" name="rowTemplate" size="1120px 42px" onClick="onClickInputRow">
+                        <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                        <Text profile="SDRowCell" position="48px 0px"  size="230px 42px" textSize="12px" name="name" />
+                        <Text profile="SDRowCell" position="296px 0px" size="90px 42px"  textSize="12px" name="kind" />
+                        <Text profile="SDRowCell" position="392px 0px" size="150px 42px" textSize="12px" name="held" />
+                        <Text profile="SDRowCell" position="548px 0px" size="195px 42px" textSize="12px" name="cap" />
+                        <Text profile="SDRowCell" position="749px 0px" size="150px 42px" textSize="12px" name="avail" />
+                        <Text profile="SDRowCell" position="905px 0px" size="215px 42px" textSize="12px" name="target" />
                     </ListItem>
                 </SmoothList>
             </GuiElement>
+
+            <!-- LOWER LIST: every building that could supply the SELECTED input, and why it is or is not.
+                 The first header doubles as the section title, so no separate label element is needed.
+                 Building thumbnail is 44x32 at y=5, the Overview's own numbers, which are already
+                 tuned for a 42px row. Tiles with 8px gutters to exactly 1120px:
+                   icon 8..52 | source 60..560 | range 568..678 | holds 686..886 | status 894..1120
+                 7 rows visible; it scrolls. -->
+            <Bitmap profile="SDList" position="40px -424px" size="1120px 34px">
+                <Text profile="SDHeaderLeft" position="60px 0px"  size="500px 34px" textSize="11px" text="$l10n_dr_col_potentialSources" />
+                <Text profile="SDHeaderLeft" position="568px 0px" size="110px 34px" textSize="11px" text="$l10n_dr_col_range" />
+                <Text profile="SDHeaderLeft" position="686px 0px" size="200px 34px" textSize="11px" text="$l10n_dr_col_held" />
+                <Text profile="SDHeaderLeft" position="894px 0px" size="226px 34px" textSize="11px" text="$l10n_dr_col_status" />
+                <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+            </Bitmap>
+            <GuiElement profile="SDList" position="40px -462px" size="1120px 294px">
+                <!-- READ ONLY. ignoreMouse makes SmoothListElement:mouseEvent a no-op outright (its whole
+                     body is behind `if self:getIsActive() and not self.ignoreMouse`), so a click cannot
+                     select a row, cannot move the highlight, cannot raise a callback and cannot steal
+                     focus from the list the buttons act on. It also kills WHEEL SCROLLING, which is why
+                     this list has a slider and the one above it does not.
+                     Cells use SDInfoCell (selected / focused colour == normal), so even a keyboard-driven
+                     selection cannot repaint a row. -->
+                <SmoothList profile="SDList" id="sourceList" position="0px 0px" size="1120px 294px"
+                            ignoreMouse="true">
+                    <ListItem profile="SDListItemStatsInfo" name="rowTemplate" size="1120px 42px">
+                        <Bitmap position="8px 5px" size="44px 32px" name="assetIcon" imageColor="1 1 1 1" />
+                        <Text profile="SDInfoCell" position="60px 0px"  size="500px 42px" textSize="12px" name="srcName" />
+                        <Text profile="SDInfoCell" position="568px 0px" size="110px 42px" textSize="12px" name="srcRange" />
+                        <Text profile="SDInfoCell" position="686px 0px" size="200px 42px" textSize="12px" name="srcHolds" />
+                        <Text profile="SDInfoCell" position="894px 0px" size="226px 42px" textSize="12px" name="srcStatus" />
+                    </ListItem>
+                </SmoothList>
+                <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 294px" with="anchorTopRight">
+                    <Slider profile="fs25_listSlider" size="6px 286px" dataElementId="sourceList" id="sourceSlider" />
+                </ThreePartBitmap>
+            </GuiElement>
+            <!-- Shown instead of the rows when nothing on the farm could supply the selected product.
+                 An empty table with a header above it reads as a bug; a sentence reads as an answer.
+                 WRAPPED IN AN SDList BITMAP, positioned in the content container with the Text placed
+                 INSIDE it. 5.70 records a label put straight into fs25_dialogContentContainer failing to
+                 render at all, because a cell profile brings its own anchoring and an absolute position
+                 there means nothing to it. This is the pattern that file settled on, and the one the
+                 four header rows above already use. -->
+            <Bitmap profile="SDList" position="40px -466px" size="1120px 42px">
+                <Text profile="SDRowCell" id="noSourcesText" position="60px 0px" size="1000px 42px"
+                      textSize="12px" visible="false" />
+            </Bitmap>
         </GuiElement>
 
         <!-- action buttons -->

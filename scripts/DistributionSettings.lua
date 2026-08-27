@@ -106,11 +106,18 @@ DistributionSettings.SETTINGS = {
         values  = { true, false },
         strings = { "Enabled", "Disabled" },
     },
+    -- MONEY-VALUED. `money = true` tells DistributionSettingsPage to build each label by formatting
+    -- values[i] through the GAME's own currency formatter and substituting it into the l10n string --
+    -- so a euro player reads "10 EUR /h", not "$10 /h". The symbol must never be baked into a
+    -- translation: FS25 picks the currency from the SAVEGAME, not the language, so hardcoding it in
+    -- translation_en.xml would be wrong for an English player using euros. Reported 2026-08-27.
+    -- `strings` stays the English fallback for when l10n or g_i18n is unavailable.
     distCostBase = {
         order   = 6,
-        default = 3,                                            -- $10/h
+        default = 3,                                            -- 10/h
         values  = { 0, 5, 10, 20, 50 },
-        strings = { "$0 /h", "$5 /h", "$10 /h", "$20 /h", "$50 /h" },
+        money   = true,
+        strings = { "%s /h", "%s /h", "%s /h", "%s /h", "%s /h" },
     },
     distCostThreshold = {
         order   = 7,
@@ -1030,6 +1037,12 @@ function DistributionStateRequestEvent:run(connection)
     end
     if DistributionStatsEvent ~= nil and DistributionStatsEvent.broadcast ~= nil then
         DistributionStatsEvent.broadcast(connection)                            -- monthly /mo stats for the joining client
+    end
+    -- ...and the last pass's LINK log, so a joining client's statuses and the Advanced Inputs source
+    -- table are right immediately instead of after a full in-game hour. Must follow the stats push:
+    -- that is what sets the client flag the feed readers test.
+    if DistributionFeedEvent ~= nil and DistributionFeedEvent.broadcast ~= nil then
+        DistributionFeedEvent.broadcast(connection)
     end
 end
 function DistributionStateRequestEvent.sendToServer()
