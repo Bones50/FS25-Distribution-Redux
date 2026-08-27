@@ -31,7 +31,8 @@
 
         <!-- ================= keybindings (shown in Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="配置分发（最近资产）" />
-        <text name="input_DISTREDUX_OPEN_MANAGER" text="打开 Distribution Redux 菜单" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="打开分发 Redux 菜单" />
+        <text name="dr_input_openManager" text="分发菜单" />
 
         <!-- ================= TEMPORARY: money-type probe =================
              Titles handed to MoneyType.register. If the base finances screen renders a
@@ -60,13 +61,13 @@
         <text name="dr_col_productions"   text="生产" />
 
         <!-- ================= selector labels above the tables ================= -->
-        <text name="dr_lbl_timescale"        text="统计周期" />
+        <text name="dr_lbl_timescale"        text="时间刻度" />
         <text name="dr_lbl_filterBy"         text="筛选依据" />
         <text name="dr_lbl_show"             text="显示" />
         <text name="dr_lbl_grouping"         text="分组" />
-		<text name="dr_lbl_modeKeys" text="X/Z：循环选择输出模式" />
-        <text name="dr_lbl_sellingOff"       text="出售已关闭 - 所有市场都会在产品到达时立即出售，无论这些行如何设置" />
-        <text name="dr_lbl_overviewPointer"  text="完整明细 + 供应链：总览页签" />
+        <text name="dr_lbl_modeKeys" text="X / Z：切换所选输出模式" />
+        <text name="dr_lbl_sellingOff"       text="出售已关闭 - 无论这些行如何设置，每个市场都会在到货时售出" />
+        <text name="dr_lbl_overviewPointer"  text="完整明细与供应链：总览页" />
 
         <!-- ================= Overview: FLOW view column headers =================
              Budget roughly 10 to 16 characters each; these sit at 11px in narrow
@@ -74,14 +75,15 @@
         <text name="dr_col_building"      text="建筑" />
         <text name="dr_col_product"       text="产品" />
         <text name="dr_col_received"      text="已接收" />
-        <text name="dr_col_loaded"        text="已装入" />
-        <text name="dr_col_consumedExp"   text="消耗(预期)" />
-        <text name="dr_col_unloaded"      text="已卸出" />
-        <text name="dr_col_heldMax"       text="持有(最大)" />
+        <text name="dr_col_loaded"        text="已装载" />
+        <text name="dr_col_consumedExp"   text="已消耗（预期）" />
+        <text name="dr_col_unloaded"      text="已卸载" />
+        <text name="dr_col_heldMax"       text="持有（最大）" />
         <text name="dr_col_freeStorage"   text="可用容量" />
-        <text name="dr_col_producedExp"   text="产出(预期)" />
+        <text name="dr_col_producedExp"   text="已生产（预期）" />
         <text name="dr_col_distributed"   text="已分发" />
-        <text name="dr_col_storedMoved"   text="入库/移动" />
+        <text name="dr_col_sold"          text="已出售" />
+        <text name="dr_col_storedMoved"   text="入库/移库" />
         <text name="dr_col_sold"          text="已出售" />
         <text name="dr_col_distrCost"     text="分发成本" />
 
@@ -89,7 +91,7 @@
              Same budget as above. DEST means "active of total destinations" and is
              the narrowest cell on the page, about 6 characters. Abbreviate freely. -->
         <text name="dr_col_storageType"   text="仓储类型" />
-        <text name="dr_col_maxInPctL"     text="最大输入(%-升)" />
+        <text name="dr_col_maxInPctL"     text="最大输入（% - 升）" />
         <text name="dr_col_heldOfMax"     text="持有/最大" />
         <text name="dr_col_inStatus"      text="输入状态" />
         <text name="dr_col_lines"         text="产线" />
@@ -104,12 +106,22 @@
         <text name="dr_col_incomingProducts"  text="输入产品" />
         <text name="dr_col_incomingMaterials" text="输入物料" />
         <text name="dr_col_outgoingProducts"  text="输出产品" />
-        <text name="dr_col_heldSlashMax"      text="持有/最大" />
         <text name="dr_col_distribution"      text="分发" />
         <text name="dr_col_consumed"          text="已消耗" />
         <text name="dr_col_produced"          text="已生产" />
         <text name="dr_col_outputMode"        text="输出模式" />
         <text name="dr_col_status"            text="状态" />
+        <text name="dr_col_products"          text="产品" />
+        <text name="dr_pct_lessThanOne"       text="&lt;1%" />
+        <text name="dr_btn_advIn"             text="高级输入" />
+        <text name="dr_btn_advOut"            text="高级输出" />
+        <text name="dr_col_statusInOut"       text="状态（输入 / 输出）" />
+        <text name="dr_status_short_recv"     text="已收" />
+        <text name="dr_status_short_send"     text="已发" />
+        <text name="dr_status_short_sold"     text="已售" />
+        <text name="dr_status_short_idle"     text="空闲" />
+        <text name="dr_status_short_blocked"  text="已阻" />
+        <text name="dr_status_short_none"     text="-" />
         <text name="dr_col_productionLines"   text="生产线" />
         <!-- "/mo" = per month. The figure is the line's monthly target. -->
         <text name="dr_col_targetMo"          text="目标/月" />
@@ -138,6 +150,7 @@
         <text name="dr_btn_blockAll"      text="全部阻止" />
         <text name="dr_btn_reserveDown"   text="- 预留" />
         <text name="dr_btn_reserveUp"     text="+ 预留" />
+        <text name="dr_lbl_reserveLitres" text="预留：" />
         <text name="dr_btn_maxDown"       text="- 最大" />
         <text name="dr_btn_maxUp"         text="+ 最大" />
         <text name="dr_btn_targetDown"    text="- 目标" />
@@ -150,7 +163,6 @@
         <!-- ================= FOOTER BUTTONS (set from Lua) =================
              Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
              FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
-        <text name="dr_btn_cycleOutput"      text="切换输出" />
         <text name="dr_btn_advanced"         text="高级" />
         <text name="dr_btn_sellTiming"       text="出售时机" />
         <text name="dr_btn_sellTimingOff"    text="出售时机：出售已关闭" />
@@ -170,8 +182,8 @@
              out; the Overview's column is narrower and just says "Hour". -->
         <text name="dr_period_hourLong" text="周期（小时）" />
         <text name="dr_period_hour"     text="小时" />
-        <text name="dr_period_month"    text="月份" />
-        <text name="dr_period_year"     text="年份" />
+        <text name="dr_period_month"    text="月" />
+        <text name="dr_period_year"     text="年" />
 
         <!-- ================= OVERVIEW SELECTORS =================
              "End product (full chain)" shows every building feeding one finished product, back
@@ -180,9 +192,9 @@
         <text name="dr_filter_nothing"    text="无（显示全部）" />
         <text name="dr_filter_building"   text="建筑" />
         <text name="dr_filter_product"    text="产品" />
-        <text name="dr_filter_endProduct" text="最终产品（全链路）" />
-        <text name="dr_group_off"         text="关闭（每个建筑一行）" />
-        <text name="dr_group_on"          text="开启（同类建筑合并）" />
+        <text name="dr_filter_endProduct" text="最终产品（完整产业链）" />
+        <text name="dr_group_off"         text="关闭（每栋建筑一行）" />
+        <text name="dr_group_on"          text="开启（合并同类建筑）" />
 
         <!-- ================= OVERVIEW SHORT STATUS =================
              The same three states as dr_status_* above, but the Overview's column is 140px and
@@ -198,13 +210,18 @@
              deliberately use identical wording. -->
         <text name="dr_type_pooled"     text="共享" />
         <text name="dr_type_individual" text="独立" />
+        <text name="dr_type_pooledShort"     text="共享" />
+        <text name="dr_type_poolN"          text="共享 %s" />
+        <text name="dr_type_poolNShort"     text="共%s" />
+        <text name="dr_type_individualShort" text="独立" />
+        <text name="dr_type_linkedShort"     text="关联" />
         <text name="dr_type_internal"   text="内部" />
         <text name="dr_type_blocked"    text="已阻止" />
 
         <!-- ================= OUTPUT PRIORITY =================
              "Distance" is the default: nearest consumer first. "Ranked (n)" means the player
              has ordered n destinations by hand in Advanced Outputs. -->
-        <text name="dr_priority_ranked"   text="排序(%d)" />
+        <text name="dr_priority_ranked"   text="已排序（%d）" />
         <text name="dr_priority_distance" text="距离" />
 
         <!-- ================= BUILDING KIND =================
@@ -212,7 +229,7 @@
         <text name="dr_class_silo"    text="筒仓" />
         <text name="dr_class_barn"    text="畜棚" />
         <text name="dr_class_storage" text="仓储" />
-        <text name="dr_class_pit"     text="料坑" />
+        <text name="dr_class_pit"     text="坑储" />
         <text name="dr_class_market"  text="市场" />
 
         <!-- ================= NOTICES AND SMALL LABELS =================
@@ -220,35 +237,36 @@
              has hidden products the building is not holding. SEPARATE singular and plural keys:
              English used to make the singular by deleting the final "s", which does not survive
              translation. If your language needs no distinction, give both the same text. -->
-        <text name="dr_notice_blockedInput"  text="+%d项输入已阻止（见高级输入）" />
-        <text name="dr_notice_blockedInputs" text="+%d项输入已阻止（见高级输入）" />
+        <text name="dr_notice_blockedInput"  text="+%d 项输入已阻止（见高级输入）" />
+        <text name="dr_notice_blockedInputs" text="+%d 项输入已阻止（见高级输入）" />
         <text name="dr_label_off"      text="关闭" />
         <text name="dr_label_blocked"  text="已阻止" />
         <text name="dr_label_building" text="建筑" />
         <!-- Fallback name for a production line the game does not name itself; %d is its number. -->
-        <text name="dr_label_line"     text="生产线 %d" />
+        <text name="dr_label_line"     text="产线 %d" />
 
         <!-- ================= ADVANCED OUTPUTS DIALOG =================
              %s in the title is the building name. "Active - Invalid" marks a destination that
              is switched on but would send the product in a circle back to where it started. -->
         <text name="dr_adv_title"         text="高级 - %s" />
         <text name="dr_adv_activeInvalid" text="启用 - 无效" />
-        <text name="dr_adv_reserve"       text="     预留：" />
         <text name="dr_adv_noCapacity"    text="没有可用于预留的容量" />
-        <text name="dr_adv_loopOne"       text="无法启用 %s - 这会让产品循环回到这里。" />
-        <text name="dr_adv_loopMany"      text="%d 个目的地保持阻止 - 它们会让产品循环回到这里。" />
+        <text name="dr_adv_reserveBad"     text="预留：请输入升数" />
+        <text name="dr_adv_reserveClamped" text="预留上限为容量：%s" />
+        <text name="dr_adv_loopOne"       text="无法启用 %s - 这会使产品循环回到此处。" />
+        <text name="dr_adv_loopMany"      text="%d 个目标仍处于阻止状态 - 它们会使产品循环回到此处。" />
 
         <!-- ================= ADVANCED INPUTS DIALOG =================
              Subtitle, one of three depending on the building's storage. %s is the pool's total
              capacity; the %d are how many products share it and how many have a max set. -->
         <text name="dr_inp_title"        text="高级输入 - %s" />
-        <text name="dr_inp_pooledCapped" text="共享仓储：%s 由 %d 种产品共用，%d 种已设上限。未设上限的产品可使用整个共享容量。" />
-        <text name="dr_inp_pooled"       text="共享仓储：%s 由 %d 种产品共用。每种产品都可使用全部容量 - 设置最大输入可为其他产品预留空间。" />
-        <text name="dr_inp_individual"   text="为每种产品设置最大值，或将其阻止。此建筑拥有按产品独立的仓储。" />
+        <text name="dr_inp_pooledCapped" text="共享仓储：%s 由 %d 种产品共用，%d 种已设上限。 未设上限的产品可使用整个共享容量。" />
+        <text name="dr_inp_pooled"       text="共享仓储：%s 由 %d 种产品共用。 每种产品都可使用全部容量 - 设置最大输入可为其他产品预留空间。" />
+        <text name="dr_inp_individual"   text="为每种产品设置最大值，或将其阻止。 此建筑拥有按产品独立的仓储。" />
 
         <!-- ================= SPAWN PALLETS DIALOG =================
              Quantity word beside the stepper, and the summary line above it. -->
-        <text name="dr_spawn_info"    text="持有：%s    托盘：%s    最大：%d    将生成：%s" />
+        <text name="dr_spawn_info"    text="持有：%s    托盘：%s    最大：%d    生成中：%s" />
         <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
              name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
         <text name="dr_spawn_palletType" text="托盘" />
@@ -273,13 +291,13 @@
         <text name="dr_mode_2"   text="分发" />
         <text name="dr_mode_3"   text="分发 + 出售" />
         <text name="dr_mode_4"   text="出售" />
-        <text name="dr_mode_5"   text="分发 + 入库" />
-        <text name="dr_mode_6"   text="入库" />
-        <text name="dr_mode_7"   text="供应市场" />
-        <text name="dr_mode_8"   text="分发 + 供应市场" />
+        <text name="dr_mode_5"   text="分发 + 存储" />
+        <text name="dr_mode_6"   text="存储" />
+        <text name="dr_mode_7"   text="市场供应" />
+        <text name="dr_mode_8"   text="分发 + 市场供应" />
         <text name="dr_mode_9"   text="内部保留" />
-        <text name="dr_mode_10"  text="移动至" />
-        <text name="dr_mode_11"  text="分发 + 移动至" />
+        <text name="dr_mode_10"  text="移至" />
+        <text name="dr_mode_11"  text="分发 + 移至" />
         <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
              the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
              and spawns nothing. The distinction is the whole point, so keep them distinct. -->
@@ -328,8 +346,8 @@
         <!-- ================= MONEY NOTIFICATIONS =================
              The on-screen finance popup when DR sells or charges for haulage. Each is a label
              followed by a money figure, so keep any trailing space and punctuation. -->
-        <text name="dr_money_biogas"    text="沼气收入：" />
-        <text name="dr_money_sales"     text="产品销售：" />
+        <text name="dr_money_biogas"    text="沼气收入： " />
+        <text name="dr_money_sales"     text="产品销售： " />
         <text name="dr_money_distCost"  text="分发成本：-" />
 
         <!-- ================= MISC ENGINE LABELS ================= -->
@@ -344,47 +362,47 @@
              never reorder them, and never drop one. -->
 
         <text name="dr_set_scope"     text="范围" />
-        <text name="dr_set_scope_tt"  text="全农场：每个自有资产都可覆盖整个农场。邻近：资产只会连接下方邻近半径内的来源。" />
-        <text name="dr_set_scope_v1"  text="全农场范围" />
-        <text name="dr_set_scope_v2"  text="邻近范围（半径）" />
+        <text name="dr_set_scope_tt"  text="范围：每个拥有的资产覆盖整个农场。 邻近：资产仅能到达下方邻近半径内的来源。" />
+        <text name="dr_set_scope_v1"  text="范围（全农场）" />
+        <text name="dr_set_scope_v2"  text="邻近（半径）" />
 
-        <text name="dr_set_includeHusbandry"     text="畜牧设施" />
-        <text name="dr_set_includeHusbandry_tt"  text="将畜舍、 鸡舍、 蜂箱以及固态粪肥堆和液态粪肥池纳入分发网络。 关闭后会完全移除： 既不会自动喂养， 也不会分发或出售其产物（牛奶/固态粪肥/液态粪肥/鸡蛋/羊毛/蜂蜜）。" />
+        <text name="dr_set_includeHusbandry"     text="畜牧" />
+        <text name="dr_set_includeHusbandry_tt"  text="将畜牧（畜棚、鸡舍、蜂箱，以及粪肥与粪浆坑）纳入分发网络。 关闭则将其完全移除：它们既不会被喂食，其产出（牛奶 / 粪肥 / 粪浆 / 鸡蛋 / 羊毛 / 蜂蜜）也不会被分发或出售。" />
         <text name="dr_set_includeHusbandry_v1"  text="开启" />
         <text name="dr_set_includeHusbandry_v2"  text="关闭" />
 
-        <text name="dr_set_includeSilosSheds"     text="筒仓与托盘仓库" />
-        <text name="dr_set_includeSilosSheds_tt"  text="将作物/物料筒仓和托盘仓库纳入分发网络。 关闭后， 筒仓不再为生产供料， 托盘仓库也不再接收或释放托盘。 （固态粪肥和液态粪肥池跟随畜牧设施设置。）" />
+        <text name="dr_set_includeSilosSheds"     text="筒仓与托盘仓储" />
+        <text name="dr_set_includeSilosSheds_tt"  text="将农作物 / 物料筒仓与托盘仓储棚纳入分发网络。 关闭则移除它们：筒仓不再为生产供料，托盘仓储棚既不接收也不释放托盘。 （粪肥与粪浆坑遵循畜牧设置。）" />
         <text name="dr_set_includeSilosSheds_v1"  text="开启" />
         <text name="dr_set_includeSilosSheds_v2"  text="关闭" />
 
-        <text name="dr_set_includeMarkets"     text="市场与售货亭" />
-        <text name="dr_set_includeMarkets_tt"  text="将市场和售货亭纳入分发网络。关闭后，自有产品不再路由到这些地点出售，市场页签也会隐藏。" />
+        <text name="dr_set_includeMarkets"     text="市场与小卖部" />
+        <text name="dr_set_includeMarkets_tt"  text="将市场与小卖部纳入分发网络。 关闭则移除它们：农场自有产品不再被送往此处出售，且市场页会被隐藏。" />
         <text name="dr_set_includeMarkets_v1"  text="开启" />
         <text name="dr_set_includeMarkets_v2"  text="关闭" />
 
         <text name="dr_set_includeMapStorage"     text="公共地图仓储" />
-        <text name="dr_set_includeMapStorage_tt"  text="纳入你不拥有但仍可存放货物的地图仓储建筑， 例如铁路粮食仓。 默认关闭： 这些建筑通常会按持有的每升货物收取租金， 因此只有你明确开启时才加入网络。 开启后， 它们会作为仓储建筑出现， 所有产品默认设为保留， 直到你进行设置前不会移动任何物料。" />
+        <text name="dr_set_includeMapStorage_tt"  text="纳入你并不拥有但仍可存放货物的地图仓储建筑，例如铁路粮仓。 默认关闭：这些建筑通常会对持有的每升货物收取租金，因此仅在你需要时才加入网络。 开启后，它们会作为仓储建筑出现，所有产品均设为保留，在你设置之前不会移动任何货物。" />
         <text name="dr_set_includeMapStorage_v1"  text="开启" />
         <text name="dr_set_includeMapStorage_v2"  text="关闭" />
 
         <text name="dr_set_advancedRouting"     text="高级路由" />
-        <text name="dr_set_advancedRouting_tt"  text="高级输出（来源端阻止/优先级/移动至） 和高级输入（输入阻止/容量上限/补货目标） 的总开关。 关闭后会隐藏这些按钮， 并恢复默认的按距离就近优先分发。 警告： 关闭会清除所有现有高级设置（所有阻止、 优先级、 移动至、 输入上限和补货目标）， 它们会重置为默认， 重新开启后不会恢复， 需要重新设置。" />
+        <text name="dr_set_advancedRouting_tt"  text="高级输出（来源端阻止 / 优先级 / 移至）与高级输入（输入阻止 / 上限 / 补货目标）的总开关。 关闭会隐藏这些按钮并恢复默认的最近优先、基于距离的分发。 警告：关闭此选项会清除所有现有高级设置（每个阻止、优先级、移至、输入上限与补货目标）——它们会重置为默认值，且重新开启后不会恢复； 你将不得不从头重新设置。" />
         <text name="dr_set_advancedRouting_v1"  text="开启" />
         <text name="dr_set_advancedRouting_v2"  text="关闭" />
-		
-		<text name="dr_set_defaultOutputMode"     text="新建筑输出模式" />
-        <text name="dr_set_defaultOutputMode_tt"  text="放置建筑物时给出的输出模式。分发是正常行为。 保留意味着一个新放置的建筑会保留它所做的一切，直到你将其设置为其他状态，这样就不会有任何东西离开你尚未配置的建筑。 在制造托盘的建筑上，当托盘生成设置为从不时，这显示为“保留托盘”或“保留内部”。 这只会影响从现在开始放置的建筑物：现有建筑物永远不会改变，更改此设置不会触及任何已建的建筑物。" />
+
+        <text name="dr_set_defaultOutputMode"     text="新建筑输出模式" />
+        <text name="dr_set_defaultOutputMode_tt"  text="放置建筑时赋予它的输出模式。 分发是常规行为。 保留意味着新放置的建筑会保留其生产的全部产物，直到你另行设置，因此尚未配置的建筑不会流出任何东西。 对于生产托盘的建筑，这会显示为“保留托盘”； 当托盘生成设为永不时，显示为“内部保留”。 此设置仅影响今后放置的建筑：现有建筑绝不会改变，更改此设置也不会触动任何已建造的建筑。" />
         <text name="dr_set_defaultOutputMode_v1"  text="分发" />
         <text name="dr_set_defaultOutputMode_v2"  text="保留" />
 
         <text name="dr_set_defaultInputMode"     text="新建筑输入模式" />
-        <text name="dr_set_defaultInputMode_tt"  text="新建建筑是否接受交付。接受一切是正常的行为。 阻止所有对新建筑的每个输入，这样在您允许产品从高级输入进入之前，任何东西都不会传递给它。 注意：只有在“高级路由”处于打开状态时，“阻止所有”才有效，因为输入阻止是高级路由的一部分，只要您关闭它，它就会被清除。 这只会影响从现在开始放置的建筑物：现有建筑物永远不会改变。" />
-        <text name="dr_set_defaultInputMode_v1"  text="接受一切" />
-        <text name="dr_set_defaultInputMode_v2"  text="阻止一切" />
+        <text name="dr_set_defaultInputMode_tt"  text="新放置的建筑是否接收交付。 全部接收是常规行为。 全部阻止会阻止新建筑的所有输入，因此在你从高级输入中放行产品之前，不会有任何东西交付给它。 注意：全部阻止仅在高级路由开启时生效，因为输入阻止是高级路由的一部分，并在你关闭它时被清除。 此设置仅影响今后放置的建筑：现有建筑绝不会改变。" />
+        <text name="dr_set_defaultInputMode_v1"  text="全部接收" />
+        <text name="dr_set_defaultInputMode_v2"  text="全部阻止" />
 
         <text name="dr_set_radius"     text="邻近半径" />
-        <text name="dr_set_radius_tt"  text="邻近模式下，消耗方寻找来源的距离。" />
+        <text name="dr_set_radius_tt"  text="在邻近模式下，消费者能触及来源的距离。" />
         <text name="dr_set_radius_v1"  text="25 米" />
         <text name="dr_set_radius_v2"  text="50 米" />
         <text name="dr_set_radius_v3"  text="75 米" />
@@ -393,8 +411,8 @@
         <text name="dr_set_radius_v6"  text="200 米" />
         <text name="dr_set_radius_v7"  text="400 米" />
 
-        <text name="dr_set_bufferHours"     text="消耗方缓冲" />
-        <text name="dr_set_bufferHours_tt"  text="每个周期为每个消耗方补充的原料小时数。" />
+        <text name="dr_set_bufferHours"     text="消费者缓冲" />
+        <text name="dr_set_bufferHours_tt"  text="每个周期为每个消费者补充的原料小时数。" />
         <text name="dr_set_bufferHours_v1"  text="1 小时" />
         <text name="dr_set_bufferHours_v2"  text="2 小时" />
         <text name="dr_set_bufferHours_v3"  text="4 小时" />
@@ -403,24 +421,24 @@
         <text name="dr_set_bufferHours_v6"  text="24 小时" />
 
         <text name="dr_set_sellEnabled"     text="出售" />
-        <text name="dr_set_sellEnabled_tt"  text="所有自动出售（出售/分发+出售模式）的全局开关。" />
-        <text name="dr_set_sellEnabled_v1"  text="启用" />
-        <text name="dr_set_sellEnabled_v2"  text="禁用" />
+        <text name="dr_set_sellEnabled_tt"  text="所有自动出售（出售 / 分发+出售 模式）的总开关。" />
+        <text name="dr_set_sellEnabled_v1"  text="开启" />
+        <text name="dr_set_sellEnabled_v2"  text="关闭" />
 
         <text name="dr_set_waterSupplyEnabled"     text="自动供水" />
-        <text name="dr_set_waterSupplyEnabled_tt"  text="自动向需要水的生产设施和动物牧场供水（按到最近水源的距离计费）。" />
-        <text name="dr_set_waterSupplyEnabled_v1"  text="启用" />
-        <text name="dr_set_waterSupplyEnabled_v2"  text="禁用" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="自动向需水的生产建筑与牧场供水（按到最近水源的距离计费）。" />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="开启" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="关闭" />
 
         <text name="dr_set_distCostEnabled"     text="分发成本" />
-        <text name="dr_set_distCostEnabled_tt"  text="为每条活动分发线路按小时收取运输成本（随运输距离增加）。" />
-        <text name="dr_set_distCostEnabled_v1"  text="启用" />
-        <text name="dr_set_distCostEnabled_v2"  text="禁用" />
+        <text name="dr_set_distCostEnabled_tt"  text="为每个活动分发按小时收取运输成本（随运输距离增加而提高）。" />
+        <text name="dr_set_distCostEnabled_v1"  text="开启" />
+        <text name="dr_set_distCostEnabled_v2"  text="关闭" />
 
         <!-- The $ figures below are game currency per hour. The player's own currency
              symbol is not substituted here, so translate the "/h" part only. -->
         <text name="dr_set_distCostBase"     text="成本费率" />
-        <text name="dr_set_distCostBase_tt"  text="短途运输（不超过下方成本距离）的每小时基础运输成本。" />
+        <text name="dr_set_distCostBase_tt"  text="短途运输（在下方成本距离以内或恰好等于）的每小时基础运输成本。" />
         <text name="dr_set_distCostBase_v1"  text="$0 /小时" />
         <text name="dr_set_distCostBase_v2"  text="$5 /小时" />
         <text name="dr_set_distCostBase_v3"  text="$10 /小时" />
@@ -428,7 +446,7 @@
         <text name="dr_set_distCostBase_v5"  text="$50 /小时" />
 
         <text name="dr_set_distCostThreshold"     text="成本距离" />
-        <text name="dr_set_distCostThreshold_tt"  text="不超过此距离的运输按固定基础费率计费；更远距离会线性增加。" />
+        <text name="dr_set_distCostThreshold_tt"  text="在此距离以内或更短运输按固定基础费率计费； 更长的运输按比例线性增加。" />
         <text name="dr_set_distCostThreshold_v1"  text="25 米" />
         <text name="dr_set_distCostThreshold_v2"  text="50 米" />
         <text name="dr_set_distCostThreshold_v3"  text="100 米" />
@@ -436,36 +454,36 @@
         <text name="dr_set_distCostThreshold_v5"  text="500 米" />
 
         <text name="dr_set_seasonalReserveEnabled"     text="季节性收获预留" />
-        <text name="dr_set_seasonalReserveEnabled_tt"  text="设置为分发+出售的作物会保留足够原料维持生产到下一次收获，仅出售盈余。" />
-        <text name="dr_set_seasonalReserveEnabled_v1"  text="启用" />
-        <text name="dr_set_seasonalReserveEnabled_v2"  text="禁用" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="设为分发+出售的作物会保留足够原料维持生产到下一次收获，仅出售盈余。" />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="开启" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="关闭" />
 
-        <text name="dr_set_seasonalFallbackMonths"     text="预留月份（学习前）" />
-        <text name="dr_set_seasonalFallbackMonths_tt"  text="模组观察到真实收获窗口之前，为作物保留的原料月份数。" />
+        <text name="dr_set_seasonalFallbackMonths"     text="预留月数（学习前）" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="在模组观察到作物真实收获窗口之前，为其保留的原料月数。" />
         <text name="dr_set_seasonalFallbackMonths_v1"  text="6 个月" />
         <text name="dr_set_seasonalFallbackMonths_v2"  text="12 个月" />
         <text name="dr_set_seasonalFallbackMonths_v3"  text="13 个月" />
         <text name="dr_set_seasonalFallbackMonths_v4"  text="18 个月" />
         <text name="dr_set_seasonalFallbackMonths_v5"  text="24 个月" />
 
-        <text name="dr_set_bestPriceEnabled"     text="最佳价格出售" />
-        <text name="dr_set_bestPriceEnabled_tt"  text="总开关：出售/分发+出售的盈余会保留到最佳月份再出售。关闭后全部立即出售。" />
-        <text name="dr_set_bestPriceEnabled_v1"  text="启用" />
-        <text name="dr_set_bestPriceEnabled_v2"  text="禁用" />
+        <text name="dr_set_bestPriceEnabled"     text="以最佳价格出售" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="总开关：将出售 / 分发+出售的盈余保留到其最佳月份再出售。 关闭：所有东西立即出售。" />
+        <text name="dr_set_bestPriceEnabled_v1"  text="开启" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="关闭" />
 
         <text name="dr_set_bestPriceDefault"     text="默认出售时机" />
-        <text name="dr_set_bestPriceDefault_tt"  text="所有出售/分发+出售输出以及市场产品的默认出售时机， 直到你为该建筑单独设置。 已配置过的市场会保留自己的设置。" />
-        <text name="dr_set_bestPriceDefault_v1"  text="按最佳价格出售" />
+        <text name="dr_set_bestPriceDefault_tt"  text="任何出售 / 分发+出售输出以及每个市场产品的默认值，直到你设置该建筑自身的开关。 已配置的市场会保留其设置。" />
+        <text name="dr_set_bestPriceDefault_v1"  text="以最佳价格出售" />
         <text name="dr_set_bestPriceDefault_v2"  text="立即出售" />
 
         <text name="dr_set_palletSpawnMode"     text="托盘生成" />
-        <text name="dr_set_palletSpawnMode_tt"  text="整托盘： 畜栏会在内部储存产品， 并像生产设施一样只释放完整托盘。 原版： 托盘立即出现并逐步填充。 永不： 不会自动生成托盘， 产品保留在内部， 但仍可从内部进行分发、 入库和出售。 你仍可通过“生成托盘”手动释放。 永不只适用于你的畜栏和生产设施； 蜂箱仍按正常方式生成（没有可用于出售的内部缓冲）， 商店购买的托盘也不受影响。" />
+        <text name="dr_set_palletSpawnMode_tt"  text="整托盘：畜栏在内部持有产品并释放完整托盘，与生产建筑相同。 原版：托盘立即出现并逐步填充。 永不：不会自行生成托盘，产品保留在内部，仍可从内部进行分发、存储和出售。 你随时可以用“生成托盘”手动释放一个。 永不仅适用于你的畜栏与生产建筑——蜂箱仍正常生成（它们没有可出售的内部缓冲），你购买托盘的商店不受影响。" />
         <text name="dr_set_palletSpawnMode_v1"  text="原版（逐步填充）" />
         <text name="dr_set_palletSpawnMode_v2"  text="仅整托盘" />
         <text name="dr_set_palletSpawnMode_v3"  text="永不生成托盘" />
-        <text name="dr_set_passThroughStores"     text="直通式仓储" />
-        <text name="dr_set_passThroughStores_tt"  text="某些模组会为仓储建筑附加虚拟生产线，让每条产线都把产品原样转换回自身。这些生产线没有实际作用，只是为了让游戏能够向该建筑配送。选择视为仓储后，Distribution Redux 会按实际情况将其识别为筒仓，不再向它请求农场中的每一升产品；如果它包含真正的生产线，这些生产线仍会显示在“生产”页签中。第三个选项还会在游戏中关闭这些虚拟产线，界面更整洁，但该设置会写入存档；移除本模组后，产线仍会保持关闭。" />
-        <text name="dr_set_passThroughStores_v1"  text="视为生产设施" />
+        <text name="dr_set_passThroughStores"     text="直通仓储" />
+        <text name="dr_set_passThroughStores_tt"  text="某些模组会添加一个带有伪生产的仓储建筑，其中每条产线把产品直接变回自身。 该生产毫无作用； 它只是为了能让游戏向该建筑交付。 视为仓储会让分发 Redux 将其视为真正的筒仓，从而不再索取农场中的每一升货物，其真实产线（若有）仍显示在生产页。 第三个选项还会在游戏内关闭这些伪产线——更整洁，但它会写入你的存档，且在你移除本模组后保持关闭。" />
+        <text name="dr_set_passThroughStores_v1"  text="视为生产" />
         <text name="dr_set_passThroughStores_v2"  text="视为仓储" />
         <text name="dr_set_passThroughStores_v3"  text="视为仓储 + 关闭产线" />
         <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
@@ -473,24 +491,24 @@
              appended to a building name in a fixed-width list. -->
         <text name="dr_role_nameFmt"      text="%s (%s)" />
         <text name="dr_role_silo"         text="筒仓" />
-        <text name="dr_role_shed"         text="托盘仓库" />
+        <text name="dr_role_shed"         text="托盘仓储" />
         <text name="dr_role_production"   text="生产" />
         <text name="dr_role_husbandry"    text="畜牧" />
-        <text name="dr_role_heap"         text="料坑" />
+        <text name="dr_role_heap"         text="坑储" />
         <text name="dr_role_market"       text="市场" />
         <text name="dr_type_linked"       text="已关联" />
 
         <text name="dr_set_menuRefresh"     text="菜单刷新率" />
-        <text name="dr_set_menuRefresh_tt"  text="打开菜单后重新读取农场数据的频率。 总览页会重新枚举每个建筑和产品， 因此大型农场使用较慢频率可保持菜单响应。 仅手动会完全停止后台刷新； 选择项目或在总览页按刷新时， 数值仍会更新。" />
+        <text name="dr_set_menuRefresh_tt"  text="打开的菜单重新读取农场的频率。 总览会重新枚举每个建筑和产品，因此在大型农场上较低的频率可保持菜单响应。 仅手动会完全停止后台刷新——但当你选择项目或在总览页按刷新时，数值仍会更新。" />
         <text name="dr_set_menuRefresh_v1"  text="实时（0.5秒）" />
         <text name="dr_set_menuRefresh_v2"  text="正常（2秒）" />
         <text name="dr_set_menuRefresh_v3"  text="宽松（10秒）" />
         <text name="dr_set_menuRefresh_v4"  text="仅手动" />
 
         <text name="dr_set_debugEnabled"     text="调试日志" />
-        <text name="dr_set_debugEnabled_tt"  text="将详细分发活动写入 log.txt（转移、出售、入库、补水和收费）。关闭可减少日志输出。" />
-        <text name="dr_set_debugEnabled_v1"  text="启用" />
-        <text name="dr_set_debugEnabled_v2"  text="禁用" />
+        <text name="dr_set_debugEnabled_tt"  text="将详细的分发活动写入 log.txt（移动、销售、存储、补水与计费）。 关闭可获得更简洁的日志。" />
+        <text name="dr_set_debugEnabled_v1"  text="开启" />
+        <text name="dr_set_debugEnabled_v2"  text="关闭" />
 
 
         <!-- ============ USER GUIDE (generated: gen_guide_l10n.py) ============
@@ -503,255 +521,255 @@
              back to English, so a topic can be translated a paragraph at a time.
              DO NOT reorder or renumber these; the numbers are positions in the guide. -->
 
-        <text name="dr_guide_gettingStarted_title" text="快速入门" />
-        <text name="dr_guide_gettingStarted_1" text="Distribution Redux 完全接管基础游戏的产品分发系统， 不需要额外放置专用设施。 它适用于所有默认建筑， 也适用于遵循 GIANTS 标准建筑结构的模组建筑。 这个模组较为复杂， 设置不当时容易无意中造成问题或堵塞。 使用前建议完整阅读帮助指南。" />
+        <text name="dr_guide_gettingStarted_title" text="入门指南" />
+        <text name="dr_guide_gettingStarted_1" text="分发 Redux 完全取代了原版游戏的分发系统。 无需额外的可放置物体。 它适用于所有默认建筑，以及遵循其建筑类型标准 GIANTS 架构的建筑模组。 这是一个非常复杂的模组，很容易在无意中造成问题或阻塞。 使用前请通读整个帮助指南。" />
         <text name="dr_guide_gettingStarted_2" text="## 访问界面" />
-        <text name="dr_guide_gettingStarted_3" text="反斜杠键： 打开 Distribution Redux 菜单， 一个全屏窗口， 包含每类建筑的页签， 以及本指南和设置。" />
-        <text name="dr_guide_gettingStarted_4" text="左方括号键： 步行时看向建筑的装载点或卸载点， 可直接打开该建筑的分发页面。 只有当你看向属于自己且已加入网络的建筑时， 提示才会出现。" />
-        <text name="dr_guide_gettingStarted_5" text="两个按键都可在“选项 - 控制”中重新绑定。" />
-        <text name="dr_guide_gettingStarted_6" text="## 基本思路" />
-        <text name="dr_guide_gettingStarted_7" text="打开菜单， 选择你关心的建筑， 然后把每种产品设置为保留、 分发、 出售等模式。 核心循环就是这样， 其余都是细节。" />
-        <text name="dr_guide_gettingStarted_8" text="## 与基础游戏分发的区别" />
-        <text name="dr_guide_gettingStarted_9" text="- 允许任何用于储存、生产、喂养或销售的建筑参与分发。" />
-        <text name="dr_guide_gettingStarted_10" text="- 只配送需求实际需要的数量，而不是尝试填满容量。" />
-        <text name="dr_guide_gettingStarted_11" text="- 根据距离收取分发费用。" />
-        <text name="dr_guide_gettingStarted_12" text="- 允许立即出售，或等待达到最佳价格再出售。" />
-        <text name="dr_guide_gettingStarted_13" text="- 可为季节性作物保留生产所需原料直到下一次收获，只出售不需要的部分。" />
-        <text name="dr_guide_gettingStarted_14" text="- 自动供水会从任意仓储或最近水源（例如湖泊）抽水满足需求。" />
-        <text name="dr_guide_gettingStarted_15" text="- 允许覆盖默认分发机制， 以便设置需求优先级、 阻止指定输入/输出、 设置输出预留和输入补货目标。" />
-        <text name="dr_guide_gettingStarted_16" text="## 每个周期执行什么" />
-        <text name="dr_guide_gettingStarted_17" text="- 分配： 从每个消耗方建立需求列表， 包括生产输入、 动物饲料、 喂料机器人料仓、 垫草和畜牧饮水。 随后按就近优先匹配来源， 并遵守按产品设置的阻止、 优先级和输入上限。" />
-        <text name="dr_guide_gettingStarted_18" text="- 移动余量： 将剩余物料存入可用仓储、 移动库存到可用市场， 再在仓储之间移动库存， 并遵守按产品设置的阻止、 优先级和输入上限。" />
-        <text name="dr_guide_gettingStarted_19" text="- 计费： 收取基于距离的运输费用， 以及原版每小时生产运行成本（由于 DR 抑制了基础每小时流程， 否则这些成本会丢失）。" />
-        <text name="dr_guide_gettingStarted_20" text="- 出售/供应市场： 出售盈余， 从市场缓冲出售， 再出售直接输出（例如电力、 甲烷）， 同时遵守季节性收获规则以及立即出售/最佳价格出售规则。" />
-        <text name="dr_guide_gettingStarted_21" text="- 记账：记录生产和畜牧吞吐量，计算手动装载/卸载差值，并显示资金汇总。" />
+        <text name="dr_guide_gettingStarted_3" text="反斜杠键：打开分发 Redux 菜单——一个全屏窗口，包含每种建筑的标签页，以及本指南与设置。" />
+        <text name="dr_guide_gettingStarted_4" text="左方括号键：徒步时，看向建筑的装载或卸载点，即可直接打开该建筑页面的菜单。 该提示仅在你看向属于网络的自有建筑时出现。" />
+        <text name="dr_guide_gettingStarted_5" text="这两个按键都可以在选项 - 控制中重新绑定。" />
+        <text name="dr_guide_gettingStarted_6" text="## 核心思路" />
+        <text name="dr_guide_gettingStarted_7" text="打开菜单，选择你关心的建筑，将每种产品设为保留、分发、出售等。 这就是整个循环——其余都是细节。" />
+        <text name="dr_guide_gettingStarted_8" text="## 与原版游戏的不同之处" />
+        <text name="dr_guide_gettingStarted_9" text="- 允许任何存储、生产、喂养或出售的建筑参与分发。" />
+        <text name="dr_guide_gettingStarted_10" text="- 只交付需求所需的数量，而不是试图填满到容量" />
+        <text name="dr_guide_gettingStarted_11" text="- 根据距离收取分发费用" />
+        <text name="dr_guide_gettingStarted_12" text="- 允许你立即出售或等待达到最佳价格" />
+        <text name="dr_guide_gettingStarted_13" text="- 允许为季节性作物保留季节性储备，以确保生产能够持续，仅出售收获中不需要的部分" />
+        <text name="dr_guide_gettingStarted_14" text="- 自动供水会从任何仓储或最近的水源（例如湖泊）抽取水来满足需求" />
+        <text name="dr_guide_gettingStarted_15" text="- 允许你覆盖默认分发机制，以优先满足需求、阻止特定输入与输出、设置输出预留，以及设置输入需求目标" />
+        <text name="dr_guide_gettingStarted_16" text="## 每个周期的工作" />
+        <text name="dr_guide_gettingStarted_17" text="- 分配 - 从每个消费者构建需求列表：生产输入、动物饲料、喂养机器人料槽、秸秆、畜牧用水。 然后就近将来源匹配到需求，并遵循按产品的阻止、优先级与输入上限。" />
+        <text name="dr_guide_gettingStarted_18" text="- 转移剩余 - 将剩余存入可用仓储建筑，将库存移至可用市场，然后在仓储之间转移库存，并遵循按产品的阻止、优先级与输入上限。" />
+        <text name="dr_guide_gettingStarted_19" text="- 计费 - 基于距离的运输账单，加上原版每小时生产运行成本（否则会丢失，因为分发 Redux 抑制了原版每小时的传递）。" />
+        <text name="dr_guide_gettingStarted_20" text="- 出售 / 市场供应 - 出售盈余，清空市场缓冲后出售，然后出售直接产出（例如电力、甲烷），并遵循任何季节性收获，以及立即出售与最佳价格出售规则。" />
+        <text name="dr_guide_gettingStarted_21" text="- 记账 - 记录生产与畜牧吞吐量，计算手动装载/卸载差值，生成资金汇总。" />
 
         <text name="dr_guide_theMenu_title" text="菜单" />
-        <text name="dr_guide_theMenu_1" text="反斜杠键会打开整合菜单。左侧是各个页签。" />
-        <text name="dr_guide_theMenu_2" text="## 页签" />
-        <text name="dr_guide_theMenu_3" text="- 生产：工厂和生产点。" />
-        <text name="dr_guide_theMenu_4" text="- 筒仓：散装筒仓、托盘/草捆仓库，以及固态粪肥堆和液态粪肥池。" />
-        <text name="dr_guide_theMenu_5" text="- 畜牧：畜棚、鸡舍、圈舍和蜂箱。" />
-        <text name="dr_guide_theMenu_6" text="- 市场：你放置在地图上的售货亭和市场。" />
-        <text name="dr_guide_theMenu_7" text="- 总览：在一张表中显示每个建筑和每种产品的详细数据。" />
-        <text name="dr_guide_theMenu_8" text="- 用户指南：本指南。" />
-        <text name="dr_guide_theMenu_9" text="- 设置：全局选项。" />
-        <text name="dr_guide_theMenu_10" text="每个建筑页签都是双栏页面： 左侧列出你的建筑， 右侧显示所选建筑的输入产品、 生产线和输出产品。 具体显示哪几个列表取决于该建筑的功能。" />
-        <text name="dr_guide_theMenu_11" text="## 统计周期" />
-        <text name="dr_guide_theMenu_12" text="每个建筑页签和总览页签顶部都有统计周期选择器， 可选择小时、 月份和年份。 它会重新定义该页面流量数据的统计窗口， 包括接收、 消耗、 生产、 分发和出售。" />
-        <text name="dr_guide_theMenu_13" text="Distribution Redux 的“月份”是 24 次小时周期， 因此月份大致表示最近一个游戏日， 不受你设置的每期真实天数影响。 持有量不会按周期重算： 它是库存而不是流量， 所以始终显示建筑当前实际库存。" />
-        <text name="dr_guide_theMenu_14" text="年份数据会随时间累积。 此功能出现前没有年度记录， 因此旧存档的年份列会从空白开始， 并在每个游戏月份完成后逐步填充。" />
-        <text name="dr_guide_theMenu_15" text="## 隐藏页签" />
-        <text name="dr_guide_theMenu_16" text="筒仓、 畜牧和市场页签只会在设置中开启对应分组时显示。 关闭一个分组后， 其建筑会完全离开分发网络， 对应页签也会消失。 重新开启该分组后， 两者都会恢复。" />
+        <text name="dr_guide_theMenu_1" text="反斜杠键打开整合菜单。 左侧是各个标签页。" />
+        <text name="dr_guide_theMenu_2" text="## 标签页" />
+        <text name="dr_guide_theMenu_3" text="- 生产 - 工厂与生产点。" />
+        <text name="dr_guide_theMenu_4" text="- 筒仓 - 散装筒仓与托盘 / 打包仓储棚，以及粪肥与粪浆坑。" />
+        <text name="dr_guide_theMenu_5" text="- 畜牧 - 畜棚、鸡舍、畜栏与蜂箱。" />
+        <text name="dr_guide_theMenu_6" text="- 市场 - 你在地图上放置的小卖部与市场。" />
+        <text name="dr_guide_theMenu_7" text="- 总览 - 在一张表中显示每个建筑与每种产品的详细数据。" />
+        <text name="dr_guide_theMenu_8" text="- 用户指南 - 本指南。" />
+        <text name="dr_guide_theMenu_9" text="- 设置 - 全局选项。" />
+        <text name="dr_guide_theMenu_10" text="每个建筑标签页都是双栏页面：左侧列出你的建筑，右侧显示所选建筑的输入产品、生产线与输出产品。 这三张列表中具体显示哪些，取决于该建筑的功能。" />
+        <text name="dr_guide_theMenu_11" text="## 时间刻度" />
+        <text name="dr_guide_theMenu_12" text="每个建筑标签页与总览标签页顶部都有时间刻度选择器，提供小时、月与年。 它会重定该页面流量数据的范围——即在该时间窗口内接收、消耗、生产、分发与出售的数量。" />
+        <text name="dr_guide_theMenu_13" text="分发 Redux 的“月”为 24 次每小时传递，因此无论你为每个周期设置了多少真实天数，月都大致等于最近一个游戏日。 持有量永不重定范围：它是库存而非流量，因此始终显示建筑内当前的量。" />
+        <text name="dr_guide_theMenu_14" text="年数据会随时间积累。 在此功能出现之前没有年尺度记录，因此在较旧的存档中，年列起初为空，并随每个游戏月的完成而填充。" />
+        <text name="dr_guide_theMenu_15" text="## 隐藏的标签页" />
+        <text name="dr_guide_theMenu_16" text="筒仓、畜牧与市场标签页仅在该组在设置中开启时出现。 关闭某组，其建筑会完全离开分发网络，其标签页也会消失。 重新开启该组即可恢复二者。" />
 
         <text name="dr_guide_buildingPages_title" text="建筑页面" />
-        <text name="dr_guide_buildingPages_1" text="生产、 筒仓、 市场和畜牧页签共用一种布局： 在左侧选择建筑， 然后在右侧配置其产品。 表格和列组会因建筑类型略有不同， 因为并非每个建筑都会消耗或生产。" />
+        <text name="dr_guide_buildingPages_1" text="生产、筒仓、市场与畜牧标签页共用一种布局：在左侧选择建筑，然后在右侧配置其产品。 表格与列集因建筑类型略有不同，因为并非每个建筑都消耗或生产。" />
         <text name="dr_guide_buildingPages_2" text="## 表格内容" />
         <text name="dr_guide_buildingPages_3" text="### 输入产品" />
-        <text name="dr_guide_buildingPages_4" text="- 产品：名称和图标。" />
-        <text name="dr_guide_buildingPages_5" text="- 持有/最大：当前建筑内数量、可存储的最大数量，以及以百分比显示的已设置最大值。" />
-        <text name="dr_guide_buildingPages_6" text="- 可用容量：考虑最大设置量（%）和剩余空间后，此产品还能存入多少。" />
-        <text name="dr_guide_buildingPages_7" text="- 已接收： 所选统计周期内 Distribution Redux 向此建筑配送的产品数量。" />
-        <text name="dr_guide_buildingPages_8" text="- 已消耗：所选统计周期内建筑使用的产品数量。仅生产和畜牧建筑显示。" />
-        <text name="dr_guide_buildingPages_9" text="- 状态：根据上一周期活动显示启用（接收中）、启用（空闲）或已阻止。" />
+        <text name="dr_guide_buildingPages_4" text="- 产品 - 名称与图标。" />
+        <text name="dr_guide_buildingPages_5" text="- 持有/最大 - 建筑内当前的数量、可存储的最大数量，以及以括号中的百分比表示的最大设置量。" />
+        <text name="dr_guide_buildingPages_6" text="- 可用容量 - 在考虑最大设置量（%）与剩余空间后，建筑还能容纳多少该产品。" />
+        <text name="dr_guide_buildingPages_7" text="- 已接收 - 在所选时间刻度内，分发 Redux 向该建筑交付了多少产品。" />
+        <text name="dr_guide_buildingPages_8" text="- 已消耗 - 在所选时间刻度内，建筑使用了多少该产品。 仅生产建筑与畜牧。" />
+        <text name="dr_guide_buildingPages_9" text="- 状态 - 启用（接收中）或启用（空闲），依据最近一个周期的活动，或已阻止。" />
         <text name="dr_guide_buildingPages_10" text="### 生产线（仅生产建筑）" />
-        <text name="dr_guide_buildingPages_11" text="- 生产线：该产线制造的产品，括号中显示输入。" />
-        <text name="dr_guide_buildingPages_12" text="- 状态：运行、空闲（已开启但缺少输入）或关闭。" />
-        <text name="dr_guide_buildingPages_13" text="- 目标/月：若提供所有输入，该产线每月预计产出。" />
+        <text name="dr_guide_buildingPages_11" text="- 生产线 - 该产线制造的产品，其输入以括号表示。" />
+        <text name="dr_guide_buildingPages_12" text="- 状态 - 运行中、空闲（已开启但缺少输入），或关闭。" />
+        <text name="dr_guide_buildingPages_13" text="- 目标/月 - 若提供所有输入，该产线预计每月的产量。" />
         <text name="dr_guide_buildingPages_14" text="### 输出产品" />
-        <text name="dr_guide_buildingPages_15" text="- 产品：名称和图标。" />
-        <text name="dr_guide_buildingPages_16" text="- 持有（最大）：当前建筑内此产品数量，括号中显示容量。" />
-        <text name="dr_guide_buildingPages_17" text="- 可用容量：此产品在建筑中还能存放多少。" />
-        <text name="dr_guide_buildingPages_18" text="- 已生产：所选统计周期内的生产数量。仅生产和畜牧建筑显示。" />
-        <text name="dr_guide_buildingPages_19" text="- 已分发：所有离开建筑的数量：分发、入库、移动和出售合计；如有出售，括号中显示销售额。" />
-        <text name="dr_guide_buildingPages_20" text="- 输出模式：此输出当前设置的模式。" />
-        <text name="dr_guide_buildingPages_21" text="- 状态：根据上一周期活动显示启用（发送中）、启用（空闲）或已阻止。" />
+        <text name="dr_guide_buildingPages_15" text="- 产品 - 名称与图标。" />
+        <text name="dr_guide_buildingPages_16" text="- 持有（最大）- 建筑内当前该产品的数量，容量以括号表示。" />
+        <text name="dr_guide_buildingPages_17" text="- 可用容量 - 建筑还能容纳多少该产品" />
+        <text name="dr_guide_buildingPages_18" text="- 已生产 - 在所选时间刻度内生产了多少。 仅生产建筑与畜牧。" />
+        <text name="dr_guide_buildingPages_19" text="- 已分发 - 所有流出的部分：分发、存储、移动与出售的总和，若有出售则括号中显示销售额。" />
+        <text name="dr_guide_buildingPages_20" text="- 输出模式 - 该输出当前设置的模式。" />
+        <text name="dr_guide_buildingPages_21" text="- 状态 - 启用（发送中）或启用（空闲），依据最近一个周期的活动，或已阻止。" />
         <text name="dr_guide_buildingPages_22" text="## 注意" />
-        <text name="dr_guide_buildingPages_23" text="- 如果建筑同时拥有内部库存和托盘， 显示会包含内部数量， 以及建筑托盘生成点上存放于托盘中的数量。" />
-        <text name="dr_guide_buildingPages_24" text="- 所选时间范围只会显示该范围内移动过的物料； 如果你刚刚启用生产并查看年度数据， 只会看到启用后移动过的内容。" />
-        <text name="dr_guide_buildingPages_25" text="- 更多关于物料流向的细节可在总览页查看。" />
-        <text name="dr_guide_buildingPages_26" text="- 体积会在 1,000 升处切换单位。 999 升及以下显示为升； 从 1,000 升起显示为千升， 并去掉多余的零， 因此 1,001 升显示为 1.001 千升， 123,123 升显示为 123.123 千升， 600,000 升显示为 600 千升。 三位小数正好等于一升， 因此切换单位不会丢失精度。" />
-        <text name="dr_guide_buildingPages_27" text="- 若要查看某项变更是否生效（例如空闲或运行）， 需要经过一个周期（1 小时） 后界面列才会刷新。 如果存在分发链， 可能需要经过多个小时周期， 所有步骤才会刷新。" />
+        <text name="dr_guide_buildingPages_23" text="- 若建筑同时拥有内部存储与托盘，显示会先显示内部数量，然后显示在建筑托盘生成器上以托盘存储的数量" />
+        <text name="dr_guide_buildingPages_24" text="- 所选时间范围仅显示在该时间范围内已移动的材料； 如果你刚启用生产并查看年度，你只会看到启用后移动的内容。" />
+        <text name="dr_guide_buildingPages_25" text="- 关于货物去向的更多明细可在总览标签页查看" />
+        <text name="dr_guide_buildingPages_26" text="- 体积在 1,000 升处切换单位。 999 升及以下以升显示； 1,000 升及以上以千升显示，并去掉多余的零，因此 1,001 升显示为 1.001 千升，123,123 升显示为 123.123 千升，600,000 升直接显示为 600 千升。 三位小数恰好等于一升，因此单位换算不会丢失任何数据。" />
+        <text name="dr_guide_buildingPages_27" text="- 要查看更改是否生效（例如空闲或运行中），你需要经过一个周期（1 小时）后界面列才会刷新。 如果你有一连串分发，可能需要经过若干小时直到所有步骤刷新。" />
         <text name="dr_guide_buildingPages_28" text="## 更改设置" />
-        <text name="dr_guide_buildingPages_29" text="- 要开启或关闭生产线，请选择该产线并按“切换产线”。" />
-        <text name="dr_guide_buildingPages_30" text="- 要更改输出的处理方式，请选择它并按“切换输出”。" />
-        <text name="dr_guide_buildingPages_31" text="- “高级”会打开按产品设置的路由控制（见高级输入和高级输出）。" />
-        <text name="dr_guide_buildingPages_32" text="- 对处于出售模式的输出，会显示“出售时机”。" />
-        <text name="dr_guide_buildingPages_33" text="在这里更改生产输出或切换生产线， 与原版生产界面的输出切换是同一个设置， 因此任一位置修改都会同步到另一处， 原版界面也会显示本模组的模式名称。" />
+        <text name="dr_guide_buildingPages_29" text="- 要开启或关闭一条生产线，选择该产线并按切换产线。" />
+        <text name="dr_guide_buildingPages_30" text="- 要更改输出的行为，选择它并按切换输出。" />
+        <text name="dr_guide_buildingPages_31" text="- 高级打开按产品的路由控制（见高级输入与输出）。" />
+        <text name="dr_guide_buildingPages_32" text="- 出售时机出现在处于出售模式的输出上。" />
+        <text name="dr_guide_buildingPages_33" text="在此处更改生产输出或切换产线与原版生产屏幕的输出开关是同一设置，因此任一处修改都会更新另一处——且原版屏幕也会显示该模组的模式名称。" />
 
         <text name="dr_guide_outputModes_title" text="输出模式" />
-        <text name="dr_guide_outputModes_1" text="## 各建筑类型可用的模式" />
-        <text name="dr_guide_outputModes_2" text="- 生产：分发、入库、保留托盘、内部保留、出售、供应市场。" />
-        <text name="dr_guide_outputModes_3" text="- 筒仓和仓储：分发、移动至、保留、出售、供应市场。" />
-        <text name="dr_guide_outputModes_4" text="- 畜牧：分发、入库、保留托盘、内部保留、出售、供应市场。" />
-        <text name="dr_guide_outputModes_5" text="- 市场：仅出售或保留。" />
-        <text name="dr_guide_outputModes_6" text="并非所有模式都会一直显示。 如果某个模式没有可能的终点， 它会被隐藏， 而不是显示成无法使用的死路。 例如没有放置市场， 或没有接受该产品的市场时， 供应市场不会出现在列表中。" />
-        <text name="dr_guide_outputModes_7" text="## 模式说明" />
-        <text name="dr_guide_outputModes_8" text="- 分发： 向需要该产品的附近生产和动物供料， 按最近来源优先， 最多满足配方需求。 盈余留在原处。" />
-        <text name="dr_guide_outputModes_9" text="- 入库： 将输出移动到任何接受它的仓储建筑， 按最近优先， 一个满了再转到下一个。 适用于生产和畜牧。" />
-        <text name="dr_guide_outputModes_10" text="- 移动至： 把产品从一个仓储建筑移动到另一个接受它的仓储建筑。 仅限仓储建筑。 请查看下方警告。" />
-        <text name="dr_guide_outputModes_11" text="- 内部保留： 将输出作为散装库存保存在建筑内部； 不会自动生成托盘， 你可按需手动生成（见托盘生成）。" />
-        <text name="dr_guide_outputModes_12" text="- 保留托盘：将输出以托盘形式保留在当前位置并累积。" />
-        <text name="dr_guide_outputModes_13" text="- 出售：出售产品，可立即出售或按最佳价格出售（见出售时机）。" />
-        <text name="dr_guide_outputModes_14" text="- 供应市场：将输出转移到你放置的市场或售货亭，在那里以加价出售。" />
+        <text name="dr_guide_outputModes_1" text="## 每种建筑类型提供的模式" />
+        <text name="dr_guide_outputModes_2" text="- 生产建筑 - 分发、存储、保留托盘、内部保留、出售、市场供应。" />
+        <text name="dr_guide_outputModes_3" text="- 筒仓与仓储 - 分发、移至、保留、出售、市场供应。" />
+        <text name="dr_guide_outputModes_4" text="- 畜牧 - 分发、存储、保留托盘、内部保留、出售、市场供应。" />
+        <text name="dr_guide_outputModes_5" text="- 市场 - 仅出售或保留。" />
+        <text name="dr_guide_outputModes_6" text="并非任何时候都提供所有模式。 若某模式没有可能的终点，它会被隐藏而非显示为死路。 例如，未放置市场或没有接受该产品的市场时，市场供应不会出现在列表中。" />
+        <text name="dr_guide_outputModes_7" text="## 各模式" />
+        <text name="dr_guide_outputModes_8" text="- 分发 - 就近向需要该产品的生产与动物供料，从最近来源开始，直到满足其配方需求。 盈余留在原地。" />
+        <text name="dr_guide_outputModes_9" text="- 存储 - 将输出移入任何接受它的仓储建筑，就近优先，一个装满后溢出到下一个。 适用于生产建筑与畜牧。" />
+        <text name="dr_guide_outputModes_10" text="- 移至 - 将产品从一个仓储建筑移到另一个接受它的仓储建筑。 仅仓储建筑。 参见下方警告。" />
+        <text name="dr_guide_outputModes_11" text="- 内部保留 - 将输出作为散料保留在建筑内部； 不会自行生成托盘，你可按需手动生成（见托盘生成）。" />
+        <text name="dr_guide_outputModes_12" text="- 保留托盘 - 将输出以托盘形式保留在原处，并让其累积。" />
+        <text name="dr_guide_outputModes_13" text="- 出售 - 出售产品，可立即或按最佳价格（见出售时机）。" />
+        <text name="dr_guide_outputModes_14" text="- 市场供应 - 将输出转移到你放置的市场或小卖部，在那里以溢价出售。" />
         <text name="dr_guide_outputModes_15" text="## 组合模式" />
-        <text name="dr_guide_outputModes_16" text="- 分发 + 出售：先满足所有需求，再出售剩余。" />
-        <text name="dr_guide_outputModes_17" text="- 分发 + 入库： 先满足需求， 再把盈余移动到你的仓储中， 而不是出售。 仅适用于生产和畜牧。" />
-        <text name="dr_guide_outputModes_18" text="- 分发 + 移动至：先满足需求，再把盈余移动到你选择的仓储。仅限仓储建筑。" />
-        <text name="dr_guide_outputModes_19" text="- 分发 + 供应市场：先满足需求，再把盈余转移到你的市场或售货亭。" />
-        <text name="dr_guide_outputModes_20" text="在每种组合模式中， 前半部分都会真正先执行。 产品在提供给消耗方之前， 不会被出售、 入库或运往市场。" />
-        <text name="dr_guide_outputModes_21" text="“移动至”只有在启用高级路由时才会提供（见高级路由）。" />
+        <text name="dr_guide_outputModes_16" text="- 分发 + 出售 - 先满足所有需求，再出售剩余部分。" />
+        <text name="dr_guide_outputModes_17" text="- 分发 + 存储 - 先满足需求，再将盈余移入你的仓储而非出售。 仅生产建筑与畜牧。" />
+        <text name="dr_guide_outputModes_18" text="- 分发 + 移至 - 先满足需求，再将盈余移到你选择的仓储。 仅仓储建筑。" />
+        <text name="dr_guide_outputModes_19" text="- 分发 + 市场供应 - 先满足需求，再将盈余转移到你的市场或小卖部。" />
+        <text name="dr_guide_outputModes_20" text="在每个组合模式中，前半部分确实先发生。 在消费者被供应之前，不会出售、存储或运往市场任何东西。" />
+        <text name="dr_guide_outputModes_21" text="移至仅在高级路由已启用时提供（见高级路由）。" />
 
         <text name="dr_guide_advancedRoutingRules_title" text="高级路由与规则" />
         <text name="dr_guide_advancedRoutingRules_1" text="## 高级路由" />
-        <text name="dr_guide_advancedRoutingRules_2" text="高级路由允许你控制每个建筑的每一项输入和输出。它默认开启，也可在设置中关闭。" />
+        <text name="dr_guide_advancedRoutingRules_2" text="高级路由让你可以控制每个建筑每一个独立的输入与输出。 它默认开启，可在设置中关闭。" />
         <text name="dr_guide_advancedRoutingRules_3" text="### 高级输入" />
-        <text name="dr_guide_advancedRoutingRules_4" text="- 选择任意输入产品并按“高级输入”。" />
-        <text name="dr_guide_advancedRoutingRules_5" text="- 阻止/允许：阻止此建筑接收该产品。" />
-        <text name="dr_guide_advancedRoutingRules_6" text="- 全部阻止/全部允许：一次性切换所有输入。" />
-        <text name="dr_guide_advancedRoutingRules_7" text="- 最大输入： 该建筑可持有此产品的最大数量。 对于多个产品共用一个储罐的共享仓储， 这一点很重要。 共享容量遵循先到先得： 默认每种产品都可以使用全部容量， 与基础游戏完全一致。 这意味着繁忙产品可能填满筒仓， 导致其他产品没有空间； 因此可为该产品设置最大输入来限制它， 并为其他产品保留空间。 各项上限彼此独立， 不需要合计为 100%； 未设置的产品保持无限制。" />
-        <text name="dr_guide_advancedRoutingRules_8" text="- 目标： 该产品的补货目标。 网络不再只配送下一周期所需数量， 而是努力补到此水平并保持， 相当于输入预留。" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- 选择任意输入产品并按高级输入。" />
+        <text name="dr_guide_advancedRoutingRules_5" text="- 阻止 / 允许 - 阻止该建筑接收该产品。" />
+        <text name="dr_guide_advancedRoutingRules_6" text="- 全部阻止 / 全部允许 - 一次性翻转所有输入。" />
+        <text name="dr_guide_advancedRoutingRules_7" text="- 最大输入 - 该建筑可持有该产品的最大量。 这对共享仓储很重要，因为多种产品共用一个储罐。 共享池遵循先到先得：默认每种产品都可使用全部容量，与原版游戏行为一致。 这意味着繁忙的产品可能填满筒仓，留给其他的空间很少——因此对该产品设置最大输入以限制它，并为其余产品保留空间。 各上限相互独立，不必相加为 100%； 未设置的任何产品保持不限量。" />
+        <text name="dr_guide_advancedRoutingRules_8" text="- 目标 - 该产品的补货目标。 网络不再只交付下一个周期所需的数量，而是朝此水平努力然后保持——实质上是一个输入预留。" />
         <text name="dr_guide_advancedRoutingRules_9" text="### 高级输出" />
-        <text name="dr_guide_advancedRoutingRules_10" text="- 选择要调整的输出产品并按“高级输出”。" />
-        <text name="dr_guide_advancedRoutingRules_11" text="- 阻止/允许：永不将此输出发送到该目的地。" />
-        <text name="dr_guide_advancedRoutingRules_12" text="- 优先级：为该输出的需求和仓储选项排序。这会覆盖默认的就近优先再溢出行为。" />
-        <text name="dr_guide_advancedRoutingRules_13" text="- 预留（+/-）： 始终在建筑中保留这么多升。 任何操作（分发、 出售、 入库、 移动或供应市场） 都不能让产品低于此数值。" />
-        <text name="dr_guide_advancedRoutingRules_14" text="### “移动至”输出模式" />
-        <text name="dr_guide_advancedRoutingRules_15" text="- 只有在开启高级路由且建筑类型为仓储时，此模式才可作为输出模式使用。" />
-        <text name="dr_guide_advancedRoutingRules_16" text="- 此模式允许你把该仓储中的物料移动到另一个支持它的仓储。" />
-        <text name="dr_guide_advancedRoutingRules_17" text="- 默认启用时会阻止所有可能目的地，以避免意外产生产品循环。" />
-        <text name="dr_guide_advancedRoutingRules_18" text="- 要启用此模式， 请选择任意输出并按“高级输出”。 你会在右侧看到支持的目的地列表（全部阻止）， 可按需允许建筑。 其他高级输出功能也可用于这次移动（优先级、 预留等）。" />
-        <text name="dr_guide_advancedRoutingRules_19" text="- 默认情况下， “移动至”会在每个周期尽可能填满目标建筑。 你可以在接收建筑的输入上设置“最大输入”， 以确保有空间移动多种产品（而不是被第一个产品完全填满筒仓）。" />
-        <text name="dr_guide_advancedRoutingRules_20" text="### 关闭高级路由前" />
-        <text name="dr_guide_advancedRoutingRules_21" text="- 你已设置的每项高级设置都会被清除， 而不只是忽略， 包括所有阻止、 优先级、 预留、 最大输入和目标。 之后重新开启高级路由会得到一套空白设置， 因此需要重新配置。" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- 选择你想调整的输出产品并按高级输出。" />
+        <text name="dr_guide_advancedRoutingRules_11" text="- 阻止 / 允许 - 永不将该输出发送到该目标。" />
+        <text name="dr_guide_advancedRoutingRules_12" text="- 优先级 - 为该输出的需求与存储选项排序。 这会覆盖默认的最近优先、再溢出的行为。" />
+        <text name="dr_guide_advancedRoutingRules_13" text="- 预留（+/-）- 始终在建筑内保留这么多升。 任何操作——分发、出售、存储、移动或市场供应——都不得将产品降到此数值以下。" />
+        <text name="dr_guide_advancedRoutingRules_14" text="### &quot;移至&quot; 输出模式" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- 此模式仅在高级路由开启且建筑类型为：仓储 时可作为输出模式使用" />
+        <text name="dr_guide_advancedRoutingRules_16" text="- 此模式允许你将该仓储中的物料移到另一个支持它的仓储" />
+        <text name="dr_guide_advancedRoutingRules_17" text="- 默认情况下，当你启用此模式时，每个可能的目标都被阻止，以避免意外创建产品循环" />
+        <text name="dr_guide_advancedRoutingRules_18" text="- 要启用它，选择任意输出并按高级输出。 你会在右侧看到支持的目标列表（全部阻止），并可根据需要放行建筑。 所有其他高级输出功能在此移（优先级、预留等）中也都可用。" />
+        <text name="dr_guide_advancedRoutingRules_19" text="- 默认情况下，移至会在每个周期尽可能填满建筑。 你可以在接收建筑的输入上设置“最大输入”，以确保有空间移动多种产品（而不是仅用第一种产品完全填满筒仓）。" />
+        <text name="dr_guide_advancedRoutingRules_20" text="### 关闭高级路由之前" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- 你所做的每个高级设置都会被清除，而非仅仅忽略——所有阻止、优先级、预留、最大输入值与目标。 日后重新开启高级路由会给你一个干净的起点，因此你将需要重新进行所有设置。" />
         <text name="dr_guide_advancedRoutingRules_22" text="## 高级规则" />
-        <text name="dr_guide_advancedRoutingRules_23" text="这些高级规则无论高级路由是否开启都会生效； 如有需要， 季节性收获预留和自动供水可在设置中开关。" />
+        <text name="dr_guide_advancedRoutingRules_23" text="这些高级规则无论高级路由是否开启都适用； 季节性收获预留与自动供水可在设置中按需开启/关闭。" />
         <text name="dr_guide_advancedRoutingRules_24" text="### 出售模式" />
-        <text name="dr_guide_advancedRoutingRules_25" text="任何处于出售模式的输出， 都可以选择立即出售或等待最佳价格。 等待意味着产品会在建筑中累积直到价格高峰到来， 因此请确保有足够空间。" />
+        <text name="dr_guide_advancedRoutingRules_25" text="对于处于出售模式的任何输出，你可以选择立即出售或等待最佳价格。 等待意味着产品会在建筑内累积直到峰值到来，因此请确保有足够空间。" />
         <text name="dr_guide_advancedRoutingRules_26" text="### 季节性收获预留" />
-        <text name="dr_guide_advancedRoutingRules_27" text="默认关闭。 开启后， 作为年度收获作物的输出会大约保留一年的用量来供应你自己的生产， 只出售盈余。 草和其他全年可再生作物则保留三个月。 在模组看到某作物被收获前， 它不知道下一次收获何时到来， 因此会退回使用“预留月份”设置。" />
+        <text name="dr_guide_advancedRoutingRules_27" text="默认关闭。 开启时，作为年度收获作物的输出会保留大约一年的量来供应你自己的生产，仅出售盈余。 牧草及年内再生的其他作物则保留三个月。 在模组观察到作物被收获之前，它不知道下一次收获何时到来，因此会回退到预留月数设置。" />
         <text name="dr_guide_advancedRoutingRules_28" text="### 自动供水" />
-        <text name="dr_guide_advancedRoutingRules_29" text="开启自动供水时， 任何需要水的建筑都会从最近水源自动供水。 如果没有放置水源， 系统会从最近水体取水（注意： 若最近水体距离较远， 分发成本会很高）。" />
+        <text name="dr_guide_advancedRoutingRules_29" text="在自动供水开启时，水会从最近的水源自动供给任何需要它的建筑。 若未放置水源，系统会从最近的水体获取（注意：若最近的水体很远，分发成本会很高）" />
 
-        <text name="dr_guide_overviewTab_title" text="总览页" />
-        <text name="dr_guide_overviewTab_1" text="总览页把整个网络放在一张表中： 每个已加入的建筑， 以及进入或离开它的每种产品。 当你想知道实际发生了什么， 而不是只看单个建筑设置时， 这里最有用。" />
-        <text name="dr_guide_overviewTab_2" text="每种产品都会标记为（入）、 （出） 或（入/出）， 方便一眼看出它在建筑的哪一侧。 筒仓和仓库对所有产品都是入/出， 因为它们既接收也供应。" />
+        <text name="dr_guide_overviewTab_title" text="总览标签页" />
+        <text name="dr_guide_overviewTab_1" text="总览标签页将整个网络放在一张表中：每个已注册的建筑，以及进出它的每种产品。 当你想知道实际发生了什么，而非单个建筑被设置成什么时，这里就是该看的地方。" />
+        <text name="dr_guide_overviewTab_2" text="每种产品都标有（入）、（出）或（入/出），因此你可以一眼看出它位于建筑的哪一侧。 筒仓与仓储棚对一切都是入/出，因为它们既接收又供应。" />
         <text name="dr_guide_overviewTab_3" text="## 四个选择器" />
-        <text name="dr_guide_overviewTab_4" text="- 筛选依据：无（显示全部）、建筑、产品或最终产品（全链路）。" />
-        <text name="dr_guide_overviewTab_5" text="- 显示：选择筛选器应用到哪个建筑或产品。" />
-        <text name="dr_guide_overviewTab_6" text="- 统计周期：小时、月份或年份，与建筑页签相同。" />
-        <text name="dr_guide_overviewTab_7" text="- 分组：关闭时每个建筑一行；开启时将同类型建筑合并为一条汇总行，例如“面包房 x2”。" />
-        <text name="dr_guide_overviewTab_8" text="“最终产品（全链路） ”是其中最有用的选项。 选择蛋糕等成品后， 表格会显示为其供料的每个建筑和每种中间产品， 并从成品向下游原料链排序。 这是查找生产线瓶颈或过量供应最快的方法。" />
-        <text name="dr_guide_overviewTab_9" text="## 列说明" />
-        <text name="dr_guide_overviewTab_10" text="- 已接收：由 Distribution Redux 配送到此建筑。" />
-        <text name="dr_guide_overviewTab_11" text="- 已装入： 由非 Distribution Redux 的方式放入此建筑， 例如你用拖车、 草捆、 AI 工人或其他模组。" />
-        <text name="dr_guide_overviewTab_12" text="- 消耗（预期）：已消耗数量，括号中显示预期数。" />
-        <text name="dr_guide_overviewTab_13" text="- 已卸出： 由非 Distribution Redux 的方式从此建筑取出， 包括你开走的托盘。" />
-        <text name="dr_guide_overviewTab_14" text="- 持有（容量）：建筑当前库存和容量。不会按统计周期重算。" />
-        <text name="dr_guide_overviewTab_15" text="- 产出（预期）：此建筑生产的数量，括号中显示预期数。" />
-        <text name="dr_guide_overviewTab_16" text="- 已分发：配送给消耗方的数量。" />
-        <text name="dr_guide_overviewTab_17" text="- 入库/移动：发送到仓储，或移动到另一个仓储。" />
-        <text name="dr_guide_overviewTab_18" text="- 已出售：已出售数量，包括直接出售或通过市场出售。" />
-        <text name="dr_guide_overviewTab_19" text="- 分发成本： 此建筑配送产生的运输费用。 只计入发送建筑， 因此该列合计就是实际花费， 不会把每次配送重复计算。" />
+        <text name="dr_guide_overviewTab_4" text="- 筛选依据 - 无（显示全部）、建筑、产品，或最终产品（完整产业链）。" />
+        <text name="dr_guide_overviewTab_5" text="- 显示 - 选择筛选应用于哪个建筑或产品。" />
+        <text name="dr_guide_overviewTab_6" text="- 时间刻度 - 小时、月或年，与建筑标签页相同。" />
+        <text name="dr_guide_overviewTab_7" text="- 分组 - 关闭时每栋建筑显示一行； 开启时将同类建筑合并为一行合计，例如标记为“面包房 x2”。" />
+        <text name="dr_guide_overviewTab_8" text="最终产品（完整产业链）是其中最实用的。 选择一个成品如蛋糕，表格会显示每个建筑和每个喂给它的中间产品，从成品沿链条向下排列。 这是查找生产线瓶颈或过剩的最快方式。" />
+        <text name="dr_guide_overviewTab_9" text="## 各列" />
+        <text name="dr_guide_overviewTab_10" text="- 已接收 - 由分发 Redux 交付到该建筑。" />
+        <text name="dr_guide_overviewTab_11" text="- 已装载 - 由任何非分发 Redux 的事物放入该建筑：你用拖车、打包、AI 帮手或另一个模组。" />
+        <text name="dr_guide_overviewTab_12" text="- 已消耗（预期）- 已用完，括号中为有预期数值。" />
+        <text name="dr_guide_overviewTab_13" text="- 已卸载 - 由任何非分发 Redux 的事物从建筑取出，包括你开走的托盘。" />
+        <text name="dr_guide_overviewTab_14" text="- 持有（容量）- 建筑内当前的量，含容量。 从不因时间刻度重定范围。" />
+        <text name="dr_guide_overviewTab_15" text="- 已生产（预期）- 由该建筑制造，括号中为有预期数值。" />
+        <text name="dr_guide_overviewTab_16" text="- 已分发 - 向外交付给消费者。" />
+        <text name="dr_guide_overviewTab_17" text="- 入库/移库 - 发送到仓储，或移到另一个仓库。" />
+        <text name="dr_guide_overviewTab_18" text="- 已出售 - 已售出，无论直接还是通过市场。" />
+        <text name="dr_guide_overviewTab_19" text="- 分发成本 - 该建筑交付的运输成本。 仅向发送建筑计费，因此该列合计为实际花费的资金，而不会将每次交付重复计算。" />
         <text name="dr_guide_overviewTab_20" text="## 预期数值及其颜色" />
-        <text name="dr_guide_overviewTab_21" text="已消耗和已生产会带有括号中的预期数量， 该数量根据已开启生产线的配方计算。 接近或达到目标时为绿色， 略低时为橙色， 明显不足时为红色。 只有生产建筑有配方， 因此畜牧和筒仓行显示普通数值， 不会凭空生成目标。" />
-        <text name="dr_guide_overviewTab_22" text="红色的已生产数值是发现产线缺料最快的方法。" />
+        <text name="dr_guide_overviewTab_21" text="已消耗与已生产在括号中带有预期数量，由已开启产线的配方算出。 该数值在达到或非常接近目标时显示为绿色，略低于目标时为橙色，远低于目标时为红色。 只有生产建筑有配方，因此畜牧与筒仓行显示无目标的普通数值，而非虚构一个。" />
+        <text name="dr_guide_overviewTab_22" text="红色的已生产数值是发现饥饿产线的最快方式。" />
         <text name="dr_guide_overviewTab_23" text="## 显示设置" />
-        <text name="dr_guide_overviewTab_24" text="页面底部有按钮可在“显示流量”和“显示设置”之间切换。 如果某条生产线被阻止， 可快速切换到显示设置页面查看可能的阻止项。" />
-        <text name="dr_guide_overviewTab_25" text="在任一视图中双击一行，都会直接跳转到该建筑页面。" />
+        <text name="dr_guide_overviewTab_24" text="在页面底部有一个在显示流量与显示设置之间切换的按钮。 如果你有被阻止的生产线，可以快速切换到显示设置页查看可能是哪个设置阻止了它。" />
+        <text name="dr_guide_overviewTab_25" text="在任一种视图中双击一行，会直接跳转到该建筑页面。" />
 
         <text name="dr_guide_palletManagement_title" text="托盘管理" />
-        <text name="dr_guide_palletManagement_1" text="许多输出以托盘形式交付， 例如木板、 板材、 箱装蔬菜、 鸡蛋、 羊毛等。 为确保 Distribution Redux 按预期运行， 托盘工作方式已完全重写。" />
-        <text name="dr_guide_palletManagement_2" text="Distribution Redux 会同时计入建筑内部持有的产品， 以及建筑托盘生成点上的任何托盘， 用于信息显示和输出模式。 分发始终会先从托盘生成点取货， 然后再使用内部库存。 如果托盘生成点被阻塞， 产品会累积在建筑自己的内部仓储中， 并从那里参与分发。 手动从生成点移走的托盘会立即从建筑总量中扣除。" />
-        <text name="dr_guide_palletManagement_3" text="模型中没有正规托盘点的建筑， 会退回使用最近建筑规则。 这包括部分模组生成器和少数蜂箱。" />
+        <text name="dr_guide_palletManagement_1" text="许多输出以托盘交付——木板、厚板、装箱蔬菜、鸡蛋、羊毛等。 为确保分发 Redux 按预期运行，托盘的工作方式已被完全重写" />
+        <text name="dr_guide_palletManagement_2" text="分发 Redux 会同时考虑建筑内部持有的产品，以及建筑托盘生成器上的任何托盘，用于信息显示与输出模式。 分发会始终先从托盘生成器提取，然后才是内部存储。 若托盘生成器被阻止，产品会累积在建筑自身的内部存储中并从中分发。 手动从生成器移除的托盘会立即从建筑总量中扣除。" />
+        <text name="dr_guide_palletManagement_3" text="模型中没有合适托盘垫的建筑——某些模组生成器，以及少数蜂箱——会回退到简单的就近建筑规则。" />
         <text name="dr_guide_palletManagement_4" text="## 手动生成" />
-        <text name="dr_guide_palletManagement_5" text="- 将输出设置为内部保留。 当内部至少持有一个完整托盘的数量时， “生成托盘”按钮会出现， 生产页签和基础游戏生产界面都会显示。 按下后打开生成窗口。" />
-        <text name="dr_guide_palletManagement_6" text="- 类型：托盘类型。如果该输出只支持一种，会显示作为参考；如果支持多种，可用箭头选择。" />
-        <text name="dr_guide_palletManagement_7" text="- 数量： 要生成多少个。 箭头每次增减 1， -10/+10 按钮每次跳 10， 总数受你持有库存限制。" />
-        <text name="dr_guide_palletManagement_8" text="- 生成会在建筑托盘点放下对应数量的满托盘，并扣除相应库存。取消则关闭窗口且不生成。" />
-        <text name="dr_guide_palletManagement_9" text="只有当输出处于内部保留且持有至少一个完整托盘数量时， 按钮才会出现； 低于这个数量就没有可生成内容。 建筑模型还必须有托盘生成点， 大多数托盘化建筑都有。 多人游戏中由主机执行生成， 因此所有人都会看到托盘。" />
-        <text name="dr_guide_palletManagement_10" text="## 动物圈舍托盘" />
-        <text name="dr_guide_palletManagement_11" text="默认游戏中， 动物圈舍每小时都会生成一个托盘， 并把内部库存装入托盘， 不管是否足够装满（不同于生产设施）。 为了保持一致， 默认情况下畜牧建筑已改为像生产设施一样运行。 可在设置中改回基础游戏模式， 但这可能影响分发和分发追踪数据（不推荐）。" />
-        <text name="dr_guide_palletManagement_12" text="同一设置中还有一个永不生成托盘的选项。 它会阻止托盘自动生成， 并只使用建筑内部库存参与分发。" />
+        <text name="dr_guide_palletManagement_5" text="- 将输出设为内部保留。 一旦它持有至少一整托盘的量，生成托盘按钮就会出现在生产标签页与原版生产屏幕上。 按它打开生成窗口。" />
+        <text name="dr_guide_palletManagement_6" text="- 类型 - 托盘类型。 若输出仅支持一种，则会显示以供参考； 若支持多种，使用箭头选择。" />
+        <text name="dr_guide_palletManagement_7" text="- 数量 - 要生成多少。 箭头每次增减一，−10 / +10 按钮以十为单位跳跃，总数受你持有库存上限限制。" />
+        <text name="dr_guide_palletManagement_8" text="- 生成会在建筑托盘点放下这么多装满的托盘，并扣除相应的库存。 取消则关闭而不生成。" />
+        <text name="dr_guide_palletManagement_9" text="该按钮仅对处于内部保留且持有至少一整托盘量的输出出现——低于此量则没有可生成的内容。 建筑还必须在模型中有托盘生成点，大多数制托盘建筑都有。 在多人游戏中由主机执行生成，因此托盘对所有人可见。" />
+        <text name="dr_guide_palletManagement_10" text="## 来自动物畜栏的托盘" />
+        <text name="dr_guide_palletManagement_11" text="在原版游戏中，动物畜栏每小时生成一个托盘，并用内部存储中的内容装载它，无论是否足够装满一整托盘（与生产建筑不同）。 为保持一致性，默认情况下畜牧已改为与生产建筑相同的方式运行。 这可以在设置中改回原版游戏模式，但可能影响分发与分发追踪数据（不推荐）" />
+        <text name="dr_guide_palletManagement_12" text="同一设置中还有一个选项可永不生成托盘。 这将阻止托盘生成，仅利用建筑内部存储进行分发。" />
 
-        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="对基础游戏机制的其他改动" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## 青贮窖" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- 打开青贮窖时，现在只需按 R，模组会移除整个覆盖层（不再有无法移除的部分覆盖）。" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- 青贮窖要求你先装入物料、 覆盖、 等待发酵， 再揭开以产生输出。 因此 Distribution Redux 只显示输出表和选项， 并且只有物料揭开后才显示库存。" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## 固态粪肥堆和液态粪肥池" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- 固态粪肥堆和液态粪肥池现在可以放在地图任意位置， 并且不会自动附加到畜牧建筑。 要把物料从畜牧建筑移动到这些对象， 请先放置它， 然后在畜棚上把输出模式设为“入库”。 固态粪肥和液态粪肥会像其他输出一样移动到这些建筑。" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="对原版游戏机制的其他更改" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## 青贮仓" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- 打开青贮仓时，你只需按 R，模组就会移除仓上的整个覆盖物（不再有无法移除的部分覆盖物）" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- 青贮仓需要你装入物料、覆盖、等待发酵，然后揭开才能产出。 因此分发 Redux 只显示输出表与选项，且只有在物料揭开后才显示库存。" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## 粪肥堆与粪浆坑" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- 粪肥堆与粪浆坑现在可以放置在地图上的任何位置，且不会自动附着到畜牧。 要将物料从畜牧移动到这些物体，放置它们，并在畜棚上选择“存储”作为输出模式。 粪肥与粪浆会像其他任何输出一样移动到这些建筑。" />
         <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## 筒仓扩展" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- 筒仓扩展已大幅重写， 现在与基础游戏不同。 筒仓扩展只能放在现有筒仓、 堆场或池体 50 米范围内， 并且只为该建筑增加存储空间。" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- 筒仓扩展已被大幅重写，现在与原版游戏运行方式不同。 筒仓扩展现在只能放置在现有筒仓、堆或坑的 50 米范围内，且仅为该建筑增加存储空间。" />
         <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## 市场手动倾倒" />
-        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- 你仍然可以在自己的市场/摊位手动倾倒或投放产品。 这些产品不会像基础游戏那样立即出售， 而是会遵守市场上设置的输出模式。" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- 你仍可以在自己的市场/摊位手动倾倒/放下产品。 与在原版游戏中立即出售不同，这些产品会遵循市场设置的输出模式。" />
 
         <text name="dr_guide_settings_title" text="设置" />
-        <text name="dr_guide_settings_1" text="全局设置位于设置页签。 它们会随存档保存， 并由主机在多人游戏中同步。 单个建筑的选择始终会覆盖该建筑的全局设置。" />
+        <text name="dr_guide_settings_1" text="全局设置位于设置标签页。 它们随你的存档保存，并在多人游戏中由主机同步。 按建筑的选择始终覆盖该建筑的这些全局设置。" />
         <text name="dr_guide_settings_2" text="## 选项" />
-        <text name="dr_guide_settings_3" text="- 按页签中出现的顺序列出。" />
-        <text name="dr_guide_settings_4" text="- 范围：全农场或邻近（半径内）。" />
-        <text name="dr_guide_settings_5" text="- 畜牧设施：包含或排除畜棚、鸡舍、圈舍和蜂箱。" />
-        <text name="dr_guide_settings_6" text="- 筒仓与托盘仓库：包含或排除散装筒仓、托盘和草捆仓库，以及固态粪肥堆和液态粪肥池。" />
-        <text name="dr_guide_settings_7" text="- 市场与售货亭：包含或排除你的市场和售货亭。" />
-        <text name="dr_guide_settings_8" text="- 高级路由： 高级输入和高级输出的总开关。 关闭也会移除“移动至”并清除所有高级设置（见高级输入和输出）。" />
-        <text name="dr_guide_settings_9" text="- 邻近半径：邻近范围下来源可覆盖的距离。默认 50 米。" />
-        <text name="dr_guide_settings_10" text="- 消耗方缓冲：每个周期为每个消耗方补充的原料小时数。默认 2。" />
-        <text name="dr_guide_settings_11" text="- 出售：所有出售的总开关。关闭后无论单个输出如何设置，都不会出售任何内容。" />
-        <text name="dr_guide_settings_12" text="- 自动供水：自动为消耗水的建筑供水。" />
-        <text name="dr_guide_settings_13" text="- 分发成本：是否收取运输费用。" />
-        <text name="dr_guide_settings_14" text="- 成本费率：每条线路每小时基础费用。默认 10。" />
-        <text name="dr_guide_settings_15" text="- 成本距离：费率乘算的距离增量。默认 50 米。" />
-        <text name="dr_guide_settings_16" text="- 季节性收获预留：保留足够原料直到下一次收获，只出售盈余。默认关闭。" />
-        <text name="dr_guide_settings_17" text="- 预留月份（学习前）：模组学习到作物收获窗口之前需要预留的月份数。默认 13。" />
-        <text name="dr_guide_settings_18" text="- 最佳价格出售：最佳价格出售的总开关。关闭后所有内容立即出售。" />
-        <text name="dr_guide_settings_19" text="- 默认出售时机：新输出在未单独设置时使用的方式：等待价格高峰或立即出售。" />
-        <text name="dr_guide_settings_20" text="- 托盘生成： 三个选项， 基础游戏（生成部分填充托盘）、 仅生成完整托盘（默认） 和永不生成托盘。" />
-        <text name="dr_guide_settings_21" text="- 菜单刷新率： 如果界面出现延迟或卡顿， 可调整此项。 手动模式会启用一个可用于刷新界面的按钮。" />
-        <text name="dr_guide_settings_22" text="- 调试日志：将详细活动写入 log.txt。保持关闭可减少日志输出。" />
+        <text name="dr_guide_settings_3" text="- 按它们在标签页上出现的顺序排列。" />
+        <text name="dr_guide_settings_4" text="- 范围 - 范围（整个农场）或邻近（半径内）。" />
+        <text name="dr_guide_settings_5" text="- 畜牧 - 包含或排除畜棚、鸡舍、畜栏与蜂箱。" />
+        <text name="dr_guide_settings_6" text="- 筒仓与托盘仓储 - 包含或排除散装筒仓、托盘与打包棚，以及粪肥与粪浆坑。" />
+        <text name="dr_guide_settings_7" text="- 市场与小卖部 - 包含或排除你的市场与小卖部。" />
+        <text name="dr_guide_settings_8" text="- 高级路由 - 高级输入与高级输出的总开关。 关闭还会移除移至并清除每个高级设置（见高级输入与输出）。" />
+        <text name="dr_guide_settings_9" text="- 邻近半径 - 在邻近范围内来源能到达的距离。 默认 50 米。" />
+        <text name="dr_guide_settings_10" text="- 消费者缓冲 - 每个周期为每个消费者补充的原料小时数。 默认 2。" />
+        <text name="dr_guide_settings_11" text="- 出售 - 所有出售的总开关。 关闭意味着无论单个输出如何设置，都永远不会出售任何东西。" />
+        <text name="dr_guide_settings_12" text="- 自动供水 - 自动向消耗水的建筑供水。" />
+        <text name="dr_guide_settings_13" text="- 分发成本 - 是否收取运输费用。" />
+        <text name="dr_guide_settings_14" text="- 成本费率 - 每个连接每小时的基础费用。 默认 10。" />
+        <text name="dr_guide_settings_15" text="- 成本距离 - 费率相乘的距离增量。 默认 50 米。" />
+        <text name="dr_guide_settings_16" text="- 季节性收获预留 - 保留足够维持到下次收获的原料，仅出售盈余。 默认关闭。" />
+        <text name="dr_guide_settings_17" text="- 预留月数（学习前）- 在模组学习到作物收获窗口之前保留的月数。 默认 13。" />
+        <text name="dr_guide_settings_18" text="- 以最佳价格出售 - 最佳价格出售的总开关。 关闭意味着所有东西立即出售。" />
+        <text name="dr_guide_settings_19" text="- 默认出售时机 - 你没有设置时新输出使用的时机：等待峰值，或立即出售。" />
+        <text name="dr_guide_settings_20" text="- 托盘生成 - 三个选项：默认游戏（生成部分托盘）、仅生成整托盘（默认）与永不生成托盘。" />
+        <text name="dr_guide_settings_21" text="- 菜单刷新率 - 如果你在界面上遇到卡顿或停顿，可以调整。 仅手动会激活一个刷新按钮，你可用它刷新界面。" />
+        <text name="dr_guide_settings_22" text="- 调试日志 - 将详细活动写入 log.txt。 关闭可获得更简洁的日志。" />
 
         <text name="dr_guide_support_title" text="支持" />
-        <text name="dr_guide_support_1" text="## 故障排查" />
-        <text name="dr_guide_support_2" text="- 建筑没有显示。 检查范围和分组开关。 邻近模式只覆盖半径内建筑， 关闭分组的建筑会从网络中移除， 并隐藏其页签。" />
-        <text name="dr_guide_support_3" text="- 没有配送。 确认来源设置为分发类模式而不是保留， 消耗方生产线已开启， 并且二者在当前范围内可连接。" />
-        <text name="dr_guide_support_4" text="- “移动至”输出没有移动任何东西。 “移动至”默认会阻止所有目的地。 打开高级输出并启用你需要的目的地。 如果目的地以红色显示“启用 - 无效”， 启用它会产生循环。" />
-        <text name="dr_guide_support_5" text="- 有东西到达但本小时没有出售。 这是预期行为。 刚到达的产品会等待一个周期， 让消耗方先获得使用机会。" />
-        <text name="dr_guide_support_6" text="- 动物圈舍保留了鸡蛋或羊毛。 开启“畜栏整托盘”时， 圈舍会累积到完整托盘后再释放一个。 消费者仍可在填充期间使用库存； 出售和入库会等待托盘。" />
-        <text name="dr_guide_support_7" text="- 工厂没有获得水。 自动供水开启时会自动向需要水的建筑供水； 如果某个需水工厂缺水， 请确认该设置。" />
-        <text name="dr_guide_support_8" text="- 建筑没有提示。 左方括号提示只会对分发网络中的建筑显示。 如果你在设置中排除了该分组， 提示消失是设计行为。" />
-        <text name="dr_guide_support_9" text="- 模组行为不符合预期。 不要与其他分发系统重写类模组同时使用， 它们会挂接同一系统并相互冲突。 本模组适用于基础游戏建筑， 也适用于遵循 GIANTS 标准结构的模组建筑； 部分模组建筑可能行为不同并影响本模组。" />
-        <text name="dr_guide_support_10" text="## 指南和概览" />
-        <text name="dr_guide_support_11" text="概览和指南可在我的 YouTube 频道 @AussieSimmer 查看。" />
-        <text name="dr_guide_support_12" text="## 错误报告" />
-        <text name="dr_guide_support_13" text="错误、功能请求和模组兼容性请求可在我的 GitHub 仓库提交工单：" />
+        <text name="dr_guide_support_1" text="## 故障排除" />
+        <text name="dr_guide_support_2" text="- 某个建筑未显示。 检查范围与各组开关。 邻近仅能到达半径内，且关闭了组的建筑会从网络移除且其标签页隐藏。" />
+        <text name="dr_guide_support_3" text="- 没有东西被交付。 确保来源设置为分发模式而非保留，消费者的生产线已开启，且两者在当前范围内可达。" />
+        <text name="dr_guide_support_4" text="- 移至输出没有移动任何东西。 移至在开始时每个目标都被阻止。 打开高级输出并启用你想要的目标。 若某目标以红色显示“启用 - 无效”，启用它会创建循环。" />
+        <text name="dr_guide_support_5" text="- 有东西到达但本小时未出售。 这是预期行为。 刚到达的产品会等待一次传递，以便消费者优先获取。" />
+        <text name="dr_guide_support_6" text="- 动物畜栏在持有其鸡蛋或羊毛。 在“畜栏整托盘”开启时，畜栏会累积到拥有一整托盘才释放一个。 消费者仍可在填充期间提取库存； 出售与存储则等待托盘。" />
+        <text name="dr_guide_support_7" text="- 工厂没有获得水。 在自动供水开启时水会自动供给； 若需水工厂看起来缺水，请确认该设置。" />
+        <text name="dr_guide_support_8" text="- 在建筑处没有提示。 左方括号提示仅对属于网络的建筑显示。 如果你在设置中排除了该组，提示会按设计消失。" />
+        <text name="dr_guide_support_9" text="- 模组行为不符合预期。 不要将此模组与其他分发重构模组一起运行——它们挂钩同一系统会冲突。 本模组适用于原版游戏建筑与遵循标准 GIANTS 架构的模组建筑； 某些模组建筑可能表现不同并可能影响本模组。" />
+        <text name="dr_guide_support_10" text="## 指南与概览" />
+        <text name="dr_guide_support_11" text="概览与指南在我的 YouTube 频道 @AussieSimmer 上。" />
+        <text name="dr_guide_support_12" text="## 缺陷报告" />
+        <text name="dr_guide_support_13" text="缺陷、功能请求与模组兼容性请求可作为工单提交到我的 GitHub 仓库：" />
         <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
 
         <text name="dr_guide_changelog_title" text="更新日志" />
         <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
-        <text name="dr_guide_changelog_2" text="1. 大量错误修复（完整详情见 GitHub）。" />
-        <text name="dr_guide_changelog_3" text="2. 大量体验改进（完整详情见 GitHub）。" />
-        <text name="dr_guide_changelog_4" text="3. 新增对多个模组的兼容，并强化代码以整体提升模组兼容性（完整详情见 GitHub）。" />
-        <text name="dr_guide_changelog_5" text="4. 新增总览页， 可在一处查看所有建筑的所有分发活动和分发设置（包含筛选器， 并可设置为显示贡献到特定最终产品的所有来源和生产）。" />
-        <text name="dr_guide_changelog_6" text="5. 新增高级输入和输出管理（阻止、优先级、预留库存、补货目标、最大输入）。" />
-        <text name="dr_guide_changelog_7" text="6. 新增在仓储之间移动和整理产品的能力（例如筒仓、托盘仓库等）。" />
+        <text name="dr_guide_changelog_2" text="1. 大量缺陷修复（完整细节见 GitHub）。" />
+        <text name="dr_guide_changelog_3" text="2. 大量生活质量改进（完整细节见 GitHub）。" />
+        <text name="dr_guide_changelog_4" text="3. 增加了对许多模组的兼容性，并加强了代码以整体提升模组兼容性（完整细节见 GitHub）。" />
+        <text name="dr_guide_changelog_5" text="4. 添加了总览标签页，可在一处查看所有建筑的分发活动与分发设置（包含筛选器，并可设为显示贡献于某个特定最终产品的所有来源与生产）" />
+        <text name="dr_guide_changelog_6" text="5. 添加了高级输入与输出管理（阻止、优先级、预留库存、补货目标、最大输入）。" />
+        <text name="dr_guide_changelog_7" text="6. 添加了在仓储之间移动与排序产品的功能（即筒仓、托盘仓储等）" />
         <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
-        <text name="dr_guide_changelog_9" text="1. 建筑重命名： 分发网络中的每个建筑， 现在都可在基础游戏建造菜单中设置自定义名称。 Distribution Redux 会为筒仓、 仓库、 坑池和市场等所有相关建筑启用此功能。 菜单中会使用你的自定义名称， 并在下方显示原建筑名作参考。" />
-        <text name="dr_guide_changelog_10" text="2. 固态粪肥堆/液态粪肥池产品修复： 二者此前会把对方的产品列为输出。 现在固态粪肥堆只显示固态粪肥， 液态粪肥池只显示液态粪肥。" />
-        <text name="dr_guide_changelog_11" text="3. 固态粪肥堆/液态粪肥池输入修复： 二者此前都不显示输入产品。 现在会分别列出实际流入它们的物料（固态粪肥和液态粪肥）。" />
+        <text name="dr_guide_changelog_9" text="1. 重命名建筑——分发网络中的每个建筑现在都可以从原版游戏建造菜单获得自定义名称。 游戏默认仅允许在某些建筑上这样做； 分发 Redux 为它的所有建筑（包括筒仓、仓储棚、坑储与市场）启用此功能。 模组随后会在本菜单各处使用你的名称，并在其下方显示原始建筑名称作为参考，因此拥有八个相同温室的农场终于可读了。" />
+        <text name="dr_guide_changelog_10" text="2. 粪肥堆 / 粪浆坑产品修复——此前各自将对方的产品列为输出。 粪肥堆现在仅显示粪肥，粪浆坑仅显示粪浆。" />
+        <text name="dr_guide_changelog_11" text="3. 粪肥堆 / 粪浆坑输入修复——此前两者都不显示输入产品。 它们现在列出实际流入的产品（分别为粪肥与粪浆）。" />
         <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
-        <text name="dr_guide_changelog_13" text="1. 界面改进和一致性调整，包括滚动条、表格重新定位，并在已出售列中加入售出产品价值。" />
-        <text name="dr_guide_changelog_14" text="2. 市场和售货亭已加入分发系统。 所有建筑现在都有“供应市场”选项， 可将输出送到你放置的市场。 通过你的市场出售可获得 20% 价格加成， 但批量出售仍会像基础游戏一样降低售价。" />
-        <text name="dr_guide_changelog_15" text="3. 最佳价格出售修复： 没有价格历史时， 系统会比预期更早出售。 现在会回退使用游戏内价格图表， 直到收集到足够的自身数据。" />
-        <text name="dr_guide_changelog_16" text="4. 新增内部保留模式和手动托盘生成。 可托盘化输出可作为散装库存保留， 而不是自动生成托盘。 之后可通过生成窗口手动生成托盘， 并选择托盘类型和数量。" />
+        <text name="dr_guide_changelog_13" text="1. 界面改进与一致性梳理，包括滚动条、重新定位的表格，以及将已售产品价值加入已售列。" />
+        <text name="dr_guide_changelog_14" text="2. 将市场与小卖部加入分发系统——所有建筑现在都有市场供应选项，可将输出路由到你放置的市场。 通过你的市场售出的物品获得 20% 的价格加成，尽管批量出售会降低你获得的价格，与原版游戏相同。" />
+        <text name="dr_guide_changelog_15" text="3. 以最佳价格出售修复——在没有定价历史时，系统会比预期更早出售。 它现在会回退到游戏内价格图表，直到收集到足够的自有数据。" />
+        <text name="dr_guide_changelog_16" text="4. 添加了内部保留模式与手动托盘生成——可托盘化的输出可作为散料库存保留，而非自动生成托盘，然后通过在生成窗口中挑选托盘类型与数量手动生成。 可从生产标签页与原版游戏生产屏幕使用。" />
         <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
-        <text name="dr_guide_changelog_18" text="1. 新增指定货物应立即出售还是达到最佳价格后出售的功能。" />
-        <text name="dr_guide_changelog_19" text="2. 完全重建界面，拆分分发类型，并把设置和帮助指南整合进菜单。" />
-        <text name="dr_guide_changelog_20" text="3. 修复筒仓扩展， 使其以一致方式工作。 扩展现在必须放在匹配筒仓类型附近； 所有分发都在主筒仓中管理， 扩展只为其增加存储容量。" />
-        <text name="dr_guide_changelog_21" text="4. 托盘和草捆仓库现在会显示网络中的所有活动托盘， 以便物品到达前预先配置。 新增预留功能， 可出售托盘（先出售价值最低的） 为下一周期腾出空间； 如果另一个托盘仓库有空间， 则会改为把托盘移动到那里。" />
-        <text name="dr_guide_changelog_22" text="5. 修复托盘仓库交互：游戏内看向装载点图标即可直接打开该建筑的分发页面。" />
-        <text name="dr_guide_changelog_23" text="6. 修复分发后来源残留少量输出的问题（时序问题）。" />
-        <text name="dr_guide_changelog_24" text="7. 修复沼气站： 甲烷和电力销售现在会考虑游戏难度， 沼渣现在会正确登记为财务表中的沼气站收入。" />
-        <text name="dr_guide_changelog_25" text="8. 设置重做为更细的粒度： 现在可包含或排除筒仓/托盘仓库， 也可包含或排除畜牧建筑。 生产设施始终注册并参与分发， 就像基础游戏一样。" />
-        <text name="dr_guide_changelog_26" text="9. 模式标题变更： “保留”现在表示把物品保留在建筑中（过去称为“已储存”）； “入库”表示在有可用仓储时把物品移到场外。" />
+        <text name="dr_guide_changelog_18" text="1. 添加了指定货物应立即可售还是在达到最佳价格时出售的功能。" />
+        <text name="dr_guide_changelog_19" text="2. 完全重建的界面，将分发类型拆分出来，并将设置与帮助指南整合进菜单。" />
+        <text name="dr_guide_changelog_20" text="3. 修复筒仓扩展，使其以一致的方式工作。 扩展现在必须放置在与匹配筒仓类型邻近的范围内； 所有分发都在主筒仓中管理，扩展仅为其增加存储。" />
+        <text name="dr_guide_changelog_21" text="4. 托盘与打包棚现在显示网络中所有活动托盘，以便在物品到达前预配置。 添加了预留功能，可出售托盘（最不值钱的优先）为下一个周期腾出空间——若另一个托盘棚有空间则绕过此功能，此时托盘会移到那里。" />
+        <text name="dr_guide_changelog_22" text="5. 修复托盘棚交互：在游戏中看向装载点图标即可直接打开该建筑的分发页面。" />
+        <text name="dr_guide_changelog_23" text="6. 修复分发后来源中残留少量输出的问题（时序问题）。" />
+        <text name="dr_guide_changelog_24" text="7. 修复沼气工厂：甲烷与电力销售现在考虑游戏难度，且沼液现在在资金表上正确登记为沼气工厂收入。" />
+        <text name="dr_guide_changelog_25" text="8. 重新设计设置以更细化：你现在可以包含或排除筒仓/托盘棚，以及包含或排除畜牧建筑。 生产建筑始终注册并参与分发，与原版游戏相同。" />
+        <text name="dr_guide_changelog_26" text="9. 模式标题变更：保留现在将物品留在建筑内（以前是“已存储”）； 存储在可用时将其移到场外。" />
         <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
         <text name="dr_guide_changelog_28" text="预发布。" />
 
