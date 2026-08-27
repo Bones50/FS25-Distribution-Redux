@@ -208,7 +208,7 @@
         <text name="dr_class_silo" text="Silo" />
         <text name="dr_class_barn" text="Grange" />
         <text name="dr_class_storage" text="Stockage" />
-        <text name="dr_class_pit" text="Fosse" />
+        <text name="dr_class_pit" text="Fosse à lisier" />
         <text name="dr_class_market" text="Marché" />
 
         <!-- ================= NOTICES AND SMALL LABELS =================
@@ -266,19 +266,19 @@
         <text name="dr_mode_0" text="Hérité" />
         <text name="dr_mode_1" text="Conserver" />
         <text name="dr_mode_2" text="Distribuer" />
-        <text name="dr_mode_3" text="Distribuer + vendre" />
+        <text name="dr_mode_3" text="Distribuer + Vendre" />
         <text name="dr_mode_4" text="Vendre" />
-        <text name="dr_mode_5" text="Distribuer + stocker" />
+        <text name="dr_mode_5" text="Distribuer + Stocker" />
         <text name="dr_mode_6" text="Stocker" />
         <text name="dr_mode_7" text="Approv. marché" />
         <text name="dr_mode_8" text="Distribuer + Approv. marché" />
         <text name="dr_mode_9" text="Conserver (interne)" />
         <text name="dr_mode_10" text="Déplacer vers" />
-        <text name="dr_mode_11" text="Distribuer + déplacer vers" />
+        <text name="dr_mode_11" text="Distribuer + Déplacer vers" />
         <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
              the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
              and spawns nothing. The distinction is the whole point, so keep them distinct. -->
-        <text name="dr_mode_holdPallets" text="Conserver palettes" />
+        <text name="dr_mode_holdPallets" text="Conserver les palettes" />
 
         <!-- ================= LINK STATUS =================
              The STATUS column. Three states: product actually moved on the last hourly pass,
@@ -308,8 +308,8 @@
         <text name="dr_timing_bestPrice" text="Meilleur prix" />
         <text name="dr_timing_immediate" text="Immédiat" />
         <text name="dr_market_hold" text="Conserver" />
-        <text name="dr_market_best" text="Vendre  -  Meilleur prix" />
-        <text name="dr_market_immediate" text="Vendre  -  Immédiat" />
+        <text name="dr_market_best" text="Vendre - Meilleur prix" />
+        <text name="dr_market_immediate" text="Vendre - Immédiat" />
 
         <!-- ================= UNITS =================
              Volumes read in litres below 1,000 and in kilolitres above it, so 1,001 L shows as
@@ -342,7 +342,7 @@
         <text name="dr_set_scope_v2" text="Proximité (rayon)" />
         
 		<text name="dr_set_includeHusbandry" text="Élevages" />
-        <text name="dr_set_includeHusbandry_tt" text="Inclut les élevages -- étables, poulaillers, ruches, tas de fumier et fosses à lisier -- dans le réseau de distribution. Désactivé : ils sont entièrement retirés ; ils ne sont ni approvisionnés ni leurs produits (lait / fumier / lisier / œufs / laine / miel) distribués ou vendus." />
+        <text name="dr_set_includeHusbandry_tt" text="Inclut les élevages (étables, poulaillers, ruches, tas de fumier et fosses à lisier) dans le réseau de distribution. Désactivé : ils sont entièrement retirés ; ils ne sont ni approvisionnés ni leurs produits (lait, fumier, lisier, oeufs, laine, miel) distribués ou vendus." />
         <text name="dr_set_includeHusbandry_v1" text="Activé" />
         <text name="dr_set_includeHusbandry_v2" text="Désactivé" />
         
@@ -362,7 +362,7 @@
         <text name="dr_set_includeMapStorage_v2" text="Désactivé" />
         
 		<text name="dr_set_advancedRouting" text="Routage avancé" />
-        <text name="dr_set_advancedRouting_tt" text="Interrupteur principal des Sorties avancées (blocage côté source / priorité / Déplacer vers) et des Entrées avancées (blocage des entrées / plafonds / objectifs de remplissage). Désactivé : ces boutons sont masqués et la distribution par défaut, fondée sur la distance et la source la plus proche, est rétablie. ATTENTION : désactiver cette option EFFACE tous les paramètres avancés existants (chaque blocage, priorité, Déplacer vers, plafond d'entrée et objectif de remplissage) -- ils sont réinitialisés et ne seront PAS restaurés si vous la réactivez ; vous devrez tout reconfigurer." />
+        <text name="dr_set_advancedRouting_tt" text="Interrupteur principal des Sorties avancées (blocage côté source, priorité, Déplacer vers) et des Entrées avancées (blocage des entrées, plafonds, objectifs de remplissage). Désactivé : ces boutons sont masqués et la distribution par défaut, fondée sur la distance et la source la plus proche, est rétablie. ATTENTION : désactiver cette option EFFACE tous les paramètres avancés existants (chaque blocage, priorité, Déplacer vers, plafond d'entrée et objectif de remplissage); ils sont réinitialisés et ne seront PAS restaurés si vous la réactivez ; vous devrez tout reconfigurer." />
         <text name="dr_set_advancedRouting_v1" text="Activé" />
         <text name="dr_set_advancedRouting_v2" text="Désactivé" />
         
@@ -396,7 +396,7 @@
         <text name="dr_set_bufferHours_v6" text="24 heures" />
         
 		<text name="dr_set_sellEnabled" text="Vente" />
-        <text name="dr_set_sellEnabled_tt" text="Interrupteur général de toutes les ventes automatiques (modes Vendre / Distribuer + vendre)." />
+        <text name="dr_set_sellEnabled_tt" text="Interrupteur général de toutes les ventes automatiques (modes Vendre - Distribuer + Vendre)." />
         <text name="dr_set_sellEnabled_v1" text="Activé" />
         <text name="dr_set_sellEnabled_v2" text="Désactivé" />
         
@@ -445,7 +445,7 @@
         <text name="dr_set_seasonalFallbackMonths_v5" text="24 mois" />
 
         <text name="dr_set_bestPriceEnabled" text="Vendre au meilleur prix" />
-        <text name="dr_set_bestPriceEnabled_tt" text="Interrupteur principal : conserve le surplus des modes Vendre / Distribuer + vendre jusqu'à son meilleur mois avant la vente. Désactivé : tout est vendu immédiatement." />
+        <text name="dr_set_bestPriceEnabled_tt" text="Interrupteur principal : conserve le surplus des modes Vendre - Distribuer + Vendre jusqu'à son meilleur mois avant la vente. Désactivé : tout est vendu immédiatement." />
         <text name="dr_set_bestPriceEnabled_v1" text="Activé" />
         <text name="dr_set_bestPriceEnabled_v2" text="Désactivé" />
 
