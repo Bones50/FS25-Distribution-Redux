@@ -32,6 +32,7 @@
         <!-- ================= tangentbindningar (visas i Alternativ > Kontroller) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Konfigurera distribution (närmaste byggnad)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Öppna Distribution Redux-menyn" />
+        <text name="dr_input_openManager" text="Öppna Distributionsmeny" />
 
         <!-- ================= sid- och dialogtitlar ================= -->
         <text name="dr_title_overview"        text="Distribution - Översikt" />
@@ -68,12 +69,12 @@
         <text name="dr_col_received"      text="MOTTAGET" />
         <text name="dr_col_loaded"        text="LASTAT" />
         <text name="dr_col_consumedExp"   text="FÖRBRUKAT (FÖRV.)" />
-        <text name="dr_col_unloaded"      text="URLASSAT" />
+        <text name="dr_col_unloaded"      text="LOSSAT" />
         <text name="dr_col_heldMax"       text="INNEHAV (MAX)" />
-        <text name="dr_col_freeStorage"   text="LEDIG LAGRING" />
-        <text name="dr_col_producedExp"   text="PRODUCERAT (FÖRV.)" />
-        <text name="dr_col_distributed"   text="DISTRIBUERAT" />
-        <text name="dr_col_storedMoved"   text="LAGRAT/FLYTTAT" />
+        <text name="dr_col_freeStorage"   text="LED. LAG." />
+        <text name="dr_col_producedExp"   text="PRODUC. (FÖRV.)" />
+        <text name="dr_col_distributed"   text="DISTRI." />
+        <text name="dr_col_storedMoved"   text="LAG./FLYTT." />
         <text name="dr_col_sold"          text="SÅLT" />
         <text name="dr_col_distrCost"     text="DISTR.KOSTN." />
 
@@ -101,6 +102,17 @@
         <text name="dr_col_produced"          text="PRODUCERAT" />
         <text name="dr_col_outputMode"        text="UTMATNINGSLÄGE" />
         <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_products"          text="PRODUKTER" />
+        <text name="dr_pct_lessThanOne"       text="&lt;1%" />
+        <text name="dr_btn_advIn"             text="Av. inmatning" />
+        <text name="dr_btn_advOut"            text="Av. utmatning" />
+        <text name="dr_col_statusInOut"       text="STATUS (IN / UT)" />
+        <text name="dr_status_short_recv"     text="Mottaget" />
+        <text name="dr_status_short_send"     text="Skickat" />
+        <text name="dr_status_short_sold"     text="Sålt" />
+        <text name="dr_status_short_idle"     text="Väntar" />
+        <text name="dr_status_short_blocked"  text="Block" />
+        <text name="dr_status_short_none"     text="-" />
         <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
         <!-- "/mo" = per månad. Siffran är linjens månatliga mål. -->
         <text name="dr_col_targetMo"          text="MÅL /mån" />
@@ -119,16 +131,23 @@
         <text name="dr_col_available"       text="TILLGÄNGLIGT" />
         <text name="dr_col_fillTarget"      text="FYLLNADSMÅL" />
 
+        <!-- Nedre tabellen i samma dialog: varje byggnad som skulle kunna leverera till den VALDA inmatningen.
+             Den första rubriken fungerar även som sektionstitel, så håll den läsbar som en rubrik.
+             Budget: POTENTIELLA KÄLLOR 500px, RÄCKVIDD 110px, INNEHAV återanvänds från ovan, STATUS 226px. -->
+        <text name="dr_col_potentialSources" text="POT. KÄLLOR" />
+        <text name="dr_col_range"            text="RÄCKVIDD" />
+
         <!-- ================= knappar =================
              Dessa delar samma sidfot, så varje extra tecken tränger grannarna.
              Sikta på samma längd som engelskan eller kortare. -->
-        <text name="dr_btn_priorityUp"    text="Prioritet upp" />
-        <text name="dr_btn_priorityDown"  text="Prioritet ner" />
+        <text name="dr_btn_priorityUp"    text="Prio upp" />
+        <text name="dr_btn_priorityDown"  text="Prio ner" />
         <text name="dr_btn_toggle"        text="Växla" />
         <text name="dr_btn_clear"         text="Rensa" />
         <text name="dr_btn_blockAll"      text="Blockera alla" />
         <text name="dr_btn_reserveDown"   text="- Reserv" />
         <text name="dr_btn_reserveUp"     text="+ Reserv" />
+        <text name="dr_lbl_reserveLitres" text="Reserverat:" />
         <text name="dr_btn_maxDown"       text="- Max" />
         <text name="dr_btn_maxUp"         text="+ Max" />
         <text name="dr_btn_targetDown"    text="- Mål" />
@@ -186,10 +205,15 @@
              Samlad: en tank delas av flera produkter. Individuell: en separat tank per
              produkt. Visas i dialogen Avancerade inmatningar och i Översiktens
              inställningsvy, som medvetet använder identisk formulering. -->
-        <text name="dr_type_pooled"     text="Samlad" />
-        <text name="dr_type_individual" text="Individuell" />
-        <text name="dr_type_internal"   text="Intern" />
-        <text name="dr_type_blocked"    text="BLOCKERAD" />
+        <text name="dr_type_pooled"           text="Samlad" />
+        <text name="dr_type_individual"       text="Individuell" />
+        <text name="dr_type_pooledShort"      text="Pool" />
+        <text name="dr_type_poolN"            text="Pool %s" />
+        <text name="dr_type_poolNShort"       text="P%s" />
+        <text name="dr_type_individualShort"  text="Ind." />
+        <text name="dr_type_linkedShort"      text="Länk" />
+        <text name="dr_type_internal"         text="Intern" />
+        <text name="dr_type_blocked"          text="BLOCKERAD" />
 
         <!-- ================= UTMATNINGSPRIORITET =================
              "Avstånd" är standard: närmaste konsument först. "Rankad (n)" betyder att
@@ -225,6 +249,8 @@
         <text name="dr_adv_title"         text="Avancerat - %s" />
         <text name="dr_adv_activeInvalid" text="Aktiv - Ogiltig" />
         <text name="dr_adv_noCapacity"    text="Ingen kapacitet att reservera mot" />
+        <text name="dr_adv_reserveBad"     text="Reserv: ange antal liter" />
+        <text name="dr_adv_reserveClamped" text="Reserv begränsad till kapacitet: %s" />
         <text name="dr_adv_loopOne"       text="Kan inte aktivera %s - det skulle skicka produkten i en cirkel tillbaka hit." />
         <text name="dr_adv_loopMany"      text="%d destination(er) förblev blockerade - de skulle skicka produkten i en cirkel tillbaka hit." />
 
@@ -235,6 +261,33 @@
         <text name="dr_inp_pooledCapped" text="Samlad lagring: %s delas av %d produkter, %d har tak. Allt utan tak kan använda hela poolen." />
         <text name="dr_inp_pooled"       text="Samlad lagring: %s delas av %d produkter. Var och en kan använda allt - sätt ett max för att reservera plats åt de andra." />
         <text name="dr_inp_individual"   text="Sätt varje produkts max, eller blockera den. Denna byggnad har individuell lagring per produkt." />
+        
+        <!-- Visas i stället för källraderna när ingen byggnad på gården kan leverera den valda
+             produkten. En tom tabell under en rubrik ser ut som en bugg; en mening läses som ett svar. -->
+        <text name="dr_inp_noSources"    text="Ingen byggnad på gården kan leverera denna produkt." />
+        
+        <!-- STATUS för en potentiell källa, i en 226px cell vid 12px: cirka 30 tecken.
+             Dessa är de tre kategorierna som statuskolumnen räknar, i ordning.
+             LEVERERAR
+               Levererar        den flyttade produkt hit vid senaste passen
+             KUNDE LEVERERA, MEN GÖR INTE DET
+               Vänteläge        redo och tillåten, bara inte den som används just nu
+               Inget lager      tillåten och inom räckvidd, men har inget av produkten just nu
+             KAN INTE LEVERERA
+               Blockerad        denna källa har blockerat denna mottagare i sina egna Avancerade utmatningar
+               Distribuerar ej  dess läge matar inte konsumenter (Håll, Sälj, endast Lagra...)
+               Utanför räckvidd utanför distributionsradien, så ingen inställning kan få den att leverera -->
+        <!-- STATUS för en PRODUKTIONSLINJE på fliken Produktioner: avstängd, igång eller påslagen men
+             inte aktivt producerande (saknar en inmatning, eller dess utmatningsbuffert är full). -->
+        <text name="dr_lineStatus_off"     text="Av" />
+        <text name="dr_lineStatus_running" text="Igång" />
+        <text name="dr_lineStatus_idle"    text="Väntar" />
+        <text name="dr_srcst_feeding"    text="Levererar" />
+        <text name="dr_srcst_standby"    text="Vänteläge" />
+        <text name="dr_srcst_noStock"    text="Inget lager" />
+        <text name="dr_srcst_blocked"    text="Blockerad" />
+        <text name="dr_srcst_notDist"    text="Distribuerar ej" />
+        <text name="dr_srcst_outOfRange" text="Utanför räckvidd" />
 
         <!-- ================= DIALOGEN SKAPA PALLAR =================
              Kvantitetsord bredvid stegaren och sammanfattningsraden ovanför. -->
@@ -409,18 +462,23 @@
         <text name="dr_set_distCostEnabled_v1"  text="Aktiverad" />
         <text name="dr_set_distCostEnabled_v2"  text="Inaktiverad" />
 
-        <!-- Beloppen nedan är spelvaluta per timme. Spelarens egen valutasymbol
-             ersätts inte här, så översätt endast "/h"-delen. -->
-        <text name="dr_set_distCostBase"     text="Kostnadstakt" />
+        <text name="dr_set_distCostBase"     text="Kostnad" />
         <text name="dr_set_distCostBase_tt"  text="Bas transportkostnad per timme för en kort transport (vid eller under kostnadsavståndet nedan)." />
-        <text name="dr_set_distCostBase_v1"  text="%s /h" />
-        <text name="dr_set_distCostBase_v2"  text="%s /h" />
-        <text name="dr_set_distCostBase_v3"  text="%s /h" />
-        <text name="dr_set_distCostBase_v4"  text="%s /h" />
-        <text name="dr_set_distCostBase_v5"  text="%s /h" />
+
+        <!-- PENNINGVÄRDEN: "%s" är beloppet, formaterat av SPELET i spelarens egen valuta.
+             Skriv INTE en valutasymbol här. FS25 hämtar valutan från SPARFILEN snarare än
+             från språket, så en hårdkodad symbol i någon översättning skulle vara fel för alla
+             som spelar på det språket med en annan valuta. Översätt endast "/h"-delen (per timme),
+             och behåll "%s". De fem är medvetet identiska på engelska; ett språk som behöver
+             annan ordföljd per belopp kan fortfarande variera dem. -->
+        <text name="dr_set_distCostBase_v1"  text="%s /tim." />
+        <text name="dr_set_distCostBase_v2"  text="%s /tim." />
+        <text name="dr_set_distCostBase_v3"  text="%s /tim." />
+        <text name="dr_set_distCostBase_v4"  text="%s /tim." />
+        <text name="dr_set_distCostBase_v5"  text="%s /tim." />
 
         <text name="dr_set_distCostThreshold"     text="Kostnadsavstånd" />
-        <text name="dr_set_distCostThreshold_tt"  text="Transporter på eller under detta avstånd betalar den fasta bastakten; längre transporter skalas linjärt uppåt." />
+        <text name="dr_set_distCostThreshold_tt"  text="Transporter på eller under detta avstånd betalar den fasta kostnaden; längre transporter skalas linjärt uppåt." />
         <text name="dr_set_distCostThreshold_v1"  text="25 m" />
         <text name="dr_set_distCostThreshold_v2"  text="50 m" />
         <text name="dr_set_distCostThreshold_v3"  text="100 m" />
