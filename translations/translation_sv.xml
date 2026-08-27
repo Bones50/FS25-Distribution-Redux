@@ -226,7 +226,7 @@
         <text name="dr_class_silo"    text="Silo" />
         <text name="dr_class_barn"    text="Ladugård" />
         <text name="dr_class_storage" text="Förvaring" />
-        <text name="dr_class_pit"     text="Slamgbrunn" />
+        <text name="dr_class_pit"     text="Gödsel/Slam" />
         <text name="dr_class_market"  text="Marknad" />
 
         <!-- ================= MEDDELANDEN OCH SMÅ ETIKETTER =================
