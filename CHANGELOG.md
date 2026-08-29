@@ -15,9 +15,10 @@ Fixed
 8) Fixed animal husbandries showing only the total food amount rather than the individual food amounts stored. (26/8)
 9) Fixed an issue with building icons not showing in the UI due to no building menu icon being defined in mods. Now checks and has multiple fallback options. (26/8)
 10) Fixed Horse Barns not accpeting Straw. (26/8)
-11) (NEW) DR will now remember the last DR cycle activity across a save and reload, and all statuses will reflect that rather than having to run a cycle to see what's happening. (27/8)
-12) (NEW) Audited the whole l10n and fixed some missing/duplicated translation keys. (27/8)
-13) (NEW) DR will now use base game currency everywhere rather than being hardcoded. (27/8)
+11) DR will now remember the last DR cycle activity across a save and reload, and all statuses will reflect that rather than having to run a cycle to see what's happening. (27/8)
+12) Audited the whole l10n and fixed some missing/duplicated translation keys. (27/8)
+13) DR will now use base game currency everywhere rather than being hardcoded. (27/8)
+14) (NEW) Added pallet counts back to UI. The bar will show internal storage, pallets on the pallet spawner will be shown as a count & Pallet image over the storage bar (29/8)
 
 Added
 1) Added L10n Translation Layer to the mod (See notes above for contributors). 15/8
@@ -35,8 +36,8 @@ Added
 13) Added an API Layer to support add-on mods (no gameplay change) 24/8
 14) Reworked the UI's to be more user friendly. This is the first cut of the new UI, feedback welcome, i have described the new storage bar included in the UI below as a new feature (It's complicated!). (26/8)
 15) You can now open the DR menu while in a vehicle. (26/8)
-16) (NEW) Added an updated indication of how many sources/outputs did (Actually fed material), could have (could but didn't send due to closer sources or lack of product) or could not (Blocked or out of range) feed the input/output demand (Example- 1/2/1 means 1 source actively feeding, 2 sources could feed but aren't and 1 that is blocked or out of range).(27/8)
-17) (NEW) Re-did the advanced input page to show, for the selected product, all the possible sources and their status (such as whether blocked, distance, how much stored material etc ).(27/8)
+16) Added an updated indication of how many sources/outputs did (Actually fed material), could have (could but didn't send due to closer sources or lack of product) or could not (Blocked or out of range) feed the input/output demand (Example- 1/2/1 means 1 source actively feeding, 2 sources could feed but aren't and 1 that is blocked or out of range).(27/8)
+17) Re-did the advanced input page to show, for the selected product, all the possible sources and their status (such as whether blocked, distance, how much stored material etc ).(27/8)
 
 NEW FEATURES
 1) NOTE THIS IS VERY EXPERIMENTAL SO PLEASE TEST ON A COPY OF YOUR SAVEGAME FIRST! Added a new feature to increase support for modded buildings and change how they work with DR to make more sense. 

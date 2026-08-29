@@ -88,6 +88,18 @@
         <textAlignment value="right" />
     </Profile>
 
+    <!-- The "+3" beside the pallet icon, drawn ON the storage bar rather than beside it. All four
+         colours are set to the SAME value: this chip sits over the fills and must not dim or shift
+         when the row happens to be the selected one, the way TextElement:getColor would otherwise make
+         it (it prefers textFocusedSelectedColor / textSelectedColor / textFocusedColor over textColor
+         whenever the row is in those states), the finding 5.77b records for SDInfoCell. -->
+    <Profile name="SDBarPalletCount" extends="SDBarLabelRight">
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textSelectedColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainLight" />
+        <textFocusedSelectedColor value="$preset_fs25_colorMainLight" />
+    </Profile>
+
     <!-- CENTRED numeric columns (RECEIVED / DISTRIBUTED on the merged storage table) and their headers.
          5.22 flipped every DATA column to the left so a table reads as one block, and that still holds
          for the wide cells; these two carry a single short figure in a narrow column, where centring
