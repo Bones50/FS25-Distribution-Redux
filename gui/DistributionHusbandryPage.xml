@@ -74,7 +74,6 @@
                     </Bitmap>
                     <Text profile="SDBarLabel"      position="323px 23px" size="180px 15px" name="barHeld" />
                     <Text profile="SDBarLabelRight" position="443px 23px" size="180px 15px" name="barCap" />
-                    <Text profile="SDRowCell" position="556px 0px" size="110px 42px" textSize="12px" name="remainingText" />
                     <Text profile="SDRowCellCenter" position="674px 0px" size="110px 42px" textSize="12px" name="recvText" />
                     <Text profile="SDRowCellCenter" position="792px 0px" size="110px 42px" textSize="12px" name="consumedText" />
                     <Text profile="SDRowCell" position="910px 0px" size="180px 42px" textSize="12px" name="statusText" />
@@ -123,6 +122,16 @@
                     </Bitmap>
                     <Text profile="SDBarLabel"      position="207px 23px" size="180px 15px" name="barHeld" />
                     <Text profile="SDBarLabelRight" position="327px 23px" size="180px 15px" name="barCap" />
+                    <!-- "+3 [pallet]" is whole pallets standing on this building's own pad, drawn over the
+                         right end of the track. SIBLINGS of barBg, not children, so they still show on a
+                         building whose internal store has no capacity to draw a track for (a beehive).
+                         Declared AFTER barBg so they paint on top of it. -->
+                    <Bitmap position="407px 4px" size="100px 18px" name="barPalletPlate" visible="false"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.10 0.11 0.13 0.78" />
+                    <Text profile="SDBarPalletCount" position="411px 4px" size="60px 18px" textSize="12px"
+                          name="barPalletCount" visible="false" />
+                    <Bitmap position="481px 5px" size="26px 16px" name="barPalletIcon" visible="false"
+                            imageColor="1 1 1 1" imageSize="512 512" imageUVs="105px 322px 303px 190px" />
                     <Text profile="SDRowCellCenter" position="517px 0px" size="79px 42px" textSize="12px" name="prodText" />
                     <Text profile="SDRowCellCenter" position="604px 0px" size="87px 42px" textSize="12px" name="distText" />
                     <!-- mode AND its sell timing share this cell ("Distribute + Sell - Sell Immediately"),

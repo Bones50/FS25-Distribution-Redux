@@ -102,6 +102,7 @@ SmartDistribution._layoutScaling = false   -- true ONLY while DR's own PAGE file
 -- would render 43x32 instead of 32x32. Add to these lists if anything looks stretched.
 SmartDistribution.LAYOUT_KEEP_ASPECT_NAMES = {
     assetIcon = true, fillIcon = true, productIcon = true,   -- DR's own images
+    barPalletIcon = true,                                    -- the pallet chip on the storage bar
 }
 SmartDistribution.LAYOUT_KEEP_ASPECT_PROFILES = {
     fs25_menuHeaderIcon = true, fs25_menuHeaderIconBg = true, -- the tab header badge
@@ -17707,8 +17708,55 @@ function SmartDistribution.outputBarValues(p, ft, role, held)
     if p == nil or ft == nil then return nil end
     local total = SmartDistribution.outputCapacityTotal ~= nil
                   and SmartDistribution.outputCapacityTotal(p, ft, role) or nil
-    if type(total) ~= "number" or total <= 0 or total >= INF then return nil end
+    if type(total) ~= "number" or total >= INF then return nil end
     held = (type(held) == "number" and held > 0) and held or 0
+
+    -- THE BAR IS THE INTERNAL STORE ALONE; PALLETS ARE THE OVERLAY (2026-08-29).
+    --
+    -- Both pages hand `held` in as the building's FULL stock, and each is right to: a pen folds its
+    -- queue and its pad into one figure through assetHeld (5.21) and a production adds its pad to the
+    -- buffer, so between them that is the one number the tabs print. But the two halves live in
+    -- different containers and only ONE of them has a capacity to draw a bar against, so the pad is
+    -- taken back out HERE rather than in each page -- one subtraction, one basis, and neither caller
+    -- had to change (5.27 / 5.28 / 5.54c).
+    --
+    -- What it fixes: outputCapacityTotal adds husbandryPalletCapacity, which reads spec_husbandryPallets
+    -- and so returns 0 FOR A PRODUCTION. A bakery holding a 450 L buffer (5,000 L cap) and five bread
+    -- pallets therefore reported held 5,450 against total 5,000, frac() clamped to 1, and the bar read
+    -- COMPLETELY FULL while the buffer was nearly empty -- with the two labels on the same row
+    -- contradicting each other ("5,450 L (100%)" over "5,000 L"). A pen could do the same once its pad
+    -- was full and its queue was filling toward the next release.
+    --
+    -- padSnapshot returns 0, 0 for anything that is not a pallet spawner and is memoised on the same
+    -- epoch + TTL as the rest of the menu reads (5.46), so a bulk row pays one table lookup and is
+    -- byte-identical to before.
+    local padLitres, padCount = 0, 0
+    if SmartDistribution.padSnapshot ~= nil then
+        local ok, l, n = pcall(SmartDistribution.padSnapshot, p, ft)
+        if ok then
+            if type(l) == "number" then padLitres = l end
+            if type(n) == "number" then padCount  = n end
+        end
+    end
+    held  = math.max(0, held - padLitres)
+    total = math.max(0, total - ((SmartDistribution.husbandryPalletCapacity ~= nil)
+                                 and SmartDistribution.husbandryPalletCapacity(p, ft) or 0))
+
+    -- A PEN HAS NO BULK STORAGE AT ALL for an egg or a fleece -- assetCapacity is 0 and every litre of
+    -- its capacity was the PAD -- so the subtraction above leaves it with no denominator and the bar
+    -- would simply vanish from the Animal Husbandry tab. Its queue does have a real ceiling though, and
+    -- it is not invented: spawnWholePallets releases the moment pendingLiters reaches one pallet's
+    -- capacity (5.20), so that IS the most the queue can hold under the default setting and the bar
+    -- reads as "filling toward the next pallet" -- exactly what 5.20 / 5.25 describe it doing.
+    -- Restricted to spec_husbandryPallets: a BEEHIVE declares neither a capacity nor a pallet limit
+    -- (checked in PlaceableBeehivePalletSpawner -- it carries pendingLiters and nothing else), so it
+    -- keeps today's behaviour of showing no track rather than being given a made-up one (5.21).
+    if total <= 0 and p.spec_husbandryPallets ~= nil
+       and SmartDistribution.palletCapacityForHusbandry ~= nil then
+        local one = SmartDistribution.palletCapacityForHusbandry(p, ft)
+        if type(one) == "number" and one > 0 then total = one end
+    end
+    if total <= 0 then return nil end
 
     -- The RESERVE, read the way the Advanced Outputs dialog writes it (settingUid, role-aware), so the
     -- mark and the dialog can never disagree. See the note in storageBarValues about the pass reading
@@ -17722,7 +17770,91 @@ function SmartDistribution.outputBarValues(p, ft, role, held)
         end
     end
     return { total = total, held = held, others = 0, capL = nil, pct = 100,
-             blocked = false, target = nil, reserve = reserve }
+             blocked = false, target = nil, reserve = reserve,
+             pallets = padLitres, palletCount = padCount }
+end
+
+-- ---------------------------------------------------------------------------
+-- THE PALLET ICON, RESOLVED ONCE AND VERIFIED BEFORE USE.
+--
+-- REFERENCED, NOT SHIPPED. The base game's own potato-pallet store picture is used straight out of the
+-- game data rather than copied into the mod, which settles three things at once: nothing of GIANTS' is
+-- redistributed in the zip (CLAUDE.md 8.1 draws that line for source and it reads the same for art);
+-- deploy-dr.ps1's allowlist filters gui/ and scripts/ to .lua and .xml, so a PNG dropped in there would
+-- have been SILENTLY absent from the build with the deploy still reporting success (the 5.60 trap, in
+-- its extension form); and there is no atlas to register.
+--
+-- The XML route is not available for this: GuiOverlay.resolveFilename substitutes exactly three globals
+-- (g_baseUIFilename / g_baseHUDFilename / g_iconsUIFilename) and does NO mod- or data-relative
+-- resolution, so an imageFilename attribute cannot name this file. It is set at runtime instead, which
+-- is what DR already does for building and fill icons.
+--
+-- FALLBACK CANDIDATES, TRIED IN ORDER, for a build where the store lookup comes up empty (the pallet is
+-- a multi-purchase item, so its store registration is not something to take on trust). The resolved form
+-- of a "$data/..." path is not readable from here:
+-- Utils.getFilename is the documented resolver but its body is stripped from the SDK source (§8.1), so
+-- an absence there proves nothing and the raw and engine-relative forms are kept as fallbacks. The
+-- declared extension is .png while the shipped file is store_palletPotato.dds -- the same authored-png /
+-- shipped-dds split iconFileUsable already documents -- so textureFileExists is what picks the winner
+-- rather than any guess about which extension is on disk.
+--
+-- IT IS CROPPED IN THE XML, AND THE CROP IS MEASURED. Reported twice from screenshots as "still low and
+-- too small": the store picture is 512x512 and the pallet occupies only x 105..408, y 322..512 -- the
+-- BOTTOM THIRD, 16.7% of the canvas, with the rest transparent. Drawn whole into an 18px band the pallet
+-- itself was about 12x7 px and sat against the bottom edge, which is what "low and small" was. The row
+-- templates therefore carry imageSize="512 512" imageUVs="105 322 303 190" and a box of 29x18 matching
+-- the content's own 1.595 aspect, so the pallet fills the band instead of floating in a mostly-empty
+-- square. Measured with an alpha bounding box at four thresholds (0/32/128/200) and stable across all
+-- four, so it is the pallet plus its soft edge, not a stray shadow.
+--
+-- BitmapElement:loadFromXML reads #imageSize and #imageUVs directly, and the UV string's y is measured
+-- from the TOP (GuiUtils.getUVs flips it: 1 - y - h). setImageFilename only swaps the image handle on
+-- the same overlay table, so a runtime filename does NOT clobber XML-declared UVs -- both read from
+-- BitmapElement.lua / GuiOverlay.lua, each measuring complete (27% / 26% blank).
+--
+-- Memoised on first use INCLUDING THE MISS (stored as false), so a build where none of the candidates
+-- resolves costs one pass over three strings for the whole session and then draws no icon, rather than
+-- re-probing per row per refresh. Safe to memoise a miss here in a way it was NOT in 5.29's load-time
+-- path: this is a fixed file in the game install, not a spec on a modded building that may still be
+-- populating.
+SmartDistribution.PALLET_ICON_CANDIDATES = {
+    "$data/objects/pallets/palletPotato/store_palletPotato.png",
+    "data/objects/pallets/palletPotato/store_palletPotato.png",
+}
+SmartDistribution.PALLET_ICON_STORE_XML = "data/objects/pallets/palletPotato/palletPotato.xml"
+function SmartDistribution.palletIconFile()
+    if SmartDistribution._palletIconFile ~= nil then
+        return SmartDistribution._palletIconFile or nil        -- false (a cached miss) -> nil
+    end
+    -- FIRST CHOICE: ask the STORE for the pallet's own picture. That path has already been resolved and
+    -- loaded by the game itself, so it needs no assumption about how "$data/..." expands or which
+    -- extension is on disk -- the same lookup assetIconFile uses for a building, keyed the same way.
+    if g_storeManager ~= nil and g_storeManager.getItemByXMLFilename ~= nil then
+        local ok, item = pcall(g_storeManager.getItemByXMLFilename, g_storeManager,
+                               SmartDistribution.PALLET_ICON_STORE_XML)
+        if ok and item ~= nil then
+            -- imageFilename ONLY. The crop below is cut for THAT picture (512x512, the pallet in its
+            -- bottom third); imageFilenameSmall / iconFilename are different images at different sizes,
+            -- so accepting one would silently apply the wrong UV window and show a slice of nothing.
+            if SmartDistribution.iconFileUsable(item.imageFilename) then
+                SmartDistribution._palletIconFile = item.imageFilename
+                return item.imageFilename
+            end
+        end
+    end
+    for _, cand in ipairs(SmartDistribution.PALLET_ICON_CANDIDATES) do
+        local f = cand
+        if Utils ~= nil and Utils.getFilename ~= nil then
+            local ok, r = pcall(Utils.getFilename, cand, nil)
+            if ok and type(r) == "string" and r ~= "" then f = r end
+        end
+        if SmartDistribution.iconFileUsable(f) then
+            SmartDistribution._palletIconFile = f
+            return f
+        end
+    end
+    SmartDistribution._palletIconFile = false
+    return nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -17739,6 +17871,19 @@ end
 -- green and the others fill is red, so a green or red line disappears exactly where it matters most.
 -- That is why MAX is orange rather than red and TARGET is blue rather than green (2026-08-26).
 --   "both"   -> all three, for the merged Silos/Markets table where one row IS both directions.
+-- Hide the whole widget: the track AND the pallet chip. ONE function because the chip is a SIBLING of
+-- barBg rather than a child of it (it has to be, so it still draws on a building with no track), which
+-- means hiding the track no longer hides the chip with it. Both pages' notice rows call this: cells are
+-- RECYCLED by SmoothList, so a "+N blocked" row would otherwise keep the "+3" and the pallet picture of
+-- whichever product row last used its slot (5.7 / 5.57).
+function SmartDistribution.hideStorageBar(cell)
+    if cell == nil or cell.getAttribute == nil then return end
+    for _, n in ipairs({ "barBg", "barPalletPlate", "barPalletCount", "barPalletIcon" }) do
+        local e = cell:getAttribute(n)
+        if e ~= nil and e.setVisible ~= nil then e:setVisible(false) end
+    end
+end
+
 function SmartDistribution.drawStorageBar(cell, p, ft, role, side, held)
     if cell == nil or cell.getAttribute == nil then return end
     local bg = cell:getAttribute("barBg")
@@ -17746,10 +17891,61 @@ function SmartDistribution.drawStorageBar(cell, p, ft, role, side, held)
     local heldT, capT = cell:getAttribute("barHeld"), cell:getAttribute("barCap")
     local function label(c, t) if c ~= nil and c.setText ~= nil then c:setText(t) end end
 
+    -- "+3 [pallet]" -- how many whole pallet OBJECTS are standing on this building's own pad, beside
+    -- whatever the bar is showing. The bar itself is the INTERNAL store only (see outputBarValues), so
+    -- without this the pallets would not be represented anywhere: the count restores what the tabs lost
+    -- when the bar replaced the "473 L (55,000 L) + 3,000 L (3p)" text, which the Overview still shows
+    -- and these tabs had stopped agreeing with.
+    --
+    -- A COUNT OF OBJECTS, never litres/1000: pallet capacity differs by fill type and a part-filled
+    -- pallet is one pallet standing on the pad, not none (5.16). padSnapshot already counts it that way
+    -- and excludes emptied pallets still sitting there.
+    --
+    -- HIDDEN AT ZERO, and it must be hidden ACTIVELY on every path out of this function -- cells are
+    -- RECYCLED by SmoothList, so a bulk row reusing a pallet row's slot would otherwise keep its "+3"
+    -- and its icon (the trap 5.7 hit with colours and 5.57 with the notice row). That is why the
+    -- early-return below calls this too.
+    local function setPalletOverlay(n)
+        local icon, txt = cell:getAttribute("barPalletIcon"), cell:getAttribute("barPalletCount")
+        local plate = cell:getAttribute("barPalletPlate")
+        local show = type(n) == "number" and n > 0
+        -- The chip sits ON the track, over green, red or bare grey depending on how full the internal
+        -- store is, so it carries its own dark backing or it is unreadable exactly where it matters.
+        -- Hidden with the rest at zero, which also keeps it off the RESERVE mark on a row that has no
+        -- pallets to report.
+        if plate ~= nil and plate.setVisible ~= nil then plate:setVisible(show) end
+        local file = show and SmartDistribution.palletIconFile() or nil
+        if txt ~= nil then
+            if txt.setText ~= nil then txt:setText(show and ("+" .. tostring(n)) or "") end
+            if txt.setVisible ~= nil then txt:setVisible(show) end
+        end
+        if icon ~= nil then
+            -- the count still shows if the picture cannot be resolved: "+3" alone is the information,
+            -- the icon is what makes it readable at a glance
+            if show and file ~= nil and icon.setImageFilename ~= nil then icon:setImageFilename(file) end
+            if icon.setVisible ~= nil then icon:setVisible(show and file ~= nil) end
+        end
+    end
+
     side = side or "both"
+
+    -- THE CHIP IS RESOLVED INDEPENDENTLY OF THE TRACK, and that is the point of it being a sibling. A
+    -- BEEHIVE declares no pallet capacity and no bulk storage at all, so it has no denominator and its
+    -- track is correctly hidden (5.21: omit rather than invent) -- but it can still be standing on three
+    -- honey pallets, and "+3" is then the only thing the row has to say. Reading it here rather than off
+    -- the returned table keeps the two questions apart: "how full is the internal store" and "how many
+    -- pallets are outside it" have different answers and one may exist without the other.
+    -- Never on a pure INPUT row: a pad is an output.
+    local padCount = 0
+    if side ~= "input" and SmartDistribution.padSnapshot ~= nil then
+        local ok, _, n = pcall(SmartDistribution.padSnapshot, p, ft)
+        if ok and type(n) == "number" then padCount = n end
+    end
+    setPalletOverlay(padCount)
+
     local v = (side == "output") and SmartDistribution.outputBarValues(p, ft, role, held)
                                   or SmartDistribution.storageBarValues(p, ft, role)
-    -- No resolvable capacity: hide the widget rather than draw an empty tank, which would read as
+    -- No resolvable capacity: hide the TRACK rather than draw an empty tank, which would read as
     -- "this holds nothing" when the truth is "DR cannot say". Same rule as the capacity bracket (5.21).
     if v == nil or v.total == nil or v.total <= 0 then
         if bg.setVisible ~= nil then bg:setVisible(false) end

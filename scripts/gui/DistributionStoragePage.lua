@@ -81,8 +81,13 @@ local function renderNoticeRow(cell, hidden, what)
     -- ...and the BAR itself. Cells are RECYCLED, so without this the notice row inherits whatever bar
     -- the product row that last used this slot drew (5.57's colour trap, one widget over). Its two
     -- LABELS need no special case: they are in NOTICE_CELLS with every other text cell.
-    local bar = cell:getAttribute("barBg")
-    if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
+    -- the track AND the pallet chip, which is a sibling of barBg and so is not hidden with it
+    if SmartDistribution.hideStorageBar ~= nil then
+        SmartDistribution.hideStorageBar(cell)
+    else
+        local bar = cell:getAttribute("barBg")
+        if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
+    end
     local n = cell:getAttribute("noticeText")
     if n == nil then return end
     if n.setVisible ~= nil then n:setVisible(true) end
@@ -332,23 +337,6 @@ local function setStorageBar(cell, placeable, ft, role, side, held)
     SmartDistribution.drawStorageBar(cell, placeable, ft, role, side or "both", held)
 end
 
-local function setRemainingCell(cell, remaining, capacity)
-    local c = cell:getAttribute("remainingText")
-    if c ~= nil then
-        if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
-        if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
-    end
-    local h = cell:getAttribute("heldText")
-    if h == nil or h.setTextColor == nil then return end
-    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
-    local col = nil
-    if remaining ~= nil and capacity ~= nil and capacity > 0 then
-        if remaining <= 0.5 then col = COL.BLOCKED
-        elseif remaining <= capacity * 0.10 then col = COL.IDLE
-        else col = COL.ACTIVE end
-    end
-    if col ~= nil then h:setTextColor(col[1], col[2], col[3], col[4]) else h:setTextColor(1, 1, 1, 1) end
-end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
 -- building category -- silos, storages, productions, animal pens and markets resolve a link the same way.

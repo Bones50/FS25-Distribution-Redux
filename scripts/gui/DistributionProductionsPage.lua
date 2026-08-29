@@ -70,8 +70,13 @@ local function renderNoticeRow(cell, hidden, what)
     -- ...and the BAR. Cells are RECYCLED, so without this the notice row keeps whatever bar the product
     -- row that last used this slot drew. Its two LABELS need no special case -- they are in NOTICE_CELLS
     -- with every other text cell.
-    local bar = cell:getAttribute("barBg")
-    if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
+    -- the track AND the pallet chip, which is a sibling of barBg and so is not hidden with it
+    if SmartDistribution.hideStorageBar ~= nil then
+        SmartDistribution.hideStorageBar(cell)
+    else
+        local bar = cell:getAttribute("barBg")
+        if bar ~= nil and bar.setVisible ~= nil then bar:setVisible(false) end
+    end
     -- SmoothList RECYCLES cells: clear every column or this row inherits the last product row in the slot
     for _, k in ipairs(NOTICE_CELLS) do
         local c = cell:getAttribute(k)
@@ -227,27 +232,6 @@ local function inputRemaining(placeable, ft)
     return v
 end
 
--- The verdict is painted on the HELD cell -- "amount" on this page -- rather than on the figure it was
--- derived from, so FREE STORAGE stays plain white. Same maths, moved one column left. Cells are RECYCLED by
--- SmoothList, so BOTH the nil path and the plain cell must actively reset the colour or a row inherits the
--- previous row's.
-local function setRemainingCell(cell, remaining, capacity)
-    local c = cell:getAttribute("remainingText")
-    if c ~= nil then
-        if c.setText ~= nil then c:setText(remaining ~= nil and fmtV(remaining) or "-") end
-        if c.setTextColor ~= nil then c:setTextColor(1, 1, 1, 1) end
-    end
-    local h = cell:getAttribute("amount")
-    if h == nil or h.setTextColor == nil then return end
-    local COL = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
-    local col = nil
-    if remaining ~= nil and capacity ~= nil and capacity > 0 then
-        if remaining <= 0.5 then col = COL.BLOCKED
-        elseif remaining <= capacity * 0.10 then col = COL.IDLE
-        else col = COL.ACTIVE end
-    end
-    if col ~= nil then h:setTextColor(col[1], col[2], col[3], col[4]) else h:setTextColor(1, 1, 1, 1) end
-end
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). The label set is
 -- shared in SmartDistribution so every building category reads identically.
