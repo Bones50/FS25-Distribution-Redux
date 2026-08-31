@@ -807,5 +807,31 @@
         <text name="dr_guide_changelog_28" text="Pre-release." />
 
         <!-- ============ end USER GUIDE ============ -->
+
+        <!-- the ANIMAL PANEL, drawn only when an extension registers a provider (API v4).
+             Budgets: the block labels sit in 234-480px columns at 11px, so keep them short. -->
+        <text name="dr_col_animalPanel" text="ANIMALS, FEED AND HERD VALUE" />
+        <text name="dr_panel_animals" text="ANIMALS" />
+        <text name="dr_panel_health" text="HEALTH" />
+        <text name="dr_panel_productivity" text="PRODUCTIVITY" />
+        <text name="dr_panel_na" text="n/a" />
+        <text name="dr_panel_feed" text="FEED" />
+        <text name="dr_panel_foodFactor" text="Food factor %s" />
+        <text name="dr_panel_grazing" text="grazing" />
+        <text name="dr_panel_noFeedData" text="no feed data" />
+        <text name="dr_panel_herdValue" text="HERD VALUE" />
+        <text name="dr_panel_ofPeak" text="of %s at peak age" />
+        <text name="dr_panel_pastPeak" text="past peak - value falls with age" />
+        <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
+             characters; the four breakdown words share 740px with four money figures, so
+             keep each under about 10. -->
+        <text name="dr_panel_profit" text="EST. FORECAST - PROFIT / MO" />
+        <text name="dr_panel_pfOutputs" text="outputs" />
+        <text name="dr_panel_pfInputs" text="inputs" />
+        <text name="dr_panel_pfAgeing" text="ageing" />
+        <text name="dr_panel_pfBirths" text="births" />
+
+        <!-- the known-problem-mod warning shown once on load -->
+        <text name="dr_modwarn_body" text="WARNING! You currently have mods activated that are known to create issues with Distribution Redux. You can continue, but game performance and mod performance cannot be guaranteed while these mods are active. To avoid this warning, quit and reload the save without the below mods activated:" />
     </texts>
 </l10n>

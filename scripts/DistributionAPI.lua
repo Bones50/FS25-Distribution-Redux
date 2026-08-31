@@ -62,7 +62,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 3
+SmartDistribution.API.VERSION = 7
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -102,6 +102,219 @@ function SmartDistribution.API.registerFeedPlanner(name, fn)
         log("feed planner '%s' registered", name)
     end
     return true
+end
+
+-- ---------------------------------------------------------------------------
+-- THE HUSBANDRY PANEL (API v4). A mod supplies the FACTS about a barn -- herd,
+-- health, value, feed groups -- and DR draws them into a panel between the
+-- INCOMING and OUTGOING tables on the Animal Husbandry tab.
+--
+-- DR OWNS THE LAYOUT, THE PROVIDER OWNS THE DATA, exactly as registerFeedPlanner
+-- splits it. That is not tidiness: a provider that could place its own elements
+-- into DR's page could break the page for everyone, and the geometry here is
+-- hand-tiled to the pixel (5.55). A table of numbers cannot.
+--
+-- WITH NO PROVIDER REGISTERED THE TAB IS BYTE-IDENTICAL TO TODAY. The panel's
+-- elements ship hidden and the two lists keep their original heights; only a
+-- successful registration reflows them. So a stock install cannot be affected by
+-- any of this, which is the same layering registerFeedPlanner has.
+--
+-- The provider is called during a GUI populate, so it is treated exactly as a
+-- planner is: pcall'd, its answer validated field by field, and STRUCK OUT for
+-- the session after MAX_STRIKES throws (grep the log for STRUCK OUT).
+SmartDistribution._husbandryPanels = SmartDistribution._husbandryPanels or {}
+
+function SmartDistribution.API.registerHusbandryPanel(name, fn)
+    if type(name) ~= "string" or name == "" or type(fn) ~= "function" then
+        log("registerHusbandryPanel refused: needs (string name, function fn)")
+        return false
+    end
+    local list = SmartDistribution._husbandryPanels
+    for i, entry in ipairs(list) do
+        if entry.name == name then
+            list[i] = { name = name, fn = fn, strikes = 0 }
+            log("husbandry panel '%s' re-registered", name)
+            return true
+        end
+    end
+    list[#list + 1] = { name = name, fn = fn, strikes = 0 }
+    -- ONE panel is drawn -- the first registration that answers, in registration
+    -- order -- because there is exactly one strip of screen to draw it in. Said
+    -- out loud for the same reason the planner says it: the loser would
+    -- otherwise be silently absent and look like a broken mod.
+    if #list > 1 then
+        log("husbandry panel '%s' registered (%d now; the FIRST to answer wins, "
+            .. "in registration order)", name, #list)
+    else
+        log("husbandry panel '%s' registered", name)
+    end
+    return true
+end
+
+function SmartDistribution.API.unregisterHusbandryPanel(name)
+    local list = SmartDistribution._husbandryPanels
+    for i, entry in ipairs(list) do
+        if entry.name == name then
+            table.remove(list, i)
+            log("husbandry panel '%s' unregistered", name)
+            return true
+        end
+    end
+    return false
+end
+
+---Is anything registered? The page asks this ONCE at setup to decide whether to
+-- reflow, so it must not depend on a particular barn answering.
+function SmartDistribution.hasHusbandryPanel()
+    local list = SmartDistribution._husbandryPanels
+    return type(list) == "table" and #list > 0
+end
+
+-- ---------------------------------------------------------------------------
+---Validate a provider's answer. EVERY field is optional and every one is checked:
+-- a panel drawing a NaN or a negative litre count is worse than a panel with a
+-- gap in it, and this runs per populate on data DR did not compute.
+--
+--   herd    = { count, max, health,                  health 0..1
+--               productivity, prodApplies,           productivity 0..1
+--               advice = { text, tone } }            tone good|warn|bad
+--   value   = { current, potential, pastPeak }       money; potential >= current
+--   profit  = { perMonth, outputs, inputs,           money PER MONTH; MAY BE
+--               ageing, births, complete }           NEGATIVE, so never clamped
+--   feed    = { factor, serial, activeTitle,         factor 0..1
+--               advice = { text, tone },             tone good|warn|bad
+--               groups = { { title, colourIndex, share, met, held, need }, ... } }
+--
+-- `profit` is v5 and PURELY ADDITIVE: an older DR drops it in this sanitiser and
+-- draws the panel exactly as before, and a provider that does not send it leaves
+-- the line blank. Neither side needs to feature-detect the other.
+--
+-- `serial` is the load-bearing flag and the reason this shape carries it at all.
+-- For a PARALLEL animal (pig, horse, sheep, chicken) the groups SUM: each one
+-- contributes production x met and the total is the factor, so a stacked bar is
+-- literally the arithmetic. For a SERIAL animal (a COW) the groups are quality
+-- tiers and are ALTERNATIVES -- only the best one present counts -- so stacking a
+-- barn holding grass AND hay AND silage would draw 0.4 + 0.8 + 0.8 = 2.0 and be
+-- nonsense. DR draws the two differently and cannot infer which is which.
+local function panelNum(v, lo, hi)
+    if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return nil end
+    if lo ~= nil and v < lo then v = lo end
+    if hi ~= nil and v > hi then v = hi end
+    return v
+end
+
+-- AN ADVICE LINE IS PROVIDER TEXT, and that is deliberate rather than a lapse of
+-- the code-and-data rule: DR draws the panel but has no vocabulary for which food
+-- groups an animal type has or what a full pen destroys. `feed.activeTitle` set the
+-- precedent in v4 -- the provider names the tier, DR prints it. What DR keeps is the
+-- LAYOUT and the PALETTE, which is the split that matters: the tone arrives as a
+-- WORD and DR maps it to a colour, so a provider can never paint on this page.
+local PANEL_TONES = { good = true, warn = true, bad = true }
+local function panelAdvice(v)
+    if type(v) ~= "table" then return nil end
+    local t = v.text
+    if type(t) ~= "string" or t == "" then return nil end
+    -- capped because these cells TRUNCATE rather than wrap, and a provider that
+    -- sends a paragraph would silently lose the end of it either way
+    if #t > 120 then t = t:sub(1, 120) end
+    return { text = t, tone = PANEL_TONES[v.tone] and v.tone or nil }
+end
+
+local function sanitisePanel(d)
+    if type(d) ~= "table" then return nil end
+    local out = {}
+
+    if type(d.herd) == "table" then
+        out.herd = { count  = panelNum(d.herd.count, 0),
+                     max    = panelNum(d.herd.max, 0),
+                     health = panelNum(d.herd.health, 0, 1),
+                     -- PRODUCTIVITY is the base game's own headline for a husbandry
+                     -- and is NOT the food factor: food is one input to it, so a
+                     -- perfectly fed barn can still sit at 15%. `prodApplies` false
+                     -- means the base game hides it for this animal type (horses and
+                     -- pigs), which is a different fact from "it is zero".
+                     productivity = panelNum(d.herd.productivity, 0, 1),
+                     prodApplies  = d.herd.prodApplies ~= false,
+                     advice       = panelAdvice(d.herd.advice) }
+    end
+    if type(d.value) == "table" then
+        local cur = panelNum(d.value.current, 0)
+        local pot = panelNum(d.value.potential, 0)
+        -- POTENTIAL IS A CEILING, so a provider that reports less than the herd is
+        -- already worth is clamped up rather than drawn as an over-full bar.
+        if cur ~= nil and pot ~= nil and pot < cur then pot = cur end
+        out.value = { current = cur, potential = pot, pastPeak = d.value.pastPeak == true }
+    end
+    -- PROFIT IS THE ONE FIELD THAT MAY BE NEGATIVE, so it is the one field that
+    -- must NOT be clamped at 0. A barn losing money is exactly what this line
+    -- exists to say, and panelNum(v, 0) would have drawn every such barn as
+    -- breaking even -- the "0 is a real value" trap this codebase keeps meeting
+    -- (5.46c / 5.47), one field over.
+    if type(d.profit) == "table" then
+        out.profit = { perMonth = panelNum(d.profit.perMonth),
+                       outputs  = panelNum(d.profit.outputs),
+                       inputs   = panelNum(d.profit.inputs),
+                       ageing   = panelNum(d.profit.ageing),
+                       births   = panelNum(d.profit.births),
+                       complete = d.profit.complete == true }
+    end
+    if type(d.feed) == "table" then
+        local groups = {}
+        local maxG = SmartDistribution.PANEL_MAX_GROUPS or 6
+        if type(d.feed.groups) == "table" then
+            for _, g in ipairs(d.feed.groups) do
+                if type(g) == "table" and #groups < maxG then
+                    local share = panelNum(g.share, 0, 1)
+                    if share ~= nil then
+                        groups[#groups + 1] = {
+                            title  = tostring(g.title or "?"),
+                            share  = share,
+                            met    = panelNum(g.met, 0, 1),
+                            held   = panelNum(g.held, 0),
+                            need   = panelNum(g.need, 0),
+                            colourIndex = panelNum(g.colourIndex, 1, maxG),
+                        }
+                    end
+                end
+            end
+        end
+        out.feed = { factor = panelNum(d.feed.factor, 0, 1),
+                     serial = d.feed.serial == true,
+                     activeTitle = d.feed.activeTitle ~= nil and tostring(d.feed.activeTitle) or nil,
+                     grazes = d.feed.grazes == true,
+                     advice = panelAdvice(d.feed.advice),
+                     groups = groups }
+    end
+    if out.herd == nil and out.value == nil and out.feed == nil and out.profit == nil then
+        return nil
+    end
+    return out
+end
+
+---The panel's facts for one barn, or nil when nothing is registered / nothing
+-- answered. Never throws: a provider that does is struck out, not propagated into
+-- a GUI populate where it would abort the page mid-render (5.44 / 5.57).
+function SmartDistribution.husbandryPanelData(placeable)
+    local list = SmartDistribution._husbandryPanels
+    if type(list) ~= "table" or #list == 0 or placeable == nil then return nil end
+    for _, entry in ipairs(list) do
+        if entry.strikes < MAX_STRIKES then
+            local ok, res = pcall(entry.fn, placeable)
+            if not ok then
+                entry.strikes = entry.strikes + 1
+                log("husbandry panel '%s' threw (%d/%d): %s", entry.name, entry.strikes,
+                    MAX_STRIKES, tostring(res))
+                if entry.strikes >= MAX_STRIKES then
+                    log("husbandry panel '%s' STRUCK OUT for this session; the panel will "
+                        .. "stay empty rather than the tab breaking", entry.name)
+                end
+            else
+                local clean = sanitisePanel(res)
+                if clean ~= nil then return clean end
+            end
+        end
+    end
+    return nil
 end
 
 function SmartDistribution.API.unregisterFeedPlanner(name)
@@ -313,7 +526,11 @@ function SmartDistribution.API.loadMenuPage(pageInstance, guiName, xmlPath)
 end
 
 ---Add a page as a tab. `sliceId` is a base-game icon slice (e.g.
--- "gui.icon_ingameMenu_animals"); `title` is the tab's name -- pass it, because
+-- "gui.icon_ingameMenu_animals"); `badgeSliceId` is an OPTIONAL second slice drawn
+-- small in the corner of the same tab, for a page that is about two things at once
+-- (the base game allows a tab exactly one icon, and its icons are slices inside
+-- dataS.gar, so two of them cannot be merged into a file); `title` is the tab's
+-- name -- pass it, because
 -- the base game's fallback looks up "ui_<pageName>" in ITS namespace and a mod
 -- key will never be found there.
 -- ATOMIC. This mutates several of the menu's internal tables, and a failure part
@@ -335,7 +552,8 @@ end
 -- stripped, and the base game's own addPage() hands it pageRoot instead of the
 -- controller -- a mismatch that works for XML-declared pages and not for one
 -- added at runtime.
-function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title, predicate, buttons)
+function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title, predicate,
+                                           buttons, badgeSliceId)
     if menu == nil or page == nil then return false end
     if menu.pagingElement == nil or menu.registerPage == nil then
         log("addMenuPage: this menu has no paging element")
@@ -381,6 +599,15 @@ function SmartDistribution.API.addMenuPage(menu, page, position, sliceId, title,
 
         menu:addPageTab(page, nil, nil, sliceId)
         undo[#undo + 1] = function() menu.pageTabs[page] = nil end
+
+        -- A SECOND SLICE IN THE CORNER OF THE SAME TAB, for a page that is about
+        -- two things at once. Optional and additive: omit it and the tab is
+        -- exactly as it was. Rolled back with everything else, so a later step
+        -- failing cannot leave a badge on a tab that was never added.
+        if badgeSliceId ~= nil and menu.setPageTabBadge ~= nil then
+            menu:setPageTabBadge(page, badgeSliceId)
+            undo[#undo + 1] = function() menu:setPageTabBadge(page, nil) end
+        end
 
         if buttons ~= nil and page.setMenuButtonInfo ~= nil then page:setMenuButtonInfo(buttons) end
         menu:rebuildTabList()

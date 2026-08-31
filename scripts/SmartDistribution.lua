@@ -103,6 +103,7 @@ SmartDistribution._layoutScaling = false   -- true ONLY while DR's own PAGE file
 SmartDistribution.LAYOUT_KEEP_ASPECT_NAMES = {
     assetIcon = true, fillIcon = true, productIcon = true,   -- DR's own images
     barPalletIcon = true,                                    -- the pallet chip on the storage bar
+    tabBadge = true,                                         -- the second icon in a tab's corner
 }
 SmartDistribution.LAYOUT_KEEP_ASPECT_PROFILES = {
     fs25_menuHeaderIcon = true, fs25_menuHeaderIconBg = true, -- the tab header badge
@@ -1042,7 +1043,8 @@ function SmartDistribution.isGrazingPasture(p)
     if p == nil then return false end
     -- FS25 gives each mod its own Lua environment, so DR cannot see PastureFeedOverride and cannot rely on
     -- the pasture mod's own API.  Structural test instead, verified against sdManureProbe output:
-    --   Cow Barn (large)     -> spec_husbandryMeadow yes, spec_husbandryLiquidManure YES                 -> normal barn
+    --   Cow Barn (big)       -> spec_husbandryMeadow yes, spec_husbandryLiquidManure YES                 -> normal barn
+    --   Cow Barn (large)     -> spec_husbandryMeadow yes, NO slurry, but spec_husbandryStraw YES        -> normal barn
     --   Grazing Pasture      -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO,  no pallets     -> pasture
     --   Chicken coop         -> spec_husbandryMeadow yes, spec_husbandryLiquidManure NO,  spec_husbandryPallets YES (EGG) -> normal barn
     --   Chicken shed / silos -> no meadow spec                                                           -> normal
@@ -1072,9 +1074,34 @@ function SmartDistribution.isGrazingPasture(p)
     -- This also makes the CHICKEN case robust rather than incidental. 4.4 records coops matching this test
     -- and being saved only by the pallet-spawner exclusion; their meadows are cosmetic too, so they now
     -- fail on the meadow itself and would be safe even without pallets.
+    -- A BUILDING THAT DECLARES <straw> IS NOT A GRAZING AREA. Reported 2026-08-31 against
+    -- savegame4: the base game's own Cow Barn (large) (`specialCowStable`, type
+    -- `cowHusbandryPastureStraw`) accepted no straw and produced no manure. It declares a
+    -- GRAZEABLE meadow (GRASS + MEADOW fruit types), has NO <liquidManure> block, and spawns no
+    -- pallets -- so it satisfied every condition of the 5.75 test and was classified a pasture,
+    -- and registerPastureManureStorage then zeroed its own STRAW capacity. With nowhere to put
+    -- straw, PlaceableHusbandryStraw:updateOutput computes delta = 0 and NEVER PRODUCES MANURE,
+    -- which is why both halves of the report had one cause.
+    --
+    -- This is 5.75 exactly, one building over, and the same lesson: the structural test kept
+    -- matching real barns whose meadow happens to be usable. `<straw>` is the discriminator it
+    -- was missing -- a building that eats straw and converts it to manure is doing husbandry,
+    -- not grazing.
+    --
+    -- MEASURED, not reasoned (base game + every installed mod, 139 husbandry files): the old
+    -- test called **20** buildings pastures and **12 of them declare <straw>** -- the base Cow
+    -- Barn and Cow Barn (large), the whole Carpathian cow set, a Fed Mods feedlot, and the three
+    -- genuine GrazingPasture types. Every one of those 12 was having a capacity zeroed.
+    --
+    -- THE THREE GENUINE PASTURES ALSO DECLARE <straw>, which is why this had to be added to the
+    -- STRUCTURAL test and not used as a blanket rule: they fall through to the type-name backstop
+    -- below and are still classified correctly. That backstop stops being a "in case the
+    -- structural test ever misses" convenience here and becomes load-bearing. Costing them the
+    -- straw capacity is harmless and deliberate -- the pasture mod routes straw through an
+    -- external feeder placeable, not through this storage (see registerPastureManureStorage).
     local ms = p.spec_husbandryMeadow
     local grazeable = ms ~= nil and type(ms.fruitTypeInfos) == "table" and next(ms.fruitTypeInfos) ~= nil
-    if grazeable and p.spec_husbandryLiquidManure == nil
+    if grazeable and p.spec_husbandryLiquidManure == nil and p.spec_husbandryStraw == nil
        and p.spec_husbandryPallets == nil and p.spec_beehivePalletSpawner == nil then return true end
     local tn = p.typeName
     if type(tn) == "string" then
@@ -3672,6 +3699,25 @@ local function fmtMoney(v)
     return string.format("%s%d", v < 0 and "-" or "", math.floor(math.abs(v) + 0.5))
 end
 SmartDistribution.formatMoney = fmtMoney
+
+---A SMALL FIGURE IS NOT A ZERO. fmtMoney rounds to whole units, which is right for
+-- the sums this mod usually prints and wrong for a rate: manure and slurry are
+-- 0.033/L, so a pen making 2 L an hour earns 0.066 -- and at 0 decimal places that
+-- printed as a flat "0" and read as "this product is worthless" (reported
+-- 2026-08-31). Below 10 the figure gets two decimals, so a REAL zero and a small
+-- one are different on screen. That is nil-is-not-zero applied to ROUNDING.
+--
+-- SEPARATE FROM fmtMoney ON PURPOSE: that one is called from ~40 sites printing
+-- totals and sale values, where two decimals would be noise.
+function SmartDistribution.formatMoneyFine(v)
+    if type(v) ~= "number" then return "-" end
+    if v == 0 or math.abs(v) >= 10 then return fmtMoney(v) end
+    if g_i18n ~= nil and g_i18n.formatMoney ~= nil then
+        local ok, t = pcall(function() return g_i18n:formatMoney(v, 2, true, false) end)
+        if ok and type(t) == "string" then return t end
+    end
+    return string.format("%s%.2f", v < 0 and "-" or "", math.abs(v))
+end
 -- compact money for tight table cells: -$1.2M / $12.3k / $980, locale currency symbol if available
 function SmartDistribution.formatMoneyShort(v)
     v = v or 0
@@ -15304,6 +15350,11 @@ function proximityWatcher:update(dt)
     -- before its fill types are read -- see the header above stampPlacementDefaults.
     if SmartDistribution._stampQueue ~= nil then SmartDistribution.flushPlacementStamps() end
     if SmartDistribution._pendingOrphanCheck then SmartDistribution.runOrphanCheck() end
+    -- Same first-tick deferral, same reason (6.19): at load the GUI is not necessarily up, and a
+    -- dialog raised into a half-built screen either does not appear or appears behind everything.
+    if DistributionModWarning ~= nil and DistributionModWarning.showIfNeeded ~= nil then
+        pcall(DistributionModWarning.showIfNeeded)
+    end
     -- Run an hourly pass deferred from onHourChanged (normal play). We wait one update
     -- tick first, so the engine's hour-change processing -- including producers depositing
     -- this hour's batch in a listener that runs after ours -- has completed; the store pass
@@ -17663,6 +17714,529 @@ function SmartDistribution._legacyInputEffectiveMaxLiters(p, ft)
     local freeForFt = math.max(0, cap - othersHeld)
     if eff > freeForFt then eff = freeForFt end
     return eff
+end
+
+-- ---- THE ANIMAL PANEL: making room for it ------------------------------------------------------
+-- The Animal Husbandry tab ships with TWO sections and no spare vertical space (the right column
+-- and the building list both end at exactly -810). A third section can therefore only exist by
+-- taking height from the other two, and that has to happen at RUNTIME because whether a provider
+-- is registered is not knowable when the XML is written.
+--
+-- THE DIRECTION IS DELIBERATE: the XML holds today's geometry unchanged and nothing moves unless a
+-- provider registers. So a stock install never executes a line of this, and "without the extension
+-- the tab is exactly as it was" is a property of the code path rather than a claim to be tested.
+--
+-- The budget, taken from the Productions tab's own three-section pattern (a 40px header, +44 to
+-- its list, and 10px from a list's end to the next header):
+--
+--   inputs   -136  h 252   6 rows   (was 280 = 6.7 rows, so effectively unchanged: a cow barn
+--                                    needs TMR / Silage / Hay / Grass / Straw / Water = 6)
+--   header   -398  h  40
+--   panel    -442  h 146
+--   header   -598  h  40
+--   outputs  -642  h 168   4 rows   (was 340 = 8.1 rows; a husbandry has milk, manure, slurry and
+--                                    at most one more, so the slack was never used)
+--                  ends -810, exactly where it ended before.
+--
+-- setPosition / setSize take NORMALIZED screen units, not px -- the px in the XML are converted at
+-- load. So every figure here goes through GuiUtils.getNormalizedScreenValues first. That function
+-- is wrapped by the 6.15 widening hook, which is inert outside DR's own GUI load, so a value
+-- converted here is not double-scaled.
+SmartDistribution.PANEL_LAYOUT = {
+    inputH   = 252,
+    headerY  = -398,
+    panelY   = -442,
+    outHdrY  = -598,
+    outY     = -642,
+    outH     = 168,
+    inputRows = 6,
+    outputRows = 4,
+}
+
+---px -> normalized (x, y). Returns nil on a build without GuiUtils rather than guessing.
+function SmartDistribution._pxNorm(x, y)
+    if GuiUtils == nil or GuiUtils.getNormalizedScreenValues == nil then return nil, nil end
+    local ok, v = pcall(GuiUtils.getNormalizedScreenValues, string.format("%dpx %dpx", x, y))
+    if not ok or type(v) ~= "table" then return nil, nil end
+    return v[1], v[2]
+end
+
+function SmartDistribution._panelSetH(el, hNorm)
+    if el ~= nil and el.setSize ~= nil and hNorm ~= nil then el:setSize(nil, hNorm) end
+end
+
+---Reflow the Animal Husbandry page to make room for the panel. Safe to call more than once
+-- (idempotent -- every figure is absolute, never a delta), and a no-op when anything it needs is
+-- missing, which is what keeps a layout it does not recognise unchanged rather than half-moved.
+function SmartDistribution.reflowForPanel(page)
+    if page == nil or page._panelReflowed then return false end
+    local L = SmartDistribution.PANEL_LAYOUT
+    local inSec, outSec = page.inputSection, page.outputSection
+    local hdr, panel, outHdr = page.panelHeader, page.animalPanel, page.outputHeader
+    if inSec == nil or outSec == nil or hdr == nil or panel == nil or outHdr == nil then
+        print("[SmartDistribution] husbandry panel: page is missing an element it needs; layout "
+            .. "left alone (panel will not be shown)")
+        return false
+    end
+
+    local _, inH   = SmartDistribution._pxNorm(0, L.inputH)
+    local _, outH  = SmartDistribution._pxNorm(0, L.outH)
+    if inH == nil or outH == nil then return false end
+    -- Y ONLY, NEVER X. The x in the XML was converted at LOAD, when the 6.15 widening hook was
+    -- active and multiplied it by the ultrawide factor; this runs later, with that hook inert, so a
+    -- runtime conversion of the same "390px" yields the UNWIDENED value. Writing it back shifted every
+    -- element this function moved to the left of the two it did not, which is exactly what the first
+    -- build looked like: the INCOMING table in one place and the panel and OUTGOING table in another.
+    -- setPosition takes nil for "leave this axis alone", so the correct x simply survives.
+    local _, hy = SmartDistribution._pxNorm(0, L.headerY)
+    local _, py = SmartDistribution._pxNorm(0, L.panelY)
+    local _, oy = SmartDistribution._pxNorm(0, L.outHdrY)
+    local _, sy = SmartDistribution._pxNorm(0, L.outY)
+
+    -- INPUTS: the section, the list inside it and the scrollbar track all carry their own explicit
+    -- height, so all three move or the track ends up longer than the list it drives.
+    SmartDistribution._panelSetH(inSec, inH); SmartDistribution._panelSetH(page.inputList, inH)
+    local ib = SmartDistribution._panelEl(inSec, "sliderBox")
+    SmartDistribution._panelSetH(ib, inH)
+    if page.inputSlider ~= nil then
+        local _, sh = SmartDistribution._pxNorm(0, L.inputH - 8)
+        SmartDistribution._panelSetH(page.inputSlider, sh)
+    end
+
+    -- THE PANEL, shown and placed. Its children are positioned inside it, so this moves all of them.
+    if hdr.setPosition ~= nil then hdr:setPosition(nil, hy) end
+    if panel.setPosition ~= nil then panel:setPosition(nil, py) end
+    if hdr.setVisible ~= nil then hdr:setVisible(true) end
+    -- the panel itself stays hidden until a barn actually answers; drawHusbandryPanel shows it
+
+    -- OUTPUTS: moved down AND shortened.
+    if outHdr.setPosition ~= nil then outHdr:setPosition(nil, oy) end
+    if outSec.setPosition ~= nil then outSec:setPosition(nil, sy) end
+    SmartDistribution._panelSetH(outSec, outH); SmartDistribution._panelSetH(page.outputList, outH)
+    local ob = SmartDistribution._panelEl(outSec, "sliderBox")
+    SmartDistribution._panelSetH(ob, outH)
+    if page.outputSlider ~= nil then
+        local _, sh2 = SmartDistribution._pxNorm(0, L.outH - 8)
+        SmartDistribution._panelSetH(page.outputSlider, sh2)
+    end
+
+    -- _scrollMap is "how many rows fit", which is a function of the height that just changed. 5.55
+    -- records this being wrong for months on the Silos tab and the scrollbar being hidden on lists
+    -- that did overflow.
+    page._scrollMap = { { "inputSlider", "inputList", L.inputRows },
+                        { "outputSlider", "outputList", L.outputRows } }
+
+    if page.updateAbsolutePosition ~= nil then pcall(page.updateAbsolutePosition, page) end
+    page._panelReflowed = true
+    print("[SmartDistribution] husbandry panel: layout reflowed (inputs 6 rows, panel, outputs 4 rows)")
+    return true
+end
+
+-- ---- THE ANIMAL PANEL ------------------------------------------------------------------------
+-- Drawn between the INCOMING and OUTGOING tables on the Animal Husbandry tab from facts a mod
+-- supplies through API v4. Nothing here computes husbandry state; it renders what it is handed,
+-- already validated by sanitisePanel.
+--
+-- THE PALETTE IS COMPUTED, NOT CHOSEN. These six are the dataviz reference categorical theme's
+-- dark steps, and they were RUN through the six checks against this panel's own track colour
+-- (#212429), not the reference surface: worst adjacent CVD deltaE 8.4 (target >= 8), worst
+-- normal-vision deltaE 19.3 (floor >= 15), every slot 3.15 to 5.07 contrast (>= 3), all six in the
+-- dark lightness band with chroma above the floor. PASS at four slots (the most any base-game
+-- animal declares) and at six. tools/validate_palette.py is the checker, and it is verified by
+-- reproducing the skill's own published figures for the reference palette exactly.
+--
+-- ASSIGNED IN FIXED ORDER BY GROUP RANK, never cycled and never re-packed: a group keeps its
+-- colour when another one disappears from the barn, or the legend repaints itself every time the
+-- trough changes and the colours stop meaning anything.
+SmartDistribution.PANEL_MAX_GROUPS = 6
+SmartDistribution.PANEL_COLOURS = {
+    { 0.224, 0.529, 0.898 },   -- 1 blue     #3987e5
+    { 0.851, 0.349, 0.149 },   -- 2 orange   #d95926
+    { 0.098, 0.620, 0.439 },   -- 3 aqua     #199e70
+    { 0.788, 0.522, 0.000 },   -- 4 yellow   #c98500
+    { 0.835, 0.318, 0.506 },   -- 5 magenta  #d55181
+    { 0.000, 0.514, 0.000 },   -- 6 green    #008300
+}
+
+-- The two-pixel gap the mark specs ask for between stacked segments, so a boundary reads as a
+-- boundary rather than two hues touching. Taken off the RIGHT of each segment except the last.
+SmartDistribution.PANEL_SEG_GAP = 2
+
+---Find a named child of the panel.
+--
+-- `getAttribute` IS NOT A GuiElement METHOD. Every other named-child lookup in this mod is on a
+-- SmoothList CELL, where it works -- the base game calls it the same way (SmoothListElement.lua:912)
+-- and its definition is in the stripped part of the source (8.1), so it was easy to assume it was
+-- general. It is not: the panel container is a plain GuiElement, `root.getAttribute` is nil, and the
+-- first build's guard `if root.getAttribute == nil then return false end` therefore made
+-- drawHusbandryPanel return before drawing a single thing -- with no error, with the data arriving
+-- correctly, and with the strip simply blank.
+--
+-- `GuiElement:getDescendantByName` is the right call and is PRESENT in the shipped source: recursive,
+-- depth-first, returns the element or nil. getAttribute is kept as a fallback so this same helper
+-- still works if it is ever pointed at a list cell.
+function SmartDistribution._panelEl(root, name)
+    if root == nil then return nil end
+    if root.getDescendantByName ~= nil then
+        local ok, e = pcall(root.getDescendantByName, root, name)
+        if ok then return e end
+    end
+    if root.getAttribute ~= nil then return root:getAttribute(name) end
+    return nil
+end
+
+function SmartDistribution._panelText(root, name, text, r, g, b)
+    local e = SmartDistribution._panelEl(root, name)
+    if e == nil then return end
+    if e.setText ~= nil then e:setText(text or "") end
+    -- ALWAYS set the colour, both branches. These elements are not recycled the way list cells are,
+    -- but they ARE reused across buildings, so a red "past peak" note left on a healthy barn is the
+    -- same class of bug (5.7 / 5.57) with a slower trigger.
+    if e.setTextColor ~= nil then
+        if r ~= nil then e:setTextColor(r, g, b, 1) else e:setTextColor(1, 1, 1, 1) end
+    end
+    if e.setVisible ~= nil then e:setVisible(text ~= nil and text ~= "") end
+end
+
+---The NORMALIZED width of a track, read off the element itself. setSize and setPosition work in
+-- normalized screen units, NOT the px the XML is written in -- px are converted at load, and on an
+-- ultrawide the 6.15 widening multiplies them again, so a px figure hardcoded here would be wrong by
+-- the widen factor as well as by the reference scale. drawStorageBar has always read absSize for
+-- exactly this reason; `size` is the same figure before layout has resolved and is the safe fallback.
+function SmartDistribution._panelTrackW(root, bgName)
+    local bg = SmartDistribution._panelEl(root, bgName)
+    if bg == nil then return 0 end
+    local w = (bg.absSize ~= nil and bg.absSize[1]) or 0
+    if w <= 0 then w = (bg.size ~= nil and bg.size[1]) or 0 end
+    return w
+end
+
+---Fill `name` to `frac` of the track `bgName` names.
+function SmartDistribution._panelFill(root, name, frac, bgName)
+    local e = SmartDistribution._panelEl(root, name)
+    if e == nil then return end
+    local full = SmartDistribution._panelTrackW(root, bgName)
+    frac = math.max(0, math.min(1, frac or 0))
+    if e.setSize ~= nil and full > 0 then e:setSize(full * frac, nil) end
+    if e.setVisible ~= nil then e:setVisible(frac > 0 and full > 0) end
+end
+
+---Hide every optional element, so a barn that answers with less than the last one does not inherit
+-- its neighbour's figures. Called first on every draw.
+function SmartDistribution._panelReset(root)
+    for i = 1, SmartDistribution.PANEL_MAX_GROUPS do
+        for _, n in ipairs({ "apSeg" .. i, "apTier" .. i, "apLegSw" .. i }) do
+            local e = SmartDistribution._panelEl(root, n)
+            if e ~= nil and e.setVisible ~= nil then e:setVisible(false) end
+        end
+        SmartDistribution._panelText(root, "apLegTx" .. i, "")
+    end
+end
+
+---Draw the panel for one barn. `root` is the animalPanel container; `d` is API v4 data or nil.
+-- Returns true if anything was drawn, so the caller can hide the whole strip on nil.
+--
+-- `opts` is OPTIONAL and exists for one thing: a page carrying its own timescale
+-- selector. `profitScale` multiplies the profit block (which the provider states per
+-- MONTH) and `profitLabel` renames it to match. Omitting it leaves the block exactly
+-- per month, which is what DR's own Animal Husbandry tab wants -- that tab's period
+-- selector scopes historical LEDGER windows, and a forward projection is not one of
+-- those, so the two are deliberately not wired together.
+function SmartDistribution.drawHusbandryPanel(root, d, opts)
+    -- NOT gated on getAttribute: see _panelEl. A plain GuiElement has no such method, and requiring it
+    -- is what made the first build draw nothing at all.
+    if root == nil then return false end
+    if d == nil then
+        if root.setVisible ~= nil then root:setVisible(false) end
+        return false
+    end
+    if root.setVisible ~= nil then root:setVisible(true) end
+    SmartDistribution._panelReset(root)
+
+    local L = SmartDistribution.l10n
+    local COL = SmartDistribution.PANEL_COLOURS
+    local function pct(v) return string.format("%d%%", math.floor((v or 0) * 100 + 0.5)) end
+
+    -- ---- block A: the herd ---------------------------------------------------------------------
+    -- A COUNT IS A NUMBER, NOT A CHART. It has no magnitude worth encoding and no parts, so it is
+    -- set as a hero figure with the capacity bar beneath it carrying the only comparison there is.
+    local herd = d.herd or {}
+    SmartDistribution._panelText(root, "apHerdLabel", L("dr_panel_animals", "ANIMALS"))
+    if herd.count ~= nil then
+        local txt = tostring(math.floor(herd.count + 0.5))
+        if herd.max ~= nil and herd.max > 0 then
+            txt = txt .. "  / " .. tostring(math.floor(herd.max + 0.5))
+        end
+        SmartDistribution._panelText(root, "apCount", txt)
+        SmartDistribution._panelFill(root, "apCapFill", (herd.max ~= nil and herd.max > 0) and (herd.count / herd.max) or 0, "apCapBg")
+    else
+        SmartDistribution._panelText(root, "apCount", "-")
+        SmartDistribution._panelFill(root, "apCapFill", 0, "apCapBg")
+    end
+
+    if herd.health ~= nil then
+        SmartDistribution._panelText(root, "apHealthLabel", L("dr_panel_health", "HEALTH") .. "   " .. pct(herd.health))
+        SmartDistribution._panelFill(root, "apHealthFill", herd.health, "apHealthBg")
+        -- STATUS COLOURS ARE RESERVED and never reused as a series hue: the health fill is the only
+        -- place a good/warning/critical reading is expressed, and it never appears in the feed
+        -- legend. Bands match the Overview's own MET_TARGET / NEAR_TARGET convention.
+        local e = SmartDistribution._panelEl(root, "apHealthFill")
+        if e ~= nil and e.setImageColor ~= nil then
+            if herd.health >= 0.75 then e:setImageColor(nil, 0.31, 0.72, 0.31, 1)
+            elseif herd.health >= 0.50 then e:setImageColor(nil, 1.00, 0.62, 0.10, 1)
+            else e:setImageColor(nil, 0.72, 0.20, 0.17, 1) end
+        end
+    else
+        SmartDistribution._panelText(root, "apHealthLabel", L("dr_panel_health", "HEALTH") .. "   -")
+        SmartDistribution._panelFill(root, "apHealthFill", 0, "apHealthBg")
+    end
+
+    -- PRODUCTIVITY -- the base game's OWN headline (globalProductionFactor x
+    -- productionFactor, exactly as getConditionInfos computes it). Deliberately its own bar rather
+    -- than a number folded into the feed block: it is NOT the food factor, food is one input to it,
+    -- so a barn can be perfectly fed and still sit at 15% for a reason nothing else here would show.
+    -- Same status bands as HEALTH, because it is the same kind of reading.
+    -- THE TWO ADVICE LINES. The text is the provider's (it owns the vocabulary);
+    -- the PALETTE is DR's, so the tone arrives as a word and is mapped here. Same
+    -- status bands as the bars they sit beside -- an advice line is a status
+    -- reading, and the categorical palette stays reserved for the feed groups.
+    local function advice(name, a)
+        if type(a) ~= "table" or a.text == nil then
+            SmartDistribution._panelText(root, name, "")
+            return
+        end
+        if a.tone == "good" then SmartDistribution._panelText(root, name, a.text, 0.31, 0.72, 0.31)
+        elseif a.tone == "warn" then SmartDistribution._panelText(root, name, a.text, 1.00, 0.62, 0.10)
+        elseif a.tone == "bad" then SmartDistribution._panelText(root, name, a.text, 0.72, 0.20, 0.17)
+        else SmartDistribution._panelText(root, name, a.text) end
+    end
+    advice("apHerdAdvice", herd.advice)
+
+    local prodLbl = L("dr_panel_productivity", "PRODUCTIVITY")
+    if herd.prodApplies == false then
+        -- the base game hides this for horses and pigs, which is a different fact from zero
+        SmartDistribution._panelText(root, "apProdLabel", prodLbl .. "   " .. L("dr_panel_na", "n/a"))
+        SmartDistribution._panelFill(root, "apProdFill", 0, "apProdBg")
+    elseif herd.productivity ~= nil then
+        SmartDistribution._panelText(root, "apProdLabel", prodLbl .. "   " .. pct(herd.productivity))
+        SmartDistribution._panelFill(root, "apProdFill", herd.productivity, "apProdBg")
+        local e = SmartDistribution._panelEl(root, "apProdFill")
+        if e ~= nil and e.setImageColor ~= nil then
+            if herd.productivity >= 0.75 then e:setImageColor(nil, 0.31, 0.72, 0.31, 1)
+            elseif herd.productivity >= 0.50 then e:setImageColor(nil, 1.00, 0.62, 0.10, 1)
+            else e:setImageColor(nil, 0.72, 0.20, 0.17, 1) end
+        end
+    else
+        SmartDistribution._panelText(root, "apProdLabel", prodLbl .. "   -")
+        SmartDistribution._panelFill(root, "apProdFill", 0, "apProdBg")
+    end
+
+    -- ---- block B: feed -------------------------------------------------------------------------
+    local feed = d.feed or {}
+    SmartDistribution._panelText(root, "apFeedLabel", L("dr_panel_feed", "FEED"))
+    local title = L("dr_panel_noFeedData", "no feed data")
+    if feed.factor ~= nil then
+        title = string.format(L("dr_panel_foodFactor", "Food factor %s"), pct(feed.factor))
+        if feed.serial and feed.activeTitle ~= nil then
+            title = title .. "   -   " .. feed.activeTitle
+        end
+        if feed.grazes then
+            -- A MEADOW FEEDS OUTSIDE THE TROUGH, so the groups below can all read 0 L while the
+            -- factor is well above zero. Said on the panel rather than left as a contradiction.
+            title = title .. "   (" .. L("dr_panel_grazing", "grazing") .. ")"
+        end
+    end
+    SmartDistribution._panelText(root, "apFeedTitle", title)
+    advice("apFeedAdvice", feed.advice)
+
+    local groups = feed.groups or {}
+    -- the segments and the tier marks are CHILDREN of apFeedBg, so they are positioned and sized in
+    -- that element's own normalized width, exactly as the storage bar's marks are
+    local W = SmartDistribution._panelTrackW(root, "apFeedBg")
+    if feed.serial then
+        -- SERIAL (a cow): the tiers are ALTERNATIVES, so there is nothing to stack. One fill to the
+        -- factor actually achieved, and a tick where each tier sits, which is what turns the bar
+        -- into "you are on Silage, TMR is the one above". Stacking these would draw
+        -- 0.4 + 0.8 + 0.8 = 2.0 for a barn holding grass and hay and silage.
+        local seg = SmartDistribution._panelEl(root, "apSeg1")
+        if seg ~= nil then
+            if seg.setImageColor ~= nil then seg:setImageColor(nil, COL[1][1], COL[1][2], COL[1][3], 1) end
+            if seg.setPosition ~= nil then seg:setPosition(0, nil) end
+            SmartDistribution._panelFill(root, "apSeg1", feed.factor or 0, "apFeedBg")
+        end
+        for i, g in ipairs(groups) do
+            if i <= SmartDistribution.PANEL_MAX_GROUPS then
+                local m = SmartDistribution._panelEl(root, "apTier" .. i)
+                if m ~= nil then
+                    if m.setPosition ~= nil then
+                        -- keep the mark inside the track, using the mark's OWN width: the figure
+                        -- here is normalized, so the "2" this was written with (2 PIXELS) was twice
+                        -- the screen and inverted the clamp
+                        local mw = (m.absSize ~= nil and m.absSize[1]) or (m.size ~= nil and m.size[1]) or 0
+                        m:setPosition(math.min(W * math.max(0, math.min(1, g.share)),
+                                               math.max(0, W - mw)), nil)
+                    end
+                    if m.setVisible ~= nil then m:setVisible(true) end
+                end
+                -- A TIER THAT IS NOT IN THE TROUGH IS DIMMED. Without this the legend lists four
+                -- tiers at their headline values (Grass 40%, Silage 80%, TMR 100%) whatever the barn
+                -- actually holds, so a factor of 0 sits beside four healthy-looking percentages with
+                -- nothing explaining the gap. Presence is what decides a SERIAL factor, so it is the
+                -- one thing this legend has to show.
+                local present = (g.met or 0) > 0
+                local sw = SmartDistribution._panelEl(root, "apLegSw" .. i)
+                if sw ~= nil then
+                    if sw.setImageColor ~= nil then
+                        if present then sw:setImageColor(nil, COL[1][1], COL[1][2], COL[1][3], 1)
+                        else sw:setImageColor(nil, 1, 1, 1, 0.18) end
+                    end
+                    if sw.setVisible ~= nil then sw:setVisible(true) end
+                end
+                if present then
+                    SmartDistribution._panelText(root, "apLegTx" .. i,
+                        string.format("%s  %s", g.title, pct(g.share)))
+                else
+                    SmartDistribution._panelText(root, "apLegTx" .. i,
+                        string.format("%s  %s", g.title, pct(g.share)), 0.55, 0.55, 0.55)
+                end
+            end
+        end
+    else
+        -- PARALLEL: each group contributes production x met and the sum IS the factor, so the
+        -- stacked bar is literally the arithmetic rather than a picture of it.
+        local x = 0
+        -- the surface gap between stacked segments, converted from px to this track's own units
+        local gap = 0
+        do
+            local _, _ = nil, nil
+            local gx = select(1, SmartDistribution._pxNorm(SmartDistribution.PANEL_SEG_GAP, 0))
+            if type(gx) == "number" then gap = gx end
+        end
+        for i, g in ipairs(groups) do
+            if i <= SmartDistribution.PANEL_MAX_GROUPS then
+                local ci = math.floor(g.colourIndex or i)
+                if ci < 1 or ci > #COL then ci = ((i - 1) % #COL) + 1 end
+                local contributes = (g.share or 0) * (g.met or 0)
+                local w = W * math.max(0, math.min(1, contributes))
+                local seg = SmartDistribution._panelEl(root, "apSeg" .. i)
+                if seg ~= nil then
+                    if seg.setImageColor ~= nil then
+                        seg:setImageColor(nil, COL[ci][1], COL[ci][2], COL[ci][3], 1)
+                    end
+                    if seg.setPosition ~= nil then seg:setPosition(x, nil) end
+                    -- the 2px surface gap goes on the RIGHT of every segment but the last, so the
+                    -- run of colours never ends short of the value it represents
+                    if seg.setSize ~= nil then seg:setSize(math.max(0, w - gap), nil) end
+                    if seg.setVisible ~= nil then seg:setVisible(w > 1e-5) end
+                end
+                x = x + w
+                local sw = SmartDistribution._panelEl(root, "apLegSw" .. i)
+                if sw ~= nil then
+                    if sw.setImageColor ~= nil then
+                        sw:setImageColor(nil, COL[ci][1], COL[ci][2], COL[ci][3], 1)
+                    end
+                    if sw.setVisible ~= nil then sw:setVisible(true) end
+                end
+                -- DIRECT LABELS, so identity is never colour alone: the legend names the group AND
+                -- what it is actually contributing, which is the number the bar encodes.
+                SmartDistribution._panelText(root, "apLegTx" .. i, string.format("%s  %s", g.title, pct(contributes)))
+            end
+        end
+    end
+
+    -- ---- block C: herd value -------------------------------------------------------------------
+    local val = d.value or {}
+    SmartDistribution._panelText(root, "apValueLabel", L("dr_panel_herdValue", "HERD VALUE"))
+    if val.current ~= nil then
+        SmartDistribution._panelText(root, "apValueMain", SmartDistribution.formatMoney ~= nil
+                  and SmartDistribution.formatMoney(val.current) or tostring(math.floor(val.current)))
+        local pot = val.potential
+        if pot ~= nil and pot > 0 then
+            SmartDistribution._panelFill(root, "apValueFill", val.current / pot, "apValueBg")
+            SmartDistribution._panelText(root, "apValueOf", string.format(L("dr_panel_ofPeak", "of %s at peak age"),
+                      SmartDistribution.formatMoney ~= nil and SmartDistribution.formatMoney(pot)
+                      or tostring(math.floor(pot))))
+        else
+            SmartDistribution._panelFill(root, "apValueFill", 0, "apValueBg")
+            SmartDistribution._panelText(root, "apValueOf", "")
+        end
+    else
+        SmartDistribution._panelText(root, "apValueMain", "-")
+        SmartDistribution._panelFill(root, "apValueFill", 0, "apValueBg")
+        SmartDistribution._panelText(root, "apValueOf", "")
+    end
+    -- PAST PEAK is a state, not a series, so it gets a status colour and a WORD rather than being
+    -- encoded in the bar: only cows decline with age, and a falling bar with no explanation reads
+    -- as something the player did wrong rather than as "sell these now".
+    if val.pastPeak then
+        SmartDistribution._panelText(root, "apValueNote", L("dr_panel_pastPeak", "past peak - value falls with age"),
+                  1.00, 0.62, 0.10)
+    else
+        SmartDistribution._panelText(root, "apValueNote", "")
+    end
+
+    -- ---- block D: profit -----------------------------------------------------------------------
+    -- WHAT THE BARN MAKES, per month, under the value it is made of:
+    --     increase in animal value + outputs sold - inputs bought
+    --
+    -- SIGNED AND COLOURED, because the sign is the whole message and a reader must
+    -- not have to compare two figures to find out which way it went. The green and
+    -- the red are the panel's own STATUS colours (the health bands), not series
+    -- hues -- profitable or not is a status reading, and the categorical palette
+    -- stays reserved for the feed groups so a legend swatch never means "good".
+    --
+    -- A MISSING TERM SHOWS A DASH, NOT A NUMBER. `complete` is false whenever any
+    -- of the four terms could not be priced, and a profit quoted without its feed
+    -- cost or without its capital side is not a smaller profit -- it is a different
+    -- figure wearing the same label (5.46c's nil-is-not-zero, and 15.7 of Animal
+    -- Redux, which shipped exactly this bug once).
+    local pr = d.profit or {}
+    local o = opts or {}
+    local scale = (type(o.profitScale) == "number" and o.profitScale > 0) and o.profitScale or 1
+    -- "EST. FORECAST" IS PART OF THE LABEL, not a footnote. Every term in this block is
+    -- today's rate at today's price projected forward; none of it is a measurement of
+    -- anything that has happened, and a money figure with no such qualifier reads as one.
+    SmartDistribution._panelText(root, "apProfitLabel",
+              o.profitLabel or L("dr_panel_profit", "EST. FORECAST - PROFIT / MO"))
+    -- FINE formatting here, not fmtMoney: at a one-hour period a term can be a few
+    -- cents, and a whole-unit round would print it as "+0" beside three figures
+    -- that are not zero either
+    local money = SmartDistribution.formatMoneyFine or SmartDistribution.formatMoney
+    local function signed(v)
+        if v == nil then return "-" end
+        v = v * scale
+        local t = (money ~= nil) and money(math.abs(v)) or tostring(math.floor(math.abs(v)))
+        if v < 0 then return "-" .. t end
+        return "+" .. t
+    end
+    -- THE ARITHMETIC SITS DIRECTLY ABOVE THE HEADLINE IT EXPLAINS. It first went in
+    -- the dead strip under blocks A and B, which is where the space was; on screen
+    -- it read as a stray line under HEALTH with no visible connection to the figure
+    -- it decomposes (reported from a screenshot). Two rows of two, in this column.
+    local function part(name, key, fallback, v)
+        SmartDistribution._panelText(root, name, L(key, fallback) .. " " .. signed(v))
+    end
+    if pr.complete and pr.perMonth ~= nil then
+        local v = pr.perMonth * scale
+        if v >= 0 then
+            SmartDistribution._panelText(root, "apProfitMain", signed(pr.perMonth), 0.31, 0.72, 0.31)
+        else
+            SmartDistribution._panelText(root, "apProfitMain", signed(pr.perMonth), 0.72, 0.20, 0.17)
+        end
+        part("apProfitP1", "dr_panel_pfOutputs", "outputs", pr.outputs)
+        -- INPUTS ARE NEGATED FOR DISPLAY. The provider reports a cost as a positive
+        -- number because that is what it is; the row reads as money leaving, so it
+        -- carries the sign a reader expects to see beside the three terms that add.
+        part("apProfitP2", "dr_panel_pfInputs", "inputs", pr.inputs ~= nil and -pr.inputs or nil)
+        part("apProfitP3", "dr_panel_pfAgeing", "ageing", pr.ageing)
+        part("apProfitP4", "dr_panel_pfBirths", "births", pr.births)
+    else
+        SmartDistribution._panelText(root, "apProfitMain", "-")
+        for _, n in ipairs({ "apProfitP1", "apProfitP2", "apProfitP3", "apProfitP4" }) do
+            SmartDistribution._panelText(root, n, "")
+        end
+    end
+    return true
 end
 
 -- ---- THE STORAGE BAR --------------------------------------------------------------------------------

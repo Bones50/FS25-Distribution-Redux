@@ -252,5 +252,6 @@ v1.0.0.1
         <sourceFile filename="scripts/gui/DistributionAdvancedDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionInputsDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionMenu.lua"/>
+        <sourceFile filename="scripts/DistributionModWarning.lua"/>
     </extraSourceFiles>
 </modDesc>

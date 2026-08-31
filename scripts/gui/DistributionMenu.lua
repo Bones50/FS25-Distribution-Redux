@@ -228,6 +228,74 @@ function DistributionMenu:keyEvent(unicode, sym, modifier, isDown, eventUsed)
     return DistributionMenu:superClass().keyEvent(self, unicode, sym, modifier, isDown, eventUsed)
 end
 
+---A SECOND ICON IN THE CORNER OF ONE TAB.
+--
+-- WHY THIS OVERRIDE EXISTS AT ALL. A tab carries ONE icon slice
+-- (TabbedMenu:addPageTab's fourth argument), and the base game's icons live as
+-- SLICES inside dataS.gar -- so two of them cannot be merged into a file, and the
+-- only way to show both is to draw both. This is the place that can.
+--
+-- IT IS PRECISELY SCOPED BY CONSTRUCTION, not by a guard. SmoothListElement takes
+-- its data source from #listDataSource, defaulting to the element's TARGET; the
+-- tab list in DistributionMenu.xml declares none, so its data source is this MENU
+-- and this method serves the TAB LIST AND NOTHING ELSE. Every other list in the
+-- mod sits inside a page and is populated by that page. So this is not the global
+-- class hook 5.62 warns about -- no other menu in the game is touched.
+--
+-- WRITTEN AS A POST-STEP. The inherited populate runs FIRST and unchanged, so a
+-- tab with no badge is byte-identical to before and a failure here can only cost
+-- the badge, never the icon or the tab.
+--
+-- THE BASE IMPLEMENTATION IS STRIPPED FROM THE SDK SOURCE (8.1) -- there is not
+-- one surviving populateCellForItemInSection anywhere in it, so the cell's own
+-- structure could not be read. That is why the badge element is declared in the
+-- ListItem template in OUR XML and only LOOKED UP here: creating an element blind
+-- would be guessing at a profile and an anchor, while looking one up by name
+-- either finds it or does nothing.
+function DistributionMenu:populateCellForItemInSection(list, section, index, cell)
+    DistributionMenu:superClass().populateCellForItemInSection(self, list, section, index, cell)
+    if cell == nil then return end
+
+    -- CELLS ARE RECYCLED, so this must CLEAR as well as set -- otherwise the badge
+    -- follows whichever tab happens to reuse that cell, the same trap 5.7 and 5.57
+    -- hit with colours and the notice row.
+    local badge = nil
+    if cell.getDescendantByName ~= nil then
+        local ok, el = pcall(cell.getDescendantByName, cell, "tabBadge")
+        if ok then badge = el end
+    end
+    if badge == nil then
+        -- SAY SO ONCE. The template is ours, so a miss means the ListItem changed
+        -- or the cell is not the element we think it is; without this the feature
+        -- just silently does nothing, which is the hardest failure to diagnose.
+        if not DistributionMenu._badgeWarned then
+            DistributionMenu._badgeWarned = true
+            print("[SmartDistribution] tab badge: no 'tabBadge' in the tab cell; badges disabled")
+        end
+        return
+    end
+
+    -- enabledPages is what rebuildTabList hands the list, in list order, so the
+    -- row index selects the page directly.
+    local page = (self.enabledPages or {})[index]
+    local slice = page ~= nil and (self._tabBadges or {})[page] or nil
+    if slice ~= nil and badge.setImageSlice ~= nil then
+        pcall(badge.setImageSlice, badge, nil, slice)
+        badge:setVisible(true)
+    else
+        badge:setVisible(false)
+    end
+end
+
+---Give a page a corner badge, or clear it with nil. Applied on the next tab
+-- rebuild; safe to call before the tab exists.
+function DistributionMenu:setPageTabBadge(page, sliceId)
+    if page == nil then return end
+    self._tabBadges = self._tabBadges or {}
+    self._tabBadges[page] = sliceId
+    if self.rebuildTabList ~= nil then pcall(self.rebuildTabList, self) end
+end
+
 function DistributionMenu:onClickBack()
     if g_gui ~= nil then
         g_gui:changeScreen(nil)

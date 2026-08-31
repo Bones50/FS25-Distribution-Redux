@@ -1076,6 +1076,13 @@ function DistributionAnimalHusbandryPage:onGuiSetupFinished()
     end
     -- rows that fit each frame at the 42px SDListItemStats pitch (280/42 = 6, 340/42 = 8)
     self._scrollMap = { { "inputSlider", "inputList", 6 }, { "outputSlider", "outputList", 8 } }
+    -- THE ANIMAL PANEL (API v4). Only an extension that has registered a provider moves anything;
+    -- with none registered this is one boolean and the tab is byte-identical to before. reflowForPanel
+    -- rewrites _scrollMap itself, so it must run AFTER the line above rather than before it.
+    if SmartDistribution ~= nil and SmartDistribution.hasHusbandryPanel ~= nil
+       and SmartDistribution.hasHusbandryPanel() and SmartDistribution.reflowForPanel ~= nil then
+        SmartDistribution.reflowForPanel(self)
+    end
 end
 
 -- This layout's output rows live in outputList (there is no detailList), so the inherited onFrameOpen's
@@ -1086,6 +1093,7 @@ end
 function DistributionAnimalHusbandryPage:onFrameOpen()
     DistributionStoragePage.onFrameOpen(self)
     self._realtimeLists = { "inputList", "outputList" }
+    self:refreshAnimalPanel()
 end
 
 function DistributionAnimalHusbandryPage:buildDetailRows()
@@ -1117,7 +1125,30 @@ function DistributionAnimalHusbandryPage:selectAsset(index)
     self.detailIndex = 1
     if self.inputList ~= nil then self.inputList:reloadData() end
     if self.outputList ~= nil then self.outputList:reloadData() end
+    self:refreshAnimalPanel()
     self:updateSellTimingButton()
+end
+
+-- The panel is LIVE state (a trough fills, an animal is born), so it is redrawn on selection AND on
+-- the page refresh rather than only when the building changes. drawHusbandryPanel hides the strip
+-- itself when a barn answers with nothing, so a husbandry the provider knows nothing about leaves a
+-- gap rather than showing the previous building's herd.
+-- rebuildRealtimeData is the hook DistributionMenuPage:refreshRealtimeLists already calls on every
+-- timed refresh, for pages that cache figures rather than reading them live. This page reads live, so
+-- it never needed one -- but the PANEL is not a list cell and nothing else would repaint it, so this
+-- is the existing seam rather than a second timer.
+function DistributionAnimalHusbandryPage:rebuildRealtimeData()
+    self:refreshAnimalPanel()
+end
+
+function DistributionAnimalHusbandryPage:refreshAnimalPanel()
+    if self.animalPanel == nil or SmartDistribution == nil then return end
+    if SmartDistribution.drawHusbandryPanel == nil then return end
+    local d = nil
+    if self.selectedAsset ~= nil and SmartDistribution.husbandryPanelData ~= nil then
+        d = SmartDistribution.husbandryPanelData(self.selectedAsset)
+    end
+    SmartDistribution.drawHusbandryPanel(self.animalPanel, d)
 end
 
 function DistributionAnimalHusbandryPage:getNumberOfItemsInSection(list, section)

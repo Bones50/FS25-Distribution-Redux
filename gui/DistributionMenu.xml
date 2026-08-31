@@ -19,6 +19,9 @@
                 <Button profile="fs25_tabListItemButton" name="tabButton" soundDisabled="true"/>
                 <Bitmap profile="fs25_tabListItemSeparator"/>
                 <Bitmap profile="fs25_tabListItemSeparatorBottom"/>
+                <!-- AFTER tabButton on purpose: children draw in order, so the badge
+                     has to be last to sit ON the icon rather than under it. -->
+                <Bitmap profile="SDTabBadge" name="tabBadge" visible="false"/>
             </ListItem>
         </SmoothList>
     </Bitmap>

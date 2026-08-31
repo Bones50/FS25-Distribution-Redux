@@ -50,7 +50,7 @@
             <Text profile="SDHeaderLeft" position="910px 0px" size="180px 40px" textSize="11px" text="$l10n_dr_col_distribution" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
-        <GuiElement profile="SDList" position="390px -136px" size="1090px 280px">
+        <GuiElement profile="SDList" position="390px -136px" size="1090px 280px" id="inputSection">
             <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 280px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickInputRow">
@@ -79,14 +79,152 @@
                     <Text profile="SDRowCell" position="910px 0px" size="180px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight">
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 280px" with="anchorTopRight" name="sliderBox">
                 <Slider profile="fs25_listSlider" size="6px 272px" dataElementId="inputList" id="inputSlider" />
             </ThreePartBitmap>
         </GuiElement>
 
         <!-- outgoing products. DISTRIBUTED is everything that left: distributed + stored/moved + sold,
              with the sale value in brackets. -->
-        <Bitmap profile="SDList" position="390px -426px" size="1090px 40px">
+
+        <!-- ===================== THE ANIMAL PANEL (API v4 providers only) =====================
+             SHIPS HIDDEN, and the two lists above and below keep their ORIGINAL heights until a
+             provider registers. So a stock install without a panel provider renders exactly as it
+             always has, and only registerHusbandryPanel reflows anything (see reflowForPanel).
+
+             Everything here is positioned inside the container, so the reflow moves ONE element
+             and the whole panel travels with it.
+
+             Three blocks, separated by hairlines: ANIMALS (a count and two bars), FEED (the food
+             factor, stacked by group for a PARALLEL animal and tier-marked for a SERIAL one), and
+             HERD VALUE (now against what the same herd would fetch at peak age and full health).
+
+             The six segment / swatch colours are set in Lua, not here, so the palette lives in ONE
+             place  - it is validated as a set against this exact track colour and re-stepping one
+             hue in isolation would break that. -->
+        <Bitmap profile="SDList" position="390px -398px" size="1090px 40px" id="panelHeader" name="panelHeader" visible="false">
+            <Text profile="SDHeaderLeft" position="16px 0px" size="700px 40px" textSize="11px"
+                  text="$l10n_dr_col_animalPanel" />
+            <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
+        </Bitmap>
+
+        <GuiElement profile="SDList" position="390px -442px" size="1090px 146px" id="animalPanel" name="animalPanel" visible="false">
+
+            <!--  - block A: ANIMALS  - -->
+            <Text profile="SDBarLabel" position="16px 128px"  size="234px 14px" textSize="11px" name="apHerdLabel" />
+            <Text profile="SDBarLabel" position="16px 96px" size="118px 30px" textSize="24px" name="apCount" />
+            <!-- BESIDE THE COUNT, because that is the number it is about: whether to
+                 sell to make room for births. 11.11 measured what a full pen costs -
+                 it destroys numAnimals offspring AND the gestation that made them,
+                 permanently, every cycle - and nothing else on this strip says it.
+                 108px at 11px is about 19 characters, so it wraps to two lines; the
+                 provider writes to a 36-character budget.
+                 16+118=134 | 142+108=250, the block's own right edge. -->
+            <Text profile="SDBarLabel" position="142px 96px" size="108px 30px" textSize="11px" textMaxNumLines="2" name="apHerdAdvice" />
+            <Bitmap position="16px 84px" size="230px 8px" name="apCapBg"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85" />
+            <Bitmap position="16px 84px" size="230px 8px" name="apCapFill"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.42 0.45 0.50 1" />
+            <Text profile="SDBarLabel" position="16px 64px" size="234px 14px" textSize="11px" name="apHealthLabel" />
+            <Bitmap position="16px 46px" size="230px 16px" name="apHealthBg"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85" />
+            <Bitmap position="16px 46px" size="230px 16px" name="apHealthFill"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+            <!-- PRODUCTIVITY, the base game's OWN headline for a husbandry
+                 (globalProductionFactor x productionFactor, exactly as
+                 getConditionInfos computes it). It is NOT the food factor: food is
+                 one input to it, so a barn can be perfectly fed and still sit at 15%
+                 for a reason nothing else on this strip would show. Same bar idiom
+                 and the same status bands as HEALTH above it. The base game HIDES
+                 it for horses and pigs, so the provider flags that and it reads
+                 "n/a" rather than a confident zero. -->
+            <Text profile="SDBarLabel" position="16px 26px" size="234px 14px" textSize="11px" name="apProdLabel" />
+            <Bitmap position="16px 8px" size="230px 16px" name="apProdBg"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85" />
+            <Bitmap position="16px 8px" size="230px 16px" name="apProdFill"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+
+            <!-- UNDER THE FEED GRAPHIC: what to put in the trough next. It reads the
+                 same groups the bar above it draws, so the sentence and the bar
+                 cannot disagree about which tier is short. 480px at 11px is about
+                 80 characters, which is why this one needs no wrapping.
+                 286+480=766, level with the feed block above it. -->
+            <Text profile="SDBarLabel" position="286px 10px" size="480px 16px" textSize="11px" name="apFeedAdvice" />
+
+            <Bitmap position="270px 8px" size="1px 134px" name="apSep1"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.16" />
+
+            <!--  - block B: FEED  - -->
+            <Text profile="SDBarLabel" position="286px 126px"  size="480px 14px" textSize="11px" name="apFeedLabel" />
+            <Text profile="SDBarLabel" position="286px 106px" size="480px 18px" textSize="13px" name="apFeedTitle" />
+            <Bitmap position="286px 80px" size="470px 22px" name="apFeedBg"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg1" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg2" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg3" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg4" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg5" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="0px 22px" name="apSeg6" imageFilename="dataS/menu/base/graph_pixel.png" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier1" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier2" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier3" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier4" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier5" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+                <Bitmap position="0px 0px" size="2px 22px" name="apTier6" imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.55" />
+            </Bitmap>
+
+            <Bitmap position="286px 58px" size="12px 12px" name="apLegSw1" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="304px 56px" size="140px 16px" textSize="11px" name="apLegTx1" />
+            <Bitmap position="446px 58px" size="12px 12px" name="apLegSw2" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="464px 56px" size="140px 16px" textSize="11px" name="apLegTx2" />
+            <Bitmap position="606px 58px" size="12px 12px" name="apLegSw3" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="624px 56px" size="140px 16px" textSize="11px" name="apLegTx3" />
+            <Bitmap position="286px 34px" size="12px 12px" name="apLegSw4" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="304px 32px" size="140px 16px" textSize="11px" name="apLegTx4" />
+            <Bitmap position="446px 34px" size="12px 12px" name="apLegSw5" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="464px 32px" size="140px 16px" textSize="11px" name="apLegTx5" />
+            <Bitmap position="606px 34px" size="12px 12px" name="apLegSw6" imageFilename="dataS/menu/base/graph_pixel.png" />
+            <Text profile="SDBarLabel" position="624px 32px" size="140px 16px" textSize="11px" name="apLegTx6" />
+
+            <Bitmap position="778px 8px" size="1px 134px" name="apSep2"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 1 1 0.16" />
+
+            <!--  - block C: HERD VALUE  - -->
+            <Text profile="SDBarLabel" position="794px 128px" size="280px 14px" textSize="11px" name="apValueLabel" />
+            <Text profile="SDBarLabel" position="794px 104px" size="280px 22px" textSize="16px" name="apValueMain" />
+            <Bitmap position="794px 82px" size="280px 20px" name="apValueBg"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85" />
+            <Bitmap position="794px 82px" size="280px 20px" name="apValueFill"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.10 0.62 0.44 1" />
+            <Text profile="SDBarLabel" position="794px 66px" size="280px 14px" textSize="11px" name="apValueOf" />
+            <Text profile="SDBarLabel" position="794px 50px" size="280px 14px" textSize="11px" name="apValueNote" />
+
+            <!--  - block D: PROFIT  -
+                 THE BREAKDOWN SITS DIRECTLY ABOVE THE HEADLINE IT EXPLAINS. It first went in the
+                 dead strip under blocks A and B, which is where the space was; on screen it read
+                 as a stray line under HEALTH with no visible connection to the figure it
+                 decomposes. Two rows of two, in the herd-value column, so the four terms and the
+                 total they make are one block.
+                 The whole of block C was re-pitched by a few px to buy the two rows; nothing in
+                 blocks A or B moved, and the strip is still 146px.
+                 794 + 140 = 934 | 934 + 140 = 1074, level with the column above. -->
+            <!-- THE HEADLINE LEADS AND THE BREAKDOWN FOLLOWS. It sat UNDER its own
+                 arithmetic for one build; a total belongs at the top of the terms
+                 that make it, the way every other figure on this strip does.
+                 The label says EST. FORECAST because that is exactly what the block
+                 is: today's rates at today's prices projected forward, not a
+                 measurement of anything that has happened. 190px at 11px is about
+                 34 characters and the longest string is 27.
+                 794 + 190 = 984 | 984 + 90 = 1074, level with the column above. -->
+            <Text profile="SDBarLabel" position="794px 32px" size="190px 16px" textSize="11px" name="apProfitLabel" />
+            <Text profile="SDBarLabel" position="984px 32px" size="90px 16px"  textSize="13px" name="apProfitMain" />
+            <Text profile="SDBarLabel" position="794px 17px" size="140px 14px" textSize="11px" name="apProfitP1" />
+            <Text profile="SDBarLabel" position="934px 17px" size="140px 14px" textSize="11px" name="apProfitP2" />
+            <Text profile="SDBarLabel" position="794px 2px"  size="140px 14px" textSize="11px" name="apProfitP3" />
+            <Text profile="SDBarLabel" position="934px 2px"  size="140px 14px" textSize="11px" name="apProfitP4" />
+        </GuiElement>
+
+        <Bitmap profile="SDList" position="390px -426px" size="1090px 40px" id="outputHeader">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="155px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
             <Text profile="SDHeaderLeft" position="207px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
             <!-- the three flow columns each gave up width (100->84, 95->79, 115->87) to fund the in-row
@@ -97,7 +235,7 @@
             <Text profile="SDHeaderLeft" position="992px 0px" size="98px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
-        <GuiElement profile="SDList" position="390px -470px" size="1090px 340px">
+        <GuiElement profile="SDList" position="390px -470px" size="1090px 340px" id="outputSection">
             <SmoothList profile="SDList" id="outputList" position="0px 0px" size="1090px 340px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickOutputRow">
@@ -143,7 +281,7 @@
                     <Text profile="SDRowCell" position="992px 0px" size="98px 42px" textSize="12px" name="statusText" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight">
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 340px" with="anchorTopRight" name="sliderBox">
                 <Slider profile="fs25_listSlider" size="6px 332px" dataElementId="outputList" id="outputSlider" />
             </ThreePartBitmap>
         </GuiElement>

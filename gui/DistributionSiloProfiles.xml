@@ -19,6 +19,37 @@
     <Profile name="SDList" extends="emptyPanel" with="anchorStretchingYLeft pivotTopLeft">
     </Profile>
 
+    <!-- A SECOND ICON IN THE CORNER OF A TAB, so one tab can say two things.
+         ANCHORED, not positioned from the top-left, because fs25_tabListItem's own
+         size lives in dataS.gar and cannot be read - an anchor needs no such number
+         and lands in the corner whatever the cell turns out to be.
+         anchorTopRight IS THE ONLY CORNER PROFILE THIS MOD CAN PROVE: it is used a
+         dozen times across these layouts. anchorBottomRight and pivotBottomRight
+         were written here first and are used NOWHERE else in the mod or in any
+         installed mod, so they are names I could not verify - and 5.64 records that
+         an unknown profile does not error, it falls back to a default with no
+         positioning at all, which is exactly how a badge ends up in the middle of
+         the screen. The base profile set is inside dataS.gar and unreadable.
+         THE OFFSET MUST CLEAR THE BADGE'S OWN WIDTH. anchorTopRight pins the
+         element's TOP-LEFT corner - the default pivot - to the tile's top-RIGHT
+         corner, so at x=0 the whole badge sits OUTSIDE the tile. The first version
+         used -4px and reported exactly that: 22px wide, 4px pulled back, 18px
+         hanging off the tile (screenshot 2026-08-31). x must therefore be
+         -(width + inset), so it moves with the size and cannot drift apart again.
+         SIZE, measured rather than guessed at twice: the strip is 169 SCREEN px on
+         the reported 3441-wide display, and an unwidened GUI px covers
+         (1/1920) * g_aspectScaleX * 3441 = 1.334 screen px there - so the tile is
+         about 125 GUI px and the tab's own icon about 52. At 22px the badge was a
+         SIXTH of the tile and read as a speck; 40px stands beside the icon rather
+         than sitting on it, which is what "a combination of the two" asks for.
+         If the inset needs a nudge it is an XML-only change - a soft menu reload,
+         no restart (1.4). -->
+    <Profile name="SDTabBadge" extends="baseReference" with="anchorTopRight">
+        <size value="40px 40px" />
+        <position value="-46px -6px" />
+        <imageColor value="$preset_colorWhite" />
+    </Profile>
+
     <Profile name="SDListItem" extends="baseReference" with="anchorTopStretchingX alternating">
         <height value="56px"/>
         <imageColor value="$preset_fs25_colorGrey" />
