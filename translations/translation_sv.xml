@@ -807,5 +807,31 @@
         <text name="dr_guide_changelog_28" text="Förrelease." />
 
         <!-- ============ SLUT PÅ ANVÄNDARGUIDE ============ -->
+
+        <!-- DJURPANELEN, ritas endast när ett tillägg registrerar en leverantör (API v4).
+             Budget: blocketiketterna sitter i 234-480px kolumner med 11px, så håll dem korta. -->
+        <text name="dr_col_animalPanel" text="DJUR, FODER OCH BESÄTTNINGSVÄRDE" />
+        <text name="dr_panel_animals" text="DJUR" />
+        <text name="dr_panel_health" text="HÄLSA" />
+        <text name="dr_panel_productivity" text="PRODUKTIVITET" />
+        <text name="dr_panel_na" text="ej tillg." />
+        <text name="dr_panel_feed" text="FODER" />
+        <text name="dr_panel_foodFactor" text="Foderfaktor %s" />
+        <text name="dr_panel_grazing" text="betesgång" />
+        <text name="dr_panel_noFeedData" text="inga foderdata" />
+        <text name="dr_panel_herdValue" text="BESÄTTNINGSVÄRDE" />
+        <text name="dr_panel_ofPeak" text="av %s vid maxålder" />
+        <text name="dr_panel_pastPeak" text="efter max - värdet sjunker med åldern" />
+        <!-- resultatrader. Teckenbudget: apProfitLabel är 130px med 11px, alltså ca 20
+             tecken; de fyra uppdelningsorden delar på 740px med fyra siffror, så
+             håll varje under ca 10. -->
+        <text name="dr_panel_profit" text="BERÄKN. PROGNOS - VINST / MÅN" />
+        <text name="dr_panel_pfOutputs" text="produktion" />
+        <text name="dr_panel_pfInputs" text="insatser" />
+        <text name="dr_panel_pfAgeing" text="åldring" />
+        <text name="dr_panel_pfBirths" text="födsel" />
+
+        <!-- varningen för kända problem-moddar som visas en gång vid laddning -->
+        <text name="dr_modwarn_body" text="VARNING! Du har för närvarande moddar aktiverade som är kända för att skapa problem med Distribution Redux. Du kan fortsätta, men spelprestanda och moddprestanda kan inte garanteras medan dessa moddar är aktiva. För att undvika denna varning, avsluta och ladda om spelet utan nedanstående moddar aktiverade:" />
     </texts>
 </l10n>
