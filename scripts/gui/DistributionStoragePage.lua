@@ -186,6 +186,10 @@ local function outTotalText(e)
     return soldWithMoney((e.dist or 0) + (e.stored or 0) + (e.sold or 0), e.money)
 end
 
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- ====================================
+
 -- "473 L + 3,000 L (3p)" -- the internal buffer, then what stands on the pad, matching the Productions and
 -- Overview tabs. A pen's stock lives in BOTH places at once and the split is the useful information: one
 -- lump could not say whether the eggs were still buffering or already on pallets, and the figure used to
@@ -253,6 +257,12 @@ local function buildProductRows(asset, ordered, role)
     return rows
 end
 
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- 
+-- heldOfMaxText function use this function
+-- but heldOfMaxText is not used!
+-- ====================================
 
 -- How much of this product the building will actually take: its storage AFTER the Advanced Inputs
 -- percentage is applied, so the figure on the main list matches the one the dialog reserves. A pooled
@@ -289,6 +299,10 @@ local function inputMaxLiters(placeable, ft, role)
     return cap * pct / 100, pct
 end
 
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- ====================================
+
 -- "619 L / 50,000 L (50%)" for an input row: what is there, the most that may go in, and the percentage
 -- that ceiling comes from. Drops the tail when capacity cannot be resolved rather than inventing one.
 local function heldOfMaxText(placeable, ft, held, role)
@@ -298,6 +312,13 @@ local function heldOfMaxText(placeable, ft, held, role)
     if pct ~= nil then s = s .. string.format(" (%d%%)", pct) end
     return s
 end
+
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- 
+-- outputRemaining function use this function
+-- but outputRemaining is not used!
+-- =======================================
 
 -- ---- FREE STORAGE ---------------------------------------------------------
 -- How much more will fit, and the colour that says how comfortable that is.
@@ -314,6 +335,10 @@ local function inputRemaining(placeable, ft, role)
     if not ok or type(v) ~= "number" or v ~= v or v < 0 or v >= math.huge then return nil end
     return v
 end
+
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- ====================================
 
 local function outputRemaining(placeable, ft, held, role)
     if placeable == nil or ft == nil or SmartDistribution == nil then return nil, nil end
@@ -358,6 +383,9 @@ local function setStorageBar(cell, placeable, ft, role, side, held)
     SmartDistribution.drawStorageBar(cell, placeable, ft, role, side or "both", held)
 end
 
+-- ====================================
+-- UNUSED FUNCTION BELOW, REMOVE????
+-- ====================================
 
 -- Distribution status of an input row (Active (Receiving) / Active (Idle) / Blocked). Shared by every
 -- building category -- silos, storages, productions, animal pens and markets resolve a link the same way.
@@ -918,7 +946,6 @@ function DistributionStoragePage:stepRowMode(dir, ...)
     local el = clickedArrow(...)
     local ft = (el ~= nil) and el.sdFillType or nil
     if ft == nil or self.selectedAsset == nil then return end
-        local bs
     if SmartDistribution.bunkerIsSealed ~= nil and SmartDistribution.bunkerIsSealed(self.selectedAsset) then return end
     local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, ft, self.selectedRole)
     local nxt
@@ -964,7 +991,6 @@ DistributionStoragePage.MODE_KEYS_ENABLED = true
 function DistributionStoragePage:onCycleSelectedBack()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil then return end
-        local bs
     if SmartDistribution.bunkerIsSealed ~= nil and SmartDistribution.bunkerIsSealed(self.selectedAsset) then return end
     if SmartDistribution.cyclePrevForAsset == nil then return end
     local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
@@ -980,7 +1006,6 @@ end
 function DistributionStoragePage:onCycleSelected()
     local row = self:selectedDetailRow()
     if row == nil or self.selectedAsset == nil then return end
-        local bs
     if SmartDistribution.bunkerIsSealed ~= nil and SmartDistribution.bunkerIsSealed(self.selectedAsset) then return end
     local cur = SmartDistribution.resolvedAssetMode(self.selectedAsset, row.ft, self.selectedRole)
     local nxt = (SmartDistribution.cycleNextForAsset and SmartDistribution.cycleNextForAsset(self.selectedAsset, cur, row.ft, self.selectedRole))
