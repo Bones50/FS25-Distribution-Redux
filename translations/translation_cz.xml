@@ -1,0 +1,767 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Čeština (překlad)
+
+  POZNÁMKA PRO EDITORY: komentář XML nesmí obsahovat dvě pomlčky za sebou. Je
+  to chyba při parsování a celý soubor je pak ignorován. Hodnoty ATRIBUTŮ níže
+  jsou v pořádku a některé záměrně obsahují dvě pomlčky za sebou; ponechte je
+  přesně tak, jak jsou.
+
+  JAK PŘIDAT JAZYK
+    1. Zkopírujte tento soubor do translations/translation_<kód>.xml
+       Kódy, které FS25 používá: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Překládejte POUZE hodnoty text="...". Nikdy neměňte klíč name="...".
+    3. Otevřete pull request. Není nutné přeložit vše: kterýkoliv
+       vynechaný klíč spadne zpět na angličtinu, částečný soubor je vítán.
+
+  DŮLEŽITÁ PRAVIDLA
+    * Klíče končící na _tt jsou TOOLTIPY. Jsou dlouhé a volně se zalamují,
+      takže délka zde není problém.
+    * Klíče začínající dr_col_ jsou ZÁHLAVÍ SLOUPCŮ TABULKY s pevnou šířkou.
+      Rozpočet znaků je uveden v komentáři nad každým blokem. Záhlaví, které
+      je příliš dlouhé, se OŘÍZNE, což už jednou způsobilo skutečnou chybu:
+      režim výstupu zobrazený jako "Distribute + S..." vypadal jako obyčejný
+      Distribute a skrýval budovu, která prodávala úplně vše. Volte krátké
+      slovo nebo zaužívanou zkratku.
+    * Klíče začínající dr_btn_ jsou TLAČÍTKA sdílející jednu spodní lištu.
+      Udržujte je krátká.
+    * "L" jsou litry a "kL" kilolitry. Objemy se formátují v kódu, ne zde.
+    * Ponechte XML entity beze změny: &amp; je "a", &quot; jsou uvozovky.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= klávesové zkratky (v Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Nastavit distribuci (nejbližší objekt)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Otevřít menu Distribution Redux" />
+
+        <!-- ================= DOČASNÉ: sonda typu peněz =================
+             Tituly předávané funkci MoneyType.register. Pokud obrazovka financí vykresluje
+             řádek pro každý registrovaný TYP, jeden z těchto textů se v něm objeví; pokud
+             vykresluje podle uložené KATEGORIE, neobjeví se ani jeden a peníze se zobrazí pod
+             existujícím řádkem. Obě znění se ZÁMĚRNĚ liší, aby nebylo nutné log kontrolovat,
+             která registrace řádek vytvořila.
+             OBĚ SMAZAT, až sonda skončí.                                          -->
+
+        <!-- ================= názvy stránek a dialogů ================= -->
+        <text name="dr_title_overview" text="Distribuce - Přehled" />
+        <text name="dr_title_productions" text="Distribuce - Výroba" />
+        <text name="dr_title_storage" text="Distribuce - Sklad" />
+        <text name="dr_title_husbandry" text="Distribuce - Chov zvířat" />
+        <text name="dr_title_markets" text="Distribuce - Trhy" />
+        <text name="dr_title_help" text="Distribuce - Nápověda" />
+        <text name="dr_title_settings" text="Distribuce - Nastavení" />
+        <text name="dr_title_advanced" text="Pokročilé" />
+        <text name="dr_title_advancedInputs" text="Pokročilé vstupy" />
+        <text name="dr_title_spawnPallets" text="Vytvořit palety" />
+
+        <!-- ================= záhlaví seznamu budov (levý sloupec, ~40 znaků) ================= -->
+        <text name="dr_col_buildings" text="BUDOVY" />
+        <text name="dr_col_husbandries" text="CHOVY" />
+        <text name="dr_col_markets" text="TRHY" />
+        <text name="dr_col_productions" text="VÝROBA" />
+
+        <!-- ================= popisky výběrů nad tabulkami ================= -->
+        <text name="dr_lbl_timescale" text="Období" />
+        <text name="dr_lbl_filterBy" text="Filtrovat podle" />
+        <text name="dr_lbl_show" text="Zobrazit" />
+        <text name="dr_lbl_grouping" text="Seskupení" />
+        <text name="dr_lbl_modeKeys" text="X / Z: přepínat vybraný výstupní režim" />
+        <text name="dr_lbl_sellingOff" text="PRODEJ JE VYPNUTÝ - každý trh prodá po příjezdu bez ohledu na nastavení těchto řádků" />
+        <text name="dr_lbl_overviewPointer" text="Podrobný rozpis + výrobní řetězce: záložka Přehled" />
+
+        <!-- ================= Přehled: záhlaví sloupců v pohledu TOKY =================
+             Rozpočet přibližně 10 až 16 znaků; buňky mají velikost písma 11px. "(OČEK.)"
+             je zkratka pro "očekáváno", cílová hodnota receptu. -->
+        <text name="dr_col_building" text="BUDOVA" />
+        <text name="dr_col_product" text="PRODUKT" />
+        <text name="dr_col_received" text="PŘIJATO" />
+        <text name="dr_col_loaded" text="NALOŽ." />
+        <text name="dr_col_consumedExp" text="SPOTŘ. (OČEK.)" />
+        <text name="dr_col_unloaded" text="VYLOŽ." />
+        <text name="dr_col_heldMax" text="ZÁSOBA (MAX)" />
+        <text name="dr_col_freeStorage" text="VOLNÝ SKLAD" />
+        <text name="dr_col_producedExp" text="VYROB. (OČEK.)" />
+        <text name="dr_col_distributed" text="DISTRIBUOVÁNO" />
+        <text name="dr_col_storedMoved" text="ULOŽ./PŘESUN" />
+        <text name="dr_col_sold" text="PRODÁNO" />
+        <text name="dr_col_distrCost" text="NÁKL. DISTR." />
+
+        <!-- ================= Přehled: záhlaví sloupců v pohledu NASTAVENÍ =================
+             Stejný rozpočet jako výše. DEST znamená "aktivní z celkových cílů" a je
+             nejužší buňkou na stránce, asi 6 znaků. Zkracujte volně. -->
+        <text name="dr_col_storageType" text="TYP SKLADU" />
+        <text name="dr_col_maxInPctL" text="MAX VST (% - L)" />
+        <text name="dr_col_heldOfMax" text="ZÁSOBA Z MAX" />
+        <text name="dr_col_inStatus" text="STAV VST" />
+        <text name="dr_col_lines" text="LINKY" />
+        <text name="dr_col_outMode" text="REŽIM VÝST" />
+        <text name="dr_col_reserve" text="REZERVA" />
+        <text name="dr_col_priority" text="PRIORITA" />
+        <text name="dr_col_dest" text="CÍLE" />
+        <text name="dr_col_outStatus" text="STAV VÝST" />
+
+        <!-- ================= záhlaví tabulek na kartách budov =================
+             Sdílené mezi Sila / Chov zvířat / Trhy / Výroba. -->
+        <text name="dr_col_incomingProducts" text="PŘÍCHOZÍ PRODUKTY" />
+        <text name="dr_col_incomingMaterials" text="PŘÍCHOZÍ MATERIÁLY" />
+        <text name="dr_col_outgoingProducts" text="ODCHOZÍ PRODUKTY" />
+        <text name="dr_col_heldSlashMax" text="ZÁSOBA / MAX" />
+        <text name="dr_col_distribution" text="DISTRIBUCE" />
+        <text name="dr_col_consumed" text="SPOTŘEBOVÁNO" />
+        <text name="dr_col_produced" text="VYROBENO" />
+        <text name="dr_col_outputMode" text="VÝSTUPNÍ REŽIM" />
+        <text name="dr_col_status" text="STAV" />
+        <text name="dr_col_productionLines" text="VÝROBNÍ LINKY" />
+        <!-- "/mo" = za měsíc. Hodnota je měsíční cíl linky. -->
+        <text name="dr_col_targetMo" text="CÍL /měs" />
+
+        <!-- ================= dialog Pokročilé výstupy ================= -->
+        <text name="dr_col_demands" text="POPTÁVKY" />
+        <text name="dr_col_storage" text="SKLAD" />
+        <text name="dr_col_distance" text="VZDÁLENOST" />
+        <text name="dr_col_order" text="POŘADÍ" />
+
+        <!-- ================= dialog Pokročilé vstupy ================= -->
+        <text name="dr_col_incomingProduct" text="PŘÍCHOZÍ PRODUKT" />
+        <text name="dr_col_type" text="TYP" />
+        <text name="dr_col_held" text="ZÁSOBA" />
+        <text name="dr_col_maxIn" text="MAX VSTUP" />
+        <text name="dr_col_available" text="K DISPOZICI" />
+        <text name="dr_col_fillTarget" text="CÍL NAPLNĚNÍ" />
+
+        <!-- ================= tlačítka =================
+             Sdílejí jednu spodní lištu, takže každý znak navíc zmenšuje prostor
+             sousedům. Cílem je délka angličtiny nebo kratší. -->
+        <text name="dr_btn_priorityUp" text="Priorita nahoru" />
+        <text name="dr_btn_priorityDown" text="Priorita dolů" />
+        <text name="dr_btn_toggle" text="Přepnout" />
+        <text name="dr_btn_clear" text="Vymazat" />
+        <text name="dr_btn_blockAll" text="Blok. vše" />
+        <text name="dr_btn_reserveDown" text="- Rezerva" />
+        <text name="dr_btn_reserveUp" text="+ Rezerva" />
+        <text name="dr_btn_maxDown" text="- Max" />
+        <text name="dr_btn_maxUp" text="+ Max" />
+        <text name="dr_btn_targetDown" text="- Cíl" />
+        <text name="dr_btn_targetUp" text="+ Cíl" />
+        <text name="dr_btn_block" text="Blokovat" />
+        <text name="dr_btn_spawn" text="Vytvořit" />
+        <text name="dr_btn_cancel" text="Zrušit" />
+        <text name="dr_btn_close" text="Zavřít" />
+
+        <!-- ================= TLAČÍTKA V PATĚ (nastavená z Lua) =================
+             Stejná spodní lišta jako tlačítka dr_btn_ výše, stejný tlak na délku. Sell Timing je
+             FORMÁTOVACÍ řetězec: %s je aktuální časování ("Nejlepší cena" / "Okamžitě"). -->
+        <text name="dr_btn_cycleOutput" text="Přepnout výstup" />
+        <text name="dr_btn_advanced" text="Pokročilé" />
+        <text name="dr_btn_sellTiming" text="Časování prodeje" />
+        <text name="dr_btn_sellTimingOff" text="Časování prodeje: prodej VYPNUT" />
+        <text name="dr_btn_sellTimingValue" text="Časování prodeje: %s" />
+        <text name="dr_btn_toggleLine" text="Přepnout linku" />
+        <text name="dr_btn_showSettings" text="Zobrazit nastavení" />
+        <text name="dr_btn_showFlows" text="Zobrazit toky" />
+        <text name="dr_btn_refresh" text="Obnovit" />
+        <text name="dr_btn_advancedOutputs" text="Pokročilé výstupy" />
+        <text name="dr_btn_activate" text="Aktivovat" />
+        <text name="dr_btn_activateAll" text="Aktiv. vše" />
+        <text name="dr_btn_allow" text="Povolit" />
+        <text name="dr_btn_allowAll" text="Povolit vše" />
+
+        <!-- ================= VÝBĚR OBDOBÍ =================
+             Jedna herní hodina je jeden distribuční cyklus, proto to karty budov vypisují
+             celé; sloupec v Přehledu je užší a jen říká "Hodina". -->
+        <text name="dr_period_hourLong" text="Cyklus (hodina)" />
+        <text name="dr_period_hour" text="Hodina" />
+        <text name="dr_period_month" text="Měsíc" />
+        <text name="dr_period_year" text="Rok" />
+
+        <!-- ================= VÝBĚRY V PŘEHLEDU =================
+             "Konečný produkt (celý řetězec)" zobrazí každou budovu, která přispívá k jednomu
+             hotovému produktu, zpět přes celý výrobní řetězec. Seskupení sloučí budovy stejného
+             typu do jednoho souhrnného řádku, např. "Pekárna x2". -->
+        <text name="dr_filter_nothing" text="Nic (zobrazit vše)" />
+        <text name="dr_filter_building" text="Budova" />
+        <text name="dr_filter_product" text="Produkt" />
+        <text name="dr_filter_endProduct" text="Konečný produkt (celý řetězec)" />
+        <text name="dr_group_off" text="Vypnuto (jeden řádek na budovu)" />
+        <text name="dr_group_on" text="Zapnuto (sloučit stejný typ budovy)" />
+
+        <!-- ================= KRÁTKÝ STAV V PŘEHLEDU =================
+             Stejné tři stavy jako dr_status_* výše, ale sloupec v Přehledu má 140px a jeho
+             záhlaví už říká VST nebo VÝST, takže se upřesnění vynechává. Udržujte KRÁTKÉ. -->
+        <text name="dr_statusShort_receiving" text="Přijímá" />
+        <text name="dr_statusShort_sending" text="Odesílá" />
+        <text name="dr_statusShort_idle" text="Nečinný" />
+        <text name="dr_statusShort_blocked" text="Blokován" />
+
+        <!-- ================= TYP SKLADU =================
+             Sdílený: jedna nádrž sdílená více produkty. Samostatný: oddělená nádrž pro
+             každý produkt. Zobrazeno v dialogu Pokročilé vstupy a v pohledu nastavení
+             Přehledu, kde je záměrně použito shodné znění. -->
+        <text name="dr_type_pooled" text="Sdílený" />
+        <text name="dr_type_individual" text="Samostatný" />
+        <text name="dr_type_internal" text="Interní" />
+        <text name="dr_type_blocked" text="BLOKOVÁNO" />
+
+        <!-- ================= PRIORITA VÝSTUPU =================
+             "Vzdálenost" je výchozí: nejbližší odběratel jako první. "Seřazeno (n)" znamená,
+             že hráč ručně seřadil n cílů v Pokročilých výstupech. -->
+        <text name="dr_priority_ranked" text="Seřazeno (%d)" />
+        <text name="dr_priority_distance" text="Vzdálenost" />
+
+        <!-- ================= TYP BUDOVY =================
+             Pravý sloupec seznamu budov na kartě Sila. Velmi úzký. -->
+        <text name="dr_class_silo" text="Silo" />
+        <text name="dr_class_barn" text="Stáj" />
+        <text name="dr_class_storage" text="Sklad" />
+        <text name="dr_class_pit" text="Jímka" />
+        <text name="dr_class_market" text="Trh" />
+
+        <!-- ================= HLÁŠKY A MALÉ POPISKY =================
+             Hláška o zablokování je poslední řádek seznamu vstupů budovy, když Pokročilé
+             směrování skrylo produkty, které budova nemá na skladě. ODDĚLENÉ klíče pro
+             jednotné a množné číslo: angličtina tvořila jednotné číslo odstraněním koncového
+             "s", což při překladu nefunguje. Pokud váš jazyk rozlišení nepotřebuje, dejte oběma
+             stejný text. -->
+        <text name="dr_notice_blockedInput" text="+%d blokovaný vstup (viz Pokročilé vstupy)" />
+        <text name="dr_notice_blockedInputs" text="+%d blokovaných vstupů (viz Pokročilé vstupy)" />
+        <text name="dr_label_off" text="Vypnuto" />
+        <text name="dr_label_blocked" text="Blokováno" />
+        <text name="dr_label_building" text="Budova" />
+        <!-- Náhradní název výrobní linky, kterou hra sama nepojmenovává; %d je její číslo. -->
+        <text name="dr_label_line" text="Linka %d" />
+
+        <!-- ================= DIALOG POKROČILÉ VÝSTUPY =================
+             %s v titulku je název budovy. "Aktivní - Neplatné" označuje cíl, který je
+             zapnutý, ale posílal by produkt v kruhu zpět tam, odkud vyšel. -->
+        <text name="dr_adv_title" text="Pokročilé - %s" />
+        <text name="dr_adv_activeInvalid" text="Aktivní - Neplatné" />
+        <text name="dr_adv_reserve" text="     Rezerva: " />
+        <text name="dr_adv_noCapacity" text="Není kapacita, vůči které by šlo rezervovat" />
+        <text name="dr_adv_loopOne" text="Nelze aktivovat %s - produkt by se odtud vrátil v kruhu." />
+        <text name="dr_adv_loopMany" text="%d cíl(ů) zůstává blokováno - vracely by produkt v kruhu zpět sem." />
+
+        <!-- ================= DIALOG POKROČILÉ VSTUPY =================
+             Podtitulek, jeden ze tří podle typu skladu budovy. %s je celková kapacita
+             sdíleného skladu; %d udávají, kolik produktů si ho dělí a kolik má nastavené
+             maximum. -->
+        <text name="dr_inp_title" text="Pokročilé vstupy - %s" />
+        <text name="dr_inp_pooledCapped" text="Sdílený sklad: %s sdíleno %d produkty, %d s omezením. Cokoli bez omezení může využít celý sklad." />
+        <text name="dr_inp_pooled" text="Sdílený sklad: %s sdíleno %d produkty. Každý může využít celý sklad - nastavte maximum, chcete-li ostatním nechat místo." />
+        <text name="dr_inp_individual" text="Nastavte maximum každého produktu, nebo ho blokujte. Tato budova má samostatný sklad pro každý produkt." />
+
+        <!-- ================= DIALOG VYTVOŘIT PALETY =================
+             Slovo pro množství vedle stepperu a souhrnný řádek nad ním. -->
+        <text name="dr_spawn_info" text="Zásoba: %s    Paleta: %s    Max: %d    Vytváří se: %s" />
+        <!-- Název TYPU palety v rozbalovacím seznamu; kapacita a u modované palety i název
+             modu se přidávají v kódu, např. "Paleta - 1 000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Paleta" />
+        <!-- Stepper množství: zvolený počet, maximum a přesný počet litrů, který ten počet
+             představuje. Zobrazuje se "2 / 3  (2 000 L)". Zachovejte všechny tři zástupné znaky
+             a jejich pořadí. -->
+        <text name="dr_spawn_count" text="%d / %d  (%s)" />
+
+        <!-- ================= VÝSTUPNÍ REŽIMY =================
+             Co budova dělá s produktem. Zobrazeno ve sloupci VÝSTUPNÍ REŽIM / REŽIM VÝST
+             na každé kartě budovy a v Přehledu, přepíná se tlačítkem "Přepnout výstup".
+             Nejširší sloupec, do kterého se tyto texty vejdou, má při aktuální velikosti
+             písma asi 39 znaků a "Distribute + Market Supply" je nejdelší anglická varianta.
+
+             Kombinované režimy se čtou "první polovina + druhá polovina" a POŘADÍ MÁ VÝZNAM:
+             první akce proběhne vždy jako první a produkt se nikdy neprodá ani neodešle na
+             trh, dokud nebyl alespoň jednou nabídnut odběratelům. Zachovejte tento smysl.
+
+             Čísla jsou interní ID režimů. Nepřečíslovávejte je, jsou uložena v uloženém
+             souboru hry. -->
+        <text name="dr_mode_0" text="Zděděno" />
+        <text name="dr_mode_1" text="Podržet" />
+        <text name="dr_mode_2" text="Distribuovat" />
+        <text name="dr_mode_3" text="Distribuovat + Prodat" />
+        <text name="dr_mode_4" text="Prodat" />
+        <text name="dr_mode_5" text="Distribuovat + Uložit" />
+        <text name="dr_mode_6" text="Uložit" />
+        <text name="dr_mode_7" text="Zásobovat trh" />
+        <text name="dr_mode_8" text="Distribuovat + Zásobovat trh" />
+        <text name="dr_mode_9" text="Podržet interně" />
+        <text name="dr_mode_10" text="Přesunout do" />
+        <text name="dr_mode_11" text="Distribuovat + Přesunout do" />
+        <!-- Prosté "Podržet" u budovy, která vytváří PALETY: produkt je podržen jako palety na
+             ploše, na rozdíl od "Podržet interně", kde zůstává jako volně ložený materiál uvnitř
+             budovy a nevytváří žádné palety. Rozdíl je celý smysl, takže je udržujte odlišné. -->
+        <text name="dr_mode_holdPallets" text="Podržet palety" />
+
+        <!-- ================= STAV SPOJENÍ =================
+             Sloupec STAV. Tři stavy: produkt se při poslední hodinové obsluze skutečně
+             přesunul, spojení je aktivní, ale nebylo třeba nic přesouvat, nebo je blokované
+             v Pokročilém směrování. Odběratel PŘIJÍMÁ a zdroj ODESÍLÁ, což je jediný rozdíl
+             mezi oběma sadami. Úzký sloupec, asi 20 znaků. -->
+        <text name="dr_status_in_ACTIVE" text="Aktivní (Přijímá)" />
+        <text name="dr_status_in_IDLE" text="Aktivní (Nečinný)" />
+        <text name="dr_status_in_BLOCKED" text="Blokován" />
+        <text name="dr_status_out_ACTIVE" text="Aktivní (Odesílá)" />
+        <text name="dr_status_out_IDLE" text="Aktivní (Nečinný)" />
+        <text name="dr_status_out_BLOCKED" text="Blokován" />
+
+        <!-- ================= ROLE PRODUKTU =================
+             Připojeno za název produktu v Přehledu, např. "Mouka (Vst)". Budova může
+             produkt zároveň přijímat i dodávat (silo), což znamená (Vst/Výst).
+             VELMI úzké: text sedí uvnitř buňky s názvem produktu, 3 až 7 znaků. -->
+        <text name="dr_role_in" text="Vst" />
+        <text name="dr_role_out" text="Výst" />
+        <text name="dr_role_inout" text="Vst/Výst" />
+
+        <!-- ================= ČASOVÁNÍ PRODEJE =================
+             "Nejlepší cena" podrží produkt do jeho nejlepšího měsíce, než ho prodá; "Okamžitě"
+             prodá, jakmile je k dispozici. Formy dr_market_* se objevují ve sloupci VÝSTUPNÍ
+             REŽIM na kartě Trhy, kde Podržet znamená, že trh produkt skladuje a neprodává nic,
+             dokud mu to není přikázáno. -->
+        <text name="dr_timing_bestPrice" text="Nejlepší cena" />
+        <text name="dr_timing_immediate" text="Okamžitě" />
+        <text name="dr_market_sellsNow" text="Prodává nyní" />
+        <text name="dr_market_sellsNowSet" text="%s (nastaveno: %s)" />
+        <text name="dr_market_hold" text="Podržet" />
+        <text name="dr_market_best" text="Prodat  -  Nejlepší cena" />
+        <text name="dr_market_immediate" text="Prodat  -  Okamžitě" />
+
+        <!-- ================= JEDNOTKY =================
+             Objemy se zobrazují v litrech do 1 000 a v kilolitrech nad touto hodnotou, takže
+             1 001 L se zobrazí jako "1.001 kL". Tyto jednotky se připojují k naformátovanému
+             číslu a ZAHRNUJÍ úvodní mezeru. Mezeru zachovejte a udržujte je krátké. -->
+        <text name="dr_unit_litre" text=" L" />
+        <text name="dr_unit_kilolitre" text=" kL" />
+
+        <!-- ================= FINANČNÍ OZNÁMENÍ =================
+             Finanční vyskakovací okno na obrazovce, když DR prodává nebo účtuje dopravu.
+             Každé je popisek následovaný finanční částkou, zachovejte proto koncovou mezeru
+             a interpunkci. -->
+        <text name="dr_money_biogas" text="Příjem z bioplynu: " />
+        <text name="dr_money_sales" text="Tržby z prodeje: " />
+        <text name="dr_money_distCost" text="Náklady na distribuci: -" />
+
+        <!-- ================= RŮZNÉ POPISKY ENGINU ================= -->
+        <!-- Zastupuje vodu z mapy tam, kde není žádná fyzická nádrž, kterou by šlo pojmenovat. -->
+        <text name="dr_label_waterSource" text="Vodní zdroj" />
+
+        <!-- ================= NASTAVENÍ =================
+             Jeden blok na nastavení: titulek řádku, jeho tooltip (_tt), pak hodnoty
+             výběru (_v1, _v2, ...) V POŘADÍ. Pořadí má význam, protože _v1 je první
+             volba, na kterou šipky vlevo/vpravo narazí, a INDEX je to, co se ukládá
+             do souboru hry. Překládejte každou hodnotu na jejím místě; nikdy je
+             nepřeskupujte a žádnou nevynechávejte. -->
+
+        <text name="dr_set_scope" text="Rozsah" />
+        <text name="dr_set_scope_tt" text="Rozsah: každý vlastněný objekt dosáhne po celé farmě.  Blízkost: objekty dosahují jen na zdroje v okruhu blízkosti níže." />
+        <text name="dr_set_scope_v1" text="Rozsah (celá farma)" />
+        <text name="dr_set_scope_v2" text="Blízkost (okruh)" />
+
+        <text name="dr_set_includeHusbandry" text="Chov zvířat" />
+        <text name="dr_set_includeHusbandry_tt" text="Zahrnout chov zvířat -- stáje, kurníky, včelíny, plus hnojiště a jímky na kejdu -- do distribuční sítě. Vypnuto je zcela odstraní: nejsou krmena a jejich výstup (mléko / hnůj / kejda / vejce / vlna / med) se nedistribuuje ani neprodává." />
+        <text name="dr_set_includeHusbandry_v1" text="Zapnuto" />
+        <text name="dr_set_includeHusbandry_v2" text="Vypnuto" />
+
+        <text name="dr_set_includeSilosSheds" text="Sila a sklady palet" />
+        <text name="dr_set_includeSilosSheds_tt" text="Zahrnout sila na plodiny/materiál a sklady na palety do distribuční sítě. Vypnuto je odstraní: sila už nezásobují výrobu a sklady palet ani nepřijímají, ani nevydávají palety. (Hnojiště a jímky na kejdu se řídí nastavením Chov zvířat.)" />
+        <text name="dr_set_includeSilosSheds_v1" text="Zapnuto" />
+        <text name="dr_set_includeSilosSheds_v2" text="Vypnuto" />
+
+        <text name="dr_set_includeMarkets" text="Trhy a stánky" />
+        <text name="dr_set_includeMarkets_tt" text="Zahrnout trhy a stánky do distribuční sítě. Vypnuto je odstraní: produkty z farmy se k nim už nesměrují k prodeji a karta Trhy se skryje." />
+        <text name="dr_set_includeMarkets_v1" text="Zapnuto" />
+        <text name="dr_set_includeMarkets_v2" text="Vypnuto" />
+
+        <text name="dr_set_includeMapStorage" text="Veřejné sklady na mapě" />
+        <text name="dr_set_includeMapStorage_tt" text="Zahrnout skladovací budovy na mapě, které nevlastníte, ale přesto v nich lze skladovat zboží, například železniční obilní sklad. Ve výchozím stavu vypnuto: tyto budovy obvykle účtují nájem za každý uskladněný litr, proto se do sítě přidají jen na vaše přání. Po zapnutí se objeví jako skladové budovy se všemi produkty nastavenými na Podržet a nic nepřesouvají, dokud je sami nenastavíte." />
+        <text name="dr_set_includeMapStorage_v1" text="Zapnuto" />
+        <text name="dr_set_includeMapStorage_v2" text="Vypnuto" />
+
+        <text name="dr_set_advancedRouting" text="Pokročilé směrování" />
+        <text name="dr_set_advancedRouting_tt" text="Hlavní přepínač pro Pokročilé výstupy (blokování na straně zdroje / priorita / Přesunout do) a Pokročilé vstupy (blokování vstupů / omezení / cíle naplnění). Vypnuto skryje tato tlačítka a vrátí se k výchozí distribuci podle vzdálenosti (nejbližší první). POZOR: vypnutím se VYMAŽOU všechna existující pokročilá nastavení (každá blokace, priorita, Přesunout do, omezení vstupu a cíl naplnění) -- vrátí se na výchozí hodnoty a při opětovném zapnutí se NEOBNOVÍ; museli byste je nastavit znovu od začátku." />
+        <text name="dr_set_advancedRouting_v1" text="Zapnuto" />
+        <text name="dr_set_advancedRouting_v2" text="Vypnuto" />
+
+        <text name="dr_set_defaultOutputMode" text="Výstupní režim nové budovy" />
+        <text name="dr_set_defaultOutputMode_tt" text="Výstupní režim přiřazený budově v okamžiku, kdy ji POSTAVÍTE. Distribuovat je normální chování. Podržet znamená, že nově postavená budova si nechává vše, co vyrobí, dokud nenastavíte jinak, takže z nenastavené budovy nic neodchází. U budovy, která vyrábí palety, se to zobrazí jako &quot;Podržet palety&quot;, nebo jako &quot;Podržet interně&quot;, pokud je vytváření palet nastaveno na nikdy. Toto ovlivňuje POUZE budovy postavené od teď: existující budovy se nikdy nezmění a změna tohoto nastavení se ničeho už postaveného netýká." />
+        <text name="dr_set_defaultOutputMode_v1" text="Distribuovat" />
+        <text name="dr_set_defaultOutputMode_v2" text="Podržet" />
+
+        <text name="dr_set_defaultInputMode" text="Vstupní režim nové budovy" />
+        <text name="dr_set_defaultInputMode_tt" text="Zda nově POSTAVENÁ budova přijímá dodávky. Přijímat vše je normální chování. Blokovat vše zablokuje každý vstup nové budovy, takže se do ní nic nedodá, dokud produkty nepovolíte v Pokročilých vstupech. POZNÁMKA: Blokovat vše funguje jen při zapnutém Pokročilém směrování, protože blokování vstupů je jeho součástí a při vypnutí se vymaže. Toto ovlivňuje POUZE budovy postavené od teď: existující budovy se nikdy nezmění." />
+        <text name="dr_set_defaultInputMode_v1" text="Přijímat vše" />
+        <text name="dr_set_defaultInputMode_v2" text="Blokovat vše" />
+
+        <text name="dr_set_radius" text="Okruh blízkosti" />
+        <text name="dr_set_radius_tt" text="Jak daleko odběratel dosáhne na zdroje v režimu Blízkost." />
+        <text name="dr_set_radius_v1" text="25 m" />
+        <text name="dr_set_radius_v2" text="50 m" />
+        <text name="dr_set_radius_v3" text="75 m" />
+        <text name="dr_set_radius_v4" text="100 m" />
+        <text name="dr_set_radius_v5" text="150 m" />
+        <text name="dr_set_radius_v6" text="200 m" />
+        <text name="dr_set_radius_v7" text="400 m" />
+
+        <text name="dr_set_bufferHours" text="Zásoba odběratele" />
+        <text name="dr_set_bufferHours_tt" text="Kolik hodin krmiva se doplní u každého odběratele za jeden cyklus." />
+        <text name="dr_set_bufferHours_v1" text="1 hodina" />
+        <text name="dr_set_bufferHours_v2" text="2 hodiny" />
+        <text name="dr_set_bufferHours_v3" text="4 hodiny" />
+        <text name="dr_set_bufferHours_v4" text="8 hodin" />
+        <text name="dr_set_bufferHours_v5" text="12 hodin" />
+        <text name="dr_set_bufferHours_v6" text="24 hodin" />
+
+        <text name="dr_set_sellEnabled" text="Prodej" />
+        <text name="dr_set_sellEnabled_tt" text="Hlavní přepínač pro veškerý automatický prodej (režimy Prodat / Distribuovat+Prodat)." />
+        <text name="dr_set_sellEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_sellEnabled_v2" text="Vypnuto" />
+
+        <text name="dr_set_waterSupplyEnabled" text="Auto-zavlažování" />
+        <text name="dr_set_waterSupplyEnabled_tt" text="Automaticky zásobovat vodou výrobu vyžadující vodu a pastviny pro zvířata (účtováno podle vzdálenosti k nejbližšímu vodnímu zdroji)." />
+        <text name="dr_set_waterSupplyEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_waterSupplyEnabled_v2" text="Vypnuto" />
+
+        <text name="dr_set_distCostEnabled" text="Náklady na distribuci" />
+        <text name="dr_set_distCostEnabled_tt" text="Účtovat hodinové náklady na dopravu za každou aktivní distribuci (roste s dopravní vzdáleností)." />
+        <text name="dr_set_distCostEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_distCostEnabled_v2" text="Vypnuto" />
+
+        <!-- Hodnoty $ níže jsou herní měna za hodinu. Vlastní herní měna hráče se sem
+             nedosazuje, přeložte proto pouze část "/h". -->
+        <text name="dr_set_distCostBase" text="Sazba nákladů" />
+        <text name="dr_set_distCostBase_tt" text="Základní hodinová cena dopravy pro krátkou trasu (na dosahu prahové vzdálenosti níže nebo méně)." />
+        <text name="dr_set_distCostBase_v1" text="0 Kč /h" />
+        <text name="dr_set_distCostBase_v2" text="5 Kč /h" />
+        <text name="dr_set_distCostBase_v3" text="10 Kč /h" />
+        <text name="dr_set_distCostBase_v4" text="20 Kč /h" />
+        <text name="dr_set_distCostBase_v5" text="50 Kč /h" />
+
+        <text name="dr_set_distCostThreshold" text="Prahová vzdálenost" />
+        <text name="dr_set_distCostThreshold_tt" text="Trasy na této vzdálenosti nebo kratší platí paušální základní sazbu; delší trasy se lineárně navyšují." />
+        <text name="dr_set_distCostThreshold_v1" text="25 m" />
+        <text name="dr_set_distCostThreshold_v2" text="50 m" />
+        <text name="dr_set_distCostThreshold_v3" text="100 m" />
+        <text name="dr_set_distCostThreshold_v4" text="200 m" />
+        <text name="dr_set_distCostThreshold_v5" text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled" text="Sezónní sklizňová rezerva" />
+        <text name="dr_set_seasonalReserveEnabled_tt" text="Plodiny nastavené na Distribuovat+Prodat si ponechají dostatek krmiva na zásobování výroby až do další sklizně; prodá se jen přebytek." />
+        <text name="dr_set_seasonalReserveEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_seasonalReserveEnabled_v2" text="Vypnuto" />
+
+        <text name="dr_set_seasonalFallbackMonths" text="Měsíce rezervy (než se naučí)" />
+        <text name="dr_set_seasonalFallbackMonths_tt" text="Počet měsíců zásoby, které se pro plodinu drží, než mod zjistí její skutečné sklizňové období." />
+        <text name="dr_set_seasonalFallbackMonths_v1" text="6 měsíců" />
+        <text name="dr_set_seasonalFallbackMonths_v2" text="12 měsíců" />
+        <text name="dr_set_seasonalFallbackMonths_v3" text="13 měsíců" />
+        <text name="dr_set_seasonalFallbackMonths_v4" text="18 měsíců" />
+        <text name="dr_set_seasonalFallbackMonths_v5" text="24 měsíců" />
+
+        <text name="dr_set_bestPriceEnabled" text="Prodávat za nejlepší cenu" />
+        <text name="dr_set_bestPriceEnabled_tt" text="Hlavní přepínač: podrží přebytek v režimu Prodat / Distribuovat+Prodat do nejlepšího měsíce, než ho prodá. Vypnuto: vše se prodává okamžitě." />
+        <text name="dr_set_bestPriceEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_bestPriceEnabled_v2" text="Vypnuto" />
+
+        <text name="dr_set_bestPriceDefault" text="Výchozí časování prodeje" />
+        <text name="dr_set_bestPriceDefault_tt" text="Výchozí nastavení pro jakýkoli výstup Prodat / Distribuovat+Prodat a pro každý produkt na trhu, dokud nenastavíte vlastní přepínač dané budovy. Trhy, které jste už nastavili, si své nastavení ponechají." />
+        <text name="dr_set_bestPriceDefault_v1" text="Prodat za nejlepší cenu" />
+        <text name="dr_set_bestPriceDefault_v2" text="Prodat okamžitě" />
+
+        <text name="dr_set_palletSpawnMode" text="Vytváření palet" />
+        <text name="dr_set_palletSpawnMode_tt" text="Celé palety: chovy drží produkt interně a uvolní PLNOU paletu, stejně jako výroba. Standard: paleta se objeví okamžitě a postupně se plní. Nikdy: nic samo od sebe nevytváří palety, produkt zůstává interně a přesto se distribuuje, ukládá i prodává odtud. Paletu vždy můžete uvolnit ručně přes Vytvořit palety. Nikdy se vztahuje jen na vaše chovy a výrobu - včelíny stále vytvářejí palety normálně (nemají interní zásobník, ze kterého by prodávaly), a obchody, u kterých palety kupujete, nejsou nikdy ovlivněny." />
+        <text name="dr_set_palletSpawnMode_v1" text="Standard (plní se postupně)" />
+        <text name="dr_set_palletSpawnMode_v2" text="Jen celé palety" />
+        <text name="dr_set_palletSpawnMode_v3" text="Nikdy nevytvářet palety" />
+        <text name="dr_set_passThroughStores" text="Průchozí sklady" />
+        <text name="dr_set_passThroughStores_tt" text="Některé mody přidávají skladovou budovu s falešnou výrobou, kde každá linka mění produkt přímo zpět na sebe sama. Výroba nedělá nic; je tam jen proto, aby hra do budovy vůbec doručovala. Volba Považovat za sklad přiměje Distribution Redux vidět ji jako sklad, čím skutečně je, takže přestane vyžadovat každý litr na farmě a její skutečné linky (pokud nějaké má) se stále zobrazují ve Výrobě. Třetí volba navíc tyto falešné linky vypne přímo ve hře - je to přehlednější, ale zapíše se to do vaší uložené hry a zůstane to vypnuté, i když tento mod odstraníte." />
+        <text name="dr_set_passThroughStores_v1" text="Považovat za výrobu" />
+        <text name="dr_set_passThroughStores_v2" text="Považovat za sklad" />
+        <text name="dr_set_passThroughStores_v3" text="Považovat za sklad + vypnout linky" />
+        <!-- Popisky rolí. Zobrazují se JEN u budovy, která plní dvě funkce zároveň (silo, které
+             je zároveň skladem palet), aby šlo rozlišit její poloviny v seznamu budov. Udržujte
+             krátké - připojují se za název budovy v seznamu s pevnou šířkou. -->
+        <text name="dr_role_nameFmt" text="%s (%s)" />
+        <text name="dr_role_silo" text="Silo" />
+        <text name="dr_role_shed" text="Sklad palet" />
+        <text name="dr_role_production" text="Výroba" />
+        <text name="dr_role_husbandry" text="Zvířata" />
+        <text name="dr_role_heap" text="Jímka" />
+        <text name="dr_role_market" text="Trh" />
+        <text name="dr_type_linked" text="Propojeno" />
+
+        <text name="dr_set_menuRefresh" text="Frekvence obnovy menu" />
+        <text name="dr_set_menuRefresh_tt" text="Jak často otevřené menu znovu načte data farmy. Přehled znovu prochází každou budovu a produkt, takže na velké farmě udrží pomalejší frekvence menu odezvě. Pouze ručně úplně zastaví obnovování na pozadí - hodnoty se stále aktualizují při výběru čehokoli nebo stiskem Obnovit v Přehledu." />
+        <text name="dr_set_menuRefresh_v1" text="Živě (0,5 s)" />
+        <text name="dr_set_menuRefresh_v2" text="Normální (2 s)" />
+        <text name="dr_set_menuRefresh_v3" text="Uvolněné (10 s)" />
+        <text name="dr_set_menuRefresh_v4" text="Pouze ručně" />
+
+        <text name="dr_set_debugEnabled" text="Ladicí protokol" />
+        <text name="dr_set_debugEnabled_tt" text="Zapisovat podrobnou distribuční aktivitu do log.txt (přesuny, prodeje, ukládání, doplňování vody a poplatky). Vypněte pro tišší log." />
+        <text name="dr_set_debugEnabled_v1" text="Zapnuto" />
+        <text name="dr_set_debugEnabled_v2" text="Vypnuto" />
+
+
+        <!-- ============ UŽIVATELSKÁ PŘÍRUČKA (generováno: gen_guide_l10n.py) ============
+             11 témat, jeden klíč na neprázdný odstavec. Značky na začátku hodnoty jsou
+             STRUKTURA, ne slova, a musí zůstat přesně tak, jak jsou:
+               "## "   nadpis
+               "### "  podnadpis
+               "- "    odrážka v seznamu
+             Vše po značce je běžný text. Vynechaný klíč spadne zpět na angličtinu, takže
+             téma lze překládat po odstavcích.
+             NEPŘESKUPUJTE ani nepřečíslovávejte tyto klíče; čísla jsou pozice v příručce. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Začínáme" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux zcela nahrazuje distribuční systém základní hry. Nejsou potřeba žádné další stavby. Funguje se všemi výchozími budovami a s modovanými budovami, které dodržují standardní GIANTS schéma pro svůj typ budovy. Jde o velmi komplexní mod a je snadné nechtěně vytvořit problémy či ucpání. Před použitím si prosím projděte celou nápovědu." />
+        <text name="dr_guide_gettingStarted_2" text="## Přístup k rozhraní" />
+        <text name="dr_guide_gettingStarted_3" text="Klávesa zpětné lomítko: otevře menu Distribution Redux - okno na celou obrazovku se záložkou pro každý typ budovy, plus tuto příručku a nastavení." />
+        <text name="dr_guide_gettingStarted_4" text="Klávesa levá hranatá závorka: za chůze se podívejte na nakládací nebo vykládací bod budovy a otevře se menu přímo na stránce dané budovy. Výzva se zobrazí jen tehdy, díváte-li se na vlastní budovu, která je součástí sítě." />
+        <text name="dr_guide_gettingStarted_5" text="Obě klávesy lze přenastavit v Options - Controls." />
+        <text name="dr_guide_gettingStarted_6" text="## Základní myšlenka" />
+        <text name="dr_guide_gettingStarted_7" text="Otevřete menu, vyberte budovu, která vás zajímá, a nastavte každý produkt na Podržet, Distribuovat, Prodat a podobně. To je celý princip - všechno ostatní jsou detaily." />
+        <text name="dr_guide_gettingStarted_8" text="## Čím se liší od základní hry" />
+        <text name="dr_guide_gettingStarted_9" text="- Umožňuje účastnit se distribuce jakékoli budově, která skladuje, vyrábí, krmí nebo prodává." />
+        <text name="dr_guide_gettingStarted_10" text="- Doručuje jen to, co poptávka skutečně potřebuje, místo aby se snažil naplnit kapacitu" />
+        <text name="dr_guide_gettingStarted_11" text="- Účtuje distribuci podle vzdálenosti" />
+        <text name="dr_guide_gettingStarted_12" text="- Umožňuje prodat okamžitě nebo počkat na dosažení nejlepší ceny" />
+        <text name="dr_guide_gettingStarted_13" text="- Umožňuje držet sezónní rezervu u sezónních plodin, aby výroba mohla pokračovat, a prodává jen nepotřebnou část sklizně" />
+        <text name="dr_guide_gettingStarted_14" text="- Auto-zavlažování čerpá vodu z jakéhokoli skladu nebo z nejbližšího vodního zdroje (např. jezera) k pokrytí poptávky" />
+        <text name="dr_guide_gettingStarted_15" text="- Umožňuje přepsat výchozí distribuční mechanismus, upřednostnit poptávky, blokovat konkrétní vstupy a výstupy, nastavit rezervy výstupu a cíle poptávky vstupu" />
+        <text name="dr_guide_gettingStarted_16" text="## Co dělá v každém cyklu" />
+        <text name="dr_guide_gettingStarted_17" text="- Přidělit - Sestaví seznam poptávek od každého odběratele: vstupy výroby, krmivo zvířat, zásobníky krmných robotů, sláma, voda pro chov. Poté spáruje zdroje s poptávkou podle nejbližší vzdálenosti a respektuje blokace, priority a omezení vstupů podle produktu." />
+        <text name="dr_guide_gettingStarted_18" text="- Přesunout zbytek - Uloží přebytky do dostupných skladových budov, přesune zásoby na dostupné trhy, poté přesune zásoby mezi sklady, respektujíc blokace, priority a omezení vstupů podle produktu." />
+        <text name="dr_guide_gettingStarted_19" text="- Účtovat - Fakturace dopravy podle vzdálenosti, plus běžné hodinové provozní náklady výroby ze základní hry (které by jinak zanikly, protože DR potlačuje základní hodinovou obsluhu hry)." />
+        <text name="dr_guide_gettingStarted_20" text="- Prodat / Zásobovat trh - Prodá přebytek, prodá ze zásob na trzích, poté prodá přímé výstupy (např. elektřinu, metan), respektujíc případnou sezónní rezervu sklizně a pravidla pro okamžitý prodej vs. prodej za nejlepší cenu." />
+        <text name="dr_guide_gettingStarted_21" text="- Zaznamenat - Zaznamená tok výroby a chovu, spočítá rozdíly z ručního nakládání/vykládání a vypíše finanční souhrn." />
+
+        <text name="dr_guide_theMenu_title" text="Menu" />
+        <text name="dr_guide_theMenu_1" text="Klávesa zpětné lomítko otevírá souhrnné menu. Na levé straně jsou záložky." />
+        <text name="dr_guide_theMenu_2" text="## Záložky" />
+        <text name="dr_guide_theMenu_3" text="- Výroba - továrny a výrobní místa." />
+        <text name="dr_guide_theMenu_4" text="- Sila - objemová sila a sklady palet/balíků, plus hnojiště a jímky na kejdu." />
+        <text name="dr_guide_theMenu_5" text="- Chov zvířat - stáje, kurníky, výběhy a včelíny." />
+        <text name="dr_guide_theMenu_6" text="- Trhy - stánky a trhy, které jste umístili na mapě." />
+        <text name="dr_guide_theMenu_7" text="- Přehled - podrobné údaje o každé budově a každém produktu v jedné tabulce." />
+        <text name="dr_guide_theMenu_8" text="- Uživatelská příručka - tato příručka." />
+        <text name="dr_guide_theMenu_9" text="- Nastavení - globální možnosti." />
+        <text name="dr_guide_theMenu_10" text="Každá karta budovy je dvoupanelová stránka: vaše budovy jsou vypsány vlevo a příchozí produkty, výrobní linky a odchozí produkty vybrané budovy vpravo. Které z těchto tří seznamů se zobrazí, závisí na tom, co budova dělá." />
+        <text name="dr_guide_theMenu_11" text="## Období" />
+        <text name="dr_guide_theMenu_12" text="Každá karta budovy i karta Přehled má nahoře výběr Období nabízející Hodinu, Měsíc a Rok. Přeškáluje tím hodnoty toků na dané stránce - kolik bylo v daném okně přijato, spotřebováno, vyrobeno, distribuováno a prodáno." />
+        <text name="dr_guide_theMenu_13" text="&quot;Měsíc&quot; v Distribution Redux je 24 hodinových průchodů, takže Měsíc odpovídá zhruba poslednímu hernímu dni bez ohledu na to, kolik reálných dní máte nastaveno na období. Zásoba se nikdy nepřeškáluje: je to stav, ne tok, takže vždy ukazuje, co je v budově právě teď." />
+        <text name="dr_guide_theMenu_14" text="Data za Rok se hromadí postupně. Před zavedením této funkce neexistoval žádný roční záznam, takže na starší uložené hře začíná sloupec Rok prázdný a plní se s dokončením každého herního měsíce." />
+        <text name="dr_guide_theMenu_15" text="## Skryté záložky" />
+        <text name="dr_guide_theMenu_16" text="Karty Sila, Chov zvířat a Trhy se zobrazí jen tehdy, je-li příslušná skupina zapnutá v Nastavení. Vypnete-li skupinu, její budovy zcela opustí distribuční síť a její karta zmizí. Zapnutím skupiny zpět získáte obojí zpátky." />
+
+        <text name="dr_guide_buildingPages_title" text="Stránky budov" />
+        <text name="dr_guide_buildingPages_1" text="Karty Výroba, Sila, Trhy a Chov zvířat sdílejí stejné rozvržení: vyberte budovu vlevo, poté nastavte její produkty vpravo. Tabulky a sady sloupců se podle typu budovy mírně liší, protože ne každá budova spotřebovává nebo vyrábí." />
+        <text name="dr_guide_buildingPages_2" text="## Obsah tabulek" />
+        <text name="dr_guide_buildingPages_3" text="### Příchozí produkty" />
+        <text name="dr_guide_buildingPages_4" text="- PRODUKT - název a ikona." />
+        <text name="dr_guide_buildingPages_5" text="- ZÁSOBA/MAX - kolik ho je v budově nyní, maximální množství, které lze uskladnit, a nastavené maximum v závorce jako procento." />
+        <text name="dr_guide_buildingPages_6" text="- VOLNÝ SKLAD - o kolik více tohoto produktu může budova ještě pojmout, s ohledem na nastavené maximum (%) a zbývající místo." />
+        <text name="dr_guide_buildingPages_7" text="- PŘIJATO - kolik produktu Distribution Redux doručil do této budovy ve zvoleném období." />
+        <text name="dr_guide_buildingPages_8" text="- SPOTŘEBOVÁNO - kolik produktu budova spotřebovala ve zvoleném období. Pouze Výroba a Chov zvířat." />
+        <text name="dr_guide_buildingPages_9" text="- STAV - Aktivní (Přijímá) nebo Aktivní (Nečinný), podle aktivity v posledním cyklu, případně Blokován." />
+        <text name="dr_guide_buildingPages_10" text="### Výrobní linky (pouze Výroba)" />
+        <text name="dr_guide_buildingPages_11" text="- VÝROBNÍ LINKY - produkt, který linka vyrábí, s jejími vstupy v závorce." />
+        <text name="dr_guide_buildingPages_12" text="- STAV - Běží, Nečinná (zapnutá, ale chybí vstupy), nebo Vypnuta." />
+        <text name="dr_guide_buildingPages_13" text="- CÍL /měs - kolik by linka měla za měsíc vyrobit, pokud jsou dodány všechny vstupy." />
+        <text name="dr_guide_buildingPages_14" text="### Odchozí produkty" />
+        <text name="dr_guide_buildingPages_15" text="- PRODUKT - název a ikona." />
+        <text name="dr_guide_buildingPages_16" text="- ZÁSOBA (MAX) - kolik tohoto produktu je v budově nyní, s kapacitou v závorce." />
+        <text name="dr_guide_buildingPages_17" text="- VOLNÝ SKLAD - o kolik více tohoto produktu může budova ještě pojmout" />
+        <text name="dr_guide_buildingPages_18" text="- VYROBENO - kolik bylo vyrobeno ve zvoleném období. Pouze Výroba a Chov zvířat." />
+        <text name="dr_guide_buildingPages_19" text="- DISTRIBUOVÁNO - vše, co budovu opustilo: distribuováno, uloženo, přesunuto a prodáno dohromady, s hodnotou prodeje v závorce, pokud se něco prodalo." />
+        <text name="dr_guide_buildingPages_20" text="- VÝSTUPNÍ REŽIM - režim, na který je tento výstup aktuálně nastaven." />
+        <text name="dr_guide_buildingPages_21" text="- STAV - Aktivní (Odesílá) nebo Aktivní (Nečinný), podle aktivity v posledním cyklu, případně Blokován." />
+        <text name="dr_guide_buildingPages_22" text="## POZNÁMKA" />
+        <text name="dr_guide_buildingPages_23" text="- Pokud budova může mít interní sklad i palety zároveň, zobrazení ukáže interní množství a poté množství uložené v paletách na paletovém zásobníku budovy" />
+        <text name="dr_guide_buildingPages_24" text="- Zvolené období zobrazí jen materiál přesunutý v daném období; pokud jste výrobu právě aktivovali a máte zobrazeno Roční, uvidíte jen to, co se přesunulo od aktivace." />
+        <text name="dr_guide_buildingPages_25" text="- Podrobnosti o tom, co kam jde, najdete na kartě Přehled " />
+        <text name="dr_guide_buildingPages_26" text="- Objemy mění jednotku při 1 000 litrech. Do 999 L se zobrazují v litrech; od 1 000 L výše v kilolitrech s vypuštěním přebytečných nul, takže 1 001 L se zobrazí jako 1.001 kL, 123 123 L jako 123.123 kL a 600 000 L prostě jako 600 kL. Tři desetinná místa odpovídají přesně jednomu litru, takže při změně jednotky nic neuniká." />
+        <text name="dr_guide_buildingPages_27" text="- Chcete-li zjistit, zda se změna projevila (tj. nečinná, nebo běží), musíte počkat jeden cyklus (1 hodinu), než se sloupec rozhraní obnoví. Máte-li řetězec distribucí, může být třeba počkat několik hodin, než se obnoví všechny kroky. " />
+        <text name="dr_guide_buildingPages_28" text="## Změna nastavení" />
+        <text name="dr_guide_buildingPages_29" text="- Chcete-li zapnout nebo vypnout výrobní linku, vyberte ji a stiskněte Přepnout linku." />
+        <text name="dr_guide_buildingPages_30" text="- Chcete-li změnit, co se stane s výstupem, vyberte ho a stiskněte Přepnout výstup." />
+        <text name="dr_guide_buildingPages_31" text="- Pokročilé otevře ovládání směrování po jednotlivých produktech (viz Pokročilé vstupy a výstupy)." />
+        <text name="dr_guide_buildingPages_32" text="- Časování prodeje se zobrazí u výstupu v prodejním režimu." />
+        <text name="dr_guide_buildingPages_33" text="Změna výstupu výroby nebo přepnutí výrobní linky zde je stejné nastavení jako přepínač výstupu na standardní obrazovce výroby, takže se obě místa aktualizují navzájem - a standardní obrazovka zobrazuje i názvy režimů modu." />
+
+        <text name="dr_guide_outputModes_title" text="Výstupní režimy" />
+        <text name="dr_guide_outputModes_1" text="## Které režimy nabízí každý typ budovy" />
+        <text name="dr_guide_outputModes_2" text="- Výroba - Distribuovat, Uložit, Podržet palety, Podržet interně, Prodat, Zásobovat trh." />
+        <text name="dr_guide_outputModes_3" text="- Sila a sklady - Distribuovat, Přesunout do, Podržet, Prodat, Zásobovat trh." />
+        <text name="dr_guide_outputModes_4" text="- Chov zvířat - Distribuovat, Uložit, Podržet palety, Podržet interně, Prodat, Zásobovat trh." />
+        <text name="dr_guide_outputModes_5" text="- Trhy - Pouze Prodat nebo Podržet." />
+        <text name="dr_guide_outputModes_6" text="Ne každý režim je nabízen vždy. Pokud režim nemá žádný možný koncový bod, skryje se místo toho, aby se zobrazil jako slepá ulička. Např. bez umístěného trhu, nebo bez trhu přijímajícího daný produkt, se Zásobovat trh v seznamu neobjeví." />
+        <text name="dr_guide_outputModes_7" text="## Jednotlivé režimy" />
+        <text name="dr_guide_outputModes_8" text="- Distribuovat - zásobuje blízkou výrobu a zvířata, která tento produkt potřebují, nejbližší zdroj jako první, až do množství požadovaného jejich recepty. Přebytek zůstává na místě." />
+        <text name="dr_guide_outputModes_9" text="- Uložit - přesune výstup do jakékoli skladové budovy, která ho přijímá, nejbližší jako první, a přeteče do další, jakmile se jedna zaplní. Výroba a Chov zvířat." />
+        <text name="dr_guide_outputModes_10" text="- Přesunout do - přesune produkt z jedné skladové budovy do jiné, která ho přijímá. Pouze skladové budovy. Viz varování níže." />
+        <text name="dr_guide_outputModes_11" text="- Podržet interně - ponechá výstup jako volně ložený materiál uvnitř budovy; palety se samy nevytvářejí a vytváříte je sami podle potřeby (viz Vytváření palet)." />
+        <text name="dr_guide_outputModes_12" text="- Podržet palety - ponechá výstup tam, kde je, jako palety, a nechá ho hromadit." />
+        <text name="dr_guide_outputModes_13" text="- Prodat - prodá produkt, buď okamžitě, nebo za nejlepší cenu (viz Časování prodeje)." />
+        <text name="dr_guide_outputModes_14" text="- Zásobovat trh - přesune výstup na trh nebo stánek, který jste umístili, kde se prodává s příplatkem." />
+        <text name="dr_guide_outputModes_15" text="## Kombinované režimy" />
+        <text name="dr_guide_outputModes_16" text="- Distribuovat + Prodat - nejdřív pokryje veškerou poptávku, poté prodá zbytek." />
+        <text name="dr_guide_outputModes_17" text="- Distribuovat + Uložit - nejdřív pokryje poptávku, poté přesune přebytek do vašeho skladu místo prodeje. Pouze Výroba a Chov zvířat." />
+        <text name="dr_guide_outputModes_18" text="- Distribuovat + Přesunout do - nejdřív pokryje poptávku, poté přesune přebytek do vámi zvoleného skladu. Pouze skladové budovy." />
+        <text name="dr_guide_outputModes_19" text="- Distribuovat + Zásobovat trh - nejdřív pokryje poptávku, poté přesune přebytek na váš trh nebo stánek." />
+        <text name="dr_guide_outputModes_20" text="V každém kombinovaném režimu první polovina skutečně proběhne jako první. Nic se neprodá, neuloží ani neodešle na trh, dokud to nebylo nabídnuto odběratelům." />
+        <text name="dr_guide_outputModes_21" text="Přesunout do se nabízí jen při aktivovaném Pokročilém směrování (viz Pokročilé směrování)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Pokročilé směrování a pravidla" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Pokročilé směrování" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Pokročilé směrování umožňuje ovládat každý jednotlivý vstup a výstup každé budovy. Je ve výchozím stavu zapnuté a lze ho vypnout v Nastavení." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Pokročilé vstupy" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Vyberte libovolný příchozí produkt a stiskněte Pokročilé vstupy." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Blokovat / Povolit - zabrání této budově kdykoli tento produkt přijmout." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Blokovat vše / Povolit vše - přepne všechny vstupy najednou." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Max vstup - nejvyšší množství tohoto produktu, které budova smí držet. Důležité u sdílených skladů, kde si více produktů dělí jednu nádrž. Sdílený sklad funguje na principu kdo dřív přijde: ve výchozím stavu může každý produkt využít celý sklad, přesně jako v základní hře. To znamená, že rušný produkt může zaplnit silo a nechat ostatním málo místa - nastavte proto na tomto produktu Max vstup, abyste mu určili strop a nechali místo ostatním. Omezení jsou nezávislá a nemusí dávat dohromady 100 procent; cokoli neupravíte, zůstává bez omezení." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Cíl - cíl naplnění pro daný produkt. Místo aby síť dodávala jen to, co potřebuje další cyklus, pracuje směrem k této úrovni a pak ji drží - v podstatě vstupní rezerva." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Pokročilé výstupy" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Vyberte odchozí produkt, který chcete upravit, a stiskněte Pokročilé výstupy." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Blokovat / Povolit - nikdy neposílat tento výstup danému cíli." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Upřednostnit - seřadí poptávky a možnosti uložení pro tento výstup. Přepíše výchozí chování nejbližší-první-pak-přetéká." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Rezerva (+/-) - udrží v budově vždy tolik litrů. Nic - distribuce, prodej, ukládání, přesun ani zásobování trhu - nesmí snížit produkt pod tuto hodnotu." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### Výstupní režim &quot;Přesunout do&quot;" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Tento režim je dostupný jako výstupní režim jen při zapnutém Pokročilém směrování a je-li budova typu: Sklad" />
+        <text name="dr_guide_advancedRoutingRules_16" text="- Tento režim umožňuje přesunout materiál z daného skladu do jiného skladu, který ho podporuje" />
+        <text name="dr_guide_advancedRoutingRules_17" text="- Ve výchozím stavu jsou při aktivaci tohoto režimu všechny možné cíle blokovány, aby se předešlo náhodnému vzniku smyček produktu" />
+        <text name="dr_guide_advancedRoutingRules_18" text="- Pro aktivaci vyberte libovolný výstup a stiskněte Pokročilé výstupy. Vpravo uvidíte seznam podporovaných cílů (Vše blokováno) a podle potřeby budovy povolíte. Pro tento přesun jsou dostupné i všechny ostatní pokročilé funkce výstupu (Upřednostnit, Rezerva atd.)." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- Ve výchozím stavu se Přesunout do snaží v každém cyklu naplnit budovu co nejvíce. Na vstupech cílové budovy můžete nastavit &quot;Max vstup&quot;, abyste zajistili místo pro přesun více produktů (místo úplného zaplnění sila jen prvním produktem)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Před vypnutím Pokročilého směrování" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Každé pokročilé nastavení, které jste provedli, se smaže, ne jen ignoruje - všechny blokace, priority, rezervy, hodnoty Max vstup a cíle. Opětovné zapnutí Pokročilého směrování vám dá čistý stůl, takže vše budete muset nastavit znovu." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Pokročilá pravidla" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Tato pokročilá pravidla platí bez ohledu na to, zda je Pokročilé směrování zapnuté; sezónní sklizňovou rezervu a Auto-zavlažování lze podle potřeby zapnout/vypnout v nastavení." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Prodejní režimy" />
+        <text name="dr_guide_advancedRoutingRules_25" text="U jakéhokoli výstupu v prodejním režimu si můžete zvolit prodat okamžitě, nebo počkat na nejlepší cenu. Čekání znamená, že se produkt v budově hromadí, dokud nenastane vrchol, ujistěte se proto, že je pro něj místo." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Sezónní sklizňová rezerva" />
+        <text name="dr_guide_advancedRoutingRules_27" text="Ve výchozím stavu VYPNUTO. Po zapnutí si výstup, který je roční sklizňovou plodinou, ponechá zhruba roční zásobu na zásobování vlastní výroby a prodá jen přebytek. Tráva a další plodiny, které dorůstají během roku, si ponechávají místo toho tři měsíce. Dokud mod neviděl plodinu sklizenou, neví, kdy je další sklizeň splatná, takže se řídí nastavením Měsíce rezervy." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### Auto-zavlažování" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Voda se automaticky dodává každé budově, která ji potřebuje, z nejbližšího vodního zdroje, pokud je Auto-zavlažování zapnuté. Pokud není umístěn žádný vodní zdroj, systém ji získá z nejbližší vodní plochy (pozor, je-li nejbližší vodní plocha daleko, budou náklady na distribuci vysoké)" />
+
+        <text name="dr_guide_overviewTab_title" text="Karta Přehled" />
+        <text name="dr_guide_overviewTab_1" text="Karta Přehled shrnuje celou síť do jedné tabulky: každou zapojenou budovu a každý produkt, který do ní vstupuje nebo z ní vystupuje. Je to místo, kam se podívat, chcete-li vědět, co se skutečně děje, a ne jen na co je nastavena jedna budova." />
+        <text name="dr_guide_overviewTab_2" text="Každý produkt je označen (Vst), (Výst) nebo (Vst/Výst), abyste na první pohled viděli, na které straně budovy stojí. Sila a sklady jsou Vst/Výst u všeho, protože zároveň přijímají i dodávají." />
+        <text name="dr_guide_overviewTab_3" text="## Čtyři výběry" />
+        <text name="dr_guide_overviewTab_4" text="- Filtrovat podle - Nic (zobrazit vše), Budova, Produkt, nebo Konečný produkt (celý řetězec)." />
+        <text name="dr_guide_overviewTab_5" text="- Zobrazit - vybere, na kterou budovu nebo produkt se filtr vztahuje." />
+        <text name="dr_guide_overviewTab_6" text="- Období - Hodina, Měsíc nebo Rok, stejně jako na kartách budov." />
+        <text name="dr_guide_overviewTab_7" text="- Seskupení - Vypnuto zobrazí jeden řádek na budovu; Zapnuto sloučí budovy stejného typu do jednoho souhrnného řádku, například &quot;Pekárna x2&quot;." />
+        <text name="dr_guide_overviewTab_8" text="Konečný produkt (celý řetězec) je z těchto nejužitečnější. Vyberte hotový produkt, například dort, a tabulka ukáže každou budovu a každý mezistupeň, který ho zásobuje, seřazené od hotového výrobku zpět dolů řetězcem. Je to nejrychlejší způsob, jak najít úzké místo nebo přebytek ve výrobní lince." />
+        <text name="dr_guide_overviewTab_9" text="## Sloupce" />
+        <text name="dr_guide_overviewTab_10" text="- PŘIJATO - doručeno do této budovy Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- NALOŽENO - vloženo do této budovy čímkoli, co NENÍ Distribution Redux: vámi s přívěsem, balíkem, AI pomocníkem, jiným modem." />
+        <text name="dr_guide_overviewTab_12" text="- SPOTŘ. (OČEK.) - spotřebováno, s očekávanou hodnotou v závorce." />
+        <text name="dr_guide_overviewTab_13" text="- VYLOŽENO - odebráno z této budovy čímkoli, co není Distribution Redux, včetně palety, kterou odvezete." />
+        <text name="dr_guide_overviewTab_14" text="- ZÁSOBA (KAP.) - co je v budově právě teď, s kapacitou. Nikdy se nepřeškáluje podle Období." />
+        <text name="dr_guide_overviewTab_15" text="- VYROB. (OČEK.) - vyrobeno touto budovou, s očekávanou hodnotou v závorce." />
+        <text name="dr_guide_overviewTab_16" text="- DISTRIBUOVÁNO - dodáno odběratelům." />
+        <text name="dr_guide_overviewTab_17" text="- ULOŽ./PŘESUN - odesláno do skladu, nebo přesunuto do jiného skladu." />
+        <text name="dr_guide_overviewTab_18" text="- PRODÁNO - prodáno, ať už přímo, nebo přes trh." />
+        <text name="dr_guide_overviewTab_19" text="- NÁKL. DISTR. - kolik stála doprava dodávek této budovy. Účtováno pouze odesílající budově, takže součet sloupce odpovídá skutečně vynaloženým penězům, místo aby počítal každou dodávku dvakrát." />
+        <text name="dr_guide_overviewTab_20" text="## Očekávané hodnoty a jejich barvy" />
+        <text name="dr_guide_overviewTab_21" text="SPOTŘEBOVÁNO a VYROBENO nesou v závorce očekávané množství, vypočtené z receptů zapnutých výrobních linek. Hodnota je zbarvena zeleně, je-li na cíli nebo velmi blízko, oranžově, je-li mírně pod cílem, a červeně, je-li výrazně pod cílem. Recept mají jen výrobní budovy, takže řádky chovu zvířat a sil zobrazují prostou hodnotu bez cíle místo vymyšlené hodnoty." />
+        <text name="dr_guide_overviewTab_22" text="Červená hodnota VYROBENO je nejrychlejší způsob, jak odhalit vyhladovělou linku." />
+        <text name="dr_guide_overviewTab_23" text="## Zobrazit nastavení" />
+        <text name="dr_guide_overviewTab_24" text="Ve spodní části stránky je tlačítko pro přepínání mezi Zobrazit toky a Zobrazit nastavení. Pokud máte zablokovanou výrobní linku, můžete rychle přepnout na stránku Zobrazit nastavení a zjistit, které nastavení ji blokuje." />
+        <text name="dr_guide_overviewTab_25" text="Dvojklikem na řádek v kterémkoli pohledu přejdete přímo na stránku dané budovy." />
+
+        <text name="dr_guide_palletManagement_title" text="Správa palet" />
+        <text name="dr_guide_palletManagement_1" text="Mnoho výstupů se dodává na paletách - prkna, desky, zelenina v bednách, vejce, vlna a podobně. Aby Distribution Redux fungoval podle očekávání, bylo fungování palet zcela přepsáno " />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux zohledňuje jak produkt uložený interně v budově, tak jakoukoli paletu na paletovém zásobníku budovy, a to jak v informačních zobrazeních, TAK ve Výstupních režimech. Distribuce vždy čerpá nejdřív z paletového zásobníku a poté z interního skladu. Je-li paletový zásobník blokovaný, produkt se hromadí ve vlastním interním skladu budovy a distribuuje se odtud. Paleta ručně odebraná ze zásobníku se okamžitě odečte z celkového množství budovy." />
+        <text name="dr_guide_palletManagement_3" text="Budovy bez řádné paletové plochy ve svém modelu - některé modované zásobníky a několik včelínů - se místo toho řídí jednoduchým pravidlem nejbližší budovy." />
+        <text name="dr_guide_palletManagement_4" text="## Ruční vytváření" />
+        <text name="dr_guide_palletManagement_5" text="- Nastavte výstup na Podržet interně. Jakmile drží alespoň jednu plnou paletu, objeví se tlačítko Vytvořit palety, a to jak na kartě Výroba, tak na standardní obrazovce výroby. Stiskněte ho pro otevření okna vytváření." />
+        <text name="dr_guide_palletManagement_6" text="- Typ - typ palety. Pokud výstup podporuje jen jeden typ, zobrazí se pro informaci; pokud podporuje více, vyberte pomocí šipek." />
+        <text name="dr_guide_palletManagement_7" text="- Množství - kolik jich vytvořit. Šipky mění o jednu, tlačítka -10 / +10 skáčou po desítkách a celkové množství je omezeno vaší zásobou." />
+        <text name="dr_guide_palletManagement_8" text="- Vytvořit umístí zvolený počet plných palet na paletový bod budovy a odečte odpovídající zásobu. Zrušit zavře okno bez vytvoření." />
+        <text name="dr_guide_palletManagement_9" text="Tlačítko se zobrazí jen u výstupu v režimu Podržet interně, který drží alespoň jednu plnou paletu - pod tím množstvím není co vytvářet. Budova musí mít ve svém modelu také paletový bod, což většina paletizujících budov má. Ve hře více hráčů provádí vytvoření hostitel, takže se palety objeví u všech." />
+        <text name="dr_guide_palletManagement_10" text="## Palety z výběhů zvířat" />
+        <text name="dr_guide_palletManagement_11" text="Ve výchozí hře výběhy zvířat každou hodinu vytvoří paletu a naplní ji tím, co je v interním skladu, bez ohledu na to, zda je toho dost na celou paletu, či ne (na rozdíl od výroby). Pro zachování konzistence byly ve výchozím stavu chovy zvířat přenastaveny tak, aby fungovaly stejně jako výroba. Toto lze v nastavení změnit zpět na chování základní hry, ale může to ovlivnit distribuci a sledování distribučních dat (nedoporučeno)" />
+        <text name="dr_guide_palletManagement_12" text="Ve stejném nastavení je také možnost nikdy nevytvářet palety. Ta zabrání vzniku jakýchkoli palet a distribuce bude probíhat výhradně z interního skladu budovy." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Další změny mechanik základní hry" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Žlabová sila" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- Při otevírání žlabového sila teď stačí stisknout R a mod odstraní celou plachtu ze sila (žádné dílčí plachty, které nešlo odstranit)" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- U žlabových sil se očekává, že výstup vytvoříte naložením materiálu, zakrytím, čekáním na zkvašení a poté odkrytím. Distribution Redux proto zobrazuje pouze tabulku a možnosti výstupu a zásobu ukáže až po odkrytí materiálu." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Hnojiště a jímky na kejdu" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Hnojiště a jímky na kejdu lze nyní umístit kdekoli na mapě a NEPŘIPOJUJÍ se automaticky k chovu zvířat. Chcete-li přesunout materiál z chovu zvířat do těchto objektů, umístěte je a u stáje zvolte jako výstupní režim &quot;Uložit&quot;. Hnůj a kejda se pak budou přesouvat do těchto budov jako jakýkoli jiný výstup." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Rozšíření sil" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Rozšíření sil byla zásadně přepsána a nyní fungují jinak než v základní hře. Rozšíření sila lze nyní umístit jen do 50 m od existujícího sila, hnojiště nebo jímky a POUZE přidává úložný prostor dané budově." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Ruční vykládka na trzích" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Na vlastních trzích/stáncích stále můžete produkty ručně vyklopit/vyložit. Místo okamžitého prodeje jako v základní hře budou tyto produkty respektovat výstupní režim nastavený na trhu. " />
+
+        <text name="dr_guide_settings_title" text="Nastavení" />
+        <text name="dr_guide_settings_1" text="Globální nastavení najdete na kartě Nastavení. Ukládají se s vaší uloženou hrou a v multiplayeru je synchronizuje hostitel. Volby jednotlivých budov mají pro danou budovu vždy přednost před těmito globálními hodnotami." />
+        <text name="dr_guide_settings_2" text="## Možnosti" />
+        <text name="dr_guide_settings_3" text="- Uvedeny v pořadí, v jakém se objevují na kartě." />
+        <text name="dr_guide_settings_4" text="- Rozsah - Rozsah (celá farma), nebo Blízkost (v rámci okruhu)." />
+        <text name="dr_guide_settings_5" text="- Chov zvířat - zahrnout nebo vyloučit stáje, kurníky, výběhy a včelíny." />
+        <text name="dr_guide_settings_6" text="- Sila a sklady palet - zahrnout nebo vyloučit objemová sila, sklady palet a balíků a hnojiště a jímky na kejdu." />
+        <text name="dr_guide_settings_7" text="- Trhy a stánky - zahrnout nebo vyloučit vaše trhy a stánky." />
+        <text name="dr_guide_settings_8" text="- Pokročilé směrování - hlavní přepínač pro Pokročilé vstupy a Pokročilé výstupy. Vypnutí také odstraní Přesunout do a vymaže veškerá pokročilá nastavení (viz Pokročilé vstupy a výstupy)." />
+        <text name="dr_guide_settings_9" text="- Okruh blízkosti - jak daleko zdroj dosáhne v rozsahu Blízkost. Výchozí 50 m." />
+        <text name="dr_guide_settings_10" text="- Zásoba odběratele - hodiny krmiva doplněné u každého odběratele za cyklus. Výchozí 2." />
+        <text name="dr_guide_settings_11" text="- Prodej - hlavní zapnutí/vypnutí veškerého prodeje. Vypnuto znamená, že se nikdy nic neprodá, bez ohledu na nastavení jednotlivých výstupů." />
+        <text name="dr_guide_settings_12" text="- Auto-zavlažování - automaticky zásobovat vodou budovy, které ji spotřebovávají." />
+        <text name="dr_guide_settings_13" text="- Náklady na distribuci - zda se doprava účtuje vůbec." />
+        <text name="dr_guide_settings_14" text="- Sazba nákladů - základní poplatek za spojení za hodinu. Výchozí 10." />
+        <text name="dr_guide_settings_15" text="- Prahová vzdálenost - krok vzdálenosti, kterým se sazba násobí. Výchozí 50 m." />
+        <text name="dr_guide_settings_16" text="- Sezónní sklizňová rezerva - ponechat dostatek krmiva do další sklizně a prodat jen přebytek. Ve výchozím stavu vypnuto." />
+        <text name="dr_guide_settings_17" text="- Měsíce rezervy (než se naučí) - kolik měsíců zásoby držet, než se mod naučí sklizňové období plodiny. Výchozí 13." />
+        <text name="dr_guide_settings_18" text="- Prodávat za nejlepší cenu - hlavní zapnutí/vypnutí prodeje za nejlepší cenu. Vypnuto znamená, že se vše prodává okamžitě." />
+        <text name="dr_guide_settings_19" text="- Výchozí časování prodeje - co použije nový výstup, pokud jste ho nenastavili: čekat na vrchol, nebo prodat okamžitě." />
+        <text name="dr_guide_settings_20" text="- Vytváření palet - tři možnosti: výchozí hra (vytváří dílčí palety), Vytvářet jen celé palety (VÝCHOZÍ) a Nikdy nevytvářet palety." />
+        <text name="dr_guide_settings_21" text="- Frekvence obnovy menu - lze upravit, pokud pociťujete zpoždění nebo trhání rozhraní. Ruční aktivuje tlačítko obnovy, kterým rozhraní obnovíte sami." />
+        <text name="dr_guide_settings_22" text="- Ladicí protokol - zapisovat podrobnou aktivitu do log.txt. Pro tišší log ponechte vypnuté." />
+
+        <text name="dr_guide_support_title" text="Podpora" />
+        <text name="dr_guide_support_1" text="## Řešení problémů" />
+        <text name="dr_guide_support_2" text="- Budova se nezobrazuje. Zkontrolujte Rozsah a přepínače skupin. Blízkost dosáhne jen v rámci okruhu a budova, jejíž skupina je vypnutá, je odstraněna ze sítě a její karta skrytá." />
+        <text name="dr_guide_support_3" text="- Nic se nedoručuje. Ujistěte se, že je zdroj nastaven na režim Distribuovat, ne Podržet, výrobní linka odběratele je zapnutá a oba jsou v dosahu pro aktuální rozsah." />
+        <text name="dr_guide_support_4" text="- Výstup Přesunout do nic nepřesouvá. Přesunout do začíná se všemi cíli blokovanými. Otevřete Pokročilé výstupy a aktivujte požadovaný cíl. Pokud se u cíle červeně zobrazuje &quot;Aktivní - Neplatné&quot;, jeho aktivace by vytvořila smyčku." />
+        <text name="dr_guide_support_5" text="- Něco dorazilo, ale tuto hodinu se to neprodalo. To je záměr. Právě dorazivší produkt počká jeden cyklus, aby odběratelé měli přednostní právo odmítnout." />
+        <text name="dr_guide_support_6" text="- Výběh zvířat drží svá vejce nebo vlnu. Se zapnutým &quot;Celé palety z výběhů&quot; výběh hromadí, dokud nemá plnou paletu, než jednu uvolní. Odběratelé mohou stále čerpat ze zásoby, zatímco se plní; prodej a ukládání čekají na paletu." />
+        <text name="dr_guide_support_7" text="- Továrna nedostává vodu. Voda se dodává automaticky, je-li Auto-zavlažování zapnuté; pokud výroba vyžadující vodu vypadá vyhladověle, ověřte toto nastavení." />
+        <text name="dr_guide_support_8" text="- U budovy se neobjevuje výzva. Výzva s levou hranatou závorkou se zobrazuje jen u budov, které jsou součástí sítě. Pokud jste danou skupinu v Nastavení vyloučili, chybějící výzva je záměr." />
+        <text name="dr_guide_support_9" text="- Mod se nechová podle očekávání. Nespouštějte ho současně s jinými mody přepracovávajícími distribuci - zaháknou se do stejného systému a budou si konkurovat. Mod funguje se základními budovami hry a s modovanými budovami, které dodržují standardní GIANTS schéma; některé modované budovy se mohou chovat jinak a mohou tento mod ovlivnit." />
+        <text name="dr_guide_support_10" text="## Návody a přehledy" />
+        <text name="dr_guide_support_11" text="Přehledy a návody jsou na mém YouTube kanálu, @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Hlášení chyb" />
+        <text name="dr_guide_support_13" text="Chyby, požadavky na funkce a kompatibilitu modů lze nahlásit jako ticket v mém GitHub repozitáři:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Changelog" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Řada oprav chyb (podrobnosti na GitHubu)." />
+        <text name="dr_guide_changelog_3" text="2. Řada vylepšení komfortu (podrobnosti na GitHubu)." />
+        <text name="dr_guide_changelog_4" text="3. Přidána kompatibilita s mnoha mody a kód posílen pro celkově lepší kompatibilitu s mody (podrobnosti na GitHubu)." />
+        <text name="dr_guide_changelog_5" text="4. Přidána karta Přehled, která umožňuje na jednom místě vidět veškerou distribuční aktivitu a nastavení distribuce pro všechny budovy (obsahuje filtry a lze ji nastavit tak, aby zobrazovala všechny zdroje a výrobu přispívající ke konkrétnímu konečnému produktu)" />
+        <text name="dr_guide_changelog_6" text="5. Přidána pokročilá správa vstupů a výstupů (blokace, upřednostnění, rezerva zásoby, cíl naplnění, max vstup)." />
+        <text name="dr_guide_changelog_7" text="6. Přidána možnost přesouvat a třídit produkty mezi sklady (tj. sila, sklady palet atd.) " />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Přejmenovávání budov - každé budově v distribuční síti lze nyní dát vlastní název ze základního stavebního menu hry. Hra to standardně umožňuje jen u některých budov; Distribution Redux to povoluje pro všechny své budovy (včetně sil, skladů, jímek a trhů). Mod pak váš název používá všude v tomto menu, přičemž pod ním jako referenci zobrazuje původní název budovy, takže farma s osmi identickými skleníky je konečně přehledná." />
+        <text name="dr_guide_changelog_10" text="2. Oprava produktů hnojiště / jímky na kejdu - každé z nich uvádělo produkt toho druhého jako výstup. Hnojiště nyní zobrazuje pouze Hnůj a jímka na kejdu pouze Kejdu." />
+        <text name="dr_guide_changelog_11" text="3. Oprava příchozích produktů hnojiště / jímky na kejdu - ani jedno nezobrazovalo žádný příchozí produkt. Nyní uvádějí to, co do nich skutečně proudí (hnůj, resp. kejda)." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. Vylepšení rozhraní a sjednocení, včetně posuvníků, přeuspořádaných tabulek a přidání hodnoty prodaných produktů do sloupce prodáno." />
+        <text name="dr_guide_changelog_14" text="2. Přidány Trhy a stánky do distribučního systému - všechny budovy nyní mají možnost Zásobovat trh pro nasměrování výstupu na trh, který jste umístili. Zboží prodané přes váš trh získává 20% cenový bonus, i když prodej ve velkém množství cenu snižuje, stejně jako v základní hře." />
+        <text name="dr_guide_changelog_15" text="3. Oprava Prodat za nejlepší cenu - bez cenové historie systém prodával dříve, než se očekávalo. Nyní se řídí herním cenovým grafem, dokud nenashromáždí dostatek vlastních dat." />
+        <text name="dr_guide_changelog_16" text="4. Přidán režim Podržet interně a ruční vytváření palet - paletizovatelné výstupy lze ponechat jako volně ložené zásoby místo automatického vytváření palet a poté je ručně vytvořit přes okno vytváření, kde zvolíte typ a množství palety. Dostupné jak na kartě Výroba, tak na standardní obrazovce výroby." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Přidána možnost určit, zda se má zboží prodat okamžitě, nebo až dosáhne nejlepší ceny." />
+        <text name="dr_guide_changelog_19" text="2. Zcela přepracované rozhraní, které rozděluje typy distribuce a sjednocuje nastavení a nápovědu do jednoho menu." />
+        <text name="dr_guide_changelog_20" text="3. Opravy rozšíření sil, aby fungovala konzistentně. Rozšíření nyní musí být umístěno v blízkosti odpovídajícího typu sila; veškerá distribuce se řídí v hlavním silu a rozšíření mu jen přidává úložný prostor." />
+        <text name="dr_guide_changelog_21" text="4. Sklady palet a balíků nyní zobrazují všechny aktivní palety v síti, takže je lze předem nakonfigurovat před příjezdem zboží. Přidána funkce rezervy, která prodává palety (nejméně hodnotné jako první), aby zůstalo místo pro další cyklus - obejde se, pokud má místo jiný sklad palet, v takovém případě se palety přesunou tam." />
+        <text name="dr_guide_changelog_22" text="5. Opravena interakce se sklady palet: podívejte se ve hře na ikonu nakládacího bodu, čímž otevřete stránku distribuce dané budovy přímo." />
+        <text name="dr_guide_changelog_23" text="6. Opraveno malé množství výstupu, které po distribuci zůstávalo u zdroje (problém s časováním)." />
+        <text name="dr_guide_changelog_24" text="7. Opravena bioplynová stanice: prodej metanu a elektřiny nyní zohledňuje herní obtížnost a digestát se nyní správně eviduje jako příjem bioplynové stanice ve finančním přehledu." />
+        <text name="dr_guide_changelog_25" text="8. Nastavení přepracováno na podrobnější úroveň: nyní lze zahrnout nebo vyloučit sila / sklady palet a zahrnout nebo vyloučit budovy chovu zvířat. Výroba se vždy registruje a účastní distribuce, stejně jako v základní hře." />
+        <text name="dr_guide_changelog_26" text="9. Změna v názvech režimů: Podržet nyní drží položky v budově (dříve &quot;Uloženo&quot;); Uložit přesouvá položky mimo budovu, je-li dostupný sklad." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Předběžné vydání." />
+
+        <!-- ============ konec UŽIVATELSKÉ PŘÍRUČKY ============ -->
+    </texts>
+</l10n>

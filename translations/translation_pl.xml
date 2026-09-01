@@ -1,0 +1,761 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Polski
+
+  UWAGA DLA EDYTOROW: komentarz XML nie moze zawierac dwoch myslnikow pod rzad.
+  To blad skladni i powoduje zignorowanie calego pliku. Wartosci atrybutow ponizej
+  sa w porzadku i kilka z nich celowo zawiera podwojny myslnik; zachowaj je dokladnie tak jak sa.
+
+  JAK DODAC JEZYK
+    1. Skopiuj ten plik do translations/translation_<kod>.xml
+       Kody uzywane przez FS25: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Tłumacz TYLKO wartości text="...". Nigdy nie zmieniaj klucza name="...".
+    3. Otwórz pull request. Nie musisz tłumaczyć wszystkiego: każdy pominięty klucz
+       wraca do angielskiego, więc częściowy plik jest mile widziany.
+
+  ZASADY, KTÓRE MAJĄ ZNACZENIE
+    * Klucze kończące się na _tt to PODPOWIEDZI (tooltips). Są długie i zawijają się
+      swobodnie, więc długość nie ma tu znaczenia.
+    * Klucze zaczynające się od dr_col_ to NAGŁÓWKI KOLUMN TABELI o stałej szerokości.
+      Budżet znaków podany jest w komentarzu nad każdym blokiem. Nagłówek, który go
+      przekracza, zostaje UCIĘTY, co już spowodowało prawdziwy błąd: tryb wyjścia
+      wyświetlany jako "Dystrybuuj + S..." wyglądał jak zwykłe Dystrybuuj i ukrył
+      budynek, który sprzedawał wszystko. Wybieraj krótkie słowo lub przyjęty skrót.
+    * Klucze zaczynające się od dr_btn_ to PRZYCISKI dzielące jeden pasek na dole. Mają być krótkie.
+    * "L" to litry, a "kL" to kilolitry. Objętości są formatowane w kodzie, nie tutaj.
+    * Zostaw encje XML bez zmian: &amp; to ampersand, &quot; to cudzysłów.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= klawisze (widoczne w Opcje > Sterowanie) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Konfiguruj dystrybucję (najbliższy obiekt)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Otwórz menu Distribution Redux" />
+
+        <!-- ================= TYMCZASOWE: sonda typu pieniędzy =================
+             Tytuły przekazywane do MoneyType.register. Jeśli podstawowy ekran finansów renderuje
+             wiersz na każdy zarejestrowany TYP, jeden z nich to będzie to, co pokaże ten wiersz; jeśli
+             renderuje na podstawie zapisanej PULI, żaden się nie pojawi, a pieniądze pokażą się pod
+             istniejącym wierszem. Oba są celowo sformułowane inaczej, żeby dziennik nie był potrzebny
+             do stwierdzenia, która rejestracja utworzyła wiersz.
+             USUŃ OBA, gdy sonda odejdzie.                                          -->
+
+        <!-- ================= tytuły stron i okien dialogowych ================= -->
+        <text name="dr_title_overview"        text="Dystrybucja - Przegląd" />
+        <text name="dr_title_productions"     text="Dystrybucja - Produkcja" />
+        <text name="dr_title_storage"         text="Dystrybucja - Magazyny" />
+        <text name="dr_title_husbandry"       text="Dystrybucja - Hodowla zwierząt" />
+        <text name="dr_title_markets"         text="Dystrybucja - Punkty sprzedaży" />
+        <text name="dr_title_help"            text="Dystrybucja - Pomoc" />
+        <text name="dr_title_settings"        text="Dystrybucja - Ustawienia" />
+        <text name="dr_title_advanced"        text="Zaawansowane" />
+        <text name="dr_title_advancedInputs"  text="Zaawansowane wejścia" />
+        <text name="dr_title_spawnPallets"    text="Utwórz palety" />
+
+        <!-- ================= naglowki listy budynkow (lewa kolumna, ~40 znakow) ================= -->
+        <text name="dr_col_buildings"     text="BUDYNKI" />
+        <text name="dr_col_husbandries"   text="HODOWLE" />
+        <text name="dr_col_markets"       text="PUNKTY SPRZEDAŻY" />
+        <text name="dr_col_productions"   text="PRODUKCJA" />
+
+        <!-- ================= etykiety selektorow nad tabelami ================= -->
+        <text name="dr_lbl_timescale"        text="Zakres czasu" />
+        <text name="dr_lbl_filterBy"         text="Filtruj wg" />
+        <text name="dr_lbl_show"             text="Pokaż" />
+        <text name="dr_lbl_grouping"         text="Grupowanie" />
+        <text name="dr_lbl_modeKeys" text="X / Z: przełącz wybrany tryb wyjścia" />
+        <text name="dr_lbl_sellingOff"       text="SPRZEDAŻ JEST WYŁĄCZONA - każdy punkt sprzedaży sprzedaje przy dostawie, niezależnie od ustawień tych wierszy" />
+        <text name="dr_lbl_overviewPointer"  text="Pełne zestawienie + łańcuchy dostaw: zakładka Przegląd" />
+
+        <!-- ================= Przeglad: naglowki kolumn widoku PRZEPLYW =================
+             Budzet w przyblizeniu 10-16 znakow kazdy; te siedza w waskich komorkach
+             przy 11px. "(OCZEK.)" to skrot od "oczekiwane", docelowa wartosc receptury. -->
+        <text name="dr_col_building"      text="BUDYNEK" />
+        <text name="dr_col_product"       text="PRODUKT" />
+        <text name="dr_col_received"      text="DOSTARCZONE" />
+        <text name="dr_col_loaded"        text="ZAŁADOWANE" />
+        <text name="dr_col_consumedExp"   text="ZUŻYTE (OCZEK.)" />
+        <text name="dr_col_unloaded"      text="ROZŁADOWANE" />
+        <text name="dr_col_heldMax"       text="STAN (MAKS)" />
+        <text name="dr_col_freeStorage"   text="WOLNE MIEJSCE" />
+        <text name="dr_col_producedExp"   text="WYPROD. (OCZEK.)" />
+        <text name="dr_col_distributed"   text="DYSTRYBUOWANE" />
+        <text name="dr_col_storedMoved"   text="MAGAZYN/PRZENIEŚ" />
+        <text name="dr_col_sold"          text="SPRZEDANE" />
+        <text name="dr_col_distrCost"     text="KOSZT DYSTR." />
+
+        <!-- ================= Przeglad: naglowki kolumn widoku USTAWIENIA =================
+             Ten sam budzet co wyzej. DEST oznacza "aktywne z wszystkich celow" i jest
+             najwezsza komorka na stronie, okolo 6 znakow. Skracaj swobodnie. -->
+        <text name="dr_col_storageType"   text="TYP MAGAZYNU" />
+        <text name="dr_col_maxInPctL"     text="MAKS WE (% - L)" />
+        <text name="dr_col_heldOfMax"     text="STAN Z MAKS" />
+        <text name="dr_col_inStatus"      text="STATUS WE" />
+        <text name="dr_col_lines"         text="LINIE" />
+        <text name="dr_col_outMode"       text="TRYB WY" />
+        <text name="dr_col_reserve"       text="REZERWA" />
+        <text name="dr_col_priority"      text="PRIORYTET" />
+        <text name="dr_col_dest"          text="CEL" />
+        <text name="dr_col_outStatus"     text="STATUS WY" />
+
+        <!-- ================= naglowki tabel zakladek budynkow =================
+             Wspolne dla Silosow / Hodowli zwierzat / Punktow sprzedazy / Produkcji. -->
+        <text name="dr_col_incomingProducts"  text="PRODUKTY PRZYCHODZĄCE" />
+        <text name="dr_col_incomingMaterials" text="MATERIAŁY PRZYCHODZĄCE" />
+        <text name="dr_col_outgoingProducts"  text="PRODUKTY WYCHODZĄCE" />
+        <text name="dr_col_heldSlashMax"      text="STAN / MAKS" />
+        <text name="dr_col_distribution"      text="DYSTRYBUCJA" />
+        <text name="dr_col_consumed"          text="ZUŻYTE" />
+        <text name="dr_col_produced"          text="WYPRODUKOWANE" />
+        <text name="dr_col_outputMode"        text="TRYB WYJŚCIA" />
+        <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_productionLines"   text="LINIE PRODUKCYJNE" />
+        <!-- "/mo" = miesiecznie. Wartosc to miesieczny cel danej linii. -->
+        <text name="dr_col_targetMo"          text="CEL /mies" />
+
+        <!-- ================= okno Zaawansowane wyjscia ================= -->
+        <text name="dr_col_demands"   text="ZAPOTRZEBOWANIE" />
+        <text name="dr_col_storage"   text="MAGAZYN" />
+        <text name="dr_col_distance"  text="ODLEGŁOŚĆ" />
+        <text name="dr_col_order"     text="KOLEJNOŚĆ" />
+
+        <!-- ================= okno Zaawansowane wejscia ================= -->
+        <text name="dr_col_incomingProduct" text="PRODUKT PRZYCHODZĄCY" />
+        <text name="dr_col_type"            text="TYP" />
+        <text name="dr_col_held"            text="STAN" />
+        <text name="dr_col_maxIn"           text="MAKS WE" />
+        <text name="dr_col_available"       text="DOSTĘPNE" />
+        <text name="dr_col_fillTarget"      text="CEL WYPEŁNIENIA" />
+
+        <!-- ================= przyciski =================
+             Dziela jeden pasek na dole, wiec kazdy dodatkowy znak sciska sasiadow.
+             Cel: dlugosc angielskiego oryginalu lub krocej. -->
+        <text name="dr_btn_priorityUp"    text="Priorytet w górę" />
+        <text name="dr_btn_priorityDown"  text="Priorytet w dół" />
+        <text name="dr_btn_toggle"        text="Przełącz" />
+        <text name="dr_btn_clear"         text="Wyczyść" />
+        <text name="dr_btn_blockAll"      text="Blokuj wsz." />
+        <text name="dr_btn_reserveDown"   text="- Rezerwa" />
+        <text name="dr_btn_reserveUp"     text="+ Rezerwa" />
+        <text name="dr_btn_maxDown"       text="- Maks" />
+        <text name="dr_btn_maxUp"         text="+ Maks" />
+        <text name="dr_btn_targetDown"    text="- Cel" />
+        <text name="dr_btn_targetUp"      text="+ Cel" />
+        <text name="dr_btn_block"         text="Blokuj" />
+        <text name="dr_btn_spawn"         text="Utwórz" />
+        <text name="dr_btn_cancel"        text="Anuluj" />
+        <text name="dr_btn_close"         text="Zamknij" />
+
+        <!-- ================= PRZYCISKI STOPKI (ustawiane z Lua) =================
+             Ten sam pasek stopki co klucze dr_btn_ powyzej, ta sama presja dlugosci. Sell Timing to
+             LANCUCH FORMATU: %s to biezacy tryb sprzedazy ("Najlepsza cena" / "Natychmiast"). -->
+        <text name="dr_btn_cycleOutput"      text="Zmień tryb" />
+        <text name="dr_btn_advanced"         text="Zaawansowane" />
+        <text name="dr_btn_sellTiming"       text="Moment sprzedaży" />
+        <text name="dr_btn_sellTimingOff"    text="Moment sprzedaży: sprzedaż jest WYŁĄCZONA" />
+        <text name="dr_btn_sellTimingValue"  text="Moment sprzedaży: %s" />
+        <text name="dr_btn_toggleLine"       text="Przełącz linię" />
+        <text name="dr_btn_showSettings"     text="Pokaż ustawienia" />
+        <text name="dr_btn_showFlows"        text="Pokaż przepływy" />
+        <text name="dr_btn_refresh"          text="Odśwież" />
+        <text name="dr_btn_advancedOutputs"  text="Zaawansowane wyjścia" />
+        <text name="dr_btn_activate"         text="Aktywuj" />
+        <text name="dr_btn_activateAll"      text="Aktywuj wsz." />
+        <text name="dr_btn_allow"            text="Zezwól" />
+        <text name="dr_btn_allowAll"         text="Zezwól wsz." />
+
+        <!-- ================= SELEKTOR ZAKRESU CZASU =================
+             Jedna godzina w grze to jeden cykl dystrybucji, dlatego zakladki budynkow pisza to
+             pelnym slowem; kolumna w Przegladzie jest wezsza i mowi po prostu "Godzina". -->
+        <text name="dr_period_hourLong" text="Cykl (godzina)" />
+        <text name="dr_period_hour"     text="Godzina" />
+        <text name="dr_period_month"    text="Miesiąc" />
+        <text name="dr_period_year"     text="Rok" />
+
+        <!-- ================= SELEKTORY PRZEGLADU =================
+             "Produkt koncowy (caly lancuch)" pokazuje kazdy budynek zasilajacy jeden gotowy produkt,
+             wstecz przez caly lancuch dostaw. Grupowanie laczy budynki tego samego typu w
+             jeden zsumowany wiersz, oznaczony np. "Piekarnia x2". -->
+        <text name="dr_filter_nothing"    text="Brak (pokaż wszystko)" />
+        <text name="dr_filter_building"   text="Budynek" />
+        <text name="dr_filter_product"    text="Produkt" />
+        <text name="dr_filter_endProduct" text="Produkt końcowy (cały łańcuch)" />
+        <text name="dr_group_off"         text="Wył. (jeden wiersz na budynek)" />
+        <text name="dr_group_on"          text="Wł. (łączy ten sam typ budynku)" />
+
+        <!-- ================= PRZEGLAD: KROTKI STATUS =================
+             Te same trzy stany co dr_status_* powyzej, ale kolumna w Przegladzie ma 140px i
+             jej naglowek juz mowi WE lub WY, wiec okreslenie jest pomijane. Zachowaj krotko. -->
+        <text name="dr_statusShort_receiving" text="Odbiór" />
+        <text name="dr_statusShort_sending"   text="Wysyłka" />
+        <text name="dr_statusShort_idle"      text="Bezczynny" />
+        <text name="dr_statusShort_blocked"   text="Zablokowany" />
+
+        <!-- ================= TYP MAGAZYNU =================
+             Wspolny: jeden zbiornik dzielony przez kilka produktow. Indywidualny: osobny zbiornik na
+             kazdy produkt. Widoczne w oknie Zaawansowane wejscia i w widoku ustawien Przegladu,
+             celowo z identycznym slownictwem. -->
+        <text name="dr_type_pooled"     text="Wspólny" />
+        <text name="dr_type_individual" text="Indywidualny" />
+        <text name="dr_type_internal"   text="Wewnętrzny" />
+        <text name="dr_type_blocked"    text="ZABLOKOWANY" />
+
+        <!-- ================= PRIORYTET WYJSCIA =================
+             "Odleglosc" to domyslny: najblizszy odbiorca pierwszy. "Wg rankingu (n)" oznacza, ze
+             gracz recznie uszeregowal n celow w Zaawansowanych wyjsciach. -->
+        <text name="dr_priority_ranked"   text="Wg rankingu (%d)" />
+        <text name="dr_priority_distance" text="Odległość" />
+
+        <!-- ================= RODZAJ BUDYNKU =================
+             Prawa kolumna listy budynkow w zakladce Silosy. Bardzo waska. -->
+        <text name="dr_class_silo"    text="Silos" />
+        <text name="dr_class_barn"    text="Obora" />
+        <text name="dr_class_storage" text="Magazyn" />
+        <text name="dr_class_pit"     text="Dół" />
+        <text name="dr_class_market"  text="Sklep" />
+
+        <!-- ================= KOMUNIKATY I MALE ETYKIETY =================
+             Komunikat o blokadzie to ostatni wiersz listy wejsc budynku, gdy zaawansowane trasowanie
+             ukrylo produkty, ktorych budynek nie przechowuje. ODDZIELNE klucze liczby pojedynczej i mnogiej:
+             angielski tworzyl liczbe pojedyncza usuwajac koncowe "s", co nie przetrwa tlumaczenia.
+             Jesli twoj jezyk nie potrzebuje rozroznienia, daj obu ten sam tekst. -->
+        <text name="dr_notice_blockedInput"  text="+%d wejście zablokowane (patrz Zaawansowane wejścia)" />
+        <text name="dr_notice_blockedInputs" text="+%d wejść zablokowanych (patrz Zaawansowane wejścia)" />
+        <text name="dr_label_off"      text="Wył." />
+        <text name="dr_label_blocked"  text="Zablokowany" />
+        <text name="dr_label_building" text="Budynek" />
+        <!-- Domyslna nazwa linii produkcyjnej, ktorej gra sama nie nazywa; %d to jej numer. -->
+        <text name="dr_label_line"     text="Linia %d" />
+
+        <!-- ================= OKNO ZAAWANSOWANE WYJSCIA =================
+             %s w tytule to nazwa budynku. "Aktywny - Nieprawidlowy" oznacza cel, ktory
+             jest wlaczony, ale wyslalby produkt w kolko z powrotem tam, skad wyruszyl. -->
+        <text name="dr_adv_title"         text="Zaawansowane - %s" />
+        <text name="dr_adv_activeInvalid" text="Aktywny - Nieprawidłowy" />
+        <text name="dr_adv_reserve"       text="     Rezerwa: " />
+        <text name="dr_adv_noCapacity"    text="Brak pojemności do zarezerwowania" />
+        <text name="dr_adv_loopOne"       text="Nie można aktywować %s - produkt wróciłby tutaj w kółko." />
+        <text name="dr_adv_loopMany"      text="%d cel(e) pozostawiono zablokowane - produkt wróciłby tutaj w kółko." />
+
+        <!-- ================= OKNO ZAAWANSOWANE WEJSCIA =================
+             Podtytul, jeden z trzech w zaleznosci od magazynu budynku. %s to calkowita
+             pojemnosc puli; %d to ile produktow ja dzieli i ile ma ustawiony limit. -->
+        <text name="dr_inp_title"        text="Zaawansowane wejścia - %s" />
+        <text name="dr_inp_pooledCapped" text="Magazyn wspólny: %s dzielone przez %d produktów, %d z limitem. Produkty bez limitu mogą wykorzystać całą pulę." />
+        <text name="dr_inp_pooled"       text="Magazyn wspólny: %s dzielone przez %d produktów. Każdy może wykorzystać wszystko - ustaw limit, by zarezerwować miejsce dla pozostałych." />
+        <text name="dr_inp_individual"   text="Ustaw limit dla każdego produktu lub go zablokuj. Ten budynek ma indywidualny magazyn dla każdego produktu." />
+
+        <!-- ================= OKNO TWORZENIA PALET =================
+             Slowo ilosci obok licznika i wiersz podsumowania nad nim. -->
+        <text name="dr_spawn_info"    text="Stan: %s    Paleta: %s    Maks: %d    Tworzenie: %s" />
+        <!-- Nazwa TYPU palety w rozwijanej liscie; pojemnosc oraz, dla modowanej palety, nazwa
+             moda sa dodawane w kodzie, np. "Paleta - 1000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Paleta" />
+        <!-- Licznik ilosci: wybrana liczba, maksimum i dokladna liczba litrow, ktora ta liczba przenosi.
+             Wyswietla "2 / 3  (2000 L)". Zachowaj wszystkie trzy symbole zastepcze i ich kolejnosc. -->
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= TRYBY WYJSCIA =================
+             Co budynek robi z produktem. Widoczne w kolumnie TRYB WYJŚCIA / TRYB WY
+             na każdej zakładce budynku i w Przeglądzie, przełączane przyciskiem "Zmień tryb".
+             Najszersza kolumna, która je pomieści, ma około 39 znaków przy obecnej wielkości
+             tekstu, a "Dystrybuuj + Zaopatrz sklep" jest najdłuższy po angielsku.
+
+             Tryby złożone czyta się jako "pierwsza połowa + druga połowa" i KOLEJNOŚĆ MA
+             ZNACZENIE: pierwsza czynność zawsze wykonuje się pierwsza, a produkt nigdy nie jest
+             sprzedany ani wysłany do sklepu, zanim nie został zaoferowany odbiorcom przynajmniej raz.
+             Zachowaj to znaczenie.
+
+             Liczby to wewnętrzne id trybów. Nie zmieniaj ich numeracji; są zapisywane w
+             pliku zapisu gry. -->
+        <text name="dr_mode_0"   text="Dziedzicz" />
+        <text name="dr_mode_1"   text="Wstrzymaj" />
+        <text name="dr_mode_2"   text="Dystrybuuj" />
+        <text name="dr_mode_3"   text="Dystrybuuj + Sprzedaj" />
+        <text name="dr_mode_4"   text="Sprzedaj" />
+        <text name="dr_mode_5"   text="Dystrybuuj + Magazynuj" />
+        <text name="dr_mode_6"   text="Magazynuj" />
+        <text name="dr_mode_7"   text="Zaopatrz sklep" />
+        <text name="dr_mode_8"   text="Dystrybuuj + Zaopatrz sklep" />
+        <text name="dr_mode_9"   text="Wstrzymaj wewnętrznie" />
+        <text name="dr_mode_10"  text="Przenieś do" />
+        <text name="dr_mode_11"  text="Dystrybuuj + Przenieś do" />
+        <!-- Zwykle "Wstrzymaj" na budynku, który tworzy PALETY: produkt jest wstrzymywany jako palety
+             na podeście, w odróżnieniu od "Wstrzymaj wewnętrznie", które trzyma go luzem wewnątrz
+             budynku i nie tworzy nic. To rozróżnienie jest sensem tego trybu, więc zachowaj je odrębne. -->
+        <text name="dr_mode_holdPallets" text="Wstrzymaj palety" />
+
+        <!-- ================= STATUS POŁĄCZENIA =================
+             Kolumna STATUS. Trzy stany: produkt faktycznie przemieszczony w ostatnim godzinnym cyklu,
+             połączenie jest aktywne, ale nic nie musiało się przemieścić, lub jest zablokowane w
+             zaawansowanym trasowaniu. Odbiorca ODBIERA, a źródło WYSYŁA, i to jedyna różnica między
+             tymi dwoma zestawami. Wąska kolumna, około 20 znaków. -->
+        <text name="dr_status_in_ACTIVE"   text="Aktywny (Odbiór)" />
+        <text name="dr_status_in_IDLE"     text="Aktywny (Bezczynny)" />
+        <text name="dr_status_in_BLOCKED"  text="Zablokowany" />
+        <text name="dr_status_out_ACTIVE"  text="Aktywny (Wysyłka)" />
+        <text name="dr_status_out_IDLE"    text="Aktywny (Bezczynny)" />
+        <text name="dr_status_out_BLOCKED" text="Zablokowany" />
+
+        <!-- ================= ROLA PRODUKTU =================
+             Dopisywana za nazwą produktu w Przeglądzie, np. "Mąka (We)". Budynek może
+             zarówno odbierać, jak i dostarczać ten sam produkt (silos), co oznacza (We/Wy).
+             BARDZO ciasne: siedzi wewnątrz komórki z nazwą produktu, 3 do 7 znaków. -->
+        <text name="dr_role_in"    text="We" />
+        <text name="dr_role_out"   text="Wy" />
+        <text name="dr_role_inout" text="We/Wy" />
+
+        <!-- ================= MOMENT SPRZEDAŻY =================
+             "Najlepsza cena" wstrzymuje produkt do najlepszego miesiąca przed sprzedażą; "Natychmiast"
+             sprzedaje, gdy tylko jest dostępny. Formy dr_market_* pojawiają się w kolumnie
+             TRYB WYJŚCIA zakładki Punkty sprzedaży, gdzie Wstrzymaj oznacza, że sklep magazynuje
+             produkt i nic nie sprzedaje, dopóki mu nie polecisz. -->
+        <text name="dr_timing_bestPrice" text="Najlepsza cena" />
+        <text name="dr_timing_immediate" text="Natychmiast" />
+        <text name="dr_market_sellsNow"    text="Sprzedaje teraz" />
+        <text name="dr_market_sellsNowSet" text="%s (ustaw.: %s)" />
+        <text name="dr_market_hold"      text="Wstrzymaj" />
+        <text name="dr_market_best"      text="Sprzedaj  -  Najlepsza cena" />
+        <text name="dr_market_immediate" text="Sprzedaj  -  Natychmiast" />
+
+        <!-- ================= JEDNOSTKI =================
+             Objętości wyświetlane są w litrach poniżej 1000 i w kilolitrach powyżej, więc 1001 L
+             pokazuje się jako "1.001 kL". Są dołączane do sformatowanej liczby i ZAWIERAJĄ
+             wiodącą spację. Zachowaj spację i krótkość. -->
+        <text name="dr_unit_litre"      text=" L" />
+        <text name="dr_unit_kilolitre"  text=" kL" />
+
+        <!-- ================= POWIADOMIENIA FINANSOWE =================
+             Wyskakujące okienko finansowe na ekranie, gdy DR sprzedaje lub nalicza opłatę za transport.
+             Każde to etykieta, po której następuje kwota, więc zachowaj wszelkie spacje i interpunkcję na końcu. -->
+        <text name="dr_money_biogas"    text="Przychód z biogazu: " />
+        <text name="dr_money_sales"     text="Sprzedaż produktów: " />
+        <text name="dr_money_distCost"  text="Koszty dystrybucji: -" />
+
+        <!-- ================= INNE ETYKIETY SILNIKA ================= -->
+        <!-- Zastępuje wodę na mapie tam, gdzie nie ma fizycznego zbiornika do nazwania. -->
+        <text name="dr_label_waterSource"      text="Źródło wody" />
+
+        <!-- ================= USTAWIENIA =================
+             Jeden blok na ustawienie: tytuł wiersza, jego podpowiedź (_tt), a następnie
+             wartości selektora (_v1, _v2, ...) W KOLEJNOŚCI. Kolejność ma znaczenie,
+             ponieważ _v1 to pierwsza opcja, na której lądują strzałki lewo/prawo, a INDEKS
+             jest zapisywany w pliku zapisu gry. Tłumacz każdą wartość w miejscu;
+             nigdy nie zmieniaj ich kolejności ani nie pomijaj żadnej. -->
+
+        <text name="dr_set_scope"     text="Zasięg" />
+        <text name="dr_set_scope_tt"  text="Zasięg: każdy posiadany obiekt działa na całą farmę.  Bliskość: obiekty sięgają tylko do źródeł w promieniu podanym poniżej." />
+        <text name="dr_set_scope_v1"  text="Zasięg (cała farma)" />
+        <text name="dr_set_scope_v2"  text="Bliskość (promień)" />
+
+        <text name="dr_set_includeHusbandry"     text="Hodowla zwierząt" />
+        <text name="dr_set_includeHusbandry_tt"  text="Włącza hodowlę zwierząt - obory, kurniki, ule, oraz doły na obornik i gnojowicę - do sieci dystrybucji. Wyłączenie usuwa je całkowicie: nie są karmione, a ich produkty (mleko / obornik / gnojowica / jaja / wełna / miód) nie są dystrybuowane ani sprzedawane." />
+        <text name="dr_set_includeHusbandry_v1"  text="Wł." />
+        <text name="dr_set_includeHusbandry_v2"  text="Wył." />
+
+        <text name="dr_set_includeSilosSheds"     text="Silosy i magazyny palet" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Włącza silosy na plony / materiały oraz wiaty magazynowe na palety do sieci dystrybucji. Wyłączenie je usuwa: silosy przestają zasilać produkcję, a wiaty na palety ani nie przyjmują, ani nie wydają palet. (Doły na obornik i gnojowicę podlegają ustawieniu Hodowla zwierząt.)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="Wł." />
+        <text name="dr_set_includeSilosSheds_v2"  text="Wył." />
+
+        <text name="dr_set_includeMarkets"     text="Punkty sprzedaży i kioski" />
+        <text name="dr_set_includeMarkets_tt"  text="Włącza punkty sprzedaży i kioski do sieci dystrybucji. Wyłączenie je usuwa: produkty farmy nie są już do nich kierowane w celu sprzedaży, a zakładka Punkty sprzedaży jest ukryta." />
+        <text name="dr_set_includeMarkets_v1"  text="Wł." />
+        <text name="dr_set_includeMarkets_v2"  text="Wył." />
+
+        <text name="dr_set_includeMapStorage"     text="Publiczne magazyny mapy" />
+        <text name="dr_set_includeMapStorage_tt"  text="Włącza budynki magazynowe na mapie, których nie posiadasz, ale możesz w nich przechowywać towar, np. kolejowy skup zboża. Domyślnie wyłączone: te budynki zwykle pobierają opłatę za każdy litr, więc są dodawane do sieci tylko na życzenie. Po włączeniu pojawiają się jako magazyny z każdym produktem ustawionym na Wstrzymaj i nic nie przenoszą, dopóki ich nie skonfigurujesz." />
+        <text name="dr_set_includeMapStorage_v1"  text="Wł." />
+        <text name="dr_set_includeMapStorage_v2"  text="Wył." />
+
+        <text name="dr_set_advancedRouting"     text="Zaawansowane trasowanie" />
+        <text name="dr_set_advancedRouting_tt"  text="Główny przełącznik dla Zaawansowanych wyjść (blokada / priorytet po stronie źródła / Przenieś do) oraz Zaawansowanych wejść (blokada wejść / limity / cele wypełnienia). Wyłączenie ukrywa te przyciski i przywraca domyślną dystrybucję wg odległości, najbliższy pierwszy. UWAGA: wyłączenie tego KASUJE wszystkie istniejące ustawienia zaawansowane (każdą blokadę, priorytet, Przenieś do, limit wejścia i cel wypełnienia) -- wracają do domyślnych i NIE wrócą, jeśli włączysz to ponownie; trzeba będzie ustawić je od nowa." />
+        <text name="dr_set_advancedRouting_v1"  text="Wł." />
+        <text name="dr_set_advancedRouting_v2"  text="Wył." />
+
+        <text name="dr_set_defaultOutputMode"     text="Tryb wyjścia nowego budynku" />
+        <text name="dr_set_defaultOutputMode_tt"  text="Tryb wyjścia nadawany budynkowi w chwili jego POSTAWIENIA. Dystrybuuj to normalne zachowanie. Wstrzymaj oznacza, że nowo postawiony budynek zatrzymuje wszystko, co produkuje, dopóki nie ustawisz inaczej, więc nic nie opuszcza jeszcze nieskonfigurowanego budynku. Na budynku tworzącym palety pokazuje się to jako 'Wstrzymaj palety', a jako 'Wstrzymaj wewnętrznie', gdy tworzenie palet jest ustawione na nigdy. To dotyczy TYLKO budynków stawianych od teraz: istniejące budynki nigdy nie są zmieniane, a zmiana tego ustawienia nie dotyka niczego już zbudowanego." />
+        <text name="dr_set_defaultOutputMode_v1"  text="Dystrybuuj" />
+        <text name="dr_set_defaultOutputMode_v2"  text="Wstrzymaj" />
+
+        <text name="dr_set_defaultInputMode"     text="Tryb wejścia nowego budynku" />
+        <text name="dr_set_defaultInputMode_tt"  text="Czy nowo POSTAWIONY budynek przyjmuje dostawy. Przyjmuj wszystko to normalne zachowanie. Blokuj wszystko blokuje każde wejście nowego budynku, więc nic nie jest do niego dostarczane, dopóki nie zezwolisz na produkty w Zaawansowanych wejściach. UWAGA: Blokuj wszystko działa tylko, gdy Zaawansowane trasowanie jest włączone, ponieważ blokada wejść jest częścią zaawansowanego trasowania i jest kasowana po jego wyłączeniu. To dotyczy TYLKO budynków stawianych od teraz: istniejące budynki nigdy nie są zmieniane." />
+        <text name="dr_set_defaultInputMode_v1"  text="Przyjmuj wszystko" />
+        <text name="dr_set_defaultInputMode_v2"  text="Blokuj wszystko" />
+
+        <text name="dr_set_radius"     text="Promień bliskości" />
+        <text name="dr_set_radius_tt"  text="Jak daleko odbiorca sięga po źródła w trybie Bliskość." />
+        <text name="dr_set_radius_v1"  text="25 m" />
+        <text name="dr_set_radius_v2"  text="50 m" />
+        <text name="dr_set_radius_v3"  text="75 m" />
+        <text name="dr_set_radius_v4"  text="100 m" />
+        <text name="dr_set_radius_v5"  text="150 m" />
+        <text name="dr_set_radius_v6"  text="200 m" />
+        <text name="dr_set_radius_v7"  text="400 m" />
+
+        <text name="dr_set_bufferHours"     text="Bufor odbiorcy" />
+        <text name="dr_set_bufferHours_tt"  text="Godziny zapasu paszy uzupełniane u każdego odbiorcy na cykl." />
+        <text name="dr_set_bufferHours_v1"  text="1 godzina" />
+        <text name="dr_set_bufferHours_v2"  text="2 godziny" />
+        <text name="dr_set_bufferHours_v3"  text="4 godziny" />
+        <text name="dr_set_bufferHours_v4"  text="8 godzin" />
+        <text name="dr_set_bufferHours_v5"  text="12 godzin" />
+        <text name="dr_set_bufferHours_v6"  text="24 godziny" />
+
+        <text name="dr_set_sellEnabled"     text="Sprzedaż" />
+        <text name="dr_set_sellEnabled_tt"  text="Globalny przełącznik automatycznej sprzedaży (tryby Sprzedaj / Dystrybuuj+Sprzedaj)." />
+        <text name="dr_set_sellEnabled_v1"  text="Włączona" />
+        <text name="dr_set_sellEnabled_v2"  text="Wyłączona" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Auto-nawadnianie" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Automatycznie dostarcza wodę do produkcji wymagających wody i pastwisk zwierząt (naliczane wg odległości do najbliższego źródła wody)." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Włączone" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Wyłączone" />
+
+        <text name="dr_set_distCostEnabled"     text="Koszt dystrybucji" />
+        <text name="dr_set_distCostEnabled_tt"  text="Nalicza godzinowy koszt transportu za każde aktywne połączenie dystrybucji (skaluje się z odległością)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Włączony" />
+        <text name="dr_set_distCostEnabled_v2"  text="Wyłączony" />
+
+        <!-- Wartości $ poniżej to waluta gry na godzinę. Własna waluta gracza
+             nie jest tu podstawiana, więc tłumacz tylko część "/h". -->
+        <text name="dr_set_distCostBase"     text="Stawka kosztu" />
+        <text name="dr_set_distCostBase_tt"  text="Bazowy koszt transportu na godzinę dla krótkiego transportu (na lub poniżej poniższego dystansu kosztowego)." />
+        <text name="dr_set_distCostBase_v1"  text="$0 /h" />
+        <text name="dr_set_distCostBase_v2"  text="$5 /h" />
+        <text name="dr_set_distCostBase_v3"  text="$10 /h" />
+        <text name="dr_set_distCostBase_v4"  text="$20 /h" />
+        <text name="dr_set_distCostBase_v5"  text="$50 /h" />
+
+        <text name="dr_set_distCostThreshold"     text="Dystans kosztowy" />
+        <text name="dr_set_distCostThreshold_tt"  text="Transport na tym dystansie lub poniżej płaci stawkę bazową; dłuższy transport skaluje się liniowo." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 m" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 m" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 m" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 m" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Sezonowa rezerwa żniw" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Plony ustawione na Dystrybuuj+Sprzedaj zachowują wystarczający zapas, by zasilać produkcję do następnych żniw; sprzedawana jest tylko nadwyżka." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Włączona" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Wyłączona" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Miesiące rezerwy (do nauczenia)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="Miesiące zapasu do zatrzymania dla plonu, zanim mod zaobserwuje jego rzeczywiste okno zbiorów." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 miesięcy" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 miesięcy" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 miesięcy" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 miesięcy" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 miesiące" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Sprzedaż po najlepszej cenie" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Główny przełącznik: wstrzymuje nadwyżkę z trybu Sprzedaj / Dystrybuuj+Sprzedaj do najlepszego miesiąca przed sprzedażą. Wyłączone: wszystko sprzedaje się natychmiast." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Włączona" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Wyłączona" />
+
+        <text name="dr_set_bestPriceDefault"     text="Domyślny moment sprzedaży" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Domyślny dla każdego wyjścia Sprzedaj / Dystrybuuj+Sprzedaj oraz każdego produktu w punkcie sprzedaży, dopóki nie ustawisz własnego przełącznika danego budynku. Skonfigurowane już punkty sprzedaży zachowują swoje ustawienie." />
+        <text name="dr_set_bestPriceDefault_v1"  text="Sprzedaj po najlepszej cenie" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Sprzedaj natychmiast" />
+
+        <text name="dr_set_palletSpawnMode"     text="Tworzenie palet" />
+        <text name="dr_set_palletSpawnMode_tt"  text="Całe palety: zagrody przechowują produkt wewnętrznie i wydają PEŁNĄ paletę, jak produkcję. Standardowo: paleta pojawia się od razu i wypełnia się stopniowo. Nigdy: nic nie tworzy palet samo z siebie, produkt pozostaje wewnętrzny i nadal jest dystrybuowany, magazynowany i sprzedawany stamtąd. Zawsze możesz ręcznie wypuścić jedną przyciskiem Utwórz palety. Nigdy dotyczy tylko twoich zagród i produkcji - ule nadal tworzą palety normalnie (nie mają wewnętrznego bufora do sprzedaży), a sklepy, w których kupujesz palety, nigdy nie są dotknięte." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Standardowo (wypełnia stopniowo)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Tylko całe palety" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Nigdy nie twórz palet" />
+        <text name="dr_set_passThroughStores"     text="Magazyny przelotowe" />
+        <text name="dr_set_passThroughStores_tt"  text="Niektóre mody dodają budynek magazynowy z podpiętą fikcyjną produkcją, gdzie każda linia zamienia produkt z powrotem w niego samego. Produkcja nic nie robi; jest tylko po to, by gra dostarczała do budynku. Traktuj jako magazyn sprawia, że Distribution Redux widzi go jako silos, którym naprawdę jest, więc przestaje domagać się każdego litra na farmie, a jego prawdziwe linie (jeśli je ma) nadal pokazują się w Produkcji. Trzecia opcja dodatkowo wyłącza te fikcyjne linie w samej grze - schludniej, ale jest to zapisane w twoim zapisie gry i pozostaje wyłączone, jeśli usuniesz tego moda." />
+        <text name="dr_set_passThroughStores_v1"  text="Traktuj jako produkcję" />
+        <text name="dr_set_passThroughStores_v2"  text="Traktuj jako magazyn" />
+        <text name="dr_set_passThroughStores_v3"  text="Traktuj jako magazyn + wyłącz linie" />
+        <!-- Etykiety roli. Widoczne TYLKO na budynku pełniącym dwie funkcje naraz (silos, który jest
+             także składem palet), żeby odróżnić jego części na liście budynków. Zachowaj krótko - są
+             dopisywane do nazwy budynku na liście o stałej szerokości. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="Silos" />
+        <text name="dr_role_shed"         text="Skład palet" />
+        <text name="dr_role_production"   text="Produkcja" />
+        <text name="dr_role_husbandry"    text="Zwierzęta" />
+        <text name="dr_role_heap"         text="Dół" />
+        <text name="dr_role_market"       text="Sklep" />
+        <text name="dr_type_linked"       text="Połączony" />
+
+        <text name="dr_set_menuRefresh"     text="Częstotliwość odświeżania menu" />
+        <text name="dr_set_menuRefresh_tt"  text="Jak często otwarte menu ponownie odczytuje farmę. Przegląd ponownie przeszukuje każdy budynek i produkt, więc na dużej farmie wolniejsza częstotliwość utrzymuje menu responsywnym. Tylko ręcznie całkowicie zatrzymuje odświeżanie w tle - wartości nadal aktualizują się po wybraniu czegoś lub naciśnięciu Odśwież w Przeglądzie." />
+        <text name="dr_set_menuRefresh_v1"  text="Na żywo (0,5s)" />
+        <text name="dr_set_menuRefresh_v2"  text="Normalna (2s)" />
+        <text name="dr_set_menuRefresh_v3"  text="Zrelaksowana (10s)" />
+        <text name="dr_set_menuRefresh_v4"  text="Tylko ręcznie" />
+
+        <text name="dr_set_debugEnabled"     text="Rejestrowanie debugowania" />
+        <text name="dr_set_debugEnabled_tt"  text="Zapisuje szczegółową aktywność dystrybucji do log.txt (przesunięcia, sprzedaże, magazynowanie, uzupełnienia wody i opłaty). Wyłącz dla cichszego dziennika." />
+        <text name="dr_set_debugEnabled_v1"  text="Włączone" />
+        <text name="dr_set_debugEnabled_v2"  text="Wyłączone" />
+
+
+        <!-- ============ PODRĘCZNIK UŻYTKOWNIKA (wygenerowano: gen_guide_l10n.py) ============
+             11 tematów, jeden klucz na każdy niepusty akapit. Znaczniki na początku
+             wartości to STRUKTURA, nie słowa, i muszą być zachowane dokładnie tak jak są:
+               "## "   nagłówek
+               "### "  podnagłówek
+               "- "    punkt na liście
+             Wszystko po znaczniku to zwykła proza. Pominięty klucz wraca do
+             angielskiego, więc temat można tłumaczyć akapit po akapicie.
+             NIE zmieniaj kolejności ani numeracji tych kluczy; numery to pozycje w podręczniku. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Pierwsze kroki" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux całkowicie zastępuje system dystrybucji z podstawowej gry. Nie są potrzebne żadne dodatkowe obiekty do postawienia. Działa ze wszystkimi domyślnymi budynkami oraz z modami budynków, które stosują standardowy schemat GIANTS dla swojego typu budynku. To bardzo skomplikowany mod i łatwo przypadkiem stworzyć problemy/blokady. Przed użyciem przejrzyj cały podręcznik pomocy." />
+        <text name="dr_guide_gettingStarted_2" text="## Dostęp do interfejsu" />
+        <text name="dr_guide_gettingStarted_3" text="Klawisz ukośnik wsteczny: otwiera menu Distribution Redux - pełnoekranowe okno z zakładką na każdy rodzaj budynku, plus ten podręcznik i ustawienia." />
+        <text name="dr_guide_gettingStarted_4" text="Klawisz lewego nawiasu: będąc pieszo, spójrz na punkt załadunku lub rozładunku budynku, by otworzyć menu od razu na stronie tego budynku. Podpowiedź pojawia się tylko, gdy patrzysz na jeden z własnych budynków będących częścią sieci." />
+        <text name="dr_guide_gettingStarted_5" text="Oba klawisze można przypisać na nowo w Opcje - Sterowanie." />
+        <text name="dr_guide_gettingStarted_6" text="## Idea" />
+        <text name="dr_guide_gettingStarted_7" text="Otwórz menu, wybierz interesujący cię budynek i ustaw każdy produkt na Wstrzymaj, Dystrybuuj, Sprzedaj i tak dalej. To cały schemat działania - reszta to szczegóły." />
+        <text name="dr_guide_gettingStarted_8" text="## Co robi inaczej niż podstawowa gra" />
+        <text name="dr_guide_gettingStarted_9" text="- Pozwala każdemu budynkowi, który magazynuje, produkuje, karmi lub sprzedaje, uczestniczyć w dystrybucji." />
+        <text name="dr_guide_gettingStarted_10" text="- Dostarcza tylko tyle, ile potrzebuje zapotrzebowanie, zamiast próbować wypełnić do pełnej pojemności" />
+        <text name="dr_guide_gettingStarted_11" text="- Nalicza koszt dystrybucji w zależności od odległości" />
+        <text name="dr_guide_gettingStarted_12" text="- Pozwala sprzedać natychmiast lub czekać na osiągnięcie najlepszej ceny" />
+        <text name="dr_guide_gettingStarted_13" text="- Pozwala trzymać sezonową rezerwę dla plonów sezonowych, by zapewnić ciągłość produkcji, sprzedając tylko niepotrzebną część zbiorów" />
+        <text name="dr_guide_gettingStarted_14" text="- Auto-nawadnianie pobiera wodę z dowolnego magazynu lub najbliższego źródła wody (np. jeziora), by zaspokoić zapotrzebowanie" />
+        <text name="dr_guide_gettingStarted_15" text="- Pozwala nadpisać domyślny mechanizm dystrybucji, by priorytetyzować zapotrzebowania, blokować konkretne wejścia i wyjścia, ustawiać rezerwy wyjścia oraz cele zapotrzebowania wejścia" />
+        <text name="dr_guide_gettingStarted_16" text="## Co robi w każdym cyklu" />
+        <text name="dr_guide_gettingStarted_17" text="- Przydziel - buduje listę zapotrzebowania od każdego odbiorcy: wejścia produkcji, pasza dla zwierząt, bunkry robotów karmiących, słomę, wodę hodowli. Następnie dopasowuje źródła do zapotrzebowania, najbliższe pierwsze, przestrzegając blokad, priorytetów i limitów wejść dla poszczególnych produktów." />
+        <text name="dr_guide_gettingStarted_18" text="- Przenieś resztę - magazynuje nadwyżki w dostępnych budynkach magazynowych, przenosi zapas do dostępnych punktów sprzedaży, a następnie przenosi zapas między magazynami, przestrzegając blokad, priorytetów i limitów wejść dla poszczególnych produktów." />
+        <text name="dr_guide_gettingStarted_19" text="- Nalicz - opłaty transportowe wg odległości, plus standardowe godzinowe koszty eksploatacji produkcji (które inaczej byłyby utracone, bo DR wyłącza podstawowy godzinowy cykl gry)." />
+        <text name="dr_guide_gettingStarted_20" text="- Sprzedaj / Zaopatrz sklep - sprzedaje nadwyżkę, sprzedaje z buforów punktów sprzedaży, a następnie sprzedaje wyjścia bezpośrednie (np. prąd, metan), przestrzegając sezonowej rezerwy żniw oraz zasad sprzedaży natychmiastowej lub po najlepszej cenie." />
+        <text name="dr_guide_gettingStarted_21" text="- Rozlicz - rejestruje przepływ produkcji i hodowli, oblicza ręczne różnice załadunku/rozładunku, generuje podsumowanie finansowe." />
+
+        <text name="dr_guide_theMenu_title" text="Menu" />
+        <text name="dr_guide_theMenu_1" text="Klawisz ukośnik wsteczny otwiera scalone menu. Po lewej stronie znajdują się zakładki." />
+        <text name="dr_guide_theMenu_2" text="## Zakładki" />
+        <text name="dr_guide_theMenu_3" text="- Produkcja - fabryki i punkty produkcyjne." />
+        <text name="dr_guide_theMenu_4" text="- Silosy - silosy zbiorcze oraz wiaty magazynowe na palety / bele, plus doły na obornik i gnojowicę." />
+        <text name="dr_guide_theMenu_5" text="- Hodowla zwierząt - obory, kurniki, zagrody i ule." />
+        <text name="dr_guide_theMenu_6" text="- Punkty sprzedaży - kioski i sklepy postawione przez ciebie na mapie." />
+        <text name="dr_guide_theMenu_7" text="- Przegląd - szczegółowe dane każdego budynku i każdego produktu w jednej tabeli." />
+        <text name="dr_guide_theMenu_8" text="- Podręcznik użytkownika - ten podręcznik." />
+        <text name="dr_guide_theMenu_9" text="- Ustawienia - globalne opcje." />
+        <text name="dr_guide_theMenu_10" text="Każda zakładka budynku to strona dwupanelowa: twoje budynki wypisane po lewej, a produkty przychodzące, linie produkcyjne i produkty wychodzące wybranego budynku po prawej. To, które z tych trzech list się pojawiają, zależy od tego, co robi dany budynek." />
+        <text name="dr_guide_theMenu_11" text="## Zakres czasu" />
+        <text name="dr_guide_theMenu_12" text="Każda zakładka budynku oraz zakładka Przegląd mają u góry selektor Zakresu czasu z opcjami Godzina, Miesiąc i Rok. Zmienia on zakres wartości przepływu na tej stronie - co zostało dostarczone, zużyte, wyprodukowane, dystrybuowane i sprzedane w tym oknie czasowym." />
+        <text name="dr_guide_theMenu_13" text="&quot;Miesiąc&quot; Distribution Redux to 24 godzinne cykle, więc Miesiąc oznacza w przybliżeniu ostatni dzień w grze, niezależnie od tego, ile realnych dni ustawiłeś na okres. Stan nigdy nie zmienia zakresu: to zasób, nie przepływ, więc zawsze pokazuje to, co jest w budynku teraz." />
+        <text name="dr_guide_theMenu_14" text="Dane roczne gromadzą się z czasem. Przed powstaniem tej funkcji nie było zapisu w skali roku, więc na starszym zapisie kolumna Rok zaczyna się pusta i wypełnia w miarę upływu każdego miesiąca w grze." />
+        <text name="dr_guide_theMenu_15" text="## Ukryte zakładki" />
+        <text name="dr_guide_theMenu_16" text="Zakładki Silosy, Hodowla zwierząt i Punkty sprzedaży pojawiają się tylko wtedy, gdy dana grupa jest włączona w Ustawieniach. Wyłączenie grupy całkowicie usuwa jej budynki z sieci dystrybucji, a jej zakładka znika. Włącz grupę ponownie, by odzyskać oba." />
+
+        <text name="dr_guide_buildingPages_title" text="Strony budynków" />
+        <text name="dr_guide_buildingPages_1" text="Zakładki Produkcja, Silosy, Punkty sprzedaży i Hodowla zwierząt mają wspólny układ: wybierz budynek po lewej, a następnie skonfiguruj jego produkty po prawej. Tabele i zestawy kolumn nieco się różnią w zależności od typu budynku, ponieważ nie każdy budynek zużywa lub produkuje." />
+        <text name="dr_guide_buildingPages_2" text="## Zawartość tabel" />
+        <text name="dr_guide_buildingPages_3" text="### Produkty przychodzące" />
+        <text name="dr_guide_buildingPages_4" text="- PRODUKT - nazwa i ikona." />
+        <text name="dr_guide_buildingPages_5" text="- STAN/MAKS - ile jest go teraz w budynku, maksymalna ilość możliwa do przechowania oraz ustawiony limit w nawiasach jako procent." />
+        <text name="dr_guide_buildingPages_6" text="- WOLNE MIEJSCE - ile jeszcze tego produktu budynek może pomieścić, uwzględniając ustawiony limit (%) i pozostałe miejsce." />
+        <text name="dr_guide_buildingPages_7" text="- DOSTARCZONE - ile tego produktu Distribution Redux dostarczyło do tego budynku w wybranym zakresie czasu." />
+        <text name="dr_guide_buildingPages_8" text="- ZUŻYTE - ile tego produktu budynek zużył w wybranym zakresie czasu. Tylko Produkcja i Hodowla zwierząt." />
+        <text name="dr_guide_buildingPages_9" text="- STATUS - Aktywny (Odbiór) lub Aktywny (Bezczynny), na podstawie aktywności w ostatnim cyklu, albo Zablokowany." />
+        <text name="dr_guide_buildingPages_10" text="### Linie produkcyjne (tylko Produkcja)" />
+        <text name="dr_guide_buildingPages_11" text="- LINIE PRODUKCYJNE - produkt, który dana linia tworzy, z jej wejściami w nawiasach." />
+        <text name="dr_guide_buildingPages_12" text="- STATUS - Działa, Bezczynna (włączona, ale brakuje wejść) lub Wyłączona." />
+        <text name="dr_guide_buildingPages_13" text="- CEL /mies - ile dana linia ma wyprodukować miesięcznie, jeśli dostarczone są wszystkie wejścia." />
+        <text name="dr_guide_buildingPages_14" text="### Produkty wychodzące" />
+        <text name="dr_guide_buildingPages_15" text="- PRODUKT - nazwa i ikona." />
+        <text name="dr_guide_buildingPages_16" text="- STAN (MAKS) - ile tego produktu jest teraz w budynku, z pojemnością w nawiasach." />
+        <text name="dr_guide_buildingPages_17" text="- WOLNE MIEJSCE - ile jeszcze tego produktu budynek może pomieścić" />
+        <text name="dr_guide_buildingPages_18" text="- WYPRODUKOWANE - ile wyprodukowano w wybranym zakresie czasu. Tylko Produkcja i Hodowla zwierząt." />
+        <text name="dr_guide_buildingPages_19" text="- DYSTRYBUOWANE - wszystko, co wyszło: dystrybuowane, magazynowane, przeniesione i sprzedane razem, z wartością sprzedaży w nawiasach, gdy cokolwiek się sprzedało." />
+        <text name="dr_guide_buildingPages_20" text="- TRYB WYJŚCIA - tryb, na jaki ustawione jest to wyjście." />
+        <text name="dr_guide_buildingPages_21" text="- STATUS - Aktywny (Wysyłka) lub Aktywny (Bezczynny), na podstawie aktywności w ostatnim cyklu, albo Zablokowany." />
+        <text name="dr_guide_buildingPages_22" text="## UWAGA" />
+        <text name="dr_guide_buildingPages_23" text="- Jeśli budynek może mieć zarówno magazyn wewnętrzny, jak i palety, wyświetlacz pokaże ilość wewnętrzną, a następnie ilość zmagazynowaną w paletach na paletyzatorze budynku" />
+        <text name="dr_guide_buildingPages_24" text="- Wybrany zakres czasu pokaże tylko materiał przemieszczony w tym oknie czasowym; jeśli dopiero co aktywowałeś produkcję i pokazujesz zakres Roczny, zobaczysz tylko to, co przemieszczono od momentu aktywacji." />
+        <text name="dr_guide_buildingPages_25" text="- Więcej szczegółów o tym, co i dokąd płynie, znajdziesz w zakładce Przegląd " />
+        <text name="dr_guide_buildingPages_26" text="- Objętości zmieniają jednostkę przy 1000 litrach. Do 999 L pokazują się w litrach; od 1000 L wzwyż pokazują się w kilolitrach z pominięciem zbędnych zer, więc 1001 L pokazuje się jako 1.001 kL, 123 123 L jako 123.123 kL, a 600 000 L po prostu jako 600 kL. Trzy miejsca po przecinku to dokładnie jeden litr, więc nic nie ginie przy zmianie jednostki." />
+        <text name="dr_guide_buildingPages_27" text="- Aby zobaczyć, czy zmiana zadziałała (tj. bezczynny czy działający), trzeba przejść jeden cykl (1 godzinę), zanim kolumna interfejsu się odświeży. Jeśli masz łańcuch dystrybucji, możesz musieć przejść przez kilka godzin, aż wszystkie etapy się odświeżą. " />
+        <text name="dr_guide_buildingPages_28" text="## Zmiana ustawień" />
+        <text name="dr_guide_buildingPages_29" text="- Aby włączyć lub wyłączyć linię produkcyjną, wybierz linię i naciśnij Przełącz linię." />
+        <text name="dr_guide_buildingPages_30" text="- Aby zmienić, co dzieje się z wyjściem, wybierz je i naciśnij Zmień tryb." />
+        <text name="dr_guide_buildingPages_31" text="- Zaawansowane otwiera ustawienia trasowania dla poszczególnych produktów (patrz Zaawansowane wejścia i wyjścia)." />
+        <text name="dr_guide_buildingPages_32" text="- Moment sprzedaży pojawia się dla wyjścia w trybie sprzedaży." />
+        <text name="dr_guide_buildingPages_33" text="Zmiana wyjścia produkcji lub przełączanie linii produkcyjnej tutaj to to samo ustawienie, co przełącznik wyjścia na standardowym ekranie produkcji, więc zmiana w jednym miejscu aktualizuje drugie - a standardowy ekran pokazuje też nazwy trybów z moda." />
+
+        <text name="dr_guide_outputModes_title" text="Tryby wyjścia" />
+        <text name="dr_guide_outputModes_1" text="## Które tryby oferuje każdy typ budynku" />
+        <text name="dr_guide_outputModes_2" text="- Produkcja - Dystrybuuj, Magazynuj, Wstrzymaj palety, Wstrzymaj wewnętrznie, Sprzedaj, Zaopatrz sklep." />
+        <text name="dr_guide_outputModes_3" text="- Silosy i magazyny - Dystrybuuj, Przenieś do, Wstrzymaj, Sprzedaj, Zaopatrz sklep." />
+        <text name="dr_guide_outputModes_4" text="- Hodowla zwierząt - Dystrybuuj, Magazynuj, Wstrzymaj palety, Wstrzymaj wewnętrznie, Sprzedaj, Zaopatrz sklep." />
+        <text name="dr_guide_outputModes_5" text="- Punkty sprzedaży - tylko Sprzedaj lub Wstrzymaj." />
+        <text name="dr_guide_outputModes_6" text="Nie każdy tryb jest oferowany zawsze. Jeśli tryb nie ma możliwego celu końcowego, jest ukryty zamiast pokazany jako ślepy zaułek. Np. bez postawionego punktu sprzedaży lub bez takiego, który przyjmuje dany produkt, Zaopatrz sklep nie pojawia się na liście." />
+        <text name="dr_guide_outputModes_7" text="## Tryby" />
+        <text name="dr_guide_outputModes_8" text="- Dystrybuuj - zasila pobliską produkcję i zwierzęta potrzebujące tego produktu, najbliższe źródło pierwsze, do wysokości wymaganej przez ich receptury. Nadwyżka pozostaje na miejscu." />
+        <text name="dr_guide_outputModes_9" text="- Magazynuj - przenosi wyjście do dowolnego budynku magazynowego, który je przyjmuje, najbliższy pierwszy, przelewając do kolejnego, gdy jeden się wypełni. Produkcja i Hodowla zwierząt." />
+        <text name="dr_guide_outputModes_10" text="- Przenieś do - przenosi produkt z jednego budynku magazynowego do innego, który go przyjmuje. Tylko budynki magazynowe. Zobacz ostrzeżenie poniżej." />
+        <text name="dr_guide_outputModes_11" text="- Wstrzymaj wewnętrznie - trzyma wyjście luzem wewnątrz budynku; palety nie powstają same z siebie, tworzysz je ręcznie na żądanie (patrz Tworzenie palet)." />
+        <text name="dr_guide_outputModes_12" text="- Wstrzymaj palety - trzyma wyjście tam, gdzie jest, jako palety, i pozwala mu się gromadzić." />
+        <text name="dr_guide_outputModes_13" text="- Sprzedaj - sprzedaje produkt, natychmiast albo po najlepszej cenie (patrz Moment sprzedaży)." />
+        <text name="dr_guide_outputModes_14" text="- Zaopatrz sklep - przenosi wyjście do postawionego przez ciebie punktu sprzedaży lub kiosku, gdzie sprzedaje się z premią." />
+        <text name="dr_guide_outputModes_15" text="## Tryby złożone" />
+        <text name="dr_guide_outputModes_16" text="- Dystrybuuj + Sprzedaj - najpierw zasila całe zapotrzebowanie, potem sprzedaje resztę." />
+        <text name="dr_guide_outputModes_17" text="- Dystrybuuj + Magazynuj - najpierw zasila zapotrzebowanie, potem przenosi nadwyżkę do twojego magazynu zamiast ją sprzedawać. Tylko Produkcja i Hodowla zwierząt." />
+        <text name="dr_guide_outputModes_18" text="- Dystrybuuj + Przenieś do - najpierw zasila zapotrzebowanie, potem przenosi nadwyżkę do wybranego magazynu. Tylko budynki magazynowe." />
+        <text name="dr_guide_outputModes_19" text="- Dystrybuuj + Zaopatrz sklep - najpierw zasila zapotrzebowanie, potem przenosi nadwyżkę do twojego punktu sprzedaży lub kiosku." />
+        <text name="dr_guide_outputModes_20" text="W każdym trybie złożonym pierwsza połowa naprawdę dzieje się jako pierwsza. Nic nie jest sprzedawane, magazynowane ani wysyłane do punktu sprzedaży, dopóki nie zostało zaoferowane odbiorcom." />
+        <text name="dr_guide_outputModes_21" text="Przenieś do jest oferowane tylko wtedy, gdy włączone jest zaawansowane trasowanie (patrz Zaawansowane trasowanie)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Zaawansowane trasowanie i zasady" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Zaawansowane trasowanie" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Zaawansowane trasowanie pozwala kontrolować każde pojedyncze wejście i wyjście każdego budynku. Jest domyślnie włączone i można je wyłączyć w Ustawieniach." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Zaawansowane wejścia" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Wybierz dowolny produkt przychodzący i naciśnij Zaawansowane wejścia." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Blokuj / Zezwól - uniemożliwia temu budynkowi kiedykolwiek odebrać ten produkt." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Blokuj wsz. / Zezwól wsz. - przełącza wszystkie wejścia naraz." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Maks we - najwięcej tego produktu, jakie budynek może przechowywać. Ma to znaczenie dla magazynu wspólnego, gdzie kilka produktów dzieli jeden zbiornik. Pula działa na zasadzie kto pierwszy, ten lepszy: domyślnie każdy produkt może wykorzystać ją całą, dokładnie tak jak w podstawowej grze. Oznacza to, że intensywny produkt może wypełnić silos i zostawić mało miejsca dla innych - ustaw więc Maks we na tym produkcie, by go ograniczyć i zachować miejsce dla reszty. Limity są niezależne i nie muszą sumować się do 100 procent; wszystko, czego nie ruszasz, pozostaje bez ograniczeń." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Cel - cel wypełnienia dla danego produktu. Zamiast dostarczać tylko tyle, ile potrzeba na następny cykl, sieć dąży do tego poziomu, a następnie go utrzymuje - w praktyce rezerwa wejściowa." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Zaawansowane wyjścia" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Wybierz produkt wychodzący, który chcesz dostosować, i naciśnij Zaawansowane wyjścia." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Blokuj / Zezwól - nigdy nie wysyłaj tego wyjścia do danego celu." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Priorytetyzuj - uszereguj zapotrzebowania i opcje magazynowania dla tego wyjścia. Nadpisuje to domyślne zachowanie najbliższy-pierwszy-potem-przelew." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Rezerwa (+/-) - utrzymuje tyle litrów w budynku przez cały czas. Nic - dystrybucja, sprzedaż, magazynowanie, przenoszenie ani zaopatrzenie sklepu - nie może sprowadzić produktu poniżej tej wartości." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### Tryb wyjścia &quot;Przenieś do&quot;" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Ten tryb jest dostępny jako tryb wyjścia tylko wtedy, gdy Zaawansowane trasowanie jest włączone, a budynek jest typu: Magazyn" />
+        <text name="dr_guide_advancedRoutingRules_16" text="- Ten tryb pozwala przenieść materiały z tego magazynu do innego magazynu, który go obsługuje" />
+        <text name="dr_guide_advancedRoutingRules_17" text="- Domyślnie po aktywacji każdy możliwy cel jest zablokowany, aby uniknąć przypadkowego stworzenia pętli produktu" />
+        <text name="dr_guide_advancedRoutingRules_18" text="- Aby to aktywować, wybierz dowolne wyjście i naciśnij Zaawansowane wyjścia. Zobaczysz po prawej listę obsługiwanych celów (Wszystkie zablokowane) i możesz zezwolić na budynki w miarę potrzeb. Wszystkie inne zaawansowane funkcje wyjścia są również dostępne dla tego przeniesienia (Priorytetyzuj, Rezerwa itd)." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- Domyślnie Przenieś do będzie próbować wypełnić budynek jak najbardziej w każdym cyklu. Możesz ustawić &quot;Maks we&quot; na wejściach budynku odbierającego, aby zapewnić sobie miejsce na przeniesienie wielu produktów (zamiast całkowicie zapełniać silos pierwszym produktem)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Przed wyłączeniem zaawansowanego trasowania" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Każde wprowadzone przez ciebie ustawienie zaawansowane jest kasowane, a nie tylko ignorowane - wszystkie blokady, priorytety, rezerwy, wartości Maks we i cele. Ponowne włączenie zaawansowanego trasowania daje czystą kartę, więc trzeba będzie skonfigurować wszystko od nowa." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Zasady zaawansowane" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Te zaawansowane zasady obowiązują niezależnie od tego, czy Zaawansowane trasowanie jest włączone; sezonowa rezerwa żniw i Auto-nawadnianie można w razie potrzeby włączyć/wyłączyć w ustawieniach." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Tryby sprzedaży" />
+        <text name="dr_guide_advancedRoutingRules_25" text="Dla każdego wyjścia w trybie sprzedaży możesz wybrać sprzedaż natychmiastową lub oczekiwanie na najlepszą cenę. Oczekiwanie oznacza, że produkt gromadzi się w budynku do momentu szczytu, więc upewnij się, że jest na niego miejsce." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Sezonowa rezerwa żniw" />
+        <text name="dr_guide_advancedRoutingRules_27" text="Domyślnie WYŁĄCZONA. Po włączeniu wyjście będące rocznym plonem żniwnym zachowa mniej więcej roczny zapas, by zasilać własną produkcję, sprzedając tylko nadwyżkę. Trawa i inne plony odrastające w ciągu roku zachowują zamiast tego trzy miesiące. Dopóki mod nie zaobserwuje zbioru danego plonu, nie wie, kiedy nastąpi następny zbiór, więc korzysta z ustawienia Miesiące rezerwy." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### Auto-nawadnianie" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Woda jest dostarczana automatycznie do każdego budynku, który jej potrzebuje, z najbliższego źródła wody, gdy Auto-nawadnianie jest włączone. Jeśli nie ma postawionego źródła wody, system pobierze ją z najbliższego zbiornika wodnego (uwaga: jeśli najbliższy zbiornik wodny jest daleko, koszt dystrybucji będzie wysoki)" />
+
+        <text name="dr_guide_overviewTab_title" text="Zakładka Przegląd" />
+        <text name="dr_guide_overviewTab_1" text="Zakładka Przegląd umieszcza całą sieć w jednej tabeli: każdy zarejestrowany budynek i każdy produkt wchodzący lub wychodzący z niego. To miejsce, w które warto spojrzeć, gdy chcesz wiedzieć, co naprawdę się dzieje, a nie na co ustawiony jest pojedynczy budynek." />
+        <text name="dr_guide_overviewTab_2" text="Każdy produkt jest oznaczony jako (We), (Wy) lub (We/Wy), więc od razu widać, po której stronie budynku się znajduje. Silosy i wiaty mają We/Wy dla wszystkiego, ponieważ zarówno odbierają, jak i dostarczają." />
+        <text name="dr_guide_overviewTab_3" text="## Cztery selektory" />
+        <text name="dr_guide_overviewTab_4" text="- Filtruj wg - Brak (pokaż wszystko), Budynek, Produkt lub Produkt końcowy (cały łańcuch)." />
+        <text name="dr_guide_overviewTab_5" text="- Pokaż - wybiera, którego budynku lub produktu dotyczy filtr." />
+        <text name="dr_guide_overviewTab_6" text="- Zakres czasu - Godzina, Miesiąc lub Rok, tak jak w zakładkach budynków." />
+        <text name="dr_guide_overviewTab_7" text="- Grupowanie - Wył. pokazuje jeden wiersz na budynek; Wł. łączy budynki tego samego typu w jeden zsumowany wiersz, oznaczony np. &quot;Piekarnia x2&quot;." />
+        <text name="dr_guide_overviewTab_8" text="Produkt końcowy (cały łańcuch) jest najbardziej przydatny z nich wszystkich. Wybierz gotowy produkt, np. ciasto, a tabela pokaże każdy budynek i każdy produkt pośredni, który go zasila, uporządkowany od gotowego produktu wstecz przez cały łańcuch. To najszybszy sposób na znalezienie wąskiego gardła lub nadpodaży w linii produkcyjnej." />
+        <text name="dr_guide_overviewTab_9" text="## Kolumny" />
+        <text name="dr_guide_overviewTab_10" text="- DOSTARCZONE - dostarczone do tego budynku przez Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- ZAŁADOWANE - włożone do tego budynku przez cokolwiek, co NIE jest Distribution Redux: ciebie z przyczepą, bele, pomocnika AI, inny mod." />
+        <text name="dr_guide_overviewTab_12" text="- ZUŻYTE (OCZEK.) - zużyte, z oczekiwaną wartością w nawiasach." />
+        <text name="dr_guide_overviewTab_13" text="- ROZŁADOWANE - wyjęte z tego budynku przez cokolwiek, co nie jest Distribution Redux, wliczając odjeżdżającą paletę." />
+        <text name="dr_guide_overviewTab_14" text="- STAN (POJ.) - co jest teraz w budynku, z pojemnością. Nigdy nie zmienia zakresu wg Zakresu czasu." />
+        <text name="dr_guide_overviewTab_15" text="- WYPROD. (OCZEK.) - wyprodukowane przez ten budynek, z oczekiwaną wartością w nawiasach." />
+        <text name="dr_guide_overviewTab_16" text="- DYSTRYBUOWANE - dostarczone do odbiorców." />
+        <text name="dr_guide_overviewTab_17" text="- MAGAZYN/PRZENIEŚ - wysłane do magazynu lub przeniesione do innego magazynu." />
+        <text name="dr_guide_overviewTab_18" text="- SPRZEDANE - sprzedane, bezpośrednio lub przez punkt sprzedaży." />
+        <text name="dr_guide_overviewTab_19" text="- KOSZT DYSTR. - ile kosztował transport dostaw tego budynku. Naliczany tylko budynkowi wysyłającemu, więc kolumna sumuje się do faktycznie wydanych pieniędzy, a nie liczy każdej dostawy podwójnie." />
+        <text name="dr_guide_overviewTab_20" text="## Wartości oczekiwane i ich kolory" />
+        <text name="dr_guide_overviewTab_21" text="ZUŻYTE i WYPRODUKOWANE zawierają oczekiwaną wartość w nawiasach, wyliczoną z receptur włączonych linii produkcyjnych. Wartość jest oznaczona kolorem zielonym, gdy jest na poziomie celu lub bardzo blisko niego, pomarańczowym, gdy jest nieco poniżej, i czerwonym, gdy jest znacząco poniżej. Tylko produkcje mają recepturę, więc wiersze hodowli zwierząt i silosów pokazują zwykłą wartość bez celu, zamiast wymyślonej." />
+        <text name="dr_guide_overviewTab_22" text="Czerwona wartość WYPROD. to najszybszy sposób na wykrycie zagłodzonej linii." />
+        <text name="dr_guide_overviewTab_23" text="## Pokaż ustawienia" />
+        <text name="dr_guide_overviewTab_24" text="Na dole strony jest przycisk do przełączania między Pokaż przepływy a Pokaż ustawienia. Jeśli masz zablokowaną linię produkcyjną, możesz szybko przełączyć się na stronę Pokaż ustawienia, by zobaczyć, które ustawienie może ją blokować." />
+        <text name="dr_guide_overviewTab_25" text="Podwójne kliknięcie na wiersz w dowolnym widoku przeniesie cię bezpośrednio do strony tego budynku." />
+
+        <text name="dr_guide_palletManagement_title" text="Zarządzanie paletami" />
+        <text name="dr_guide_palletManagement_1" text="Wiele wyjść jest dostarczanych na paletach - deski, bale drewna, warzywa w skrzynkach, jaja, wełna i tak dalej. Aby zapewnić, że Distribution Redux działa zgodnie z oczekiwaniami, sposób działania palet został całkowicie przepisany " />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux uwzględnia zarówno produkt przechowywany wewnętrznie w budynku, jak i każdą paletę znajdującą się na paletyzatorze budynku, zarówno dla wyświetlania informacji, JAK I dla Trybów wyjścia. Dystrybucja zawsze pobiera najpierw z paletyzatora, a następnie z magazynu wewnętrznego. Jeśli paletyzator jest zablokowany, produkt gromadzi się we własnym magazynie wewnętrznym budynku i stamtąd jest dystrybuowany. Paleta usunięta z paletyzatora ręcznie jest natychmiast odejmowana od sumy budynku." />
+        <text name="dr_guide_palletManagement_3" text="Budynki bez właściwego pola paletowego w swoim modelu - niektóre modowane paletyzatory i kilka uli - zamiast tego korzystają z prostej zasady najbliższego budynku." />
+        <text name="dr_guide_palletManagement_4" text="## Tworzenie ręcznie" />
+        <text name="dr_guide_palletManagement_5" text="- Ustaw wyjście na Wstrzymaj wewnętrznie. Gdy zgromadzi się co najmniej jedna pełna paleta, pojawi się przycisk Utwórz palety, zarówno w zakładce Produkcja, jak i na standardowym ekranie produkcji. Naciśnij go, by otworzyć okno tworzenia." />
+        <text name="dr_guide_palletManagement_6" text="- Typ - typ palety. Jeśli wyjście obsługuje tylko jeden, jest on pokazany dla informacji; jeśli obsługuje kilka, użyj strzałek, by wybrać." />
+        <text name="dr_guide_palletManagement_7" text="- Ilość - ile utworzyć. Strzałki zmieniają o jeden, przyciski -10 / +10 skaczą po dziesięć, a suma jest ograniczona posiadanym zapasem." />
+        <text name="dr_guide_palletManagement_8" text="- Utwórz umieszcza tyle wypełnionych palet w punkcie paletowym budynku i odejmuje odpowiadający zapas. Anuluj zamyka okno bez tworzenia." />
+        <text name="dr_guide_palletManagement_9" text="Przycisk pojawia się tylko dla wyjścia na Wstrzymaj wewnętrznie, gdy zgromadzona jest co najmniej jedna pełna paleta - poniżej tego nie ma nic do utworzenia. Budynek musi również mieć punkt tworzenia palet w swoim modelu, co ma większość budynków paletyzujących. W trybie wieloosobowym tworzenia dokonuje host, więc palety pojawiają się u wszystkich." />
+        <text name="dr_guide_palletManagement_10" text="## Palety z zagród zwierząt" />
+        <text name="dr_guide_palletManagement_11" text="W podstawowej grze zagrody zwierząt tworzą paletę i ładują ją tym, co jest w magazynie wewnętrznym co godzinę, niezależnie od tego, czy jest wystarczająco na pełną paletę (w odróżnieniu od produkcji). Dla spójności, domyślnie hodowle zwierząt zostały zmienione, by działać tak samo jak produkcje. Można to zmienić w ustawieniach, by przywrócić tryb podstawowej gry, ale może to wpłynąć na dystrybucję i śledzenie danych dystrybucji (Niezalecane)" />
+        <text name="dr_guide_palletManagement_12" text="W tym samym ustawieniu jest też opcja, by nigdy nie tworzyć palet. Uniemożliwi to jakiekolwiek tworzenie palet i wykorzysta wyłącznie magazyn wewnętrzny budynku do dystrybucji." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Inne zmiany w mechanice podstawowej gry" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Silosy bunkrowe" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- Przy otwieraniu silosu bunkrowego wystarczy teraz nacisnąć R, a mod usunie całą osłonę z silosu (koniec z częściowymi osłonami, których nie można zdjąć)" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- Silosy bunkrowe wymagają, by stworzyć wyjście poprzez załadowanie materiału, przykrycie go, oczekiwanie na fermentację, a następnie odkrycie. Dlatego Distribution Redux pokazuje tylko tabelę i opcje wyjścia, a zapas będzie widoczny dopiero po odkryciu materiału." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Kopce obornika i doły na gnojowicę" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Kopce obornika i doły na gnojowicę można teraz postawić w dowolnym miejscu na mapie i NIE łączą się automatycznie z hodowlą zwierząt. Aby przenieść materiał z hodowli zwierząt do tych obiektów, postaw je, a w oborze wybierz &quot;Magazynuj&quot; jako tryb wyjścia. Obornik i gnojowica będą przenoszone do tych budynków tak jak każde inne wyjście." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Rozbudowy silosów" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Rozbudowy silosów zostały gruntownie przepisane i działają teraz inaczej niż w podstawowej grze. Rozbudowę silosu można teraz postawić tylko w promieniu 50m od istniejącego silosu, kopca lub dołu i TYLKO dodaje ona miejsce magazynowe do tego budynku." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Ręczne wyładowywanie w punktach sprzedaży" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Nadal można ręcznie wyładować/zrzucić produkty we własnych punktach sprzedaży/straganach. Zamiast sprzedawać je od razu jak w podstawowej grze, te produkty będą respektować tryb wyjścia ustawiony na danym punkcie sprzedaży. " />
+
+        <text name="dr_guide_settings_title" text="Ustawienia" />
+        <text name="dr_guide_settings_1" text="Globalne ustawienia znajdują się w zakładce Ustawienia. Są zapisywane wraz z zapisem gry i synchronizowane w trybie wieloosobowym przez hosta. Wybory dla poszczególnych budynków zawsze nadpisują te globalne ustawienia dla danego budynku." />
+        <text name="dr_guide_settings_2" text="## Opcje" />
+        <text name="dr_guide_settings_3" text="- Wypisane w kolejności, w jakiej pojawiają się w zakładce." />
+        <text name="dr_guide_settings_4" text="- Zasięg - Zasięg (cała farma) lub Bliskość (w promieniu)." />
+        <text name="dr_guide_settings_5" text="- Hodowla zwierząt - dołącz lub wyłącz obory, kurniki, zagrody i ule." />
+        <text name="dr_guide_settings_6" text="- Silosy i magazyny palet - dołącz lub wyłącz silosy zbiorcze, wiaty na palety i bele oraz doły na obornik i gnojowicę." />
+        <text name="dr_guide_settings_7" text="- Punkty sprzedaży i kioski - dołącz lub wyłącz twoje punkty sprzedaży i kioski." />
+        <text name="dr_guide_settings_8" text="- Zaawansowane trasowanie - główny przełącznik dla Zaawansowanych wejść i Zaawansowanych wyjść. Wyłączenie usuwa również Przenieś do i kasuje każde ustawienie zaawansowane (patrz Zaawansowane wejścia i wyjścia)." />
+        <text name="dr_guide_settings_9" text="- Promień bliskości - jak daleko sięga źródło w zasięgu Bliskość. Domyślnie 50 m." />
+        <text name="dr_guide_settings_10" text="- Bufor odbiorcy - godziny zapasu paszy uzupełniane u każdego odbiorcy na cykl. Domyślnie 2." />
+        <text name="dr_guide_settings_11" text="- Sprzedaż - główny włącznik/wyłącznik całej sprzedaży. Wyłączone oznacza, że nic nigdy nie jest sprzedawane, niezależnie od ustawień poszczególnych wyjść." />
+        <text name="dr_guide_settings_12" text="- Auto-nawadnianie - automatycznie dostarcza wodę do budynków, które jej zużywają." />
+        <text name="dr_guide_settings_13" text="- Koszt dystrybucji - czy transport jest w ogóle naliczany." />
+        <text name="dr_guide_settings_14" text="- Stawka kosztu - bazowa opłata za połączenie na godzinę. Domyślnie 10." />
+        <text name="dr_guide_settings_15" text="- Dystans kosztowy - przyrost odległości, przez który mnożona jest stawka. Domyślnie 50 m." />
+        <text name="dr_guide_settings_16" text="- Sezonowa rezerwa żniw - zachowuje wystarczający zapas, by przetrwać do następnych żniw, sprzedając tylko nadwyżkę. Domyślnie wyłączone." />
+        <text name="dr_guide_settings_17" text="- Miesiące rezerwy (do nauczenia) - ile miesięcy zapasu trzymać, zanim mod nauczy się okna zbiorów danego plonu. Domyślnie 13." />
+        <text name="dr_guide_settings_18" text="- Sprzedaż po najlepszej cenie - główny włącznik/wyłącznik sprzedaży po najlepszej cenie. Wyłączone oznacza, że wszystko sprzedaje się natychmiast." />
+        <text name="dr_guide_settings_19" text="- Domyślny moment sprzedaży - czego używa nowe wyjście, gdy go nie ustawiłeś: czekać na szczyt czy sprzedać natychmiast." />
+        <text name="dr_guide_settings_20" text="- Tworzenie palet - trzy opcje: domyślna gra (Twórz częściowe palety), Twórz tylko całe palety (DOMYŚLNE) i Nigdy nie twórz palet." />
+        <text name="dr_guide_settings_21" text="- Częstotliwość odświeżania menu - można dostosować, jeśli występują opóźnienia lub zacinanie interfejsu. Tryb Ręcznie aktywuje przycisk odświeżania, którego możesz użyć do odświeżenia interfejsu." />
+        <text name="dr_guide_settings_22" text="- Rejestrowanie debugowania - zapisuje szczegółową aktywność do log.txt. Zostaw wyłączone dla cichszego dziennika." />
+
+        <text name="dr_guide_support_title" text="Wsparcie" />
+        <text name="dr_guide_support_1" text="## Rozwiązywanie problemów" />
+        <text name="dr_guide_support_2" text="- Budynek się nie pojawia. Sprawdź Zasięg i przełączniki grup. Bliskość sięga tylko w promieniu, a budynek, którego grupa jest wyłączona, jest usunięty z sieci, a jego zakładka ukryta." />
+        <text name="dr_guide_support_3" text="- Nic nie jest dostarczane. Upewnij się, że źródło jest ustawione na tryb Dystrybuuj, a nie Wstrzymaj, że linia produkcyjna odbiorcy jest włączona, i że oba są w zasięgu dla bieżącego zasięgu." />
+        <text name="dr_guide_support_4" text="- Wyjście Przenieś do nic nie przenosi. Przenieś do zaczyna z każdym celem zablokowanym. Otwórz Zaawansowane wyjścia i aktywuj cel, który chcesz. Jeśli cel pokazuje na czerwono &quot;Aktywny - Nieprawidłowy&quot;, jego aktywacja stworzyłaby pętlę." />
+        <text name="dr_guide_support_5" text="- Coś przyszło, ale nie sprzedało się w tej godzinie. To zamierzone. Produkt, który właśnie przybył, czeka jeden cykl, by odbiorcy mieli pierwszeństwo." />
+        <text name="dr_guide_support_6" text="- Zagroda zwierząt wstrzymuje jaja lub wełnę. Przy włączonym &quot;Całe palety z zagród&quot; zagroda gromadzi zapas, dopóki nie ma pełnej palety, zanim ją wyda. Odbiorcy nadal mogą korzystać z zapasu w trakcie gromadzenia; sprzedaż i magazynowanie czekają na paletę." />
+        <text name="dr_guide_support_7" text="- Fabryka nie dostaje wody. Woda jest dostarczana automatycznie, gdy Auto-nawadnianie jest włączone; jeśli roślina wymagająca wody wygląda na zagłodzoną, sprawdź to ustawienie." />
+        <text name="dr_guide_support_8" text="- Brak podpowiedzi przy budynku. Podpowiedź lewego nawiasu pokazuje się tylko dla budynków będących częścią sieci. Jeśli wykluczyłeś tę grupę w Ustawieniach, podpowiedź celowo znika." />
+        <text name="dr_guide_support_9" text="- Mod nie zachowuje się zgodnie z oczekiwaniami. Nie uruchamiaj tego razem z innymi modami zmieniającymi system dystrybucji - podpinają się do tego samego systemu i będą ze sobą kolidować. Mod działa z budynkami z podstawowej gry oraz z modowanymi budynkami stosującymi standardowy schemat GIANTS; niektóre modowane budynki mogą zachowywać się inaczej i mogą wpłynąć na działanie tego moda." />
+        <text name="dr_guide_support_10" text="## Poradniki i przeglądy" />
+        <text name="dr_guide_support_11" text="Przeglądy i poradniki znajdują się na moim kanale YouTube, @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Zgłaszanie błędów" />
+        <text name="dr_guide_support_13" text="Błędy, propozycje funkcji i prośby o zgodność z innymi modami można zgłaszać jako ticket na moim repozytorium GitHub:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Lista zmian" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Liczne poprawki błędów (pełne szczegóły na GitHub)." />
+        <text name="dr_guide_changelog_3" text="2. Liczne dodatki QoL (pełne szczegóły na GitHub)." />
+        <text name="dr_guide_changelog_4" text="3. Dodano zgodność z wieloma modami, a kod wzmocniono, by ogólnie poprawić zgodność z modami (pełne szczegóły na GitHub)." />
+        <text name="dr_guide_changelog_5" text="4. Dodano zakładkę Przegląd, która pozwala zobaczyć całą aktywność dystrybucji oraz ustawienia dystrybucji dla wszystkich budynków w jednym miejscu (zawiera filtry i można ją ustawić, by pokazywała wszystkie źródła i produkcje przyczyniające się do konkretnego produktu końcowego)" />
+        <text name="dr_guide_changelog_6" text="5. Dodano zaawansowane zarządzanie wejściami i wyjściami (blokada, priorytetyzacja, rezerwa zapasu, cel wypełnienia, maks we)." />
+        <text name="dr_guide_changelog_7" text="6. Dodano możliwość przenoszenia i sortowania produktów między magazynami (tj. silosy, składy palet itd.) " />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Zmiana nazw budynków - każdy budynek w sieci dystrybucji można teraz nazwać własną nazwą z podstawowego menu budowy. Gra domyślnie zezwala na to tylko na niektórych budynkach; Distribution Redux włącza to dla wszystkich swoich budynków (wliczając silosy, wiaty, doły i punkty sprzedaży). Mod następnie używa twojej nazwy wszędzie w tym menu, z oryginalną nazwą budynku pokazaną poniżej jako odniesienie, więc farma z ośmioma identycznymi szklarniami jest wreszcie czytelna." />
+        <text name="dr_guide_changelog_10" text="2. Naprawa produktu kopca obornika / dołu na gnojowicę - każdy z nich wyświetlał produkt tego drugiego jako wyjście. Kopiec obornika pokazuje teraz tylko Obornik, a dół na gnojowicę tylko Gnojowicę." />
+        <text name="dr_guide_changelog_11" text="3. Naprawa wejścia kopca obornika / dołu na gnojowicę - żaden z nich nie pokazywał produktu przychodzącego. Teraz wyświetlają to, co faktycznie do nich spływa (odpowiednio obornik i gnojowica)." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. Ulepszenia interfejsu i poprawki spójności, w tym paski przewijania, przemieszczone tabele oraz dodanie wartości sprzedanych produktów do kolumny sprzedaży." />
+        <text name="dr_guide_changelog_14" text="2. Dodano punkty sprzedaży i kioski do systemu dystrybucji - wszystkie budynki mają teraz opcję Zaopatrz sklep, kierującą ich wyjście do postawionego przez ciebie punktu sprzedaży. Przedmioty sprzedane przez twój punkt sprzedaży otrzymują 20% premii do ceny, choć sprzedaż w dużych ilościach obniża uzyskiwaną cenę, tak jak w podstawowej grze." />
+        <text name="dr_guide_changelog_15" text="3. Naprawa Sprzedaży po najlepszej cenie - bez historii cen system sprzedawał wcześniej niż oczekiwano. Teraz korzysta z wykresu cen w grze, dopóki nie zgromadzi wystarczająco własnych danych." />
+        <text name="dr_guide_changelog_16" text="4. Dodano tryb Wstrzymaj wewnętrznie i ręczne tworzenie palet - paletyzowalne wyjścia można trzymać jako zapas luzem zamiast automatycznie tworzyć palety, a następnie utworzyć je ręcznie przez okno tworzenia, w którym wybierasz typ i ilość palet. Dostępne zarówno z zakładki Produkcja, jak i standardowego ekranu produkcji." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Dodano możliwość określenia, czy towary mają się sprzedawać natychmiast, czy po osiągnięciu najlepszej ceny." />
+        <text name="dr_guide_changelog_19" text="2. Całkowicie przebudowany interfejs, który rozdziela typy dystrybucji i scala ustawienia oraz podręcznik pomocy w menu." />
+        <text name="dr_guide_changelog_20" text="3. Poprawki rozbudów silosów, aby działały w spójny sposób. Rozbudowę trzeba teraz postawić w pobliżu pasującego typu silosu; cała dystrybucja jest zarządzana w silosie głównym, a rozbudowa po prostu dodaje mu miejsce magazynowe." />
+        <text name="dr_guide_changelog_21" text="4. Wiaty na palety i bele wyświetlają teraz wszystkie aktywne palety w sieci, więc można je wstępnie skonfigurować, zanim przedmioty przybędą. Dodano funkcję rezerwy, która sprzedaje palety (najmniej wartościowe pierwsze), by zachować wolne miejsce na następny cykl - pomijana, jeśli inna wiata na palety ma miejsce, w takim przypadku palety są tam przenoszone." />
+        <text name="dr_guide_changelog_22" text="5. Naprawiono interakcje z wiatą na palety: spójrz na ikonę punktu załadunku w grze, by otworzyć bezpośrednio stronę dystrybucji tego budynku." />
+        <text name="dr_guide_changelog_23" text="6. Naprawiono niewielką ilość wyjścia pozostawianą w źródle po dystrybucji (problem z czasowaniem)." />
+        <text name="dr_guide_changelog_24" text="7. Naprawiono biogazownie: sprzedaż metanu i ładunku elektrycznego uwzględnia teraz poziom trudności gry, a digestat jest teraz poprawnie rejestrowany jako przychód Biogazowni w zestawieniu finansowym." />
+        <text name="dr_guide_changelog_25" text="8. Przebudowano ustawienia, by były bardziej szczegółowe: można teraz dołączać lub wyłączać silosy / wiaty na palety oraz dołączać lub wyłączać budynki hodowli zwierząt. Produkcje zawsze rejestrują się i uczestniczą w dystrybucji, tak jak w podstawowej grze." />
+        <text name="dr_guide_changelog_26" text="9. Zmiana nazw trybów: Wstrzymaj trzyma teraz przedmioty w budynku (dawniej &quot;Zmagazynowane&quot;); Magazynuj przenosi przedmioty poza budynek, gdy magazyn jest dostępny." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Wydanie wstępne." />
+
+        <!-- ============ koniec PODRECZNIKA UZYTKOWNIKA ============ -->
+    </texts>
+</l10n>
