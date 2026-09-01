@@ -334,10 +334,10 @@
 
         <!-- ================= SILOS/BUNKERS ================= -->
         <text name="dr_bunker_fermenting"    text="Fermenting" />
-        <text name="dr_bunker_fermented"     text="Fermented - uncover to access" />
+        <text name="dr_bunker_fermented"     text="Fermented - Uncover to access" />
         <text name="dr_bunker_filling"       text="Filling" />
-        <text name="dr_bunker_fermentPct"    text="Fermenting %d%%"/>
-        <text name="dr_bunker_compactPct"    text="Compacted %d%%"/>
+        <text name="dr_bunker_fermentPct"    text="Fermenting: %d%%"/>
+        <text name="dr_bunker_compactPct"    text="Compacted: %d%%"/>
 
 
         <!-- ================= LINK STATUS =================
