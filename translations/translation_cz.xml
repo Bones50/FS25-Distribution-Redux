@@ -35,6 +35,7 @@
         <!-- ================= klávesové zkratky (v Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Nastavit distribuci (nejbližší objekt)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Otevřít menu Distribution Redux" />
+        <text name="dr_input_openManager" text="Nabídka distribuce" />
 
         <!-- ================= DOČASNÉ: sonda typu peněz =================
              Tituly předávané funkci MoneyType.register. Pokud obrazovka financí vykresluje
@@ -113,6 +114,17 @@
         <text name="dr_col_produced" text="VYROBENO" />
         <text name="dr_col_outputMode" text="VÝSTUPNÍ REŽIM" />
         <text name="dr_col_status" text="STAV" />
+        <text name="dr_col_products" text="PRODUKTY" />
+        <text name="dr_pct_lessThanOne" text="&lt;1%" />
+        <text name="dr_btn_advIn" text="Rozš. vstupy" />
+        <text name="dr_btn_advOut" text="Rozš. výstupy" />
+        <text name="dr_col_statusInOut" text="STAV (VST / VÝST)" />
+        <text name="dr_status_short_recv" text="Příjem" />
+        <text name="dr_status_short_send" text="Odesílá" />
+        <text name="dr_status_short_sold" text="Prodej" />
+        <text name="dr_status_short_idle" text="Nečinné" />
+        <text name="dr_status_short_blocked" text="Blokov." />
+        <text name="dr_status_short_none" text="-" />
         <text name="dr_col_productionLines" text="VÝROBNÍ LINKY" />
         <!-- "/mo" = za měsíc. Hodnota je měsíční cíl linky. -->
         <text name="dr_col_targetMo" text="CÍL /měs" />
@@ -130,6 +142,8 @@
         <text name="dr_col_maxIn" text="MAX VSTUP" />
         <text name="dr_col_available" text="K DISPOZICI" />
         <text name="dr_col_fillTarget" text="CÍL NAPLNĚNÍ" />
+        <text name="dr_col_potentialSources" text="MOŽNÉ ZDROJE" />
+        <text name="dr_col_range" text="DOSAH" />
 
         <!-- ================= tlačítka =================
              Sdílejí jednu spodní lištu, takže každý znak navíc zmenšuje prostor
@@ -141,6 +155,7 @@
         <text name="dr_btn_blockAll" text="Blok. vše" />
         <text name="dr_btn_reserveDown" text="- Rezerva" />
         <text name="dr_btn_reserveUp" text="+ Rezerva" />
+        <text name="dr_lbl_reserveLitres" text="Rezerva:" />
         <text name="dr_btn_maxDown" text="- Max" />
         <text name="dr_btn_maxUp" text="+ Max" />
         <text name="dr_btn_targetDown" text="- Cíl" />
@@ -201,6 +216,11 @@
              Přehledu, kde je záměrně použito shodné znění. -->
         <text name="dr_type_pooled" text="Sdílený" />
         <text name="dr_type_individual" text="Samostatný" />
+        <text name="dr_type_pooledShort" text="Fond" />
+        <text name="dr_type_poolN" text="Fond %s" />
+        <text name="dr_type_poolNShort" text="F%s" />
+        <text name="dr_type_individualShort" text="Ind" />
+        <text name="dr_type_linkedShort" text="Spoj" />
         <text name="dr_type_internal" text="Interní" />
         <text name="dr_type_blocked" text="BLOKOVÁNO" />
 
@@ -239,6 +259,8 @@
         <text name="dr_adv_activeInvalid" text="Aktivní - Neplatné" />
         <text name="dr_adv_reserve" text="     Rezerva: " />
         <text name="dr_adv_noCapacity" text="Není kapacita, vůči které by šlo rezervovat" />
+        <text name="dr_adv_reserveBad" text="Rezerva: zadejte počet litrů" />
+        <text name="dr_adv_reserveClamped" text="Rezerva omezena kapacitou: %s" />
         <text name="dr_adv_loopOne" text="Nelze aktivovat %s - produkt by se odtud vrátil v kruhu." />
         <text name="dr_adv_loopMany" text="%d cíl(ů) zůstává blokováno - vracely by produkt v kruhu zpět sem." />
 
@@ -250,6 +272,16 @@
         <text name="dr_inp_pooledCapped" text="Sdílený sklad: %s sdíleno %d produkty, %d s omezením. Cokoli bez omezení může využít celý sklad." />
         <text name="dr_inp_pooled" text="Sdílený sklad: %s sdíleno %d produkty. Každý může využít celý sklad - nastavte maximum, chcete-li ostatním nechat místo." />
         <text name="dr_inp_individual" text="Nastavte maximum každého produktu, nebo ho blokujte. Tato budova má samostatný sklad pro každý produkt." />
+        <text name="dr_inp_noSources" text="Žádná budova této farmy nemůže tento produkt dodat." />
+        <text name="dr_lineStatus_off" text="Vypnuto" />
+        <text name="dr_lineStatus_running" text="Běží" />
+        <text name="dr_lineStatus_idle" text="Nečinná" />
+        <text name="dr_srcst_feeding" text="Dodává" />
+        <text name="dr_srcst_standby" text="Připraveno" />
+        <text name="dr_srcst_noStock" text="Bez zásob" />
+        <text name="dr_srcst_blocked" text="Blokováno" />
+        <text name="dr_srcst_notDist" text="Nedistribuuje" />
+        <text name="dr_srcst_outOfRange" text="Mimo dosah" />
 
         <!-- ================= DIALOG VYTVOŘIT PALETY =================
              Slovo pro množství vedle stepperu a souhrnný řádek nad ním. -->
@@ -732,7 +764,7 @@
         <text name="dr_guide_support_13" text="Chyby, požadavky na funkce a kompatibilitu modů lze nahlásit jako ticket v mém GitHub repozitáři:" />
         <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
 
-        <text name="dr_guide_changelog_title" text="Changelog" />
+        <text name="dr_guide_changelog_title" text="Seznam změn" />
         <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
         <text name="dr_guide_changelog_2" text="1. Řada oprav chyb (podrobnosti na GitHubu)." />
         <text name="dr_guide_changelog_3" text="2. Řada vylepšení komfortu (podrobnosti na GitHubu)." />
@@ -761,6 +793,24 @@
         <text name="dr_guide_changelog_26" text="9. Změna v názvech režimů: Podržet nyní drží položky v budově (dříve &quot;Uloženo&quot;); Uložit přesouvá položky mimo budovu, je-li dostupný sklad." />
         <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
         <text name="dr_guide_changelog_28" text="Předběžné vydání." />
+        <text name="dr_col_animalPanel" text="ZVÍŘATA, KRMENÍ A HODNOTA STÁDA" />
+        <text name="dr_panel_animals" text="ZVÍŘATA" />
+        <text name="dr_panel_health" text="ZDRAVÍ" />
+        <text name="dr_panel_productivity" text="PRODUKTIVITA" />
+        <text name="dr_panel_na" text="není" />
+        <text name="dr_panel_feed" text="KRMENÍ" />
+        <text name="dr_panel_foodFactor" text="Faktor krmení %s" />
+        <text name="dr_panel_grazing" text="pastva" />
+        <text name="dr_panel_noFeedData" text="bez dat o krmení" />
+        <text name="dr_panel_herdValue" text="HODNOTA STÁDA" />
+        <text name="dr_panel_ofPeak" text="z %s ve vrcholném věku" />
+        <text name="dr_panel_pastPeak" text="po vrcholu - hodnota klesá s věkem" />
+        <text name="dr_panel_profit" text="ODHAD PROGNÓZY - ZISK / MĚS" />
+        <text name="dr_panel_pfOutputs" text="výstupy" />
+        <text name="dr_panel_pfInputs" text="vstupy" />
+        <text name="dr_panel_pfAgeing" text="stárnutí" />
+        <text name="dr_panel_pfBirths" text="porody" />
+        <text name="dr_modwarn_body" text="POZOR! Máte aktivované mody, o kterých je známo, že způsobují problémy s Distribution Redux. Můžete pokračovat, ale výkon hry ani modu nelze zaručit, dokud jsou tyto mody aktivní. Chcete-li se tomuto varování vyhnout, ukončete hru a nahrajte uloženou pozici bez níže uvedených modů:" />
 
         <!-- ============ konec UŽIVATELSKÉ PŘÍRUČKY ============ -->
     </texts>

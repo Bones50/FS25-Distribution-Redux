@@ -14,6 +14,7 @@
         <!-- ================= keybindings (shown in Options > Controls) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Verteilung konfigurieren (nächstes Objekt)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Distribution Redux Menü öffnen" />
+        <text name="dr_input_openManager" text="Verteilungsmenü" />
 
         <!-- ================= page + dialog titles ================= -->
         <text name="dr_title_overview"        text="Verteilung - Übersicht" />
@@ -79,6 +80,17 @@
         <text name="dr_col_produced"          text="PRODUZIERT" />
         <text name="dr_col_outputMode"        text="AUSGABEMODUS" />
         <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_products" text="PRODUKTE" />
+        <text name="dr_pct_lessThanOne" text="&lt;1%" />
+        <text name="dr_btn_advIn" text="Erw. Eingänge" />
+        <text name="dr_btn_advOut" text="Erw. Ausgänge" />
+        <text name="dr_col_statusInOut" text="STATUS (EIN / AUS)" />
+        <text name="dr_status_short_recv" text="Empf." />
+        <text name="dr_status_short_send" text="Sendet" />
+        <text name="dr_status_short_sold" text="Verk." />
+        <text name="dr_status_short_idle" text="Leerl." />
+        <text name="dr_status_short_blocked" text="Blockiert" />
+        <text name="dr_status_short_none" text="-" />
         <text name="dr_col_productionLines"   text="PRODUKTIONSLINIEN" />
         <!-- "/mo" = pro Monat. Der Wert ist das monatliche Ziel der Linie. -->
         <text name="dr_col_targetMo"          text="ZIEL /Mon" />
@@ -96,6 +108,8 @@
         <text name="dr_col_maxIn"           text="MAX EIN" />
         <text name="dr_col_available"       text="VERFÜGBAR" />
         <text name="dr_col_fillTarget"      text="FÜLLZIEL" />
+        <text name="dr_col_potentialSources" text="MÖGLICHE QUELLEN" />
+        <text name="dr_col_range" text="REICHWEITE" />
 
         <!-- ================= buttons ================= -->
         <text name="dr_btn_priorityUp"    text="Priorität hoch" />
@@ -105,6 +119,7 @@
         <text name="dr_btn_blockAll"      text="Alle blockieren" />
         <text name="dr_btn_reserveDown"   text="- Reserve" />
         <text name="dr_btn_reserveUp"     text="+ Reserve" />
+        <text name="dr_lbl_reserveLitres" text="Reserve:" />
         <text name="dr_btn_maxDown"       text="- Max" />
         <text name="dr_btn_maxUp"         text="+ Max" />
         <text name="dr_btn_targetDown"    text="- Ziel" />
@@ -153,6 +168,11 @@
         <!-- ================= STORAGE TYPE ================= -->
         <text name="dr_type_pooled"     text="Gemeinsam" />
         <text name="dr_type_individual" text="Einzeln" />
+        <text name="dr_type_pooledShort" text="Pool" />
+        <text name="dr_type_poolN" text="Pool %s" />
+        <text name="dr_type_poolNShort" text="P%s" />
+        <text name="dr_type_individualShort" text="Einz" />
+        <text name="dr_type_linkedShort" text="Verb" />
         <text name="dr_type_internal"   text="Intern" />
         <text name="dr_type_blocked"    text="BLOCKIERT" />
 
@@ -181,6 +201,8 @@
         <text name="dr_adv_activeInvalid" text="Aktiv - Ungültig" />
         <text name="dr_adv_reserve"       text="     Reserve: " />
         <text name="dr_adv_noCapacity"    text="Keine Kapazität für eine Reserve" />
+        <text name="dr_adv_reserveBad" text="Reserve: Bitte eine Literzahl eingeben" />
+        <text name="dr_adv_reserveClamped" text="Reserve auf Kapazität begrenzt: %s" />
         <text name="dr_adv_loopOne"       text="%s kann nicht aktiviert werden - das Produkt würde hierher zurücklaufen." />
         <text name="dr_adv_loopMany"      text="%d Ziel(e) bleiben blockiert - sie würden das Produkt hierher zurückleiten." />
 
@@ -189,6 +211,16 @@
         <text name="dr_inp_pooledCapped" text="Gemeinsames Lager: %s geteilt von %d Produkten, %d begrenzt. Unbegrenzte Produkte dürfen das ganze Lager nutzen." />
         <text name="dr_inp_pooled"       text="Gemeinsames Lager: %s geteilt von %d Produkten. Jedes darf alles nutzen - setze ein Max, um Platz für die anderen zu reservieren." />
         <text name="dr_inp_individual"   text="Lege für jedes Produkt ein Max fest oder blockiere es. Dieses Gebäude hat getrennte Lager je Produkt." />
+        <text name="dr_inp_noSources" text="Kein Gebäude dieses Betriebs kann dieses Produkt liefern." />
+        <text name="dr_lineStatus_off" text="Aus" />
+        <text name="dr_lineStatus_running" text="Läuft" />
+        <text name="dr_lineStatus_idle" text="Leerlauf" />
+        <text name="dr_srcst_feeding" text="Liefert" />
+        <text name="dr_srcst_standby" text="Bereit" />
+        <text name="dr_srcst_noStock" text="Kein Bestand" />
+        <text name="dr_srcst_blocked" text="Blockiert" />
+        <text name="dr_srcst_notDist" text="Verteilt nicht" />
+        <text name="dr_srcst_outOfRange" text="Außer Reichweite" />
 
         <!-- ================= SPAWN PALLETS DIALOG ================= -->
         <text name="dr_spawn_info"    text="Bestand: %s    Palette: %s    Max: %d    Erzeugen: %s" />
@@ -433,7 +465,7 @@
 
         <text name="dr_guide_theMenu_title" text="Das Menü" />
         <text name="dr_guide_theMenu_1" text="Die Rückschrägstrich-Taste öffnet das zusammengefasste Menü. Links stehen die Tabs." />
-        <text name="dr_guide_theMenu_2" text="## Tabs" />
+        <text name="dr_guide_theMenu_2" text="## Reiter" />
         <text name="dr_guide_theMenu_3" text="- Produktionen - Fabriken und Produktionsstätten." />
         <text name="dr_guide_theMenu_4" text="- Silos - Schüttgutsilos und Paletten-/Ballenlagerhallen sowie Mist- und Güllegruben." />
         <text name="dr_guide_theMenu_5" text="- Tierhaltung - Ställe, Hühnerställe, Pferche und Bienenstöcke." />
@@ -659,6 +691,24 @@
         <text name="dr_guide_changelog_26" text="9. Änderung der Modusnamen: Halten hält Artikel jetzt im Gebäude (früher &quot;Gelagert&quot;); Lagern bewegt Artikel bei verfügbarem Lagerplatz aus dem Gebäude." />
         <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
         <text name="dr_guide_changelog_28" text="Vorabversion." />
+        <text name="dr_col_animalPanel" text="TIERE, FUTTER UND HERDENWERT" />
+        <text name="dr_panel_animals" text="TIERE" />
+        <text name="dr_panel_health" text="GESUNDHEIT" />
+        <text name="dr_panel_productivity" text="PRODUKTIVITÄT" />
+        <text name="dr_panel_na" text="k. A." />
+        <text name="dr_panel_feed" text="FUTTER" />
+        <text name="dr_panel_foodFactor" text="Futterfaktor %s" />
+        <text name="dr_panel_grazing" text="Weidegang" />
+        <text name="dr_panel_noFeedData" text="keine Futterdaten" />
+        <text name="dr_panel_herdValue" text="HERDENWERT" />
+        <text name="dr_panel_ofPeak" text="von %s im besten Alter" />
+        <text name="dr_panel_pastPeak" text="über dem Höchststand - Wert sinkt mit dem Alter" />
+        <text name="dr_panel_profit" text="PROGNOSE - GEWINN / MON" />
+        <text name="dr_panel_pfOutputs" text="Ausgänge" />
+        <text name="dr_panel_pfInputs" text="Eingänge" />
+        <text name="dr_panel_pfAgeing" text="Alterung" />
+        <text name="dr_panel_pfBirths" text="Geburten" />
+        <text name="dr_modwarn_body" text="WARNUNG! Es sind Mods aktiv, die bekanntermaßen Probleme mit Distribution Redux verursachen. Du kannst fortfahren, aber die Leistung von Spiel und Mod kann nicht garantiert werden, solange diese Mods aktiv sind. Um diese Warnung zu vermeiden, beende das Spiel und lade den Spielstand ohne die unten genannten Mods:" />
 
         <!-- ============ Ende BENUTZERHANDBUCH ============ -->
     </texts>
