@@ -807,5 +807,31 @@
         <text name="dr_guide_changelog_28" text="预发布。" />
 
         <!-- ============ end USER GUIDE ============ -->
+
+        <!-- the ANIMAL PANEL, drawn only when an extension registers a provider (API v4).
+             Budgets: the block labels sit in 234-480px columns at 11px, so keep them short. -->
+        <text name="dr_col_animalPanel" text="动物·饲料·畜群价值" />
+        <text name="dr_panel_animals" text="动物" />
+        <text name="dr_panel_health" text="健康" />
+        <text name="dr_panel_productivity" text="产能" />
+        <text name="dr_panel_na" text="无" />
+        <text name="dr_panel_feed" text="饲料" />
+        <text name="dr_panel_foodFactor" text="食物系数 %s" />
+        <text name="dr_panel_grazing" text="放牧" />
+        <text name="dr_panel_noFeedData" text="无饲料数据" />
+        <text name="dr_panel_herdValue" text="畜群价值" />
+        <text name="dr_panel_ofPeak" text="峰值年龄时 %s" />
+        <text name="dr_panel_pastPeak" text="已过峰值 - 价值随年龄下降" />
+        <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
+             characters; the four breakdown words share 740px with four money figures, so
+             keep each under about 10. -->
+        <text name="dr_panel_profit" text="预估 - 月利润" />
+        <text name="dr_panel_pfOutputs" text="产出" />
+        <text name="dr_panel_pfInputs" text="投入" />
+        <text name="dr_panel_pfAgeing" text="老化" />
+        <text name="dr_panel_pfBirths" text="出生" />
+
+        <!-- the known-problem-mod warning shown once on load -->
+        <text name="dr_modwarn_body" text="警告！你当前启用了已知会与 Distribution Redux 产生冲突的模组。 你可以继续，但在这些模组处于激活状态时，无法保证游戏与模组的性能。 若要消除此警告，请退出并在不激活以下模组的情况下重新载入存档： " />
     </texts>
 </l10n>
