@@ -11974,11 +11974,11 @@ function SmartDistribution.productionLines(p)
                 -- holdLabelFlag, not the raw spawner list: with pallet spawning off this must read
                 -- "Hold Internal", since the ring has dropped the separate Hold Internal option and this
                 -- is the only hold left. Productions come through here rather than modeName.
-                if drMode == MODE.HOLD_INTERNAL then vname = "Hold Internal"
+                if drMode == MODE.HOLD_INTERNAL then vname = SmartDistribution.l10n("dr_mode_9", "Hold Internal")
                 elseif drMode == MODE.HOLD then
                     local hf = SmartDistribution.holdLabelFlag(p, o.type)
-                    if hf == "internal" then vname = "Hold Internal"
-                    elseif hf then vname = "Hold Pallets" end
+                    if hf == "internal" then vname = SmartDistribution.l10n("dr_mode_9", "Hold Internal")
+                    elseif hf then vname = SmartDistribution.l10n("dr_mode_holdPallets", "Hold Pallets") end
                 end
             end
             outputs[#outputs + 1] = { ft = o.type, name = ftTitle(o.type), held = held(o.type), capacity = cap(o.type), amount = o.amount or 0,
