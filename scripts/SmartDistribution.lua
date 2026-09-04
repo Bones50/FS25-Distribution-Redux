@@ -3484,6 +3484,20 @@ function SmartDistribution.isProductionInputOnly(p, ft)
     return false
 end
 
+-- ============================================================================
+-- UNIFIED DEMAND ALLOCATOR  (phases 1 + 1b + 1c)
+-- Every hourly consumer becomes a "slot": it wants `need` liters and accepts one
+-- or more fill types, each candidate source tagged with quality (food
+-- productionWeight; flat 1.0 for productions/straw) and distance. All slots are
+-- resolved together so that:
+--   * a slot always pulls its BEST candidate first  (quality DESC, then nearest)
+--   * when one source is wanted by several slots and is short, that source's
+--     stock is split PROPORTIONALLY to the claimants' remaining demand
+-- For a lone consumer this reduces to "drain nearest-first up to need", i.e. the
+-- pre-allocator behaviour whenever supply >= demand.
+-- ============================================================================
+local ALLOC_EPS = 0.5   -- liters: <= this counts as empty; keeps contested splits whole-liter (no dust hauls)
+
 local function gatherSources(consumerPP, consumerPlaceable, ft, x, z, farmId)
     local sources = {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
@@ -3960,20 +3974,6 @@ local function chargeDistribution(bill)
     end
 end
 SmartDistribution._chargeDistribution = chargeDistribution   -- exposed for harness
-
--- ============================================================================
--- UNIFIED DEMAND ALLOCATOR  (phases 1 + 1b + 1c)
--- Every hourly consumer becomes a "slot": it wants `need` liters and accepts one
--- or more fill types, each candidate source tagged with quality (food
--- productionWeight; flat 1.0 for productions/straw) and distance. All slots are
--- resolved together so that:
---   * a slot always pulls its BEST candidate first  (quality DESC, then nearest)
---   * when one source is wanted by several slots and is short, that source's
---     stock is split PROPORTIONALLY to the claimants' remaining demand
--- For a lone consumer this reduces to "drain nearest-first up to need", i.e. the
--- pre-allocator behaviour whenever supply >= demand.
--- ============================================================================
-local ALLOC_EPS = 0.5   -- liters: <= this counts as empty; keeps contested splits whole-liter (no dust hauls)
 
 -- quality (productionWeight) per food fill type, from the animal food system.
 -- Mixtures (TMR) are the complete ration -> treat as best. Fully guarded: any
@@ -7490,7 +7490,13 @@ local function palletWatch(uid, ft)
     local byFt = S.inflow[uid]
     if byFt == nil then byFt = {}; S.inflow[uid] = byFt end
     local rec = byFt[ft]
-    if rec == nil then rec = { last = 0, rate = 0, peak = 0 }; byFt[ft] = rec end
+    if rec == nil then
+        rec = {}
+        byFt[ft] = rec
+    end
+    if rec.last == nil then rec.last = 0 end
+    if rec.rate == nil then rec.rate = 0 end
+    if rec.peak == nil then rec.peak = 0 end
     return rec
 end
 
