@@ -8,7 +8,41 @@
             <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_settings"/>
         </GuiElement>
 
-        <ScrollingLayout profile="fs25_settingsLayout" id="boxLayout">
+
+        <!-- PAGE TABS. Four slots declared, hidden when unused so the strip never
+             re-tiles (5.37). Tab 1 is always DR's own; a second mod adds its tab
+             through SmartDistribution.registerPageTab.
+             THE BASE GAME'S OWN TAB PROFILES: a three part selected background
+             (gui.tab_selected_left / _middle / _right) under the label. Unselected
+             draws NOTHING, because emptyPanel's imageSliceId is "noSlice" and both
+             caps are gui.empty, so only the active tab has a background.
+             BACKGROUND BEFORE BUTTON in each pair: children draw in order, so the
+             label must be declared after it to sit ON it (5.86).
+             textAutoWidth is OFF so the profile's auto fit cannot override these
+             widths. 16 | 224 | 432 | 640, each 200 wide with an 8px gutter. -->
+        <Bitmap profile="SDList" position="0px 0px" size="1480px 40px">
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="16px 0px" size="200px 40px" name="drTabBg1" id="drTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="16px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn1" id="drTabBtn1" onClick="onPageTab1"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="224px 0px" size="200px 40px" name="drTabBg2" id="drTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="224px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn2" id="drTabBtn2" onClick="onPageTab2"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="432px 0px" size="200px 40px" name="drTabBg3" id="drTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="432px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn3" id="drTabBtn3" onClick="onPageTab3"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="640px 0px" size="200px 40px" name="drTabBg4" id="drTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="640px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn4" id="drTabBtn4" onClick="onPageTab4"/>
+        </Bitmap>
+
+        <!-- SDSettingsLayoutTabbed shrinks this from the TOP to clear the tab strip.
+             It has to carry the pivot in a PROFILE: a `with=` on an element is read by
+             nothing and is silently ignored (5.87a). -->
+        <ScrollingLayout profile="SDSettingsLayoutTabbed" id="boxLayout">
 
             <Bitmap profile="fs25_multiTextOptionContainer" onCreate="onCreateSettingRow">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onOptionChanged" onCreate="onCreateSetting" id="scope">
@@ -171,6 +205,135 @@
                 <Text profile="fs25_settingsMultiTextOptionTitle" text="$l10n_dr_set_debugEnabled"/>
             </Bitmap>
 
+
+        <!-- EXTENSION SETTING ROWS. Twelve generic slots another mod fills through
+             SmartDistribution.API.registerSettingsTab. DR OWNS THE LAYOUT, THE
+             PROVIDER OWNS THE DATA, which is the same split registerHusbandryPanel
+             already uses: a table of definitions cannot break a page whose geometry
+             is hand tiled to the pixel, an element placed by a foreign mod can.
+             Unused slots are HIDDEN rather than repositioned, exactly as the tab
+             strip above does with PAGE_TAB_MAX (5.37).
+             THEY SIT IN THIS SAME ScrollingLayout on purpose, so the one slider
+             serves both sets and no second scrollbar has to be declared. Switching
+             tab is a per row setVisible plus invalidateLayout: BoxLayoutElement
+             getIsElementIncluded excludes an invisible child when ignoreVisibility
+             is false, which is what invalidateLayout() defaults to.
+             NO onCreate here. onCreateSetting would file these under ids that are
+             not DR settings, and the alternating tint is applied at RENDER instead
+             so a foreign tab always starts its banding at its own first row rather
+             than continuing DR's. -->
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow1" id="drExtRow1" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt1" id="drExtOpt1">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip1" id="drExtTip1" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle1" id="drExtTitle1" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow2" id="drExtRow2" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt2" id="drExtOpt2">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip2" id="drExtTip2" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle2" id="drExtTitle2" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow3" id="drExtRow3" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt3" id="drExtOpt3">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip3" id="drExtTip3" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle3" id="drExtTitle3" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow4" id="drExtRow4" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt4" id="drExtOpt4">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip4" id="drExtTip4" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle4" id="drExtTitle4" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow5" id="drExtRow5" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt5" id="drExtOpt5">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip5" id="drExtTip5" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle5" id="drExtTitle5" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow6" id="drExtRow6" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt6" id="drExtOpt6">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip6" id="drExtTip6" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle6" id="drExtTitle6" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow7" id="drExtRow7" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt7" id="drExtOpt7">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip7" id="drExtTip7" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle7" id="drExtTitle7" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow8" id="drExtRow8" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt8" id="drExtOpt8">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip8" id="drExtTip8" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle8" id="drExtTitle8" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow9" id="drExtRow9" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt9" id="drExtOpt9">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip9" id="drExtTip9" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle9" id="drExtTitle9" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow10" id="drExtRow10" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt10" id="drExtOpt10">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip10" id="drExtTip10" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle10" id="drExtTitle10" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow11" id="drExtRow11" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt11" id="drExtOpt11">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip11" id="drExtTip11" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle11" id="drExtTitle11" text=""/>
+            </Bitmap>
+
+            <Bitmap profile="fs25_multiTextOptionContainer" name="drExtRow12" id="drExtRow12" visible="false">
+                <MultiTextOption profile="fs25_settingsMultiTextOption" onClick="onExtOptionChanged"
+                                 name="drExtOpt12" id="drExtOpt12">
+                    <Text profile="fs25_multiTextOptionTooltip" name="drExtTip12" id="drExtTip12" text=""/>
+                </MultiTextOption>
+                <Text profile="fs25_settingsMultiTextOptionTitle" name="drExtTitle12" id="drExtTitle12" text=""/>
+            </Bitmap>
+
         </ScrollingLayout>
+
+        <!-- THE SCROLLBAR. This page never had one; the list has always relied on the
+             wheel. ScrollingLayoutElement keeps a `sliderElement` that a Slider binds to
+             through #dataElementId, exactly as the User Guide's sliders bind to their
+             SmoothLists.
+             THE WRAPPER CARRIES THE LIST'S OWN PROFILE, so it inherits the list's exact
+             box and nothing here has to know the container's width. fs25_listSliderBox is
+             anchorStretchingYRight at position 21px in its own profile, so it lands just
+             outside the list's right edge, inside the margin absoluteSizeOffset leaves. -->
+        <GuiElement profile="SDSettingsLayoutTabbed">
+            <ThreePartBitmap profile="fs25_listSliderBox" size="6px 100%">
+                <Slider profile="fs25_listSlider" dataElementId="boxLayout" id="settingsSlider"/>
+            </ThreePartBitmap>
+        </GuiElement>
+
     </GuiElement>
 </GUI>

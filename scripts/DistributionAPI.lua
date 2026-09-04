@@ -28,6 +28,12 @@
 --                                                       breaking change
 --   SmartDistribution.API.registerFeedPlanner(name, fn)
 --   SmartDistribution.API.unregisterFeedPlanner(name)
+--   SmartDistribution.API.registerHusbandryPanel(name, fn)      -- v4, v5 profit
+--   SmartDistribution.API.onMenuReady / loadMenuPage / addMenuPage  -- v3, v7 badge
+--   SmartDistribution.API.registerSettingsTab(modName, label, defs)   -- v8
+--   SmartDistribution.API.unregisterSettingsTab(modName)              -- v8
+--   SmartDistribution.API.registerHelpTab(modName, label, topics)     -- v9
+--   SmartDistribution.API.unregisterHelpTab(modName)                  -- v9
 --
 --   fn(placeable, allowedFillTypes, poolNeed) -> plan | nil
 --
@@ -62,7 +68,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 7
+SmartDistribution.API.VERSION = 9
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -643,5 +649,264 @@ function SmartDistribution.API.menuBackButton(menu)
         showWhenPaused = true,
     }
 end
+
+-- ---------------------------------------------------------------------------
+-- SETTINGS TABS (v8)
+--
+-- A mod puts its OWN settings on DR's Settings page, as a tab beside DR's.
+--
+-- DR OWNS THE LAYOUT, THE PROVIDER OWNS THE DATA -- the same split
+-- registerHusbandryPanel uses, and for the same reason: DR's settings rows are
+-- hand authored and hand tiled, and a provider that could place its own elements
+-- could break a page whose geometry is measured to the pixel. A table of
+-- definitions cannot. So a mod hands over WHAT its settings are and DR renders
+-- them into pre-authored generic rows.
+--
+-- THE TAB ONLY EXISTS WHILE THE MOD DOES. Nothing here is declared by DR: the
+-- registry is empty on a stock install, DR's own tab is the only one, and the
+-- strip looks exactly as it did. Remove the mod and its tab is simply never
+-- registered again.
+--
+--   SmartDistribution.API.registerSettingsTab(modName, label, defs)
+--   SmartDistribution.API.unregisterSettingsTab(modName)
+--
+--   label    the tab caption, ALREADY LOCALISED -- DR cannot resolve another
+--            mod's l10n namespace (5.60: getText needs the owning MOD_NAME or it
+--            misses into the base game's table and silently falls back).
+--   defs     an array of up to PAGE_SETTING_ROW_MAX rows, each:
+--       { id      = "trade",                 -- the provider's own key, for logs
+--         title   = "Buy / Sell Animals",    -- localised
+--         tooltip = "...",                   -- localised, optional
+--         strings = { "Off", "On" },         -- localised value labels, 2 or more
+--         get     = function() return 2 end, -- CURRENT 1-based index
+--         set     = function(index) end }    -- the player moved it
+--
+-- `defs` MAY BE A FUNCTION returning that array, for a mod whose rows depend on
+-- state that does not exist at registration time. It is re-read on every page
+-- open, so a provider may also change its own labels between opens.
+--
+-- get / set ARE PROVIDER CODE RUNNING INSIDE DR's GUI, so both are pcall'd and a
+-- provider that throws three times is struck out for the session -- the same rule
+-- the feed planner and the husbandry panel carry. A throwing setting must not be
+-- able to abort a populate, which aborts the render and shows as an EMPTY PAGE
+-- with nothing in the log (5.44 / 5.57).
+--
+-- INDEX, NEVER LABEL. `get` returns and `set` receives a 1-based index into
+-- `strings`, because the label is display text and the index is what a provider
+-- can persist. DR's own settings have carried the index for exactly this reason.
+SmartDistribution._settingsTabs = SmartDistribution._settingsTabs or {}
+
+function SmartDistribution.API.registerSettingsTab(modName, label, defs)
+    if type(modName) ~= "string" or modName == "" or type(label) ~= "string" then
+        log("registerSettingsTab refused: needs (string modName, string label, defs)")
+        return false
+    end
+    if type(defs) ~= "table" and type(defs) ~= "function" then
+        log("registerSettingsTab refused for '%s': defs must be a table or a function", modName)
+        return false
+    end
+    if SmartDistribution.registerPageTab == nil then
+        log("registerSettingsTab refused: this DR has no page tab registry")
+        return false
+    end
+    SmartDistribution._settingsTabs[modName] = { defs = defs, strikes = 0 }
+    local i, why = SmartDistribution.registerPageTab("settings", modName, label,
+                                                    { settingsOwner = modName })
+    if i == nil then
+        SmartDistribution._settingsTabs[modName] = nil
+        log("registerSettingsTab refused for '%s': %s", modName, tostring(why))
+        return false
+    end
+    log("settings tab '%s' registered as tab %d", modName, i)
+    return true
+end
+
+function SmartDistribution.API.unregisterSettingsTab(modName)
+    if type(modName) ~= "string" then return false end
+    SmartDistribution._settingsTabs[modName] = nil
+    if SmartDistribution.unregisterPageTab == nil then return false end
+    local gone = SmartDistribution.unregisterPageTab("settings", modName)
+    if gone then log("settings tab '%s' unregistered", modName) end
+    return gone
+end
+
+---Resolve one provider's rows, validated. Returns an array DR can render, never
+-- nil -- an empty array is the honest answer for a provider that has been struck
+-- out or has nothing to show, and the page then draws a tab with no rows rather
+-- than falling back to DR's own, which would be a lie about whose tab it is.
+--
+-- EVERY FIELD IS CHECKED. This is data DR did not compute, rendered into DR's own
+-- page: a nil title or a `strings` of one entry would show as a blank row or a
+-- selector that cannot move, neither of which names its cause.
+function SmartDistribution.settingsTabRows(modName)
+    local rec = SmartDistribution._settingsTabs[modName]
+    if rec == nil then return {} end
+    if (rec.strikes or 0) >= 3 then return {} end
+
+    local defs = rec.defs
+    if type(defs) == "function" then
+        local ok, out = pcall(defs)
+        if not ok then
+            SmartDistribution.noteSettingsTabThrow(modName, out)
+            return {}
+        end
+        defs = out
+    end
+    if type(defs) ~= "table" then return {} end
+
+    local rows = {}
+    local max = SmartDistribution.PAGE_SETTING_ROW_MAX or 12
+    for _, d in ipairs(defs) do
+        if #rows >= max then
+            log("settings tab '%s' offered more than %d rows; the rest are ignored", modName, max)
+            break
+        end
+        if type(d) == "table" and type(d.title) == "string" and d.title ~= ""
+           and type(d.strings) == "table" and #d.strings >= 2
+           and type(d.set) == "function" then
+            local labels = {}
+            for i = 1, #d.strings do labels[i] = tostring(d.strings[i]) end
+            rows[#rows + 1] = {
+                owner   = modName,
+                id      = tostring(d.id or ("row" .. tostring(#rows + 1))),
+                title   = d.title,
+                tooltip = type(d.tooltip) == "string" and d.tooltip or nil,
+                strings = labels,
+                get     = type(d.get) == "function" and d.get or nil,
+                set     = d.set,
+            }
+        else
+            log("settings tab '%s' offered an unusable row and it was dropped "
+                .. "(needs title, 2 or more strings, and set)", modName)
+        end
+    end
+    return rows
+end
+
+---Record a throw against a provider and strike it out at three, so one broken
+-- callback cannot re-throw on every page open for the rest of the session.
+function SmartDistribution.noteSettingsTabThrow(modName, err)
+    local rec = SmartDistribution._settingsTabs[modName]
+    if rec == nil then return end
+    rec.strikes = (rec.strikes or 0) + 1
+    log("settings tab '%s' threw (strike %d/3): %s", modName, rec.strikes, tostring(err))
+    if rec.strikes >= 3 then
+        log("settings tab '%s' STRUCK OUT for this session; its rows will stop drawing", modName)
+    end
+end
+
+
+-- ---------------------------------------------------------------------------
+-- HELP TABS (v9)
+--
+-- A mod puts its OWN user guide on DR's User Guide page, as a tab beside DR's.
+-- The exact shape registerSettingsTab takes, and for the same reason: the page
+-- already reads `entry.topics` off the registry, so this adds validation and
+-- symmetry rather than a second mechanism.
+--
+--   SmartDistribution.API.registerHelpTab(modName, label, topics)
+--   SmartDistribution.API.unregisterHelpTab(modName)
+--
+--   label   the tab caption, ALREADY LOCALISED -- DR cannot resolve another mod's
+--           l10n namespace (5.60).
+--   topics  an array of { title = "...", body = "..." }, or a FUNCTION returning
+--           one. The function form is the useful one for a guide: it is re-read on
+--           every page open, so a mod may resolve its own l10n at open time rather
+--           than at load, and may rewrite its guide without re-registering.
+--
+-- THE TAB ONLY EXISTS WHILE THE MOD DOES. DR declares nothing; remove the mod and
+-- the tab is simply never registered again, and the strip is DR's one tab exactly
+-- as before.
+--
+-- BODY IS PLAIN TEXT with the guide's own light conventions -- a line beginning
+-- "## " is a heading, blank lines separate paragraphs, and long lines are wrapped
+-- at render time. Do NOT hand-wrap: the page word-wraps to its own column count
+-- and a pre-wrapped paragraph comes out ragged.
+SmartDistribution._helpTabs = SmartDistribution._helpTabs or {}
+
+function SmartDistribution.API.registerHelpTab(modName, label, topics)
+    if type(modName) ~= "string" or modName == "" or type(label) ~= "string" then
+        log("registerHelpTab refused: needs (string modName, string label, topics)")
+        return false
+    end
+    if type(topics) ~= "table" and type(topics) ~= "function" then
+        log("registerHelpTab refused for '%s': topics must be a table or a function", modName)
+        return false
+    end
+    if SmartDistribution.registerPageTab == nil then
+        log("registerHelpTab refused: this DR has no page tab registry")
+        return false
+    end
+    SmartDistribution._helpTabs[modName] = { topics = topics, strikes = 0 }
+    -- THE PAGE READS `entry.topics` ITSELF and has since the strip was built, so
+    -- what is registered is a THUNK that runs the validator. That keeps the page
+    -- unchanged and means a malformed guide yields an empty tab rather than a
+    -- half-rendered one.
+    local i, why = SmartDistribution.registerPageTab("help", modName, label,
+        { helpOwner = modName,
+          topics = function() return SmartDistribution.helpTabTopics(modName) end })
+    if i == nil then
+        SmartDistribution._helpTabs[modName] = nil
+        log("registerHelpTab refused for '%s': %s", modName, tostring(why))
+        return false
+    end
+    log("help tab '%s' registered as tab %d", modName, i)
+    return true
+end
+
+function SmartDistribution.API.unregisterHelpTab(modName)
+    if type(modName) ~= "string" then return false end
+    SmartDistribution._helpTabs[modName] = nil
+    if SmartDistribution.unregisterPageTab == nil then return false end
+    local gone = SmartDistribution.unregisterPageTab("help", modName)
+    if gone then log("help tab '%s' unregistered", modName) end
+    return gone
+end
+
+---Resolve and validate one provider's guide. Returns an array, never nil.
+--
+-- EVERY TOPIC IS CHECKED, because this is third-party text rendered into DR's own
+-- page: a topic with no title is an unselectable entry in the contents list, and a
+-- non-string body would throw inside the renderer -- which aborts the populate and
+-- shows as an EMPTY PAGE with nothing in the log (5.44 / 5.57).
+--
+-- A topic with a title and NO body is kept, with an empty body. That is a heading
+-- a mod has written but not filled in yet, and showing it is more useful than
+-- silently dropping it -- it tells the reader the section exists.
+function SmartDistribution.helpTabTopics(modName)
+    local rec = SmartDistribution._helpTabs[modName]
+    if rec == nil then return {} end
+    if (rec.strikes or 0) >= 3 then return {} end
+
+    local src = rec.topics
+    if type(src) == "function" then
+        local ok, out = pcall(src)
+        if not ok then
+            rec.strikes = (rec.strikes or 0) + 1
+            log("help tab '%s' threw resolving its topics (strike %d/3): %s",
+                modName, rec.strikes, tostring(out))
+            if rec.strikes >= 3 then
+                log("help tab '%s' STRUCK OUT for this session", modName)
+            end
+            return {}
+        end
+        src = out
+    end
+    if type(src) ~= "table" then return {} end
+
+    local topics = {}
+    for _, t in ipairs(src) do
+        if type(t) == "table" and type(t.title) == "string" and t.title ~= "" then
+            topics[#topics + 1] = {
+                title = t.title,
+                body  = type(t.body) == "string" and t.body or "",
+            }
+        else
+            log("help tab '%s' offered a topic with no title and it was dropped", modName)
+        end
+    end
+    return topics
+end
+
 
 print("[SmartDistribution] extension API v" .. tostring(SmartDistribution.API.VERSION) .. " available")

@@ -212,6 +212,21 @@
          sources for whichever one is selected, so it needs more height than the Advanced OUTPUTS
          dialog, which shares SDAdvDialogBox and must NOT grow with it. Its own profile rather than a
          bigger shared one, so a change here can never move a dialog it was not aimed at. -->
+    <!-- THE SETTINGS LIST, SHRUNK FROM THE TOP to clear the page tab strip.
+         fs25_settingsLayout is 100% x 100% with anchors "0 1 0 1" and pivotTopCenter, so it
+         fills the container and a strip at y=0 sits on top of row one.
+         pivotBottomCenter pins it to the BOTTOM instead, and absoluteSizeOffset is SUBTRACTED
+         from the computed size (GuiElement.lua:422) , so 46px of height comes off the TOP and
+         no position override is needed. This is the base game's own idiom, copied from
+         fs25_subCategorySelectorTabbedContainer.
+         IT HAS TO BE A PROFILE. `with` is read at GuiProfile.lua:58 and NOWHERE ELSE: a
+         `with=` written on a GUI ELEMENT is silently ignored, which is exactly how the first
+         version of this shipped doing nothing (5.87a).
+         The 90px of width is fs25_settingsLayout's own value, restated because
+         absoluteSizeOffset is replaced wholesale rather than merged. -->
+    <Profile name="SDSettingsLayoutTabbed" extends="fs25_settingsLayout" with="pivotBottomCenter">
+        <absoluteSizeOffset value="90px 46px" />
+    </Profile>
     <Profile name="SDInputsDialogBox" extends="SDAdvDialogBox">
         <size value="1400px 900px" />
     </Profile>

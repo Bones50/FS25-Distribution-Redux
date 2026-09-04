@@ -8,6 +8,37 @@
             <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_help"/>
         </GuiElement>
 
+
+        <!-- PAGE TABS. Four slots declared, hidden when unused so the strip never
+             re-tiles (5.37). Tab 1 is always DR's own; a second mod adds its tab
+             through SmartDistribution.registerPageTab.
+             THE BASE GAME'S OWN TAB PROFILES: a three part selected background
+             (gui.tab_selected_left / _middle / _right) under the label. Unselected
+             draws NOTHING, because emptyPanel's imageSliceId is "noSlice" and both
+             caps are gui.empty, so only the active tab has a background.
+             BACKGROUND BEFORE BUTTON in each pair: children draw in order, so the
+             label must be declared after it to sit ON it (5.86).
+             textAutoWidth is OFF so the profile's auto fit cannot override these
+             widths. 16 | 224 | 432 | 640, each 200 wide with an 8px gutter. -->
+        <Bitmap profile="SDList" position="0px 0px" size="1480px 40px">
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="16px 0px" size="200px 40px" name="drTabBg1" id="drTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="16px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn1" id="drTabBtn1" onClick="onPageTab1"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="224px 0px" size="200px 40px" name="drTabBg2" id="drTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="224px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn2" id="drTabBtn2" onClick="onPageTab2"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="432px 0px" size="200px 40px" name="drTabBg3" id="drTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="432px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn3" id="drTabBtn3" onClick="onPageTab3"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="640px 0px" size="200px 40px" name="drTabBg4" id="drTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="640px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn4" id="drTabBtn4" onClick="onPageTab4"/>
+        </Bitmap>
+
         <!-- left: topic list (table of contents) -->
         <GuiElement profile="SDList" position="40px -96px" size="460px 760px">
             <SmoothList profile="SDList" id="topicList" position="0px 0px" size="460px 760px"
