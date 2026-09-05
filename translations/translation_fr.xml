@@ -807,5 +807,31 @@
         <text name="dr_guide_changelog_28" text="Version préliminaire." />
 
         <!-- ============ end USER GUIDE ============ -->
+
+        <!-- the ANIMAL PANEL, drawn only when an extension registers a provider (API v4).
+             Budgets: the block labels sit in 234-480px columns at 11px, so keep them short. -->
+        <text name="dr_col_animalPanel" text="ANIMAUX, ALIMENTATION ET VALEUR DU TROUPEAU" />
+        <text name="dr_panel_animals" text="ANIMAUX" />
+        <text name="dr_panel_health" text="SANTÉ" />
+        <text name="dr_panel_productivity" text="PRODUCTIVITÉ" />
+        <text name="dr_panel_na" text="n/d" />
+        <text name="dr_panel_feed" text="ALIMENTATION" />
+        <text name="dr_panel_foodFactor" text="Facteur alimentaire %s" />
+        <text name="dr_panel_grazing" text="pâturage" />
+        <text name="dr_panel_noFeedData" text="aucune donnée d'alimentation" />
+        <text name="dr_panel_herdValue" text="VALEUR DU TROUPEAU" />
+        <text name="dr_panel_ofPeak" text="sur %s à l'âge optimal" />
+        <text name="dr_panel_pastPeak" text="après l'âge optimal - la valeur baisse avec l'âge" />
+        <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
+             characters; the four breakdown words share 740px with four money figures, so
+             keep each under about 10. -->
+        <text name="dr_panel_profit" text="PRÉVISION - BÉNÉFICE / MOIS" />
+        <text name="dr_panel_pfOutputs" text="sorties" />
+        <text name="dr_panel_pfInputs" text="entrées" />
+        <text name="dr_panel_pfAgeing" text="vieilliss." />
+        <text name="dr_panel_pfBirths" text="naissances" />
+
+        <!-- the known-problem-mod warning shown once on load -->
+        <text name="dr_modwarn_body" text="ATTENTION ! Vous avez actuellement activé des mods connus pour créer des problèmes avec Distribution Redux. Vous pouvez continuer, mais les performances du jeu et du mod ne peuvent pas être garanties tant que ces mods sont actifs. Pour éviter cet avertissement, quittez puis rechargez la sauvegarde sans activer les mods ci-dessous :" />
     </texts>
 </l10n>
