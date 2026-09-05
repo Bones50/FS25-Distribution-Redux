@@ -49,6 +49,7 @@
         <text name="dr_title_husbandry"       text="Distribution - Animal Husbandry" />
         <text name="dr_title_markets"         text="Distribution - Markets" />
         <text name="dr_title_help"            text="Distribution - Help" />
+        <text name="dr_tab_distribution" text="DISTRIBUTION"/>
         <text name="dr_title_settings"        text="Distribution - Settings" />
         <text name="dr_title_advanced"        text="Advanced" />
         <text name="dr_title_advancedInputs"  text="Advanced Inputs" />

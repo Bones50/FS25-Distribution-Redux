@@ -18499,6 +18499,130 @@ end
 -- means hiding the track no longer hides the chip with it. Both pages' notice rows call this: cells are
 -- RECYCLED by SmoothList, so a "+N blocked" row would otherwise keep the "+3" and the pallet picture of
 -- whichever product row last used its slot (5.7 / 5.57).
+-- ---------------------------------------------------------------------------
+-- PAGE TABS -- a horizontal strip across the top of a full page, and a registry
+-- so ANOTHER MOD can add a tab of its own.
+--
+-- Added 2026-09-01 so Settings and the User Guide can carry Animal Redux's own
+-- content beside DR's, and built with the eventual SPLIT of the two mods in mind
+-- (the audit is in AR CLAUDE.md; the short version is that AR currently has no
+-- menu, no keybind and no profiles of its own).
+--
+-- IT IS A SECOND IMPLEMENTATION OF AR's AnimalTabs, AND THAT IS DELIBERATE.
+-- Normally this project promotes a shared widget rather than copying it -- 5.69
+-- did exactly that for the storage bar after 6.18 recorded three regressions
+-- caused by copied GUI helpers. The rule is inverted here for one reason:
+-- **DR MUST NEVER DEPEND ON AR.** DR is the base mod and has to run with AR
+-- absent, so it cannot call into AnimalTabs, and AR must keep its own copy for
+-- the day it runs with DR absent. The two are kept honest by both driving the
+-- SAME BASE GAME PROFILES (fs25_subCategorySelectorTabbedTab / ...TabBg), so
+-- they cannot drift apart visually even though the Lua is duplicated -- the
+-- appearance lives in guiProfiles.xml, which neither mod owns.
+--
+-- SELECTION IS A STATE, NOT A PAINT: GuiElement:getOverlayState returns
+-- STATE_SELECTED off getIsSelected(), and GuiOverlay resolves every *Selected*
+-- slice and colour from it. So one setSelected() per element drives the three
+-- part background AND the text colour, and there is no hand picked colour here.
+-- ---------------------------------------------------------------------------
+
+---How many tab slots the page layouts declare. Unused ones are hidden rather
+-- than repositioned (5.37).
+SmartDistribution.PAGE_TAB_MAX = 4
+
+---Registered tabs, per page key ("settings" / "help"). DR's own tab is always
+-- first and is registered by the page itself, so a page always has at least one.
+SmartDistribution._pageTabs = SmartDistribution._pageTabs or {}
+
+---Register a tab on one of DR's full pages.
+-- `key`     which page: "settings" or "help"
+-- `modName` the owner, used to de-duplicate and to log
+-- `label`   already localised -- DR cannot know another mod's l10n namespace
+-- `entry`   free-form table the page hands back on selection. DR does not
+--           interpret it; the HELP page reads `entry.topics`, and anything else
+--           is between the page and the registering mod.
+--
+-- RETURNS the tab index, or nil + why. Re-registering the same mod REPLACES its
+-- entry rather than adding a second tab, so a mod reloading its page cannot
+-- accumulate duplicates.
+function SmartDistribution.registerPageTab(key, modName, label, entry)
+    if type(key) ~= "string" or type(modName) ~= "string" or type(label) ~= "string" then
+        return nil, "registerPageTab needs (key, modName, label)"
+    end
+    local list = SmartDistribution._pageTabs[key]
+    if list == nil then list = {}; SmartDistribution._pageTabs[key] = list end
+    for i, t in ipairs(list) do
+        if t.modName == modName then
+            t.label, t.entry = label, entry
+            return i
+        end
+    end
+    if #list >= SmartDistribution.PAGE_TAB_MAX then
+        return nil, string.format("page '%s' already has %d tabs", key, #list)
+    end
+    local rec = { modName = modName, label = label, entry = entry }
+    -- DR'S OWN TAB IS PINNED FIRST, whatever order the registrations arrive in.
+    -- It cannot rely on being first by arriving first: DR registers its own tab
+    -- from the PAGE, on first open, while a dependent mod registers at MISSION
+    -- LOAD -- so Animal Redux took slot 1 and DR's own settings landed second,
+    -- which is what shipped and was wrong on screen.
+    --
+    -- Keyed on `entry.own`, which only DR's own pages set, rather than on DR's mod
+    -- name: the name is what a player can rename by renaming the zip.
+    if type(entry) == "table" and entry.own == true then
+        table.insert(list, 1, rec)
+        return 1
+    end
+    list[#list + 1] = rec
+    return #list
+end
+
+---Remove a mod's tab from a page. Returns true if one went.
+function SmartDistribution.unregisterPageTab(key, modName)
+    local list = SmartDistribution._pageTabs[key]
+    if list == nil then return false end
+    for i, t in ipairs(list) do
+        if t.modName == modName then table.remove(list, i); return true end
+    end
+    return false
+end
+
+---Every tab registered on a page, in registration order.
+function SmartDistribution.pageTabs(key)
+    return SmartDistribution._pageTabs[key] or {}
+end
+
+---Paint the strip. `owner` holds `drTabBtn1..N` and `drTabBg1..N`; `labels` is
+-- what to show; `active` is which is current.
+---Returns how many tabs are showing.
+function SmartDistribution.drawPageTabs(owner, labels, active)
+    if owner == nil or type(labels) ~= "table" then return 0 end
+    local shown = 0
+    for i = 1, SmartDistribution.PAGE_TAB_MAX do
+        local btn   = owner["drTabBtn" .. i]
+        local bg    = owner["drTabBg" .. i]
+        local label = labels[i]
+        -- A tab is ONLY selected if it is both the active one AND actually in use.
+        local live  = (i == active and label ~= nil)
+
+        if btn ~= nil and btn.setVisible ~= nil then btn:setVisible(label ~= nil) end
+        if bg ~= nil and bg.setVisible ~= nil then bg:setVisible(label ~= nil) end
+        -- BOTH DESELECT OUTSIDE THE LABEL GUARD. Selecting the button inside it
+        -- leaves a tab whose label went away still wearing textSelectedColor with
+        -- no background under it -- the bug AR's harness caught on this widget.
+        if bg ~= nil and type(bg.setSelected) == "function" then pcall(bg.setSelected, bg, live) end
+        if btn ~= nil and type(btn.setSelected) == "function" then pcall(btn.setSelected, btn, live) end
+
+        -- Nil guarded on the ELEMENT, not only the label: a page asking for more
+        -- labels than its layout declares slots must not throw inside a populate,
+        -- which aborts the render and shows as an empty page (5.44 / 5.57).
+        if label ~= nil and btn ~= nil then
+            shown = shown + 1
+            if btn.setText ~= nil then btn:setText(tostring(label)) end
+        end
+    end
+    return shown
+end
+
 function SmartDistribution.hideStorageBar(cell)
     if cell == nil or cell.getAttribute == nil then return end
     for _, n in ipairs({ "barBg", "barPalletPlate", "barPalletCount", "barPalletIcon" }) do

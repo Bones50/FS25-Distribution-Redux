@@ -30,7 +30,44 @@ local HEAD_SCALE = { h1 = 1.4, h2 = 1.05 }
 -- that. If any line ever does look undersized, lower this rather than hunting elsewhere.
 local WRAP_COLS = 150
 
-local function topics()
+---THE PAGE KEY this tab strip registers under. Another mod adds its own guide
+-- with SmartDistribution.registerPageTab("help", modName, label, { topics = ... }).
+DistributionHelpPage.TAB_KEY = "help"
+
+---DR's own tab is registered once, and FIRST, so it is always index 1 and the
+-- page can never come up with no tabs at all.
+local function ownTab()
+    if SmartDistribution == nil or SmartDistribution.registerPageTab == nil then return end
+    SmartDistribution.registerPageTab(DistributionHelpPage.TAB_KEY, "FS25_Distribution_Redux",
+        SmartDistribution.l10n("dr_tab_distribution", "DISTRIBUTION"), { own = true })
+end
+
+---The tabs to draw, and their labels.
+local function tabList()
+    if SmartDistribution == nil or SmartDistribution.pageTabs == nil then return {} end
+    return SmartDistribution.pageTabs(DistributionHelpPage.TAB_KEY)
+end
+
+---THE TOPICS OF WHICHEVER TAB IS ACTIVE.
+--
+-- This was the whole seam: every read went through one local, so pointing it at
+-- the active tab is all that was needed to make a second guide possible. DR's own
+-- tab reads DistributionHelpDialog.TOPICS as before; a registered tab supplies its
+-- own `topics`, either as a table or as a function returning one (so a mod can
+-- build its guide lazily rather than at registration time).
+local function topics(page)
+    local idx = (page ~= nil and page.currentTab) or 1
+    local t = tabList()[idx]
+    if t ~= nil and not (t.entry or {}).own then
+        local src = (t.entry or {}).topics
+        if type(src) == "function" then
+            local ok, v = pcall(src)
+            if ok and type(v) == "table" then return v end
+            return {}
+        end
+        if type(src) == "table" then return src end
+        return {}
+    end
     return (DistributionHelpDialog ~= nil and DistributionHelpDialog.TOPICS) or {}
 end
 
@@ -38,6 +75,7 @@ function DistributionHelpPage.new(target, custom_mt)
     local self = DistributionMenuPage.new(target, custom_mt or DistributionHelpPage_mt)
     self.pageName = "DISTREDUX_HELP"
     self.currentTopic = 1
+    self.currentTab = 1
     self.lines = {}
     return self
 end
@@ -56,7 +94,7 @@ function DistributionHelpPage:onGuiSetupFinished()
 end
 
 function DistributionHelpPage:selectTopic(index)
-    local T = topics()
+    local T = topics(self)
     if index == nil or T[index] == nil then return end
     self.currentTopic = index
     if DistributionHelpDialog ~= nil and DistributionHelpDialog.buildLines ~= nil then
@@ -80,8 +118,10 @@ function DistributionHelpPage:onFrameOpen()
     if DistributionHelpDialog ~= nil and DistributionHelpDialog.reload ~= nil then
         pcall(DistributionHelpDialog.reload)
     end
+    ownTab()
+    self:refreshPageTabs()
     -- the file may now have fewer tabs than last time; keep the selection in range
-    local n = #topics()
+    local n = #topics(self)
     if self.currentTopic == nil or self.currentTopic > n then self.currentTopic = 1 end
     if self.topicList ~= nil then self.topicList:reloadData() end
     self:selectTopic(self.currentTopic or 1)
@@ -98,13 +138,13 @@ end
 
 -- ---- SmoothList delegate (two lists, told apart by identity) ----------------
 function DistributionHelpPage:getNumberOfItemsInSection(list, section)
-    if list == self.topicList then return #topics() end
+    if list == self.topicList then return #topics(self) end
     return #self.lines
 end
 
 function DistributionHelpPage:populateCellForItemInSection(list, section, index, cell)
     if list == self.topicList then
-        local t = topics()[index]
+        local t = topics(self)[index]
         local nameCell = cell:getAttribute("topicName")
         if nameCell ~= nil and t ~= nil then
             nameCell:setText((DistributionHelpDialog.localisedTitle ~= nil)
@@ -177,6 +217,33 @@ function DistributionHelpPage:populateCellForItemInSection(list, section, index,
         end
     end
 end
+
+---Paint the strip from the registry.
+function DistributionHelpPage:refreshPageTabs()
+    local list, labels = tabList(), {}
+    for i, t in ipairs(list) do labels[i] = t.label end
+    if self.currentTab == nil or self.currentTab > #list then self.currentTab = 1 end
+    if SmartDistribution ~= nil and SmartDistribution.drawPageTabs ~= nil then
+        SmartDistribution.drawPageTabs(self, labels, self.currentTab)
+    end
+end
+
+---Switch guide. The topic selection is reset rather than carried across, because
+-- topic 4 of DR's guide has nothing to do with topic 4 of anyone else's.
+function DistributionHelpPage:selectPageTab(i)
+    if i == nil or i == self.currentTab then return end
+    if tabList()[i] == nil then return end
+    self.currentTab   = i
+    self.currentTopic = 1
+    self:refreshPageTabs()
+    if self.topicList ~= nil then self.topicList:reloadData() end
+    self:selectTopic(1)
+end
+
+function DistributionHelpPage:onPageTab1() self:selectPageTab(1) end
+function DistributionHelpPage:onPageTab2() self:selectPageTab(2) end
+function DistributionHelpPage:onPageTab3() self:selectPageTab(3) end
+function DistributionHelpPage:onPageTab4() self:selectPageTab(4) end
 
 function DistributionHelpPage:onListSelectionChanged(list, section, index)
     if list == self.topicList then self:selectTopic(index) end
