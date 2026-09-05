@@ -32,6 +32,7 @@
         <!-- ================= klawisze (widoczne w Opcje > Sterowanie) ================= -->
         <text name="input_DISTREDUX_OPEN_DIALOG" text="Konfiguruj dystrybucję (najbliższy obiekt)" />
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Otwórz menu Distribution Redux" />
+        <text name="dr_input_openManager" text="Menu dystrybucji" />
 
         <!-- ================= TYMCZASOWE: sonda typu pieniędzy =================
              Tytuły przekazywane do MoneyType.register. Jeśli podstawowy ekran finansów renderuje
@@ -110,6 +111,17 @@
         <text name="dr_col_produced"          text="WYPRODUKOWANE" />
         <text name="dr_col_outputMode"        text="TRYB WYJŚCIA" />
         <text name="dr_col_status"            text="STATUS" />
+        <text name="dr_col_products" text="PRODUKTY" />
+        <text name="dr_pct_lessThanOne" text="&lt;1%" />
+        <text name="dr_btn_advIn" text="Zaaw. wejścia" />
+        <text name="dr_btn_advOut" text="Zaaw. wyjścia" />
+        <text name="dr_col_statusInOut" text="STATUS (WE / WY)" />
+        <text name="dr_status_short_recv" text="Odbiór" />
+        <text name="dr_status_short_send" text="Wysyła" />
+        <text name="dr_status_short_sold" text="Sprzed." />
+        <text name="dr_status_short_idle" text="Bezczyn." />
+        <text name="dr_status_short_blocked" text="Zablok." />
+        <text name="dr_status_short_none" text="-" />
         <text name="dr_col_productionLines"   text="LINIE PRODUKCYJNE" />
         <!-- "/mo" = miesiecznie. Wartosc to miesieczny cel danej linii. -->
         <text name="dr_col_targetMo"          text="CEL /mies" />
@@ -127,6 +139,8 @@
         <text name="dr_col_maxIn"           text="MAKS WE" />
         <text name="dr_col_available"       text="DOSTĘPNE" />
         <text name="dr_col_fillTarget"      text="CEL WYPEŁNIENIA" />
+        <text name="dr_col_potentialSources" text="MOŻLIWE ŹRÓDŁA" />
+        <text name="dr_col_range" text="ZASIĘG" />
 
         <!-- ================= przyciski =================
              Dziela jeden pasek na dole, wiec kazdy dodatkowy znak sciska sasiadow.
@@ -138,6 +152,7 @@
         <text name="dr_btn_blockAll"      text="Blokuj wsz." />
         <text name="dr_btn_reserveDown"   text="- Rezerwa" />
         <text name="dr_btn_reserveUp"     text="+ Rezerwa" />
+        <text name="dr_lbl_reserveLitres" text="Rezerwa:" />
         <text name="dr_btn_maxDown"       text="- Maks" />
         <text name="dr_btn_maxUp"         text="+ Maks" />
         <text name="dr_btn_targetDown"    text="- Cel" />
@@ -198,6 +213,11 @@
              celowo z identycznym slownictwem. -->
         <text name="dr_type_pooled"     text="Wspólny" />
         <text name="dr_type_individual" text="Indywidualny" />
+        <text name="dr_type_pooledShort" text="Pula" />
+        <text name="dr_type_poolN" text="Pula %s" />
+        <text name="dr_type_poolNShort" text="P%s" />
+        <text name="dr_type_individualShort" text="Ind" />
+        <text name="dr_type_linkedShort" text="Poł" />
         <text name="dr_type_internal"   text="Wewnętrzny" />
         <text name="dr_type_blocked"    text="ZABLOKOWANY" />
 
@@ -235,6 +255,8 @@
         <text name="dr_adv_activeInvalid" text="Aktywny - Nieprawidłowy" />
         <text name="dr_adv_reserve"       text="     Rezerwa: " />
         <text name="dr_adv_noCapacity"    text="Brak pojemności do zarezerwowania" />
+        <text name="dr_adv_reserveBad" text="Rezerwa: wpisz liczbę litrów" />
+        <text name="dr_adv_reserveClamped" text="Rezerwa ograniczona do pojemności: %s" />
         <text name="dr_adv_loopOne"       text="Nie można aktywować %s - produkt wróciłby tutaj w kółko." />
         <text name="dr_adv_loopMany"      text="%d cel(e) pozostawiono zablokowane - produkt wróciłby tutaj w kółko." />
 
@@ -245,6 +267,16 @@
         <text name="dr_inp_pooledCapped" text="Magazyn wspólny: %s dzielone przez %d produktów, %d z limitem. Produkty bez limitu mogą wykorzystać całą pulę." />
         <text name="dr_inp_pooled"       text="Magazyn wspólny: %s dzielone przez %d produktów. Każdy może wykorzystać wszystko - ustaw limit, by zarezerwować miejsce dla pozostałych." />
         <text name="dr_inp_individual"   text="Ustaw limit dla każdego produktu lub go zablokuj. Ten budynek ma indywidualny magazyn dla każdego produktu." />
+        <text name="dr_inp_noSources" text="Żaden budynek tego gospodarstwa nie może dostarczyć tego produktu." />
+        <text name="dr_lineStatus_off" text="Wyłączona" />
+        <text name="dr_lineStatus_running" text="Działa" />
+        <text name="dr_lineStatus_idle" text="Bezczynna" />
+        <text name="dr_srcst_feeding" text="Zasila" />
+        <text name="dr_srcst_standby" text="Gotowość" />
+        <text name="dr_srcst_noStock" text="Brak zapasów" />
+        <text name="dr_srcst_blocked" text="Zablokowane" />
+        <text name="dr_srcst_notDist" text="Nie dystrybuuje" />
+        <text name="dr_srcst_outOfRange" text="Poza zasięgiem" />
 
         <!-- ================= OKNO TWORZENIA PALET =================
              Slowo ilosci obok licznika i wiersz podsumowania nad nim. -->
@@ -755,6 +787,24 @@
         <text name="dr_guide_changelog_26" text="9. Zmiana nazw trybów: Wstrzymaj trzyma teraz przedmioty w budynku (dawniej &quot;Zmagazynowane&quot;); Magazynuj przenosi przedmioty poza budynek, gdy magazyn jest dostępny." />
         <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
         <text name="dr_guide_changelog_28" text="Wydanie wstępne." />
+        <text name="dr_col_animalPanel" text="ZWIERZĘTA, PASZA I WARTOŚĆ STADA" />
+        <text name="dr_panel_animals" text="ZWIERZĘTA" />
+        <text name="dr_panel_health" text="ZDROWIE" />
+        <text name="dr_panel_productivity" text="PRODUKTYWNOŚĆ" />
+        <text name="dr_panel_na" text="brak" />
+        <text name="dr_panel_feed" text="PASZA" />
+        <text name="dr_panel_foodFactor" text="Współczynnik paszy %s" />
+        <text name="dr_panel_grazing" text="wypas" />
+        <text name="dr_panel_noFeedData" text="brak danych o paszy" />
+        <text name="dr_panel_herdValue" text="WARTOŚĆ STADA" />
+        <text name="dr_panel_ofPeak" text="z %s w szczytowym wieku" />
+        <text name="dr_panel_pastPeak" text="po szczycie - wartość spada z wiekiem" />
+        <text name="dr_panel_profit" text="PROGNOZA - ZYSK / MC" />
+        <text name="dr_panel_pfOutputs" text="wyjścia" />
+        <text name="dr_panel_pfInputs" text="wejścia" />
+        <text name="dr_panel_pfAgeing" text="starzenie" />
+        <text name="dr_panel_pfBirths" text="narodziny" />
+        <text name="dr_modwarn_body" text="UWAGA! Masz aktywne mody, które są znane z powodowania problemów z Distribution Redux. Możesz kontynuować, ale wydajność gry i moda nie może być zagwarantowana, dopóki te mody są aktywne. Aby uniknąć tego ostrzeżenia, zamknij grę i wczytaj zapis bez poniższych modów:" />
 
         <!-- ============ koniec PODRECZNIKA UZYTKOWNIKA ============ -->
     </texts>
