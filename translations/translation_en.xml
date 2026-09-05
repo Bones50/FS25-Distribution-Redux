@@ -333,6 +333,14 @@
              and spawns nothing. The distinction is the whole point, so keep them distinct. -->
         <text name="dr_mode_holdPallets" text="Hold Pallets" />
 
+        <!-- ================= SILOS/BUNKERS ================= -->
+        <text name="dr_bunker_fermenting"    text="Fermenting" />
+        <text name="dr_bunker_fermented"     text="Fermented - Uncover to access" />
+        <text name="dr_bunker_filling"       text="Filling" />
+        <text name="dr_bunker_fermentPct"    text="Fermenting: %d%%"/>
+        <text name="dr_bunker_compactPct"    text="Compacted: %d%%"/>
+
+
         <!-- ================= LINK STATUS =================
              The STATUS column. Three states: product actually moved on the last hourly pass,
              the link is live but nothing needed to move, or it is blocked in Advanced routing.

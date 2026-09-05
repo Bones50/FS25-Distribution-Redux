@@ -330,6 +330,13 @@
              inne i byggnaden och inte skapar något. Skillnaden är hela poängen, så håll dem åtskilda. -->
         <text name="dr_mode_holdPallets" text="Håll pallar" />
 
+        <!-- ================= SILOS/BUNKERS ================= -->
+        <text name="dr_bunker_fermenting"    text="Fermenterar" />
+        <text name="dr_bunker_fermented"     text="Fermenterad - Redo att öppnas" />
+        <text name="dr_bunker_filling"       text="Fyll" />
+        <text name="dr_bunker_fermentPct"    text="Fermentering: %d%%"/>
+        <text name="dr_bunker_compactPct"    text="Kompaktering: %d%%"/>
+
         <!-- ================= LÄNKSTATUS =================
              STATUS-kolumnen. Tre tillstånd: produkt flyttades faktiskt vid senaste timpassen,
              länken är aktiv men inget behövde flyttas, eller så är den blockerad i Avancerad
