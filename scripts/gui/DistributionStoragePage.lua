@@ -63,7 +63,7 @@ end
 local NOTICE_CELLS = { "typeText", "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
                        "consumedText", "consumed", "prodText", "produced", "distText", "distr",
                        "modeText", "method", "statusText", "status",
-                       "barHeld", "barCap",
+                       "barHeld", "barCap", "barSizes",
                        "statusIn", "statusSep", "statusOut" }
 
 local function renderNoticeRow(cell, hidden, what)
@@ -560,6 +560,11 @@ function DistributionStoragePage:onGuiSetupFinished()
         self.detailList:setDataSource(self)
         self.detailList:setDelegate(self)
     end
+    if self.detailListSizes ~= nil then
+        self.detailListSizes:setDataSource(self)
+        self.detailListSizes:setDelegate(self)
+        self._detailListBase = self.detailList      -- the 42px list; the swap repoints self.detailList
+    end
     if self.inputList ~= nil then
         self.inputList:setDataSource(self)
         self.inputList:setDelegate(self)
@@ -568,7 +573,7 @@ function DistributionStoragePage:onGuiSetupFinished()
     -- hides the scrollbar track when the list does NOT overflow its frame
     -- ONE list now, 672px at the 42px row pitch = 16 rows. The count is "rows that fit the frame", so it
     -- has to move with the height or the scrollbar track hides on a list that does overflow (5.55).
-    self._scrollMap = { { "detailSlider", "detailList", 16 } }
+    self._scrollMap = { { "detailSlider", "detailList", 16 }, { "detailSliderSizes", "detailListSizes", 16 } }
 end
 
 -- which configurable assets belong on this tab
@@ -613,6 +618,7 @@ function DistributionStoragePage:selectAsset(index)
     if self.assetTitleElement ~= nil then
         self.assetTitleElement:setText(a ~= nil and (a.name or ""):upper() or "")
     end
+    
     -- THE MERGED TABLE IS THE ONLY PRODUCT LIST, and it lives INSIDE inputPanel (see the XML) --
     -- so hiding that panel for a bunker hid its product rows too. The old two-list layout had a
     -- separate output list, which is why this used to work. The merged row already suppresses the
@@ -621,6 +627,25 @@ function DistributionStoragePage:selectAsset(index)
     self:buildDetailRows()
     self.detailIndex = 1
     self.inputIndex = 1
+
+    -- ROW PITCH BY BUILDING CLASS: two stacked SmoothLists share these rows -- 42px (SDListItemStats)
+    -- for ordinary buildings, 56px (SDListItemSizes) for pallet/bale storages, whose rows carry the
+    -- second "Sizes:" label line under the bar. SmoothList clones its rows once and recycles them,
+    -- so a single list cannot change pitch reliably -- instead self.detailList is REPOINTED at the
+    -- list matching the selected building and that one becomes visible. Every downstream
+    -- self.detailList reference (reload, focus, realtime refresh, selection) then just works.
+    if self.detailListSizes ~= nil and self._detailListBase ~= nil then
+        local isStorage = self.selectedAsset ~= nil and self.selectedAsset.spec_objectStorage ~= nil
+        local active = isStorage and self.detailListSizes or self._detailListBase
+        if self.detailList ~= active then
+            self.detailListSizes:setVisible(active == self.detailListSizes)
+            self._detailListBase:setVisible(not (active == self.detailListSizes))
+            if self.detailSlider ~= nil then self.detailSlider:setVisible(not (active == self.detailListSizes)) end
+            if self.detailSliderSizes ~= nil then self.detailSliderSizes:setVisible(active == self.detailListSizes) end
+            self.detailList = active
+        end
+    end
+
     if self.detailList ~= nil then
         self.detailList:reloadData()
         -- setSelectedItem, not setSelectedIndex (see selectRowByFt): the latter does not exist on a
@@ -725,11 +750,25 @@ function DistributionStoragePage:populateCellForItemInSection(list, section, ind
     end
 
     setc("fillName", row.name)
-    -- STORAGE TYPE, abbreviated. Role-scoped like every other read on this row: without the role a
-    -- building that is a silo AND a pallet store answers the silo's rows from the SHED pool (5.65 /
-    -- 6.30). Already listed in NOTICE_CELLS, so the notice row clears it like every other cell.
+    -- STORAGE TYPE, abbreviated (role-scoped, see 5.65 / 6.30 note above). Back to the plain label --
+    -- the shed per-type breakdown moved to its own cell under the bar (barSizes), which has the width.
     setc("typeText", (SmartDistribution.storageTypeLabel ~= nil)
         and (SmartDistribution.storageTypeLabel(self.selectedAsset, row.ft, self.selectedRole, true) or "") or "")
+
+    -- SIZES, centred between the held and max figures under the bar: "Sizes: 4,000 l, 5,000 l".
+    -- Only for sheds; empty for every other building class. pcall because this runs on the 2 Hz
+    -- live refresh and must never throw while a shed is being mutated.
+    local sizesCell = cell:getAttribute("barSizes")
+    if sizesCell ~= nil then
+        local sizesTxt = ""
+        if SmartDistribution.shedTypeSummaryText ~= nil then
+            local okS, summary = pcall(SmartDistribution.shedTypeSummaryText, self.selectedAsset, row.ft)
+            if okS and summary ~= nil and summary ~= "" then
+                sizesTxt = SmartDistribution.l10n("dr_lbl_sizes", "Sizes") .. ": " .. summary
+            end
+        end
+        sizesCell:setText(sizesTxt)
+    end
 
     local e = self:windowStats(row.ft)
     setc("recvText", fmtV(e.received))
@@ -790,7 +829,7 @@ end
 function DistributionStoragePage:onListSelectionChanged(list, section, index)
     if list == self.assetList then
         self:selectAsset(index)
-    elseif list == self.detailList then
+    elseif list == self.detailList or list == self.detailListSizes then
         self.detailIndex = index
         self:_focusOn("output")
         self:updateSellTimingButton()
@@ -871,7 +910,11 @@ function DistributionStoragePage:updateSellTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
+            if spawnReady then
+                b.text = (SmartDistribution.spawnButtonLabel ~= nil)
+                    and SmartDistribution.spawnButtonLabel(self.selectedAsset, row.ft)
+                    or SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets")
+                vis[#vis + 1] = b
             elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
         -- TWO BUTTONS, EACH SHOWN ON ITS OWN MERIT. The single contextual button dispatched on which list
         -- was last touched, and the merged table has one list -- so there is nothing left to infer from.
@@ -1140,7 +1183,11 @@ function DistributionAnimalHusbandryPage:updateSellTimingButton()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "sellTiming" then
-            if spawnReady then b.text = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"); vis[#vis + 1] = b
+            if spawnReady then
+                b.text = (SmartDistribution.spawnButtonLabel ~= nil)
+                    and SmartDistribution.spawnButtonLabel(self.selectedAsset, row.ft)
+                    or SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets")
+                vis[#vis + 1] = b
             elseif label ~= nil then b.text = string.format(SmartDistribution.l10n("dr_btn_sellTimingValue", "Sell Timing: %s"), label); vis[#vis + 1] = b end
         elseif b._role == "advanced" then
             if focus == "input" then

@@ -54,6 +54,8 @@
         <text name="dr_title_advanced"        text="Advanced" />
         <text name="dr_title_advancedInputs"  text="Advanced Inputs" />
         <text name="dr_title_spawnPallets"    text="Spawn Pallets" />
+        <text name="dr_title_spawnBales"      text="Spawn Bales" />
+
 
         <!-- ================= building-list headers (left column, ~40 chars) ================= -->
         <text name="dr_col_buildings"     text="BUILDINGS" />
@@ -66,9 +68,10 @@
         <text name="dr_lbl_filterBy"         text="Filter by" />
         <text name="dr_lbl_show"             text="Show" />
         <text name="dr_lbl_grouping"         text="Grouping" />
-        <text name="dr_lbl_modeKeys" text="X / Z: cycle selected output mode" />
+        <text name="dr_lbl_modeKeys"         text="X / Z: cycle selected output mode" />
         <text name="dr_lbl_sellingOff"       text="SELLING IS OFF - every market sells on arrival, whatever these rows are set to" />
         <text name="dr_lbl_overviewPointer"  text="Full breakdown + supply chains: Overview tab" />
+        <text name="dr_lbl_sizes"            text="Sizes" />
 
         <!-- ================= Overview: FLOW view column headers =================
              Budget roughly 10 to 16 characters each; these sit at 11px in narrow
@@ -299,9 +302,11 @@
         <!-- ================= SPAWN PALLETS DIALOG =================
              Quantity word beside the stepper, and the summary line above it. -->
         <text name="dr_spawn_info"    text="Held: %s    Pallet: %s    Max: %d    Spawning: %s" />
+        <text name="dr_spawn_info_bale"  text="Held: %s    Bale: %s    Max: %d    Spawning: %s" />
         <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
              name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
         <text name="dr_spawn_palletType" text="Pallet" />
+        <text name="dr_spawn_baleType"   text="Bale" />
         <!-- Quantity stepper: chosen count, maximum, and the exact litres that count moves.
              Reads "2 / 3  (2,000 L)". Keep all three placeholders and their order. -->
         <text name="dr_spawn_count"   text="%d / %d  (%s)" />

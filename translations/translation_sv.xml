@@ -47,6 +47,7 @@
         <text name="dr_title_advanced"        text="Avancerat" />
         <text name="dr_title_advancedInputs"  text="Avancerade inmatningar" />
         <text name="dr_title_spawnPallets"    text="Skapa pallar" />
+        <text name="dr_title_spawnBales"      text="Skapa balar" />
 
         <!-- ================= byggnadslistans rubriker (vänster kolumn, ~40 tecken) ================= -->
         <text name="dr_col_buildings"     text="BYGGNADER" />
@@ -62,6 +63,7 @@
         <text name="dr_lbl_modeKeys"         text="X / Z: växla valt utmatningsläge" />
         <text name="dr_lbl_sellingOff"       text="FÖRSÄLJNING AV - marknader säljer direkt, oavsett radinställningar" />
         <text name="dr_lbl_overviewPointer"  text="Fullständig uppdelning + leveranskedjor: fliken Översikt" />
+        <text name="dr_lbl_sizes"            text="Storlekar" />
 
         <!-- ================= Översikt: FLÖDE-vy kolumnrubriker =================
              Budget ungefär 10 till 16 tecken vardera; dessa sitter i 11px i smala
@@ -76,8 +78,8 @@
         <text name="dr_col_freeStorage"   text="LED. LAG." />
         <text name="dr_col_producedExp"   text="PRODUC. (FÖRV.)" />
         <text name="dr_col_distributed"   text="DISTRI." />
-        <text name="dr_col_storedMoved"   text="LAG./FLYTT." />
         <text name="dr_col_sold"          text="SÅLT" />
+        <text name="dr_col_storedMoved"   text="LAG./FLYTT." />
         <text name="dr_col_distrCost"     text="DISTR.KOSTN." />
 
         <!-- ================= Översikt: INSTÄLLNINGAR-vy kolumnrubriker =================
@@ -296,9 +298,11 @@
         <!-- ================= DIALOGEN SKAPA PALLAR =================
              Kvantitetsord bredvid stegaren och sammanfattningsraden ovanför. -->
         <text name="dr_spawn_info"    text="Innehav: %s    Pall: %s    Max: %d    Skapar: %s" />
+        <text name="dr_spawn_info_bale"  text="Innehav: %s    Bal: %s    Max: %d    Skapar: %s" />
         <!-- Namn på en PALLTYP i rullgardinen; kapaciteten och, för en moddad pall, moddens
              namn läggs till i koden, t.ex. "Pall - 1 000 L (Lyftbara pallar och balar)". -->
         <text name="dr_spawn_palletType" text="Pall" />
+        <text name="dr_spawn_baleType"   text="Bal" />
         <!-- Kvantitetsstegare: valt antal, maximum och de exakta litrarna som antalet motsvarar.
              Läser "2 / 3  (2 000 L)". Behåll alla tre platshållare och deras ordning. -->
         <text name="dr_spawn_count"   text="%d / %d  (%s)" />

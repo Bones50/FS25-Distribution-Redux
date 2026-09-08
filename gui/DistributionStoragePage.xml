@@ -109,7 +109,6 @@
                     </Bitmap>
                     <Text profile="SDBarLabel"      position="222px 23px" size="180px 15px" name="barHeld" />
                     <Text profile="SDBarLabelRight" position="342px 23px" size="180px 15px" name="barCap" />
-
                     <Text profile="SDRowCellCenter" position="530px 0px" size="90px 42px" textSize="12px" name="recvText" />
                     <Text profile="SDRowCellCenter" position="628px 0px" size="90px 42px" textSize="12px" name="distText" />
 
@@ -137,6 +136,82 @@
             </SmoothList>
             <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 672px" with="anchorTopRight">
                 <Slider profile="fs25_listSlider" size="6px 664px" dataElementId="detailList" id="detailSlider" />
+            </ThreePartBitmap>
+
+            <SmoothList profile="SDList" id="detailListSizes" position="0px 0px" size="1090px 672px"
+                        focusChangeTop="nil" focusChangeBottom="nil" visible="false">
+                <ListItem profile="SDListItemSizes" name="rowTemplate" size="1090px 56px" onClick="onClickDetailRow">
+                    <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
+                    <Text profile="SDRowCell" position="44px 0px" size="1030px 56px" textSize="12px" name="noticeText" visible="false" />
+                    <Bitmap position="12px 9px" size="24px 24px" name="fillIcon" imageColor="1 1 1 1" />
+                    <Text profile="SDRowCell" position="44px 0px" size="114px 56px" textSize="12px" name="fillName" />
+                    <!-- STORAGE TYPE, abbreviated: Pool / Ind / Link. Restored after the merged table
+                         dropped it, in the 56px taken off the product name. It sits BEFORE the bar so
+                         the row reads "what it is, then how it shares the tank, then how full it is".
+                         Everything from 222px rightwards is untouched, so the table still ends at
+                         exactly 1090px. -->
+                    <Text profile="SDRowCell" position="166px 0px" size="48px 56px" textSize="12px" name="typeText" />
+
+                    <!-- STORAGE BAR. Track = the whole tank; GREEN this product, RED what else occupies
+                         it, ORANGE line the configured "Max in" (pinned left when blocked). Segments are
+                         sized at populate time from the track's own absSize, so no px to normalised
+                         arithmetic and it follows 6.15's widening for free. OTHERS is drawn FIRST and
+                         SELF over it, both anchored left, so only the max line is ever positioned.
+                         Geometry copied from fillIcon: 24px at y=9 would centre it, but the label line
+                         needs the room, so the WIDGET is centred instead (bar 4..22, labels 23..38). -->
+                    <Bitmap position="222px 4px" size="300px 18px" name="barBg"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                        <Bitmap position="0px 0px" size="300px 18px" name="barOthers"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.72 0.20 0.17 0.95" />
+                        <Bitmap position="0px 0px" size="300px 18px" name="barSelf"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+                        <!-- THE THREE CONFIGURED MARKS, declared AFTER the fills so they draw on top,
+                             and in the order reserve -> target -> max so the ceiling wins where two
+                             coincide. Each is positioned at runtime by setMark(); target and reserve
+                             hide themselves when the player has not set one.
+                             Colours are deliberately BRIGHTER than the fills they sit on, because the
+                             held fill is already green (0.31 0.72 0.31) and the others fill already red
+                             (0.72 0.20 0.17). A line in the same shade as the fill beneath it would
+                             be invisible exactly where it matters most.
+                             NOTE no double hyphen anywhere in this comment: it is an XML parse error
+                             and the whole page then fails to load (CLAUDE.md 5.10 / 5.60). -->
+                        <Bitmap position="0px 0px" size="2px 18px" name="barReserve"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.32 0.92 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barTarget"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.25 0.72 1 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barMax"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 0.62 0.10 1" />
+                    </Bitmap>
+                    <Text profile="SDBarLabel"      position="222px 23px" size="180px 15px" name="barHeld" />
+                    <Text profile="SDBarLabelRight" position="342px 23px" size="180px 15px" name="barCap" />
+                    <Text profile="SDBarLabel" position="222px 38px" size="440px 15px" name="barSizes" />
+                    <Text profile="SDRowCellCenter" position="530px 0px" size="90px 56px" textSize="12px" name="recvText" />
+                    <Text profile="SDRowCellCenter" position="628px 0px" size="90px 56px" textSize="12px" name="distText" />
+
+                    <!-- MODE keeps its full 235px of text: 5.55 records a real bug from truncating it
+                         ("Distribute + S..." read as plain Distribute and hid a silo selling everything).
+                         The arrows step it in place; a click on one is consumed by the button, and
+                         SmoothList only treats a click as row-selection when no child used it, so
+                         pressing an arrow does not also re-select the row (5.64). Hidden on the notice
+                         row, actively, because cells are recycled. -->
+                    <Button profile="fs25_multiTextOptionLeft"  position="726px 0px" name="modePrev" onClick="onModePrev" />
+                    <Text   profile="SDRowCell"       position="756px 0px" size="170px 56px" textSize="12px" name="modeText" />
+                    <Button profile="SDRowArrowRight" position="926px 0px" name="modeNext" onClick="onModeNext" />
+
+                    <!-- STATUS, IN / OUT, as THREE cells because a Text carries one colour and the two
+                         halves need their own: a row whose input is blocked while its output is sending
+                         is not one state, and painting the whole string red said it was.
+                         FIXED SUB-COLUMNS rather than flowing text: an element cannot size itself to its
+                         content here, so the separator would drift with the word before it. Anchoring
+                         all three means the "/" lands in the same place on every row and the column
+                         reads down. 49px is ~8 characters at 12px, and "Blocked" is the longest word. -->
+                    <Text profile="SDRowCellRight"  position="964px 0px"  size="46px 56px" textSize="12px" name="statusIn" />
+                    <Text profile="SDRowCellCenter" position="1010px 0px" size="10px 56px" textSize="12px" name="statusSep" />
+                    <Text profile="SDRowCell"       position="1020px 0px" size="70px 56px" textSize="12px" name="statusOut" />
+                </ListItem>
+            </SmoothList>
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 672px" with="anchorTopRight" visible="false">
+                <Slider profile="fs25_listSlider" size="6px 664px" dataElementId="detailListSizes" id="detailSliderSizes" />
             </ThreePartBitmap>
         </GuiElement>
     </GuiElement>

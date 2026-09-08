@@ -166,6 +166,13 @@
     <Profile name="SDListItemStats" extends="SDListItem">
         <height value="42px"/>
     </Profile>
+    <!-- Storage page rows carry a SECOND label line under the bar (the shed "Sizes:" line at y=38),
+         so they are 14px taller than SDListItemStats. Only the Storage page uses this; the Overview
+         tab and every other SDListItemStats consumer keep their 42px pitch. -->
+    <Profile name="SDListItemSizes" extends="SDListItem">
+        <height value="56px"/>
+    </Profile>
+
     <!-- 42px INFO rows: same pitch as SDListItemStats, but never highlighted. The Advanced Inputs dialog
          now has TWO lists, and only the upper one is an action target. The Block / Max / Target buttons
          act on its selected row, so that highlight must stay visible even when the list is not focused.

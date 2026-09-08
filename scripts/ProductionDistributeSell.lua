@@ -492,12 +492,16 @@ local function serverSpawn(placeable, fillTypeIndex, count, palletFilename, lite
         if SD.spawnPalletsFromProduction ~= nil then SD.spawnPalletsFromProduction(pp, fillTypeIndex, count, palletFilename, liters) end
     elseif placeable ~= nil and placeable.spec_husbandryPallets ~= nil and SD.spawnPalletsFromHusbandry ~= nil then
         SD.spawnPalletsFromHusbandry(placeable, fillTypeIndex, count, palletFilename, liters)
+    elseif placeable ~= nil and placeable.spec_objectStorage ~= nil and SD.spawnPalletsFromShed ~= nil then
+        SD.spawnPalletsFromShed(placeable, fillTypeIndex, count, palletFilename, liters)
     end
 end
+
 function DistributionSpawnEvent:run(connection)
     if connection:getIsServer() then return end   -- only the server acts on this; ignore if a client somehow receives it
     serverSpawn(self.placeable, self.fillTypeIndex, self.count, self.palletFilename, self.liters)
 end
+
 -- Host/SP: spawn directly. Client: ask the server. Returns true if the request was issued/handled.
 function DistributionSpawnEvent.request(placeable, fillTypeIndex, count, palletFilename, liters)
     if placeable == nil or fillTypeIndex == nil then return false end

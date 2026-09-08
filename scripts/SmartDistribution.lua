@@ -7146,6 +7146,40 @@ local function shedObjectCount(shed, ft)
     return n
 end
 
+SmartDistribution.shedStoredLiters = shedStoredLiters
+
+-- One-line list of the DISTINCT sizes stored in a shed for `ft`, e.g. "4,000 l, 5,000 l" (rendered as
+-- "Sizes: 4,000 l, 5,000 l" under the storage bar). Deduped by volume, so a pallet and a bale of the
+-- same size are one entry. Reads the base game's per-type grouping (spec.objectInfos, client-safe),
+-- falling back to spec.storedObjects (server). nil when the shed holds nothing of `ft`.
+function SmartDistribution.shedTypeSummaryText(shed, ft)
+    if shed == nil or ft == nil or shed.spec_objectStorage == nil then return nil end
+    local spec = shed.spec_objectStorage
+    local seen, order = {}, {}
+    local function add(o1)
+        if type(o1) ~= "table" then return end
+        local a = storedObjectAttrs(o1)
+        if a == nil or a.fillType ~= ft or (a.fillLevel or 0) <= 0 then return end
+        local vol = SmartDistribution.formatVolume(a.fillLevel or 0)
+        if not seen[vol] then
+            seen[vol] = true
+            order[#order + 1] = vol
+        end
+    end
+    if type(spec.objectInfos) == "table" then
+        for _, info in pairs(spec.objectInfos) do
+            if type(info) == "table" and type(info.objects) == "table" and #info.objects > 0 then
+                add(info.objects[1])
+            end
+        end
+    end
+    if #order == 0 and type(spec.storedObjects) == "table" then
+        for _, obj in ipairs(spec.storedObjects) do add(obj) end
+    end
+    if #order == 0 then return nil end
+    return table.concat(order, ", ")
+end
+
 -- sell up to `liters` of a shed's `ft` at market price, in place. Returns liters sold.
 local function sellShedLiters(shed, ft, liters, farmId)
     if liters <= 0 then return 0 end
@@ -9320,7 +9354,7 @@ end
 -- whole pallets.
 function SmartDistribution.palletCountForLiters(held, capacity)
     if type(held) ~= "number" or type(capacity) ~= "number" or capacity <= 0 or held <= 0 then return 0 end
-    local n = math.floor(held / capacity)
+    local n = math.floor(held / capacity + 1e-6)
     if (held - n * capacity) >= 1 then n = n + 1 end
     return n
 end
@@ -9491,6 +9525,68 @@ function SmartDistribution.spawnPalletsFromHusbandry(p, ft, count, filename, lit
     end
     spawnNext(count)
     return count
+end
+
+-- Manually release `count` stored objects of `ft` from a Pallet/Bale Storage Shed back out onto its pad.
+-- Server-only (like every shed mutation). Every stored object becomes one physical object via the base
+-- game's own object-storage release, which materialises it as whatever it actually is -- a PALLET for
+-- egg/wool/honey, a BALE for grass / straw / hay / silage. Removed from spec.storedObjects. Ignores
+-- `liters` (a shed releases whole stored objects, which may already be partial). Returns objects released.
+-- `filename` carries an optional type signature ("<className>|<fillLevel>") so only ONE exact bale/pallet
+-- definition is released (per the per-type Spawn dialog); nil releases any stored object of `ft`.
+function SmartDistribution.spawnPalletsFromShed(shed, ft, count, filename, liters)
+    if shed == nil or ft == nil or shed.spec_objectStorage == nil then return 0 end
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return 0 end
+    local spec = shed.spec_objectStorage
+    if type(spec.storedObjects) ~= "table" or shed.removeAbstractObjectFromStorage == nil then return 0 end
+    local wantSig = (type(filename) == "string" and filename ~= "") and filename or nil
+    local targets = {}
+    for _, obj in ipairs(spec.storedObjects) do
+        local a = storedObjectAttrs(obj)
+        if a ~= nil and a.fillType == ft and (a.fillLevel or 0) > 0
+           and type(obj.removeFromStorage) == "function" then
+            if wantSig == nil then
+                targets[#targets + 1] = obj
+            else
+                local cn = obj.REFERENCE_CLASS_NAME or obj.REFERENCE_CLASS or ""
+                local sig = cn .. "|" .. tostring(a.fillLevel)
+                -- aggregate options (no class name available client-side) match by fill level alone
+                if sig == wantSig or ("Aggregate|" .. tostring(a.fillLevel)) == wantSig then
+                    targets[#targets + 1] = obj
+                end
+            end
+        end
+    end
+    if #targets == 0 then return 0 end
+    local n = math.max(1, math.min(math.floor(count or 1), 50, #targets))
+    -- release onto the shed's normal drop area; fall back to a point ahead of the building
+    local x, y, z, rx, ry, rz
+    local areaNode = (type(spec.objectSpawn) == "table" and type(spec.objectSpawn.area) == "table"
+                      and spec.objectSpawn.area[1] and spec.objectSpawn.area[1].startNode) or nil
+    if areaNode then
+        x, y, z = localToWorld(areaNode, 0, 0, 0)
+        rx, ry, rz = getWorldRotation(areaNode)
+    elseif shed.rootNode then
+        x, y, z = getWorldTranslation(shed.rootNode)
+        local dx, dy, dz = localDirectionToWorld(shed.rootNode, 0, 0, 6)
+        rx, ry, rz = getWorldRotation(shed.rootNode)
+        x, y, z = x + dx, y + 1, z + dz
+    else
+        return 0
+    end
+    local released = 0
+    for i = 1, n do
+        local ok = pcall(function() shed:removeAbstractObjectFromStorage(targets[i], x, y, z, rx, ry, rz) end)
+        if not ok then break end
+        released = released + 1
+        x = x + 1.5                       -- nudge each next pallet to avoid stacking exactly on the spot
+    end
+    if released > 0 then
+        spec.numStoredObjects = #spec.storedObjects
+        if shed.setObjectStorageObjectInfosDirty ~= nil then pcall(function() shed:setObjectStorageObjectInfosDirty() end) end
+        if shed.raiseActive ~= nil then pcall(function() shed:raiseActive() end) end
+    end
+    return released
 end
 
 -- dev: test the husbandry pallet-spawn primitive before wiring it to the UI. sdSpawnHusb <index> [count]
@@ -9672,18 +9768,84 @@ function SmartDistribution.cmdTarget(self, ftName, pctStr)
         SmartDistribution.husbandryInputHeld(p, ft), SmartDistribution.husbandryInputCapacity(p, ft))
 end
 
--- Spawn options for a pallet-spawner husbandry output: the single pallet type its spawner uses, maxCount
+-- Spawn options for a pallet-spawner husbandry output: one option per available pallet type, maxCount
 -- capped by internally-held (pending) litres / unit capacity. Mirrors getSpawnOptions (production side).
 -- Husbandry twin of getSpawnOptions; source is the pen's internal buffer rather than a production storage.
+-- BEEHIVES: they carry no spec_husbandryPallets / palletSpawner (husbandryPalletSpawner returns nil), but
+-- palletTypesFor(nil, ft) still resolves the fill type's declared pallets from the fillTypeManager, and
+-- palletPendingLiters already reads spec_beehivePalletSpawner.pendingLiters -- so honey spawns exactly
+-- like wool/eggs, just without a building-specific override option.
 function SmartDistribution.getSpawnOptionsHusbandry(p, ft)
     local opts = {}
     if p == nil or ft == nil then return opts end
     local held = SmartDistribution.palletPendingLiters(p, ft)
-    local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)
+    local spawner = SmartDistribution.husbandryPalletSpawner(p, ft)   -- nil for a beehive: fine
     for _, t in ipairs(SmartDistribution.palletTypesFor(spawner, ft)) do
         opts[#opts + 1] = { kind = "pallet", name = SmartDistribution.palletTypeName(t), fillType = ft,
                             capacity = t.capacity, filename = t.filename,
                             maxCount = SmartDistribution.palletCountForLiters(held, t.capacity) }
+    end
+    return opts
+end
+
+
+-- Spawn options for a Pallet/Bale Storage Shed: one option per DISTINCT stored object definition, so
+-- different bale sizes / pallet types each get their own row and count. Reads the base game's own
+-- per-type grouping (spec.objectInfos, synced to clients) and falls back to grouping spec.storedObjects
+-- (server) when the infos carry only aggregates. maxCount is how many of THAT exact definition are
+-- stored. Grass / straw / hay / silage release as BALES, never pallets. NOTE: getDialogText MUST be
+-- called with a colon (and pcall'd) -- a dot-call throws and kills the whole spawn dialog.
+function SmartDistribution.getSpawnOptionsShed(shed, ft)
+    local opts = {}
+    if shed == nil or ft == nil or shed.spec_objectStorage == nil then return opts end
+    local spec = shed.spec_objectStorage
+    local function safeName(o1, isPallet, fillLevel)
+        local ok, s = pcall(function() return o1:getDialogText() end)
+        if ok and type(s) == "string" and s ~= "" then return s end
+        return ((isPallet and SmartDistribution.l10n("dr_spawn_palletType", "Pallet")
+                    or SmartDistribution.l10n("dr_spawn_baleType", "Bale"))
+        .. " - " .. tostring(math.floor(fillLevel or 0)) .. " l")
+    end
+    local function addOption(o1, count)
+        if type(o1) ~= "table" then return end
+        local a = storedObjectAttrs(o1)
+        if a == nil or a.fillType ~= ft or (a.fillLevel or 0) <= 0 then return end
+        local isPallet = SmartDistribution.storedObjectIsPallet(o1)
+        local cn = tostring(o1.REFERENCE_CLASS_NAME or o1.REFERENCE_CLASS or "")
+        if not isPallet and not string.find(cn, "Bale", 1, true) then return end
+        -- identity signature consumed by spawnPalletsFromShed (keep the format in sync)
+        local sig = cn .. "|" .. tostring(a.fillLevel)
+        opts[#opts + 1] = { kind = isPallet and "pallet" or "bale", name = safeName(o1, isPallet, a.fillLevel),
+                            fillType = ft, capacity = a.fillLevel, filename = sig, maxCount = count or 1 }
+    end
+    if type(spec.objectInfos) == "table" then
+        for _, info in pairs(spec.objectInfos) do
+            if type(info) == "table" then
+                if type(info.objects) == "table" and #info.objects > 0 then
+                    addOption(info.objects[1], info.numObjects or #info.objects)
+                elseif type(info.fillType) == "number" and type(info.fillLevel) == "number"
+                       and info.fillType == ft and (info.fillLevel or 0) > 0 then
+                    -- info-level aggregate: count unknown per definition, offer 1 (release by signature)
+                    opts[#opts + 1] = { kind = "bale", name = SmartDistribution.l10n("dr_spawn_baleType", "Bale") .. " - " .. tostring(math.floor(info.fillLevel)) .. " l",
+                                        fillType = ft, capacity = info.fillLevel,
+                                        filename = "Aggregate|" .. tostring(info.fillLevel), maxCount = 1 }
+                end
+            end
+        end
+    end
+    if #opts == 0 and type(spec.storedObjects) == "table" then
+        local groups, order = {}, {}
+        for _, obj in ipairs(spec.storedObjects) do
+            local a = storedObjectAttrs(obj)
+            if a ~= nil and a.fillType == ft and (a.fillLevel or 0) > 0
+               and type(obj.removeFromStorage) == "function" then
+                local cn = tostring(obj.REFERENCE_CLASS_NAME or obj.REFERENCE_CLASS or "")
+                local sig = cn .. "|" .. tostring(a.fillLevel)
+                if groups[sig] == nil then groups[sig] = { obj = obj, n = 0 }; order[#order + 1] = sig end
+                groups[sig].n = groups[sig].n + 1
+            end
+        end
+        for _, sig in ipairs(order) do addOption(groups[sig].obj, groups[sig].n) end
     end
     return opts
 end
@@ -9764,7 +9926,30 @@ function SmartDistribution.palletSpawnReady(asset, ft)
         local held = SmartDistribution.palletPendingLiters(asset, ft)
         return cap ~= nil and cap > 0 and held >= math.min(SmartDistribution.PALLET_SPAWN_MIN_L, cap)
     end
+    if asset.spec_objectStorage ~= nil then
+        local held = (SmartDistribution.shedStoredLiters ~= nil) and SmartDistribution.shedStoredLiters(asset, ft) or 0
+        return held >= SmartDistribution.PALLET_SPAWN_MIN_L
+    end
+
     return false
+end
+
+-- Footer-button label for the manual spawn: "Spawn Bales" when the source is a shed whose stored stock
+-- of `ft` is BALES (grass / straw / hay / silage), "Spawn Pallets" otherwise. Productions and pens
+-- always spawn pallets, and a MIXED pallet+bale shed keeps the pallet label -- there is one button and
+-- the dialog is where the per-type choice happens.
+function SmartDistribution.spawnButtonLabel(asset, ft)
+    local pallets = SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets")
+    if asset == nil or ft == nil or asset.spec_objectStorage == nil then return pallets end
+    local opts = SmartDistribution.getSpawnOptionsShed(asset, ft)
+    local hasBale, hasPallet = false, false
+    for _, o in ipairs(opts) do
+        if o.kind == "bale" then hasBale = true elseif o.kind == "pallet" then hasPallet = true end
+    end
+    if hasBale and not hasPallet then
+        return SmartDistribution.l10n("dr_title_spawnBales", "Spawn Bales")
+    end
+    return pallets
 end
 
 function SmartDistribution.cmdShow(self)
@@ -15167,6 +15352,9 @@ function SmartDistribution.openSpawnDialog(placeable, ft, onConfirm)
     elseif placeable ~= nil and placeable.spec_husbandryPallets ~= nil then
         local held = SmartDistribution.palletPendingLiters(placeable, ft)
         SmartDistribution._spawnDialog:setupHusbandry(placeable, ft, held, onConfirm)
+    elseif placeable ~= nil and placeable.spec_objectStorage ~= nil then
+        local held = (SmartDistribution.shedStoredLiters ~= nil) and SmartDistribution.shedStoredLiters(placeable, ft) or 0
+        SmartDistribution._spawnDialog:setupShed(placeable, ft, held, onConfirm)
     else
         return false
     end
