@@ -49,6 +49,7 @@
         <text name="dr_title_husbandry"       text="分发 - 畜牧" />
         <text name="dr_title_markets"         text="分发 - 市场" />
         <text name="dr_title_help"            text="分发 - 帮助" />
+        <text name="dr_tab_distribution"     text="分发" />
         <text name="dr_title_settings"        text="分发 - 设置" />
         <text name="dr_title_advanced"        text="高级" />
         <text name="dr_title_advancedInputs"  text="高级输入" />
@@ -121,9 +122,7 @@
         <text name="dr_status_short_idle"     text="空闲" />
         <text name="dr_status_short_blocked"  text="已阻" />
         <text name="dr_status_short_none"     text="-" />
-        <text name="dr_col_productionLines"   text="生产线" />
-        <text name="dr_col_lineInput"      text="输入" />
-        <text name="dr_col_lineOutput"     text="产出" />
+        <text name="dr_col_productionLines"   text="生产线" />
         <!-- "/mo" = per month. The figure is the line's monthly target. -->
         <text name="dr_col_targetMo"          text="目标/月" />
 
@@ -334,6 +333,13 @@
              and spawns nothing. The distinction is the whole point, so keep them distinct. -->
         <text name="dr_mode_holdPallets" text="保留托盘" />
 
+        <!-- ================= SILOS/BUNKERS ================= -->
+        <text name="dr_bunker_fermenting"    text="发酵中" />
+        <text name="dr_bunker_fermented"     text="已发酵 - 揭开以取用" />
+        <text name="dr_bunker_filling"       text="装填中" />
+        <text name="dr_bunker_fermentPct"    text="发酵中：%d%%"/>
+        <text name="dr_bunker_compactPct"    text="已压实：%d%%"/>
+
         <!-- ================= LINK STATUS =================
              The STATUS column. Three states: product actually moved on the last hourly pass,
              the link is live but nothing needed to move, or it is blocked in Advanced routing.
@@ -512,7 +518,7 @@
         <text name="dr_set_bestPriceDefault_v2"  text="立即出售" />
 
         <text name="dr_set_palletSpawnMode"     text="托盘生成" />
-        <text name="dr_set_palletSpawnMode_tt"  text="整托盘： 畜栏会在内部储存产品，并像生产设施一样只释放完整托盘。 原版：托盘立即出现并逐步填充。 永不：不会自动生成托盘，产品保留在内部，但仍可从内部进行分发、入库和出售。 你仍可通过“生成托盘”手动释放。 永不只适用于你的畜栏和生产设施； 蜂箱仍按正常方式生成（没有可用于出售的内部缓冲），商店购买的托盘也不受影响。" />
+        <text name="dr_set_palletSpawnMode_tt"  text="整托盘：畜栏会在内部储存产品，并像生产设施一样只释放完整托盘。原版：托盘立即出现并逐步填充。 永不：不会自动生成托盘，产品保留在内部，但仍可从内部进行分发、入库和出售。 你仍可通过“生成托盘”手动释放。永不只适用于你的畜栏和生产设施； 蜂箱仍按正常方式生成（没有可用于出售的内部缓冲），商店购买的托盘也不受影响。" />
         <text name="dr_set_palletSpawnMode_v1"  text="原版（逐步填充）" />
         <text name="dr_set_palletSpawnMode_v2"  text="仅整托盘" />
         <text name="dr_set_palletSpawnMode_v3"  text="永不生成托盘" />
@@ -539,7 +545,11 @@
         <text name="dr_set_menuRefresh_v2"  text="正常（2秒）" />
         <text name="dr_set_menuRefresh_v3"  text="宽松（10秒）" />
         <text name="dr_set_menuRefresh_v4"  text="仅手动" />
-
+        <text name="dr_set_passProfiler"    text="性能记录" />
+        <text name="dr_set_passProfiler_tt" text="将 DR 每次每小时流程的开销写入 log.txt，并记录其所执行的全球扫描次数。 仅在“慢速流程”下保持开启 - 除非单次每小时流程耗时超过 150 毫秒，否则它不会输出任何内容。 若有人要求你提供性能报告，则切换到“每次流程”：此后它每游戏小时记录两行日志，据此可将运行正常的农场与缓慢的农场进行对比。 Animal Redux 拥有相同设置，两者任一开启即可启用该功能。" />
+        <text name="dr_set_passProfiler_v1" text="关闭" />
+        <text name="dr_set_passProfiler_v2" text="仅慢速流程" />
+        <text name="dr_set_passProfiler_v3" text="每次流程（诊断）" />
         <text name="dr_set_debugEnabled"     text="调试日志" />
         <text name="dr_set_debugEnabled_tt"  text="将详细分发活动写入 log.txt（转移、出售、入库、补水和收费）。关闭可减少日志输出。" />
         <text name="dr_set_debugEnabled_v1"  text="启用" />
