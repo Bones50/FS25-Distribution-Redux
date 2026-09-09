@@ -115,7 +115,7 @@
         <text name="dr_status_short_idle"     text="Väntar" />
         <text name="dr_status_short_blocked"  text="Block" />
         <text name="dr_status_short_none"     text="-" />
-        <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
+        <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
         <text name="dr_col_lineInput"      text="INKOMMANDE" />
         <text name="dr_col_lineOutput"     text="UTGÅENDE" />
         <!-- "/mo" = per månad. Siffran är linjens månatliga mål. -->
@@ -529,6 +529,7 @@
         <text name="dr_set_passThroughStores_v1"  text="Behandla som produktion" />
         <text name="dr_set_passThroughStores_v2"  text="Behandla som förvaring" />
         <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av produktion" />
+
          <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
               pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
               ett byggnadsnamn i en lista med fast bredd. -->
@@ -547,12 +548,16 @@
         <text name="dr_set_menuRefresh_v2"  text="Normal (2s)" />
         <text name="dr_set_menuRefresh_v3"  text="Avslappnad (10s)" />
         <text name="dr_set_menuRefresh_v4"  text="Endast manuell" />
+        <text name="dr_set_passProfiler"    text="Prestandaloggning" />
+        <text name="dr_set_passProfiler_tt" text="Loggar DR:s timarbete till log.txt. Endast långsamma pass loggas, >150ms. Varje pass loggar två rader per timme för prestandaanalys. Animal Redux har samma inställning." />
+        <text name="dr_set_passProfiler_v1" text="Av" />
+        <text name="dr_set_passProfiler_v2" text="Endast långsamma pass" />
+        <text name="dr_set_passProfiler_v3" text="Varje pass (diagnostiskt)" />
 
         <text name="dr_set_debugEnabled"     text="Debug-loggning" />
         <text name="dr_set_debugEnabled_tt"  text="Skriv detaljerad distributionsaktivitet till log.txt (flyttar, försäljningar, lagringar, vattenpåfyllningar och avgifter). Stäng av för en tystare logg." />
         <text name="dr_set_debugEnabled_v1"  text="Aktiverad" />
         <text name="dr_set_debugEnabled_v2"  text="Inaktiverad" />
-
 
         <!-- ============ ANVÄNDARGUIDE (genererad: gen_guide_l10n.py) ============
              11 ämnen, en nyckel per icke-tomt stycke. Markörer i början av ett
@@ -820,7 +825,7 @@
 
         <!-- DJURPANELEN, ritas endast när ett tillägg registrerar en leverantör (API v4).
              Budget: blocketiketterna sitter i 234-480px kolumner med 11px, så håll dem korta. -->
-        <text name="dr_col_animalPanel" text="DJUR, FODER OCH BESÄTTNINGSVÄRDE" />
+        <text name="dr_col_animalPanel" text="DJUR, FODER OCH UPPFÖDNINGSVÄRDE" />
         <text name="dr_panel_animals" text="DJUR" />
         <text name="dr_panel_health" text="HÄLSA" />
         <text name="dr_panel_productivity" text="PRODUKTIVITET" />
@@ -829,16 +834,16 @@
         <text name="dr_panel_foodFactor" text="Foderfaktor %s" />
         <text name="dr_panel_grazing" text="betesgång" />
         <text name="dr_panel_noFeedData" text="inga foderdata" />
-        <text name="dr_panel_herdValue" text="BESÄTTNINGSVÄRDE" />
+        <text name="dr_panel_herdValue" text="UPPFÖDNINGSVÄRDE" />
         <text name="dr_panel_ofPeak" text="av %s vid maxålder" />
-        <text name="dr_panel_pastPeak" text="efter max - värdet sjunker med åldern" />
+        <text name="dr_panel_pastPeak" text="passerat max - värdet sjunker med åldern" />
         <!-- resultatrader. Teckenbudget: apProfitLabel är 130px med 11px, alltså ca 20
              tecken; de fyra uppdelningsorden delar på 740px med fyra siffror, så
              håll varje under ca 10. -->
         <text name="dr_panel_profit" text="BERÄKN. PROGNOS - VINST / MÅN" />
         <text name="dr_panel_pfOutputs" text="produktion" />
         <text name="dr_panel_pfInputs" text="insatser" />
-        <text name="dr_panel_pfAgeing" text="åldring" />
+        <text name="dr_panel_pfAgeing" text="åldrande" />
         <text name="dr_panel_pfBirths" text="födsel" />
 
         <!-- varningen för kända problem-moddar som visas en gång vid laddning -->
