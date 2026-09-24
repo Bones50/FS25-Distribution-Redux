@@ -285,8 +285,11 @@ function DistributionSettingsPage:refreshPageTabs()
     if SmartDistribution ~= nil and SmartDistribution.drawPageTabs ~= nil then
         shown = SmartDistribution.drawPageTabs(self, labels, self.currentTab) or 0
     end
-    -- BEFORE the row work below, so the invalidateLayout at the end of this
-    -- function re-flows the rows into whatever height the layout now has.
+    -- THE LIVE FIGURE AGAIN: the strip is back above the content, so this layout has to
+    -- give up 46px whenever one is showing and take them back when it is not. Every other
+    -- page moves its own children down by that amount in the XML; this one cannot, because
+    -- its rows live in a ScrollingLayout that fills the container, so it is shrunk from the
+    -- TOP instead (applyProfile then setSize, 5.87c / 5.90).
     self:applyStripSpace(shown > 0)
 
     -- DR's own rows are visible only on DR's own tab, and a foreign tab's rows
@@ -360,6 +363,19 @@ function DistributionSettingsPage:onPageTab1() self:selectPageTab(1) end
 function DistributionSettingsPage:onPageTab2() self:selectPageTab(2) end
 function DistributionSettingsPage:onPageTab3() self:selectPageTab(3) end
 function DistributionSettingsPage:onPageTab4() self:selectPageTab(4) end
+function DistributionSettingsPage:onPageTab5() self:selectPageTab(5) end
+function DistributionSettingsPage:onPageTab6() self:selectPageTab(6) end
+
+---Which registry key this page's strip reads. The menu's A / D handler asks the
+-- CURRENT page for this, so one key handler serves every tabbed page and none of
+-- them has to know about the keys (Gui:keyEvent reaches the menu, not the frame,
+-- which is why the handler lives there at all -- 5.64).
+function DistributionSettingsPage:pageTabKey() return "settings" end
+
+---The two arrow buttons. Same call the keys make, so a click and a key press
+-- cannot come to disagree about what "next" means.
+function DistributionSettingsPage:onPageTabPrev() SmartDistribution.stepPageTab(self, "settings", -1) end
+function DistributionSettingsPage:onPageTabNext() SmartDistribution.stepPageTab(self, "settings",  1) end
 
 ---The base game's setting tooltip is `anchorTopRight`, 580px wide at +650px --
 -- geometry tuned for its OWN settings screen. In DR's page that box runs past the
@@ -462,7 +478,7 @@ function DistributionSettingsPage:onFrameOpen()
     ownTab()
     self:refreshPageTabs()
     -- SEED DR'S OWN SELECTORS FIRST, THEN CLAMP. The order here was wrong and it is what made the
-    -- hints run off the page on DR's tab while Animal Redux's were fine -- which looked like the fix
+    -- hints run off the page on DR's tab while Husbandry Redux's were fine -- which looked like the fix
     -- having been applied to one mod and not the other, and is really one line in the wrong place.
     --
     -- setState re-lays the row, and updateAbsolutePosition then rebuilds absPosition from
@@ -506,7 +522,7 @@ end
 -- THE ACTUAL BUG WAS THE TRIGGER, not the limit: this ran only from onFrameOpen,
 -- and the two tabs' rows share ONE layout with only one set visible at a time --
 -- so rows revealed by a TAB SWITCH were never measured at all. That is why the
--- Animal Redux hints were cut and DR's own were not.
+-- Husbandry Redux hints were cut and DR's own were not.
 --
 -- IDEMPOTENT, so running it on every switch is free: after the move the right edge
 -- is inside the limit and the next pass computes no overrun.

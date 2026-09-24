@@ -29,9 +29,99 @@ function DistributionMenuPage:initialize()
     self.menuButtonInfo = { self.backButtonInfo }
 end
 
+
+-- ---- THE DISTRIBUTION GROUP -------------------------------------------------------------------
+-- One left icon carries Productions, Storage, Animal Husbandry and Markets, and they appear as TOP
+-- TABS instead. These four are only TWO classes and both descend from this one, so the machinery
+-- lives here once rather than being copied (6.18). A page opts in with GROUP_MEMBER = true.
+--
+-- THESE TABS NAVIGATE; they do not swap content in place. Settings and Help switch rows and topics
+-- inside one page, and every one of these is a separate registered page with its own class, XML,
+-- footer and onFrameOpen -- so selecting one is a PAGE CHANGE. That is the only difference between
+-- the two kinds of tab, and it is carried by `entry.page` alone: the strip, the A / D keys and the
+-- arrows are all shared and know nothing about it.
+--
+-- Settings, Help and the Overview override every one of these, so they never reach them.
+
+---True only while this page is a group member AND the grouped layout is switched on. With the flag
+-- off the pages keep their own left icons and draw no strip, which is the whole rollback.
+function DistributionMenuPage:isGroupMember()
+    return self.GROUP_MEMBER == true and SmartDistribution ~= nil
+           and SmartDistribution.MENU_V2 == true
+end
+
+function DistributionMenuPage:pageTabKey()
+    return (SmartDistribution ~= nil and SmartDistribution.GROUP_TAB_KEY) or "distribution"
+end
+
+---Paint the strip, and work out which tab THIS page is.
+--
+-- currentTab is DERIVED, never remembered: arriving here means a page change has just happened, and
+-- the tab that is current is by definition the one whose entry points at this page. Remembering it
+-- would be a second source of truth for something the registry already answers.
+function DistributionMenuPage:refreshGroupTabs()
+    if SmartDistribution == nil or SmartDistribution.drawPageTabs == nil then return end
+    local key  = self:pageTabKey()
+    local list = SmartDistribution.pageTabs(key)
+    local labels, cur = {}, 1
+    for i, t in ipairs(list) do
+        labels[i] = t.label
+        if type(t.entry) == "table" and t.entry.page == self then cur = i end
+    end
+    self.currentTab = cur
+    -- Flag off: no labels, so drawPageTabs suppresses the strip and gives the header band back to
+    -- the page title. One call either way; the page needs no second path.
+    if not self:isGroupMember() then labels = {} end
+    SmartDistribution.drawPageTabs(self, labels, cur)
+end
+
+---Go to the page behind tab `i`. Reached from the tab buttons, the arrows and the A / D keys alike.
+function DistributionMenuPage:selectPageTab(i)
+    if not self:isGroupMember() then return end
+    local t = SmartDistribution.pageTabs(self:pageTabKey())[i]
+    if t == nil or type(t.entry) ~= "table" then return end
+    local target = t.entry.page
+    -- Already here: goToPage would still fire a page change, closing and reopening this very frame
+    -- for nothing -- which on these pages means a full re-enumeration.
+    if target == nil or target == self then return end
+    local menu = SmartDistribution._menu
+    if menu ~= nil and menu.goToPage ~= nil then pcall(menu.goToPage, menu, target) end
+end
+
+function DistributionMenuPage:onPageTab1() self:selectPageTab(1) end
+function DistributionMenuPage:onPageTab2() self:selectPageTab(2) end
+function DistributionMenuPage:onPageTab3() self:selectPageTab(3) end
+function DistributionMenuPage:onPageTab4() self:selectPageTab(4) end
+function DistributionMenuPage:onPageTab5() self:selectPageTab(5) end
+function DistributionMenuPage:onPageTab6() self:selectPageTab(6) end
+
+---STEP THIS PAGE'S TABS BY `delta`, WRAPPING. Returns true only if one actually moved.
+--
+-- THE CONTRACT THE MENU'S A / D HANDLER CALLS. Every DR page inherits this, which drives the
+-- shared registry through whatever key the page names; a page belonging to another mod implements
+-- the same method over its own tabs and gets the keys for free. One method, no registration, and
+-- nothing for a mod to version-test: an older DR simply never calls it.
+function DistributionMenuPage:stepPageTabBy(delta)
+    if SmartDistribution == nil or SmartDistribution.stepPageTab == nil then return false end
+    if self.pageTabKey == nil then return false end
+    return SmartDistribution.stepPageTab(self, self:pageTabKey(), delta) == true
+end
+
+function DistributionMenuPage:onPageTabPrev()
+    if SmartDistribution ~= nil then SmartDistribution.stepPageTab(self, self:pageTabKey(), -1) end
+end
+function DistributionMenuPage:onPageTabNext()
+    if SmartDistribution ~= nil then SmartDistribution.stepPageTab(self, self:pageTabKey(), 1) end
+end
+
 function DistributionMenuPage:onFrameOpen()
     DistributionMenuPage:superClass().onFrameOpen(self)
     self:setMenuButtonInfoDirty()
+    -- ONE CALL SITE for all four grouped pages, and a no-op for every other page: a page that is not
+    -- a member has no drTabBtn1 in its layout, so drawPageTabs finds nothing to paint. Settings,
+    -- Help and the Overview each drive their own strip from their own onFrameOpen and override
+    -- refreshGroupTabs' siblings, so they are not touched by this either.
+    if self.GROUP_MEMBER == true then self:refreshGroupTabs() end
 
     self:setSoundSuppressed(true)
     if self.boxLayout ~= nil then
@@ -151,6 +241,23 @@ function DistributionMenuPage:initPeriodOption()
     if opt == nil or opt.setTexts == nil then return end
     opt:setTexts(DistributionMenuPage.periodLabels())
     if opt.setState ~= nil then pcall(function() opt:setState(self.periodIndex) end) end
+end
+
+---EVERY PAGE OPENS ON CYCLE (author's call, 2026-09-09).
+--
+-- initPeriodOption runs in onGuiSetupFinished -- ONCE, when the GUI is built -- so its
+-- default only ever applied to the first open of a session and the selector then kept
+-- whatever the player last chose, for as long as the game ran. Opening the menu is the
+-- moment you want "what is happening right now", so the timescale resets to the
+-- shortest one and a deliberate choice lasts as long as you are looking at it.
+--
+-- The WIDGET is re-synced too: setting the index alone leaves the selector showing the
+-- old label while every figure beneath it reports the new period, which is worse than
+-- either behaviour on its own.
+function DistributionMenuPage:resetPeriodToCycle()
+    self.periodIndex = 1
+    local opt = self.periodOption
+    if opt ~= nil and opt.setState ~= nil then pcall(function() opt:setState(1) end) end
 end
 
 function DistributionMenuPage:currentWindow()

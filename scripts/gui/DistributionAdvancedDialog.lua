@@ -142,7 +142,11 @@ function DistributionAdvancedDialog:rebuildRows()
             local edges = (SmartDistribution.moveToActiveEdges ~= nil)
                 and SmartDistribution.moveToActiveEdges(ft) or nil
             for _, d in ipairs(self.rights) do
-                if not d.blocked and d.uid ~= nil
+                -- REFUSED, not blocked: the overlay replaces the status word with "Active -
+                -- Invalid", and on a destination that refuses the product that would overwrite
+                -- "Blocked" with a word claiming it is live. The TOGGLE below still reads .blocked,
+                -- because that is what it acts on.
+                if not d.refused and d.uid ~= nil
                    and SmartDistribution.moveToCreatesLoop(srcUid, ft, d.uid, edges) then
                     d.statusLabel = SmartDistribution.l10n("dr_adv_activeInvalid", "Active - Invalid")
                     d.status      = "INVALID"

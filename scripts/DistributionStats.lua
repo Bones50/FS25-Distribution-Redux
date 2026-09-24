@@ -720,8 +720,8 @@ local function capacityOf(p, ft, role, held)
         end
         if cap ~= nil then
             local pct = 100
-            if SmartDistribution.inputCapPct ~= nil then
-                local ok, v = pcall(SmartDistribution.inputCapPct, p, ft)
+            if SmartDistribution.inputCapLiters ~= nil then
+                local ok, v = pcall(SmartDistribution.inputCapLiters, p, ft)
                 if ok and type(v) == "number" then pct = math.max(0, math.min(100, v)) end
             end
             return cap * pct / 100
@@ -779,16 +779,16 @@ local function settingsFor(p, ft, role, brole, window)
             for _, f in ipairs(pool.fts) do if f == ft then s.pooled = true; break end end
         end
         s.blocked   = uid ~= nil and SD.isInputBlocked ~= nil and SD.isInputBlocked(uid, ft) or false
-        s.pct       = (SD.inputCapPct ~= nil) and SD.inputCapPct(p, ft, brole) or nil
+        s.capL      = (SD.inputCapLiters ~= nil) and SD.inputCapLiters(p, ft, brole) or nil
         -- with the ROLE: the Overview's settings view has a row per sub-building, and without it a pallet
         -- store's row reported the silo's ceiling and held (the same fault as the building tab's FREE
         -- STORAGE cell). settingsFor already carries the role -- it just was not passing it on.
         s.maxL      = (SD.inputEffectiveMaxLiters ~= nil) and SD.inputEffectiveMaxLiters(p, ft, brole) or nil
         s.inHeld    = (SD.inputHeldLevel ~= nil) and SD.inputHeldLevel(p, ft, brole) or nil
-        s.explicit  = uid ~= nil and SD.hasExplicitInputCapPct ~= nil and SD.hasExplicitInputCapPct(uid, ft) or false
+        s.explicit  = uid ~= nil and SD.hasExplicitInputCap ~= nil and SD.hasExplicitInputCap(uid, ft) or false
         -- nil (rendered "-") on a push-only receiver: a fill target there would only duplicate Max in %.
     local tgtOk = (SD.fillTargetApplies == nil) or SD.fillTargetApplies(p, ft, brole)
-    s.targetPct = tgtOk and uid ~= nil and SD.getInputTargetPct ~= nil and SD.getInputTargetPct(uid, ft) or nil
+    s.targetL2  = tgtOk and uid ~= nil and SD.getInputTargetStored ~= nil and SD.getInputTargetStored(uid, ft) or nil
         s.targetL   = tgtOk and (SD.inputTargetLiters ~= nil) and SD.inputTargetLiters(p, ft, brole) or nil
         s.inStatus  = uid ~= nil and SD.inputLinkStatus ~= nil and SD.inputLinkStatus(uid, ft, window) or nil
         -- drives the "nearing the cap" highlight. Measured against maxL (the EFFECTIVE ceiling the
@@ -803,13 +803,17 @@ local function settingsFor(p, ft, role, brole, window)
         local pr   = (SD.control ~= nil) and SD.control.priority or nil
         local list = (pr ~= nil and uid ~= nil and pr[uid] ~= nil) and pr[uid][ft] or nil
         s.ranked = (type(list) == "table") and #list or 0
-        -- outputDestinationsForMode returns the destinations relevant to this product's CURRENT mode, each
-        -- carrying .blocked, and deliberately mirrors DistributionAdvancedDialog -- so "3/5" here is the
-        -- same set of destinations the Advanced Outputs dialog lists, not a second opinion.
+        -- outputDestinationsForMode returns the destinations relevant to this product's CURRENT mode,
+        -- and deliberately mirrors DistributionAdvancedDialog -- so "3/5" here is the same set of
+        -- destinations the Advanced Outputs dialog lists, not a second opinion.
+        --
+        -- REFUSED, not blocked. A destination that has blocked the product on its own INPUT side will
+        -- take nothing, and counting it among the active ones made "0 of N" -- the silent-stall signal
+        -- this column exists for (5.37) -- unreachable for the commonest way of stalling a building.
         local dests = (SD.outputDestinationsForMode ~= nil) and SD.outputDestinationsForMode(p, ft) or nil
         if type(dests) == "table" then
             local n = 0
-            for _, d in ipairs(dests) do if not d.blocked then n = n + 1 end end
+            for _, d in ipairs(dests) do if not d.refused then n = n + 1 end end
             s.destTotal, s.destActive = #dests, n
         end
         s.outStatus = (SD.outputLinkStatus ~= nil) and SD.outputLinkStatus(p, ft, window) or nil

@@ -5,15 +5,55 @@
             <Bitmap profile="fs25_menuHeaderIconBg">
                 <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_productionChains"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_productions"/>
+            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_productions" name="drTitle" id="drTitle"/>
         </GuiElement>
 
+        <!-- PAGE TABS, under the header. The title above names the mod and the page; these
+             name the section within it, on their own line, the way Husbandry Redux's page does.
+             Costs the content 46px, which the page takes by ending at -856 instead of -810,
+             the depth the User Guide page has always used, so every list keeps its height.
+
+             SIX slots, hidden when unused so the strip never re-tiles (5.37). The count MUST
+             match SmartDistribution.PAGE_TAB_MAX; tools/check_lists.py pins the two together,
+             because a cap raised without slots silently drops tabs (the 5.92b failure).
+             BACKGROUND BEFORE BUTTON in each pair: children draw in order (5.86). -->
+        <Bitmap profile="SDList" position="0px 0px" size="1480px 40px" name="drTabStrip" id="drTabStrip">
+            <Button profile="SDHeaderTabArrow" position="0px 0px" size="40px 40px"
+                    name="drTabPrev" id="drTabPrev" onClick="onPageTabPrev" />
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="48px 0px" size="200px 40px" name="drTabBg1" id="drTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="48px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn1" id="drTabBtn1" onClick="onPageTab1"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="256px 0px" size="200px 40px" name="drTabBg2" id="drTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="256px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn2" id="drTabBtn2" onClick="onPageTab2"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="464px 0px" size="200px 40px" name="drTabBg3" id="drTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="464px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn3" id="drTabBtn3" onClick="onPageTab3"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="672px 0px" size="200px 40px" name="drTabBg4" id="drTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="672px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn4" id="drTabBtn4" onClick="onPageTab4"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="880px 0px" size="200px 40px" name="drTabBg5" id="drTabBg5"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="880px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn5" id="drTabBtn5" onClick="onPageTab5"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="1088px 0px" size="200px 40px" name="drTabBg6" id="drTabBg6"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1088px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn6" id="drTabBtn6" onClick="onPageTab6"/>
+            <Button profile="SDHeaderTabArrow" position="1296px 0px" size="40px 40px"
+                    name="drTabNext" id="drTabNext" onClick="onPageTabNext" />
+        </Bitmap>
+
         <!-- left: production building list -->
-        <Bitmap profile="SDList" position="0px -46px" size="370px 40px">
+        <Bitmap profile="SDList" position="0px -92px" size="370px 40px">
             <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="$l10n_dr_col_productions" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
-        <SmoothList profile="SDList" id="assetList" position="0px -90px" size="370px 720px"
+        <SmoothList profile="SDList" id="assetList" position="0px -136px" size="370px 720px"
                     onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
             <ListItem profile="SDListItem" name="rowTemplate" size="370px 52px" onClick="onClickAsset">
                 <Bitmap position="10px 6px" size="48px 40px" name="assetIcon" imageColor="1 1 1 1" />
@@ -24,9 +64,14 @@
             </ListItem>
         </SmoothList>
 
-        <!-- timescale for every figure on this page, plus a pointer to the Overview tab, which carries the
-             per-product breakdown these columns deliberately no longer repeat -->
-        <Bitmap profile="SDList" position="390px -45px" size="1090px 40px">
+        <!-- THE SELECTOR ROW, full width and left aligned on the y=-46 row under the tab strip, which
+             is the layout Husbandry Redux's own page uses and the row every DR page had left EMPTY.
+             It used to sit in the right column level with the building list's header, which spent a
+             table row on it and left this one blank. Moving it here gives the right column that row
+             back, so the tables below start at -92 beside the building list rather than 46px lower.
+             Carries the timescale for every figure on this page, plus a pointer to the Overview tab,
+             which has the per-product breakdown these columns deliberately no longer repeat. -->
+        <Bitmap profile="SDList" position="0px -46px" size="1480px 40px">
             <Text profile="SDRowCell" position="16px 0px" size="110px 40px" textSize="18px" text="$l10n_dr_lbl_timescale"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="130px 0px" size="380px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
@@ -43,7 +88,7 @@
         <!-- ===================== SECTION 1: INCOMING MATERIALS (inputs) =====================
              Columns match the Animal Husbandry page (name / RECEIVED / CONSUMED / HELD (L) / DISTRIBUTION)
              and the rows are selectable, ready for the input drill-down. -->
-        <Bitmap profile="SDList" position="390px -91px" size="1090px 40px">
+        <Bitmap profile="SDList" position="390px -92px" size="1090px 40px">
             <Text profile="SDHeaderLeft" position="44px 0px"  size="215px 40px" textSize="11px" text="$l10n_dr_col_incomingMaterials" />
             <Text profile="SDHeaderLeft" position="267px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
             <Text profile="SDHeaderCenter" position="618px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_received" />
@@ -52,7 +97,7 @@
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -133px" size="1090px 152px">
+        <GuiElement profile="SDList" position="390px -136px" size="1090px 152px">
             <SmoothList profile="SDList" id="inputList" position="0px 0px" size="1090px 152px"
                         onSelectionChanged="onInputSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickInputRow">
@@ -86,29 +131,50 @@
         </GuiElement>
 
         <!-- ===================== SECTION 2: PRODUCTION LINES (selectable, toggle on/off) ===================== -->
-        <Bitmap profile="SDList" position="390px -291px" size="1090px 40px">
-            <!-- Header aligned on the "=" axis (296px), exactly like the line rows below it.
+        <Bitmap profile="SDList" position="390px -294px" size="1090px 40px">
+            <!-- Header aligned on the "=" axis, exactly like the line rows below it. The axis is
+                 528px, moved right from 296 on 2026-09-21: 95% of recipes have ONE output, so a
+                 centred axis spent a quarter of every row on space one icon cannot use. The right
+                 end did not move (528 + 148 == 296 + 380), so STATUS and TARGET/MO keep their
+                 columns and nothing here risks the truncation 5.55 records.
                  THE SECTION KEEPS ITS OWN NAME. The tables above and below are INCOMING
                  MATERIALS and OUTGOING PRODUCTS, so a middle table labelled only INPUT / OUTPUT
                  reads as a third of the same kind. PRODUCTION LINES takes 16..150 and INPUT is
-                 right aligned in 154..280, so the longest translation of either cannot reach
-                 the other. The OUTPUT column is untouched: that space was already free. -->
+                 right aligned in 154..512, so the longest translation of either cannot reach
+                 the other. OUTPUT is now 572..716, three columns wide. -->
             <Text profile="SDHeaderLeft"  position="16px 0px"  size="134px 40px" textSize="11px" text="$l10n_dr_col_productionLines" />
-            <Text profile="SDHeaderRight" textAlignment="right" position="154px 0px" size="126px 40px" textSize="11px" text="$l10n_dr_col_lineInput" />
-            <Text profile="SDHeaderLeft"  position="296px 0px" size="40px 40px" textSize="11px" text="=" />
-            <Text profile="SDHeaderLeft"  position="340px 0px" size="376px 40px" textSize="11px" text="$l10n_dr_col_lineOutput" />
+            <Text profile="SDHeaderRight" textAlignment="right" position="154px 0px" size="358px 40px" textSize="11px" text="$l10n_dr_col_lineInput" />
+            <Text profile="SDHeaderLeft"  position="528px 0px" size="40px 40px" textSize="11px" text="=" />
+            <Text profile="SDHeaderLeft"  position="572px 0px" size="144px 40px" textSize="11px" text="$l10n_dr_col_lineOutput" />
             <Text profile="SDHeaderLeft"  position="726px 0px" size="130px 40px" textSize="11px" text="$l10n_dr_col_status" />
             <Text profile="SDHeaderRight" position="866px 0px" size="224px 40px" textSize="11px" text="$l10n_dr_col_targetMo" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
 
-        <GuiElement profile="SDList" position="390px -333px" size="1090px 152px">
-            <SmoothList profile="SDList" id="lineList" position="0px 0px" size="1090px 152px"
+        <GuiElement profile="SDList" position="390px -338px" size="1090px 193px">
+            <SmoothList profile="SDList" id="lineList" position="0px 0px" size="1090px 193px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="outputList">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickLineRow">
-                    <!-- LINE ICON STRIP: [amount] [input icon] ... "-->" ... [amount] [output icon]
-                         Up to 12 inputs and 8 outputs. Lua (setLineInputIcons) computes every number,
+                    <!-- THROUGHPUT GLYPH, left of the input strip. Says how this production point
+                         divides its rated speed across the lines that are switched on (5.28), which is
+                         what explains a halved CONSUMED (EXP.) figure and is otherwise invisible in the
+                         mod: two straight arrows = PARALLEL (each line at its own full rate), two arrows
+                         that CROSS = SERIES (one budget shared between them).
+                         The file is set at RUNTIME, not here: GuiOverlay.resolveFilename substitutes only
+                         three base globals and does no mod-relative resolution, so an imageFilename
+                         attribute cannot name a file this mod ships (5.80). Drawn white on transparent so
+                         imageColor tints it. thruIcon IS in LAYOUT_KEEP_ASPECT_NAMES: it is a real picture
+                         and would otherwise be stretched horizontally on an ultrawide display (6.15). -->
+                    <Bitmap position="6px 13px" size="48px 24px" name="thruIcon"
+                            imageColor="0.82 0.85 0.89 1" visible="false" />
+                    <!-- LINE ICON STRIP: [amount] [input icon] ... [axis glyph] ... [amount] [output icon]
+                         THE GLYPH IS NOT WRITTEN OUT HERE. Spelling it as an arrow put a literal
+                         close-comment inside this comment, which ENDED IT four lines early: the rest
+                         of this paragraph has been stray text in the layout since the 5.92 merge, and
+                         XML accepts stray text as element content, so nothing ever reported it. Found
+                         2026-09-23 by check_xml.py's marker-balance test, added the same day.
+                         Up to 15 inputs and 8 outputs. Lua (setLineInputIcons) computes every number,
                          icon and arrow position at runtime; the values below are only the reference
                          grid (inIcon1/inIcon2 define the pixel unit) and are laid out on a fixed 86px
                          pitch. No "+" separators are drawn. -->
@@ -167,7 +233,7 @@
                     <Text profile="SDRowCell" textBold="true" position="0px 0px" size="20px 42px" textSize="18px" name="outSep5" text="+" visible="false" />
                     <Text profile="SDRowCell" textBold="true" position="0px 0px" size="20px 42px" textSize="18px" name="outSep6" text="+" visible="false" />
                     <Text profile="SDRowCell" textBold="true" position="0px 0px" size="20px 42px" textSize="18px" name="outSep7" text="+" visible="false" />
-                    <Text profile="SDRowCell" textBold="true" position="296px 0px" size="40px 42px" textSize="18px" name="inArrow" text="=" visible="false" />
+                    <Text profile="SDRowCell" textBold="true" position="528px 0px" size="40px 42px" textSize="18px" name="inArrow" text="=" visible="false" />
                     <Text profile="SDRowCellR" textAlignment="center" position="740px -11px" size="40px 14px" textSize="10px" name="outNum1" visible="false" />
                     <Bitmap position="780px 13px" size="24px 24px" name="outIcon1" imageColor="1 1 1 1" visible="false" />
                     <Text profile="SDRowCellR" textAlignment="center" position="826px -11px" size="40px 14px" textSize="10px" name="outNum2" visible="false" />
@@ -190,15 +256,15 @@
                     <Text profile="SDRowCellR" position="866px 0px" size="224px 42px" textSize="12px" name="prodMo" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 152px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 144px" dataElementId="lineList" id="lineSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 193px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 185px" dataElementId="lineList" id="lineSlider" />
             </ThreePartBitmap>
         </GuiElement>
 
         <!-- ===================== SECTION 3: OUTGOING PRODUCTS (selectable, cycle distribution) =====================
              DISTRIBUTED is everything that left: distributed + stored/moved + sold, with the sale value in
              brackets. The separate DISTR / STORED / SOLD split now lives on the Overview tab. -->
-        <Bitmap profile="SDList" position="390px -491px" size="1090px 40px">
+        <Bitmap profile="SDList" position="390px -537px" size="1090px 40px">
             <Text profile="SDHeaderLeft"  position="44px 0px"  size="155px 40px" textSize="11px" text="$l10n_dr_col_outgoingProducts" />
             <Text profile="SDHeaderLeft"  position="207px 0px" size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
             <!-- the three flow columns each gave up width (100->84, 95->79, 115->87) to fund the in-row
@@ -210,7 +276,7 @@
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" position="390px -533px" size="1090px 277px">
+        <GuiElement profile="SDList" position="390px -579px" size="1090px 277px">
             <SmoothList profile="SDList" id="outputList" position="0px 0px" size="1090px 277px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="lineList" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickOutputRow">

@@ -43,14 +43,14 @@
              DELETE BOTH when the probe goes.                                          -->
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Distribution - Aperçu" />
+        <text name="dr_title_overview"        text="Aperçu" />
         <text name="dr_title_productions"     text="Distribution - Productions" />
         <text name="dr_title_storage"         text="Distribution - Stockage" />
         <text name="dr_title_husbandry"       text="Distribution - Élevages" />
         <text name="dr_title_markets"         text="Distribution - Marchés" />
-        <text name="dr_title_help"            text="Distribution - Aide" />
+        <text name="dr_title_help"            text="Aide" />
         <text name="dr_tab_distribution" text="DISTRIBUTION"/>
-        <text name="dr_title_settings"        text="Distribution - Paramètres" />
+        <text name="dr_title_settings"        text="Paramètres" />
         <text name="dr_title_advanced"        text="Avancé" />
         <text name="dr_title_advancedInputs"  text="Entrées avancées" />
         <text name="dr_title_spawnPallets"    text="Générer des palettes" />
@@ -79,8 +79,6 @@
         <text name="dr_col_loaded"        text="CHARGÉ" />
         <text name="dr_col_consumedExp"   text="CONSOMMÉ (PRÉV.)" />
         <text name="dr_col_unloaded"      text="DÉCHARGÉ" />
-        <text name="dr_col_heldMax"       text="CONSERVÉ (MAX)" />
-        <text name="dr_col_freeStorage"   text="ESPACE LIBRE" />
         <text name="dr_col_producedExp"   text="PRODUIT (PRÉV.)" />
         <text name="dr_col_distributed"   text="DISTRIBUÉ" />
         <text name="dr_col_sold"          text="VENDU" />

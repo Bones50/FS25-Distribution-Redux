@@ -17,13 +17,13 @@
         <text name="dr_input_openManager" text="Verteilungsmenü" />
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Verteilung - Übersicht" />
+        <text name="dr_title_overview"        text="Übersicht" />
         <text name="dr_title_productions"     text="Verteilung - Produktionen" />
         <text name="dr_title_storage"         text="Verteilung - Lager" />
         <text name="dr_title_husbandry"       text="Verteilung - Tierhaltung" />
         <text name="dr_title_markets"         text="Verteilung - Märkte" />
-        <text name="dr_title_help"            text="Verteilung - Hilfe" />
-        <text name="dr_title_settings"        text="Verteilung - Einstellungen" />
+        <text name="dr_title_help"            text="Hilfe" />
+        <text name="dr_title_settings"        text="Einstellungen" />
         <text name="dr_title_advanced"        text="Erweitert" />
         <text name="dr_title_advancedInputs"  text="Erweiterte Eingänge" />
         <text name="dr_title_spawnPallets"    text="Paletten erzeugen" />
@@ -50,8 +50,6 @@
         <text name="dr_col_loaded"        text="GELADEN" />
         <text name="dr_col_consumedExp"   text="VERBR. (ERW.)" />
         <text name="dr_col_unloaded"      text="ENTLADEN" />
-        <text name="dr_col_heldMax"       text="LAGER (MAX)" />
-        <text name="dr_col_freeStorage"   text="FREI" />
         <text name="dr_col_producedExp"   text="PROD. (ERW.)" />
         <text name="dr_col_distributed"   text="VERTEILT" />
         <text name="dr_col_storedMoved"   text="GELAG./BEWEGT" />
@@ -74,7 +72,6 @@
         <text name="dr_col_incomingProducts"  text="EINGEHENDE PRODUKTE" />
         <text name="dr_col_incomingMaterials" text="EINGEHENDE MATERIALIEN" />
         <text name="dr_col_outgoingProducts"  text="AUSGEHENDE PRODUKTE" />
-        <text name="dr_col_heldSlashMax"      text="LAGER / MAX" />
         <text name="dr_col_distribution"      text="VERTEILUNG" />
         <text name="dr_col_consumed"          text="VERBRAUCHT" />
         <text name="dr_col_produced"          text="PRODUZIERT" />
@@ -132,7 +129,6 @@
         <text name="dr_btn_close"         text="Schließen" />
 
         <!-- ================= FOOTER BUTTONS (set from Lua) ================= -->
-        <text name="dr_btn_cycleOutput"      text="Ausgabe wechseln" />
         <text name="dr_btn_advanced"         text="Erweitert" />
         <text name="dr_btn_sellTiming"       text="Verkaufszeit" />
         <text name="dr_btn_sellTimingOff"    text="Verkaufszeit: Verkauf ist AUS" />
@@ -201,7 +197,6 @@
         <!-- ================= ADVANCED OUTPUTS DIALOG ================= -->
         <text name="dr_adv_title"         text="Erweitert - %s" />
         <text name="dr_adv_activeInvalid" text="Aktiv - Ungültig" />
-        <text name="dr_adv_reserve"       text="     Reserve: " />
         <text name="dr_adv_noCapacity"    text="Keine Kapazität für eine Reserve" />
         <text name="dr_adv_reserveBad" text="Reserve: Bitte eine Literzahl eingeben" />
         <text name="dr_adv_reserveClamped" text="Reserve auf Kapazität begrenzt: %s" />

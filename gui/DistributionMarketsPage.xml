@@ -5,15 +5,55 @@
             <Bitmap profile="fs25_menuHeaderIconBg">
                 <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_prices"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_markets"/>
+            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_markets" name="drTitle" id="drTitle"/>
         </GuiElement>
 
+        <!-- PAGE TABS, under the header. The title above names the mod and the page; these
+             name the section within it, on their own line, the way Husbandry Redux's page does.
+             Costs the content 46px, which the page takes by ending at -856 instead of -810,
+             the depth the User Guide page has always used, so every list keeps its height.
+
+             SIX slots, hidden when unused so the strip never re-tiles (5.37). The count MUST
+             match SmartDistribution.PAGE_TAB_MAX; tools/check_lists.py pins the two together,
+             because a cap raised without slots silently drops tabs (the 5.92b failure).
+             BACKGROUND BEFORE BUTTON in each pair: children draw in order (5.86). -->
+        <Bitmap profile="SDList" position="0px 0px" size="1480px 40px" name="drTabStrip" id="drTabStrip">
+            <Button profile="SDHeaderTabArrow" position="0px 0px" size="40px 40px"
+                    name="drTabPrev" id="drTabPrev" onClick="onPageTabPrev" />
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="48px 0px" size="200px 40px" name="drTabBg1" id="drTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="48px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn1" id="drTabBtn1" onClick="onPageTab1"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="256px 0px" size="200px 40px" name="drTabBg2" id="drTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="256px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn2" id="drTabBtn2" onClick="onPageTab2"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="464px 0px" size="200px 40px" name="drTabBg3" id="drTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="464px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn3" id="drTabBtn3" onClick="onPageTab3"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="672px 0px" size="200px 40px" name="drTabBg4" id="drTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="672px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn4" id="drTabBtn4" onClick="onPageTab4"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="880px 0px" size="200px 40px" name="drTabBg5" id="drTabBg5"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="880px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn5" id="drTabBtn5" onClick="onPageTab5"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="1088px 0px" size="200px 40px" name="drTabBg6" id="drTabBg6"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1088px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn6" id="drTabBtn6" onClick="onPageTab6"/>
+            <Button profile="SDHeaderTabArrow" position="1296px 0px" size="40px 40px"
+                    name="drTabNext" id="drTabNext" onClick="onPageTabNext" />
+        </Bitmap>
+
         <!-- left: market list -->
-        <Bitmap profile="SDList" position="0px -46px" size="370px 40px">
+        <Bitmap profile="SDList" position="0px -92px" size="370px 40px">
             <Text profile="SDHeaderLeft" position="16px 0px" size="340px 40px" text="$l10n_dr_col_markets" />
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
-        <SmoothList profile="SDList" id="assetList" position="0px -90px" size="370px 720px"
+        <SmoothList profile="SDList" id="assetList" position="0px -136px" size="370px 720px"
                     onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
             <ListItem profile="SDListItem" name="rowTemplate" size="370px 52px" onClick="onClickAsset">
                 <Bitmap position="10px 6px" size="48px 40px" name="assetIcon" imageColor="1 1 1 1" />
@@ -24,9 +64,14 @@
             </ListItem>
         </SmoothList>
 
-        <!-- timescale for every figure on this page, plus a pointer to the Overview tab, which carries the
-             per-product breakdown these columns deliberately no longer repeat -->
-        <Bitmap profile="SDList" position="390px -46px" size="1090px 40px">
+        <!-- THE SELECTOR ROW, full width and left aligned on the y=-46 row under the tab strip, which
+             is the layout Husbandry Redux's own page uses and the row every DR page had left EMPTY.
+             It used to sit in the right column level with the building list's header, which spent a
+             table row on it and left this one blank. Moving it here gives the right column that row
+             back, so the tables below start at -92 beside the building list rather than 46px lower.
+             Carries the timescale for every figure on this page, plus a pointer to the Overview tab,
+             which has the per-product breakdown these columns deliberately no longer repeat. -->
+        <Bitmap profile="SDList" position="0px -46px" size="1480px 40px">
             <Text profile="SDRowCell" position="16px 0px" size="110px 40px" textSize="18px" text="$l10n_dr_lbl_timescale"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="130px 0px" size="380px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
@@ -58,8 +103,8 @@
             <ThreePartBitmap profile="fs25_lineSeparatorBottom" position="0px 2px" />
         </Bitmap>
 
-        <GuiElement profile="SDList" id="inputPanel" position="390px -136px" size="1090px 672px">
-            <SmoothList profile="SDList" id="detailList" position="0px 0px" size="1090px 672px"
+        <GuiElement profile="SDList" id="inputPanel" position="390px -136px" size="1090px 720px">
+            <SmoothList profile="SDList" id="detailList" position="0px 0px" size="1090px 720px"
                         focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1090px 42px" onClick="onClickDetailRow">
                     <!-- full-width overlay for the "+N blocked" notice row; hidden on every normal row -->
@@ -131,8 +176,8 @@
                     <Text profile="SDRowCell"       position="1020px 0px" size="70px 42px" textSize="12px" name="statusOut" />
                 </ListItem>
             </SmoothList>
-            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 672px" with="anchorTopRight">
-                <Slider profile="fs25_listSlider" size="6px 664px" dataElementId="detailList" id="detailSlider" />
+            <ThreePartBitmap profile="fs25_listSliderBox" position="12px 0px" size="12px 720px" with="anchorTopRight">
+                <Slider profile="fs25_listSlider" size="6px 712px" dataElementId="detailList" id="detailSlider" />
             </ThreePartBitmap>
         </GuiElement>
     </GuiElement>

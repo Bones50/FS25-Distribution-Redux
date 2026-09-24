@@ -34,6 +34,19 @@
 --   SmartDistribution.API.unregisterSettingsTab(modName)              -- v8
 --   SmartDistribution.API.registerHelpTab(modName, label, topics)     -- v9
 --   SmartDistribution.API.unregisterHelpTab(modName)                  -- v9
+--   SmartDistribution.API.registerOverviewTab(modName, label, content) -- v13
+--   SmartDistribution.API.unregisterOverviewTab(modName)               -- v13
+--
+--   A PAGE CONVENTION, not a function to call (v14): a page added with addMenuPage may
+--   define  page:stepPageTabBy(delta) -> boolean  to have the menu's A and D keys step
+--   ITS OWN tab strip. delta is -1 or +1, the page wraps at both ends, and it returns
+--   true only if a tab actually moved -- returning false leaves the key unclaimed, so
+--   A / D never become keys that silently do nothing. DR's own pages inherit a default
+--   that drives the shared tab registry; a mod with a strip of its own just implements
+--   the method. Nothing to register and nothing to version-test: an older DR never calls
+--   it, and the page keeps its own buttons and arrows either way.
+--   plan entry `ordered = true`                                        -- v11
+--   SmartDistribution.API.deliverableLitres(placeable, ft)             -- v12
 --
 --   fn(placeable, allowedFillTypes, poolNeed) -> plan | nil
 --
@@ -43,6 +56,10 @@
 --     request, and DR chooses by what is actually in stock and nearest. This
 --     matters because a planner cannot see the farm's stock: naming one product
 --     and hoping is how a pig pen starves on maize while its sorghum sits unused.
+--   v11: an entry may carry `ordered = true`. Its fillTypes are then a RANKING, best
+--     first, and DR draws from them in that order -- nearest source only breaking a
+--     tie -- instead of by the food-quality map. Without it DR ranks by quality, which
+--     puts a complete ration such as pig food ahead of every crop however dear it is.
 --   OR (v1, still accepted)
 --       { [fillTypeIndex] = litres }
 --     normalised internally to one single-alternative entry each.
@@ -68,7 +85,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 10
+SmartDistribution.API.VERSION = 14
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -360,7 +377,7 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
 
     local out, total, badValue, notAllowed = {}, 0, 0, 0
 
-    local function addEntry(fts, litres)
+    local function addEntry(fts, litres, ordered)
         if type(litres) ~= "number" or litres ~= litres           -- NaN
            or litres == math.huge or litres <= 0 then
             badValue = badValue + 1
@@ -377,7 +394,7 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
             end
         end
         if #usable == 0 then return end              -- nothing DR may deliver for this request
-        out[#out + 1] = { fillTypes = usable, litres = litres }
+        out[#out + 1] = { fillTypes = usable, litres = litres, ordered = ordered == true }
         total = total + litres
     end
 
@@ -386,7 +403,7 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
     if type(plan[1]) == "table" then
         for _, e in ipairs(plan) do
             if type(e) == "table" and type(e.fillTypes) == "table" then
-                addEntry(e.fillTypes, e.litres)
+                addEntry(e.fillTypes, e.litres, e.ordered)
             else
                 badValue = badValue + 1
             end
@@ -419,6 +436,41 @@ local function sanitisePlan(plan, allowed, poolNeed, who)
         for _, e in ipairs(out) do e.litres = e.litres * scale end
     end
     return out
+end
+
+-- ---------------------------------------------------------------------------
+---HOW MUCH OF `ft` COULD DR DELIVER TO THIS BUILDING RIGHT NOW (API v12, 2026-09-14).
+--
+-- For a feed planner choosing between rations: a ration whose crops the farm does not
+-- hold cannot be delivered, and asking for it only hands the barn to whatever fallback
+-- the plan names. Summed over the sources the Advanced Inputs drill-down lists for this
+-- consumer, keeping only those that would actually feed it -- a mode that distributes,
+-- not blocked, in reach, and not a production merely stocking it as an input -- at the
+-- litres each could hand over (providableLiters, the drill-down's own figure).
+--
+-- A MENU-GRADE ANSWER, not the allocator's: sourcesFor is memoised outside the hourly
+-- pass, and a source that empties can read stocked for up to its TTL. Good enough to
+-- pick a ration; it moves nothing itself.
+---Returns litres (>= 0), or nil when it cannot be answered.
+function SmartDistribution.API.deliverableLitres(placeable, ft)
+    if placeable == nil or ft == nil or SmartDistribution.sourcesFor == nil
+       or SmartDistribution.assetUid == nil or SmartDistribution.providableLiters == nil then
+        return nil
+    end
+    local ok, total = pcall(function()
+        local uid = SmartDistribution.assetUid(placeable)
+        if uid == nil then return nil end
+        local t = 0
+        for _, src in ipairs(SmartDistribution.sourcesFor(uid, ft) or {}) do
+            if src.canDistribute and not src.blocked and src.inReach ~= false
+               and not src.inputOnly and src.placeable ~= nil then
+                t = t + (SmartDistribution.providableLiters(src.placeable, ft) or 0)
+            end
+        end
+        return t
+    end)
+    if ok then return total end
+    return nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -466,7 +518,7 @@ end
 -- the three things a mod cannot get right on its own.
 --
 --   1. TIMING. DR registers its menu on Mission00.loadMission00Finished, and a
---      mod that appends to the same hook may run BEFORE it -- Animal Redux does,
+--      mod that appends to the same hook may run BEFORE it -- Husbandry Redux does,
 --      because mods load alphabetically and its chunk appends first. So
 --      SmartDistribution._menu does not exist yet at the moment a mod would
 --      naturally reach for it. onMenuReady fires AFTER the menu is built, and
@@ -875,6 +927,63 @@ function SmartDistribution.API.unregisterHelpTab(modName)
     if SmartDistribution.unregisterPageTab == nil then return false end
     local gone = SmartDistribution.unregisterPageTab("help", modName)
     if gone then log("help tab '%s' unregistered", modName) end
+    return gone
+end
+
+---A TAB ON THE OVERVIEW PAGE (v13).
+--
+-- The Overview is DR's whole-network view, and a mod with a network-wide view of its own belongs
+-- beside it rather than on a left icon of its own. Same shape as the settings and help tabs:
+--   `label`   already localised -- DR cannot resolve another mod's l10n namespace (5.60)
+--   `content` a table, or a bare string taken as `placeholder`
+--
+-- `content.placeholder`  text shown centred while this tab is active. What a mod uses before it
+--                        has anything to draw, and it is the mod's own string for the same reason
+--                        the label is.
+-- `content.onShow` /     called when the tab is entered and left, so a mod can reveal and hide
+-- `content.onHide`       elements of its own once it has some. Both optional and both pcall'd --
+--                        this runs inside DR's page, where a throw aborts the render and shows as
+--                        an EMPTY PAGE with nothing in the log (5.44 / 5.57).
+--
+-- DR DOES NOT DRAW A DEFAULT CAPTION for a tab that supplies no placeholder. An empty page is an
+-- honest "this mod registered a tab and has not filled it in"; inventing a caption would put DR's
+-- words under another mod's name.
+function SmartDistribution.API.registerOverviewTab(modName, label, content)
+    if type(modName) ~= "string" or modName == "" or type(label) ~= "string" then
+        log("registerOverviewTab refused: needs (string modName, string label, content)")
+        return false
+    end
+    if type(content) == "string" then content = { placeholder = content } end
+    if content == nil then content = {} end
+    if type(content) ~= "table" then
+        log("registerOverviewTab refused for '%s': content must be a table or a string", modName)
+        return false
+    end
+    if SmartDistribution.registerPageTab == nil then
+        log("registerOverviewTab refused: this DR has no page tab registry")
+        return false
+    end
+    -- COPIED, not stored by reference: the entry lives in DR's registry for the session, and a
+    -- provider mutating its own table afterwards would change what DR draws with no call to DR.
+    local entry = { overviewOwner = modName }
+    if type(content.placeholder) == "string" then entry.placeholder = content.placeholder end
+    if type(content.onShow) == "function" then entry.onShow = content.onShow end
+    if type(content.onHide) == "function" then entry.onHide = content.onHide end
+
+    local i, why = SmartDistribution.registerPageTab("overview", modName, label, entry)
+    if i == nil then
+        log("registerOverviewTab refused for '%s': %s", modName, tostring(why))
+        return false
+    end
+    log("overview tab '%s' registered as tab %d", modName, i)
+    return true
+end
+
+function SmartDistribution.API.unregisterOverviewTab(modName)
+    if type(modName) ~= "string" then return false end
+    if SmartDistribution.unregisterPageTab == nil then return false end
+    local gone = SmartDistribution.unregisterPageTab("overview", modName)
+    if gone then log("overview tab '%s' unregistered", modName) end
     return gone
 end
 

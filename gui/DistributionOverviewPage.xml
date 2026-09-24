@@ -5,20 +5,60 @@
             <Bitmap profile="fs25_menuHeaderIconBg">
                 <Bitmap profile="fs25_menuHeaderIcon" imageSliceId="gui.icon_ingameMenu_statistics"/>
             </Bitmap>
-            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_overview"/>
+            <Text profile="fs25_menuHeaderTitle" text="$l10n_dr_title_overview" name="drTitle" id="drTitle"/>
         </GuiElement>
+
+        <!-- PAGE TABS, under the header. The title above names the mod and the page; these
+             name the section within it, on their own line, the way Husbandry Redux's page does.
+             Costs the content 46px, which the page takes by ending at -856 instead of -810,
+             the depth the User Guide page has always used, so every list keeps its height.
+
+             SIX slots, hidden when unused so the strip never re-tiles (5.37). The count MUST
+             match SmartDistribution.PAGE_TAB_MAX; tools/check_lists.py pins the two together,
+             because a cap raised without slots silently drops tabs (the 5.92b failure).
+             BACKGROUND BEFORE BUTTON in each pair: children draw in order (5.86). -->
+        <Bitmap profile="SDList" position="0px 0px" size="1480px 40px" name="drTabStrip" id="drTabStrip">
+            <Button profile="SDHeaderTabArrow" position="0px 0px" size="40px 40px"
+                    name="drTabPrev" id="drTabPrev" onClick="onPageTabPrev" />
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="48px 0px" size="200px 40px" name="drTabBg1" id="drTabBg1"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="48px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn1" id="drTabBtn1" onClick="onPageTab1"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="256px 0px" size="200px 40px" name="drTabBg2" id="drTabBg2"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="256px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn2" id="drTabBtn2" onClick="onPageTab2"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="464px 0px" size="200px 40px" name="drTabBg3" id="drTabBg3"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="464px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn3" id="drTabBtn3" onClick="onPageTab3"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="672px 0px" size="200px 40px" name="drTabBg4" id="drTabBg4"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="672px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn4" id="drTabBtn4" onClick="onPageTab4"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="880px 0px" size="200px 40px" name="drTabBg5" id="drTabBg5"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="880px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn5" id="drTabBtn5" onClick="onPageTab5"/>
+            <ThreePartBitmap profile="fs25_subCategorySelectorTabbedTabBg"
+                             position="1088px 0px" size="200px 40px" name="drTabBg6" id="drTabBg6"/>
+            <Button profile="fs25_subCategorySelectorTabbedTab" position="1088px 0px" size="200px 40px"
+                    textAutoWidth="false" name="drTabBtn6" id="drTabBtn6" onClick="onPageTab6"/>
+            <Button profile="SDHeaderTabArrow" position="1296px 0px" size="40px 40px"
+                    name="drTabNext" id="drTabNext" onClick="onPageTabNext" />
+        </Bitmap>
 
         <!-- Controls, two rows of two. Grey backing + explicit light text on each, because the base
              settings container renders white-on-white outside the settings frame.
              Row 1: what to filter by, and which one to show. Row 2: timescale and grouping. -->
-        <Bitmap profile="SDList" position="0px -44px" size="700px 40px">
+        <Bitmap profile="SDList" position="0px -90px" size="700px 40px" id="ovFilterRow">
             <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_filterBy"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="550px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="filterModeOption" onClick="onFilterModeChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
         </Bitmap>
-        <Bitmap profile="SDList" position="740px -44px" size="740px 40px">
+        <Bitmap profile="SDList" position="740px -90px" size="740px 40px" id="ovShowRow">
             <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_show"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="590px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="filterValueOption" onClick="onFilterValueChanged"
@@ -26,14 +66,14 @@
             </Bitmap>
         </Bitmap>
 
-        <Bitmap profile="SDList" position="0px -88px" size="700px 40px">
+        <Bitmap profile="SDList" position="0px -134px" size="700px 40px" id="ovPeriodRow">
             <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_timescale"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="550px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="periodOption" onClick="onPeriodChanged"
                                  textColor="0.9 0.9 0.9 1" textColorHighlight="1 1 1 1"/>
             </Bitmap>
         </Bitmap>
-        <Bitmap profile="SDList" position="740px -88px" size="740px 40px">
+        <Bitmap profile="SDList" position="740px -134px" size="740px 40px" id="ovGroupRow">
             <Text profile="SDRowCell" position="16px 0px" size="130px 40px" textSize="18px" text="$l10n_dr_lbl_grouping"/>
             <Bitmap profile="fs25_multiTextOptionContainer" position="150px 0px" size="590px 40px" imageColor="0 0 0 0">
                 <MultiTextOption profile="fs25_settingsMultiTextOption" id="groupOption" onClick="onGroupChanged"
@@ -41,20 +81,20 @@
             </Bitmap>
         </Bitmap>
 
-        <!-- table header. All figures are litres. HELD is a live stock reading, bracketed with how much
-             room there is for it (for a product the building RECEIVES that is the Advanced Inputs "Max in"
-             figure, not the raw tank); every other column is a flow totalled over the selected timescale.
+        <!-- table header. All figures are litres. STORAGE is a live stock reading drawn as the same bar
+             the building tabs carry (this product green, whatever else shares the tank red behind it,
+             the configured ceiling orange), so it is NOT rescoped by the timescale; every other column
+             is a flow totalled over the selected timescale.
              RECEIVED / DISTRIBUTED are what Distribution Redux moved; LOADED / UNLOADED are what was put
              in or taken out by hand (player, helper, other mod). -->
-        <Bitmap profile="SDList" id="flowHeaderRow" position="0px -140px" size="1480px 40px">
+        <Bitmap profile="SDList" id="flowHeaderRow" position="0px -186px" size="1480px 40px">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="$l10n_dr_col_building" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="$l10n_dr_col_product" />
             <Text profile="SDHeaderRight" position="406px 0px"  size="64px 40px"  textSize="11px" text="$l10n_dr_col_received" />
             <Text profile="SDHeaderRight" position="474px 0px"  size="54px 40px"  textSize="11px" text="$l10n_dr_col_loaded" />
             <Text profile="SDHeaderRight" position="532px 0px"  size="110px 40px" textSize="11px" text="$l10n_dr_col_consumedExp" />
             <Text profile="SDHeaderRight" position="646px 0px"  size="64px 40px"  textSize="11px" text="$l10n_dr_col_unloaded" />
-            <Text profile="SDHeaderRight" position="714px 0px"  size="220px 40px" textSize="11px" text="$l10n_dr_col_heldMax" />
-            <Text profile="SDHeaderRight" position="938px 0px"  size="80px 40px"  textSize="11px" text="$l10n_dr_col_freeStorage" />
+            <Text profile="SDHeaderLeft"  position="714px 0px"  size="300px 40px" textSize="11px" text="$l10n_dr_col_storage" />
             <Text profile="SDHeaderRight" position="1022px 0px" size="110px 40px" textSize="11px" text="$l10n_dr_col_producedExp" />
             <Text profile="SDHeaderRight" position="1136px 0px" size="72px 40px"  textSize="11px" text="$l10n_dr_col_distributed" />
             <Text profile="SDHeaderRight" position="1212px 0px" size="84px 40px"  textSize="11px" text="$l10n_dr_col_storedMoved" />
@@ -71,7 +111,7 @@
              because the two views need genuinely different column widths and repositioning cells at runtime
              would mean px-to-normalised arithmetic on the live layout (declined for the same reason in 5.33).
              DEST is "active/total" routable destinations for the product's CURRENT mode. -->
-        <Bitmap profile="SDList" id="settingsHeaderRow" position="0px -140px" size="1480px 40px" visible="false">
+        <Bitmap profile="SDList" id="settingsHeaderRow" position="0px -186px" size="1480px 40px" visible="false">
             <Text profile="SDHeaderLeft"  position="56px 0px"   size="160px 40px" text="$l10n_dr_col_building" />
             <Text profile="SDHeaderLeft"  position="244px 0px"  size="156px 40px" text="$l10n_dr_col_product" />
             <Text profile="SDHeaderRight" position="406px 0px"  size="78px 40px"  textSize="11px" text="$l10n_dr_col_storageType" />
@@ -91,7 +131,7 @@
         </Bitmap>
 
         <!-- table body: one row per (building, product) -->
-        <GuiElement profile="SDList" id="flowListBox" position="0px -184px" size="1480px 626px">
+        <GuiElement profile="SDList" id="flowListBox" position="0px -230px" size="1480px 626px">
             <SmoothList profile="SDList" id="statsList" position="0px 0px" size="1480px 626px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1480px 42px" onClick="onClickStatsRow">
@@ -103,12 +143,37 @@
                     <Text profile="SDRowCellR" position="474px 0px"  size="54px 42px"  textSize="12px" name="loadedText" />
                     <Text profile="SDRowCellR" position="532px 0px"  size="110px 42px" textSize="12px" name="consumedText" />
                     <Text profile="SDRowCellR" position="646px 0px"  size="64px 42px"  textSize="12px" name="unloadedText" />
-                    <!-- HELD carries the longest string on the page: "473 L / 150,000 L (100%)" for an input
-                         row, "473 L (150,000 L) + 3,000 L (3p)" for a palletised output. It keeps the widest
-                         slot; REMAINING was fitted beside it by taking a few px from each of the narrow
-                         columns, which only ever hold a short figure or a dash. Table still ends at 1480. -->
-                    <Text profile="SDRowCellR" position="714px 0px"  size="220px 42px" textSize="12px" name="heldText" />
-                    <Text profile="SDRowCellR" position="938px 0px"  size="80px 42px"  textSize="12px" name="remainingText" />
+                    <!-- THE STORAGE BAR, exactly the widget the building tabs carry (5.69 / 5.80), in the
+                         714..1018 band the HELD (MAX) and FREE STORAGE text columns used to share. The track
+                         is 300px like every other copy of it, so the two screens read identically; the labels
+                         beneath carry the litres and the share, and the red band plus the orange ceiling say
+                         what FREE STORAGE used to spell out. Element NAMES are the contract with
+                         SmartDistribution.drawStorageBar: renaming one silently draws nothing. -->
+                    <Bitmap position="714px 4px" size="300px 18px" name="barBg"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.13 0.14 0.16 0.85">
+                        <Bitmap position="0px 0px" size="300px 18px" name="barOthers"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.72 0.20 0.17 0.95" />
+                        <Bitmap position="0px 0px" size="300px 18px" name="barSelf"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.31 0.72 0.31 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barReserve"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.32 0.92 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barTarget"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.25 0.72 1 1" />
+                        <Bitmap position="0px 0px" size="2px 18px" name="barMax"
+                                imageFilename="dataS/menu/base/graph_pixel.png" imageColor="1 0.62 0.10 1" />
+                    </Bitmap>
+                    <Text profile="SDBarLabel"      position="714px 23px" size="180px 15px" name="barHeld" />
+                    <Text profile="SDBarLabelRight" position="834px 23px" size="180px 15px" name="barCap" />
+                    <!-- "+3 [pallet]" over the right end of the track: SIBLINGS of barBg so they still show
+                         on a building whose internal store has no capacity to draw a track for, and declared
+                         AFTER it so they paint on top. This is what keeps the pad visible now that the
+                         "+ 3,000 L (3p)" tail of the old HELD cell is gone. -->
+                    <Bitmap position="914px 4px" size="100px 18px" name="barPalletPlate" visible="false"
+                            imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.10 0.11 0.13 0.78" />
+                    <Text profile="SDBarPalletCount" position="918px 4px" size="60px 18px" textSize="12px"
+                          name="barPalletCount" visible="false" />
+                    <Bitmap position="988px 5px" size="26px 16px" name="barPalletIcon" visible="false"
+                            imageColor="1 1 1 1" imageSize="512 512" imageUVs="105px 322px 303px 190px" />
                     <Text profile="SDRowCellR" position="1022px 0px" size="110px 42px" textSize="12px" name="producedText" />
                     <Text profile="SDRowCellR" position="1136px 0px" size="72px 42px"  textSize="12px" name="distributedText" />
                     <!-- SOLD carries a figure AND its money in brackets, "78,000 (E40,950)", so it needs
@@ -125,7 +190,7 @@
         </GuiElement>
 
         <!-- settings-view body. Same row pitch (42px) and the same first two cells as the flow list. -->
-        <GuiElement profile="SDList" id="settingsListBox" position="0px -184px" size="1480px 626px" visible="false">
+        <GuiElement profile="SDList" id="settingsListBox" position="0px -230px" size="1480px 626px" visible="false">
             <SmoothList profile="SDList" id="settingsList" position="0px 0px" size="1480px 626px"
                         onSelectionChanged="onListSelectionChanged" focusChangeTop="nil" focusChangeBottom="nil">
                 <ListItem profile="SDListItemStats" name="rowTemplate" size="1480px 42px" onClick="onClickStatsRow">
@@ -150,5 +215,14 @@
                 <Slider profile="fs25_listSlider" size="6px 618px" dataElementId="settingsList" id="settingsSlider" />
             </ThreePartBitmap>
         </GuiElement>
+
+        <!-- WHAT A FOREIGN TAB SHOWS UNTIL IT HAS CONTENT. The text is supplied by the
+             REGISTERING MOD, already localised, because DR cannot resolve another mod's
+             l10n namespace (5.60); DR owns only where it sits. Centred over the content
+             area, which runs from -44 to -810, so -380 is its middle.
+             Hidden here and shown only while a tab that asked for it is active: cells and
+             pages alike must set visibility on EVERY path, never assume a default. -->
+        <Text profile="SDPlaceholder" id="ovPlaceholder" name="ovPlaceholder"
+              position="0px -426px" size="1480px 60px" visible="false" />
     </GuiElement>
 </GUI>

@@ -43,13 +43,13 @@
              USUŃ OBA, gdy sonda odejdzie.                                          -->
 
         <!-- ================= tytuły stron i okien dialogowych ================= -->
-        <text name="dr_title_overview"        text="Dystrybucja - Przegląd" />
+        <text name="dr_title_overview"        text="Przegląd" />
         <text name="dr_title_productions"     text="Dystrybucja - Produkcja" />
         <text name="dr_title_storage"         text="Dystrybucja - Magazyny" />
         <text name="dr_title_husbandry"       text="Dystrybucja - Hodowla zwierząt" />
         <text name="dr_title_markets"         text="Dystrybucja - Punkty sprzedaży" />
-        <text name="dr_title_help"            text="Dystrybucja - Pomoc" />
-        <text name="dr_title_settings"        text="Dystrybucja - Ustawienia" />
+        <text name="dr_title_help"            text="Pomoc" />
+        <text name="dr_title_settings"        text="Ustawienia" />
         <text name="dr_title_advanced"        text="Zaawansowane" />
         <text name="dr_title_advancedInputs"  text="Zaawansowane wejścia" />
         <text name="dr_title_spawnPallets"    text="Utwórz palety" />
@@ -78,8 +78,6 @@
         <text name="dr_col_loaded"        text="ZAŁADOWANE" />
         <text name="dr_col_consumedExp"   text="ZUŻYTE (OCZEK.)" />
         <text name="dr_col_unloaded"      text="ROZŁADOWANE" />
-        <text name="dr_col_heldMax"       text="STAN (MAKS)" />
-        <text name="dr_col_freeStorage"   text="WOLNE MIEJSCE" />
         <text name="dr_col_producedExp"   text="WYPROD. (OCZEK.)" />
         <text name="dr_col_distributed"   text="DYSTRYBUOWANE" />
         <text name="dr_col_storedMoved"   text="MAGAZYN/PRZENIEŚ" />
@@ -105,7 +103,6 @@
         <text name="dr_col_incomingProducts"  text="PRODUKTY PRZYCHODZĄCE" />
         <text name="dr_col_incomingMaterials" text="MATERIAŁY PRZYCHODZĄCE" />
         <text name="dr_col_outgoingProducts"  text="PRODUKTY WYCHODZĄCE" />
-        <text name="dr_col_heldSlashMax"      text="STAN / MAKS" />
         <text name="dr_col_distribution"      text="DYSTRYBUCJA" />
         <text name="dr_col_consumed"          text="ZUŻYTE" />
         <text name="dr_col_produced"          text="WYPRODUKOWANE" />
@@ -167,7 +164,6 @@
         <!-- ================= PRZYCISKI STOPKI (ustawiane z Lua) =================
              Ten sam pasek stopki co klucze dr_btn_ powyzej, ta sama presja dlugosci. Sell Timing to
              LANCUCH FORMATU: %s to biezacy tryb sprzedazy ("Najlepsza cena" / "Natychmiast"). -->
-        <text name="dr_btn_cycleOutput"      text="Zmień tryb" />
         <text name="dr_btn_advanced"         text="Zaawansowane" />
         <text name="dr_btn_sellTiming"       text="Moment sprzedaży" />
         <text name="dr_btn_sellTimingOff"    text="Moment sprzedaży: sprzedaż jest WYŁĄCZONA" />
@@ -255,7 +251,6 @@
              jest wlaczony, ale wyslalby produkt w kolko z powrotem tam, skad wyruszyl. -->
         <text name="dr_adv_title"         text="Zaawansowane - %s" />
         <text name="dr_adv_activeInvalid" text="Aktywny - Nieprawidłowy" />
-        <text name="dr_adv_reserve"       text="     Rezerwa: " />
         <text name="dr_adv_noCapacity"    text="Brak pojemności do zarezerwowania" />
         <text name="dr_adv_reserveBad" text="Rezerwa: wpisz liczbę litrów" />
         <text name="dr_adv_reserveClamped" text="Rezerwa ograniczona do pojemności: %s" />

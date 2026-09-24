@@ -1,0 +1,1388 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Distribution Redux: the ROUTING GRAPH, scoped to ONE building.
+
+         sources | inputs | BUILDING | outputs | destinations
+
+     WHY A DIALOG RATHER THAN A TAB (author's call 2026-09-23). It was built as a page on the
+     stated grounds that a page gets more room than "chrome inside the same box" (5.106). That
+     does not survive measurement: fs25_dialogContentContainer costs 21 x 79, not hundreds, and a
+     dialog is not confined to fs25_menuContainer - so this box holds a graph about 300 design px
+     WIDER and a little taller than the page did, roughly a third more area.
+
+     It also buys the two things the page could not:
+       * BACK IS FREE. Close and you are back on the building tab with your row still selected.
+         On a page that is new state: goToPage keeps no history, so returning meant remembering
+         (page, asset, role, row) and restoring it, including when the building had been demolished.
+       * IT SITS BEHIND THE BUILDING, exactly as the Advanced Inputs / Outputs windows it can be
+         set to replace. One surface reached one way.
+
+     THE BOX IS SIZED AS A PERCENTAGE, and that is what makes it resolution-aware for free.
+     6.15's widening hook skips percentage widths (a percentage resolves from the parent, which is
+     already widened, so scaling it again compounds down the tree) - and a px box sized to fill
+     16:9 would land at 104% of an ultrawide screen and hang off the edge. The CONTENT stays in
+     design px and IS widened, capped at LAYOUT_TARGET_WIDTH (84% of screen), which a 96% box
+     always contains. The two systems compose; see SDRoutingDialogBox.
+
+     THE GRAPH BLOCK BELOW IS LIFTED FROM DistributionRoutingPage.xml BYTE FOR BYTE, including its
+     indentation, and still tiles to 1480. Capturing the extra width is a separate, deliberate
+     re-cut: a wrapper fault and a geometry fault look identical on screen, and doing both at once
+     is how 5.106 lost two builds.
+
+     LAYOUT NOTE: inside fs25_dialogContentContainer (pivotTopLeft) y runs NEGATIVE down from the
+     top and x runs positive from the left, which is the SAME convention as fs25_menuContainer.
+     That is why the lifted blocks need no coordinate change beyond their own row positions.
+     It is NOT the convention inside an ordinary container, where y runs up from the bottom
+     (5.106) - the canvas below is such a container, and its contents rely on it. -->
+<GUI name="DistributionRoutingDialog" onOpen="onOpen" onClose="onClose">
+    <GuiElement type="empty" profile="newLayer" />
+    <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
+
+    <GuiElement profile="SDRoutingDialogBox" id="dialogElement">
+        <ThreePartBitmap profile="fs25_dialogBgMiddleSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgTopSmall" />
+        <ThreePartBitmap profile="fs25_dialogBgBottom" />
+
+        <GuiElement profile="fs25_dialogContentContainer">
+            <!-- The title carries the BUILDING, set in Lua, so the graph never has to spend a row
+                 saying which one it is. The subtitle is the hint line the page kept beside its
+                 picker; it keeps its id, because the Lua writes to it by that name. -->
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_title_routing"
+                  position="0px -22px" />
+            <Text profile="fs25_dialogText"  id="rgHint" name="rgHint" text="" position="0px -56px" />
+
+        <!-- ================= THE CONTROL STRIP =================
+             The three settings the page could show and not change, put on the page rather than
+             behind a dialog (author's call 2026-09-22). Everything here acts on the SELECTED
+             input or the SELECTED output, the two products the columns either side of the
+             building already answer for, and every one of them writes through
+             DistributionControlEvent, the same event the Advanced Inputs / Advanced Outputs
+             dialogs use. So a change made here and one made there are the same write, replicate
+             identically in multiplayer, and cannot disagree.
+
+             LAID OUT AS Husbandry Redux's Auto Trader LAYS OUT A FIELD: caption directly above
+             its box, 340px wide, sentence case, in SDBarLabel rather than a table-header profile.
+             The element tree inside each box is AR's, element for element, so the two cannot drift
+             apart by accident. The PRODUCT is folded into the caption ("Max in - Wheat"), which is
+             what removed the separate IN: / OUT: cells and paid for the wider boxes.
+
+             ALL THREE ARE IN LITRES. The arrows move 1,000 L exactly; the settings are stored in
+             litres, so nothing here is converted and nothing rounds.
+
+             THE VALUES THEMSELVES LIVE ON THE PRODUCT NODES: max and target on every input,
+             reserve on every output, so the strip is where you CHANGE one and the column is
+             where you READ them all. Nothing shows a figure twice.
+
+             BLOCK ALL acts on the LINKS YOU CAN SEE: every source feeding the selected input,
+             every destination of the selected output, i.e. the chips in gaps 1 and 4, not the
+             building's product list. One TOGGLE button per side, labelled by what it will DO,
+             which is the onToggleAll idiom 5.4 established.
+
+             THERE IS NO NOTICE CELL. A transient message goes on the HINT line under the title,
+             which is 5.4's pattern for exactly this, and it frees the width these boxes need.
+
+             Boxes at 0 / 365 / 935 and buttons at 730 / 1300, all 340 and 180 wide on 25px
+             gutters: 1300 + 180 tiles to exactly 1480. -->
+        <Bitmap profile="SDList" position="40px -80px" size="1480px 20px" name="rgCtlLblRow" id="rgCtlLblRow">
+            <Text profile="SDFieldLabel" position="317px 0px" size="188px 20px" name="rgCtlMaxLbl" id="rgCtlMaxLbl" text="" />
+            <Text profile="SDFieldLabel" position="517px 0px" size="188px 20px" name="rgCtlTgtLbl" id="rgCtlTgtLbl" text="" />
+            <Text profile="SDFieldLabel" position="907px 0px" size="368px 20px" name="rgCtlResLbl" id="rgCtlResLbl" text="" />
+        </Bitmap>
+
+        <Bitmap profile="SDList" position="40px -100px" size="1480px 44px" name="rgCtlRow" id="rgCtlRow">
+            <Bitmap profile="fs25_multiTextOptionContainer" position="305px 3px" size="180px 38px"
+                    imageColor="0 0 0 0" name="rgCtlMaxBox" id="rgCtlMaxBox">
+                <ThreePartBitmap profile="fs25_multiTextOptionBg" />
+                <TextInput profile="SDNumberInput" id="rgCtlMax"
+                           onEnterPressed="onMaxEnter" onEscPressed="onMaxEsc"
+                           onTextChanged="onMaxChanged" onIsUnicodeAllowed="onMaxDigit"
+                           enterWhenClickOutside="true" />
+                <Text profile="SDNumberHint" id="rgCtlMaxHint" />
+                <Button profile="fs25_multiTextOptionLeft"  id="rgCtlMaxLeft" onClick="onMaxLeft" />
+                <Button profile="fs25_multiTextOptionRight" id="rgCtlMaxRight" onClick="onMaxRight" />
+            </Bitmap>
+            <Bitmap profile="fs25_multiTextOptionContainer" position="505px 3px" size="180px 38px"
+                    imageColor="0 0 0 0" name="rgCtlTgtBox" id="rgCtlTgtBox">
+                <ThreePartBitmap profile="fs25_multiTextOptionBg" />
+                <TextInput profile="SDNumberInput" id="rgCtlTgt"
+                           onEnterPressed="onTgtEnter" onEscPressed="onTgtEsc"
+                           onTextChanged="onTgtChanged" onIsUnicodeAllowed="onTgtDigit"
+                           enterWhenClickOutside="true" />
+                <Text profile="SDNumberHint" id="rgCtlTgtHint" />
+                <Button profile="fs25_multiTextOptionLeft"  id="rgCtlTgtLeft" onClick="onTgtLeft" />
+                <Button profile="fs25_multiTextOptionRight" id="rgCtlTgtRight" onClick="onTgtRight" />
+            </Bitmap>
+            <Bitmap profile="fs25_multiTextOptionContainer" position="895px 3px" size="180px 38px"
+                    imageColor="0 0 0 0" name="rgCtlResBox" id="rgCtlResBox">
+                <ThreePartBitmap profile="fs25_multiTextOptionBg" />
+                <TextInput profile="SDNumberInput" id="rgCtlRes"
+                           onEnterPressed="onResEnter" onEscPressed="onResEsc"
+                           onTextChanged="onResChanged" onIsUnicodeAllowed="onResDigit"
+                           enterWhenClickOutside="true" />
+                <Text profile="SDNumberHint" id="rgCtlResHint" />
+                <Button profile="fs25_multiTextOptionLeft"  id="rgCtlResLeft" onClick="onResLeft" />
+                <Button profile="fs25_multiTextOptionRight" id="rgCtlResRight" onClick="onResRight" />
+            </Bitmap>
+        </Bitmap>
+
+        <!-- ================= THE COLUMN HEADINGS =================
+             THEIR OWN ROW, in menuContainer coordinates, NOT inside the canvas. They used to be
+             declared at the canvas's top edge, and because y inside the canvas is measured UP from
+             its BOTTOM an element there extends UPWARD, so the headings overhung the canvas by
+             their own height and landed 12px inside the control strip (reported 2026-09-22 as the
+             headings overlapping the settings). Out here y is measured DOWN from the top and a row
+             cannot overhang the thing above it.
+
+             The x positions are the COLUMNS', and there are THREE copies of that table in this
+             file: the nodes, these headings, and the "+N" notes. The Lua holds none of it; it
+             reads slot 1's laid-out geometry instead, so the design px are never converted twice
+             (5.81). check_lists.py pins the three copies together. -->
+        <Bitmap profile="SDList" position="40px -168px" size="1480px 22px" name="rgHdrRow" id="rgHdrRow">
+            <Text profile="SDGraphHeader" position="0px 0px" size="350px 22px" textSize="14px"
+                  name="rgSrcHdr" id="rgSrcHdr" text="" />
+            <Text profile="SDGraphHeader" position="420px 0px" size="150px 22px" textSize="14px"
+                  name="rgInHdr" id="rgInHdr" text="" />
+            <Text profile="SDGraphHeader" position="640px 0px" size="200px 22px" textSize="14px"
+                  name="rgBldHdr" id="rgBldHdr" text="" />
+            <Text profile="SDGraphHeader" position="910px 0px" size="150px 22px" textSize="14px"
+                  name="rgOutHdr" id="rgOutHdr" text="" />
+            <Text profile="SDGraphHeader" position="1130px 0px" size="350px 22px" textSize="14px"
+                  name="rgDstHdr" id="rgDstHdr" text="" />
+        </Bitmap>
+
+        <!-- ================= THE GRAPH CANVAS =================
+             INSIDE THIS CANVAS THE Y AXIS POINTS UP. There are two opposite Y conventions in this
+             GUI: directly inside fs25_menuContainer a child takes a NEGATIVE y measured DOWN from
+             the top (every page in this mod), and inside an ORDINARY container y is measured UP
+             from the BOTTOM. Two builds of step 1 drew nothing because menuContainer style
+             negative y put every element below the bottom of the screen.
+
+             FIVE COLUMNS, tiling exactly: 350 / 150 / 200 / 150 / 350 on 70px gaps. The two
+             STORAGE columns are gone (2026-09-22): measured across the base game and all 43
+             installed mods, 587 of 588 storage bearing containers hold exactly ONE tank, so a
+             column of thirteen tank slots served one building in the entire corpus. The role's
+             totals and its pooled / individual word moved to the BUILDING node, which IS the
+             role; a product that lives in only some of a multi tank pool still says so on its
+             own node. The reclaimed width went to sources and destinations, which carry real
+             building names and truncate soonest.
+
+             THE EDGES ARE DECLARED FIRST so the nodes draw ON TOP of them (children draw in
+             order) and an edge cannot obscure the node it lands on. Every edge position here is a
+             placeholder: all of them are sized and positioned at runtime. Connectors are SQUARED,
+             so each logical edge is THREE axis aligned bars and nothing is ever rotated. -->
+        <GuiElement profile="SDList" position="40px -192px" size="1480px 680px" name="rgCanvas" id="rgCanvas">
+
+            <!-- gap 1 edges: 20 logical x 3 bars -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_1" id="rgE1_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_2" id="rgE1_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_3" id="rgE1_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_4" id="rgE1_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_5" id="rgE1_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_6" id="rgE1_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_7" id="rgE1_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_8" id="rgE1_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_9" id="rgE1_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_10" id="rgE1_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_11" id="rgE1_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_12" id="rgE1_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_13" id="rgE1_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_14" id="rgE1_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_15" id="rgE1_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_16" id="rgE1_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_17" id="rgE1_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_18" id="rgE1_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_19" id="rgE1_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_20" id="rgE1_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_21" id="rgE1_21" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_22" id="rgE1_22" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_23" id="rgE1_23" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_24" id="rgE1_24" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_25" id="rgE1_25" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_26" id="rgE1_26" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_27" id="rgE1_27" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_28" id="rgE1_28" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_29" id="rgE1_29" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_30" id="rgE1_30" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_31" id="rgE1_31" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_32" id="rgE1_32" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_33" id="rgE1_33" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_34" id="rgE1_34" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_35" id="rgE1_35" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_36" id="rgE1_36" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_37" id="rgE1_37" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_38" id="rgE1_38" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_39" id="rgE1_39" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_40" id="rgE1_40" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_41" id="rgE1_41" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_42" id="rgE1_42" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_43" id="rgE1_43" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_44" id="rgE1_44" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_45" id="rgE1_45" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_46" id="rgE1_46" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_47" id="rgE1_47" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_48" id="rgE1_48" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_49" id="rgE1_49" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_50" id="rgE1_50" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_51" id="rgE1_51" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_52" id="rgE1_52" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_53" id="rgE1_53" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_54" id="rgE1_54" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_55" id="rgE1_55" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_56" id="rgE1_56" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_57" id="rgE1_57" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_58" id="rgE1_58" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_59" id="rgE1_59" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE1_60" id="rgE1_60" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_1" id="rgLbl1_1" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_2" id="rgLbl1_2" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_3" id="rgLbl1_3" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_4" id="rgLbl1_4" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_5" id="rgLbl1_5" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_6" id="rgLbl1_6" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_7" id="rgLbl1_7" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_8" id="rgLbl1_8" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_9" id="rgLbl1_9" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_10" id="rgLbl1_10" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_11" id="rgLbl1_11" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_12" id="rgLbl1_12" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_13" id="rgLbl1_13" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_14" id="rgLbl1_14" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_15" id="rgLbl1_15" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_16" id="rgLbl1_16" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_17" id="rgLbl1_17" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_18" id="rgLbl1_18" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_19" id="rgLbl1_19" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl1_20" id="rgLbl1_20" text="" visible="false" />
+            <!-- THE PER EDGE TOGGLE, on the two ROUTABLE gaps only. The middle gaps are the
+                 building's own plumbing and a chip there would offer to switch something that
+                 is not a setting. check_lists.py pins the absence as firmly as the presence. -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_1" id="rgTog1_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_2" id="rgTog1_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_3" id="rgTog1_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_4" id="rgTog1_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_5" id="rgTog1_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_6" id="rgTog1_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_7" id="rgTog1_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_8" id="rgTog1_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_9" id="rgTog1_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_10" id="rgTog1_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_11" id="rgTog1_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_12" id="rgTog1_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_13" id="rgTog1_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_14" id="rgTog1_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_15" id="rgTog1_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_16" id="rgTog1_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_17" id="rgTog1_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_18" id="rgTog1_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_19" id="rgTog1_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog1_20" id="rgTog1_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+
+            <!-- gap 2 edges: 20 logical x 3 bars -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_1" id="rgE2_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_2" id="rgE2_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_3" id="rgE2_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_4" id="rgE2_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_5" id="rgE2_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_6" id="rgE2_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_7" id="rgE2_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_8" id="rgE2_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_9" id="rgE2_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_10" id="rgE2_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_11" id="rgE2_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_12" id="rgE2_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_13" id="rgE2_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_14" id="rgE2_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_15" id="rgE2_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_16" id="rgE2_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_17" id="rgE2_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_18" id="rgE2_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_19" id="rgE2_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_20" id="rgE2_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_21" id="rgE2_21" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_22" id="rgE2_22" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_23" id="rgE2_23" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_24" id="rgE2_24" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_25" id="rgE2_25" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_26" id="rgE2_26" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_27" id="rgE2_27" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_28" id="rgE2_28" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_29" id="rgE2_29" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_30" id="rgE2_30" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_31" id="rgE2_31" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_32" id="rgE2_32" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_33" id="rgE2_33" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_34" id="rgE2_34" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_35" id="rgE2_35" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_36" id="rgE2_36" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_37" id="rgE2_37" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_38" id="rgE2_38" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_39" id="rgE2_39" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_40" id="rgE2_40" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_41" id="rgE2_41" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_42" id="rgE2_42" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_43" id="rgE2_43" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_44" id="rgE2_44" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_45" id="rgE2_45" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_46" id="rgE2_46" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_47" id="rgE2_47" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_48" id="rgE2_48" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_49" id="rgE2_49" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_50" id="rgE2_50" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_51" id="rgE2_51" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_52" id="rgE2_52" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_53" id="rgE2_53" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_54" id="rgE2_54" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_55" id="rgE2_55" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_56" id="rgE2_56" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_57" id="rgE2_57" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_58" id="rgE2_58" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_59" id="rgE2_59" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE2_60" id="rgE2_60" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_1" id="rgLbl2_1" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_2" id="rgLbl2_2" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_3" id="rgLbl2_3" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_4" id="rgLbl2_4" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_5" id="rgLbl2_5" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_6" id="rgLbl2_6" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_7" id="rgLbl2_7" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_8" id="rgLbl2_8" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_9" id="rgLbl2_9" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_10" id="rgLbl2_10" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_11" id="rgLbl2_11" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_12" id="rgLbl2_12" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_13" id="rgLbl2_13" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_14" id="rgLbl2_14" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_15" id="rgLbl2_15" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_16" id="rgLbl2_16" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_17" id="rgLbl2_17" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_18" id="rgLbl2_18" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_19" id="rgLbl2_19" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl2_20" id="rgLbl2_20" text="" visible="false" />
+
+            <!-- gap 3 edges: 20 logical x 3 bars -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_1" id="rgE3_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_2" id="rgE3_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_3" id="rgE3_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_4" id="rgE3_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_5" id="rgE3_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_6" id="rgE3_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_7" id="rgE3_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_8" id="rgE3_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_9" id="rgE3_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_10" id="rgE3_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_11" id="rgE3_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_12" id="rgE3_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_13" id="rgE3_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_14" id="rgE3_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_15" id="rgE3_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_16" id="rgE3_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_17" id="rgE3_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_18" id="rgE3_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_19" id="rgE3_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_20" id="rgE3_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_21" id="rgE3_21" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_22" id="rgE3_22" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_23" id="rgE3_23" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_24" id="rgE3_24" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_25" id="rgE3_25" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_26" id="rgE3_26" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_27" id="rgE3_27" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_28" id="rgE3_28" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_29" id="rgE3_29" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_30" id="rgE3_30" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_31" id="rgE3_31" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_32" id="rgE3_32" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_33" id="rgE3_33" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_34" id="rgE3_34" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_35" id="rgE3_35" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_36" id="rgE3_36" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_37" id="rgE3_37" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_38" id="rgE3_38" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_39" id="rgE3_39" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_40" id="rgE3_40" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_41" id="rgE3_41" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_42" id="rgE3_42" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_43" id="rgE3_43" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_44" id="rgE3_44" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_45" id="rgE3_45" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_46" id="rgE3_46" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_47" id="rgE3_47" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_48" id="rgE3_48" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_49" id="rgE3_49" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_50" id="rgE3_50" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_51" id="rgE3_51" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_52" id="rgE3_52" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_53" id="rgE3_53" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_54" id="rgE3_54" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_55" id="rgE3_55" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_56" id="rgE3_56" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_57" id="rgE3_57" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_58" id="rgE3_58" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_59" id="rgE3_59" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE3_60" id="rgE3_60" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_1" id="rgLbl3_1" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_2" id="rgLbl3_2" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_3" id="rgLbl3_3" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_4" id="rgLbl3_4" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_5" id="rgLbl3_5" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_6" id="rgLbl3_6" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_7" id="rgLbl3_7" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_8" id="rgLbl3_8" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_9" id="rgLbl3_9" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_10" id="rgLbl3_10" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_11" id="rgLbl3_11" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_12" id="rgLbl3_12" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_13" id="rgLbl3_13" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_14" id="rgLbl3_14" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_15" id="rgLbl3_15" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_16" id="rgLbl3_16" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_17" id="rgLbl3_17" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_18" id="rgLbl3_18" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_19" id="rgLbl3_19" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl3_20" id="rgLbl3_20" text="" visible="false" />
+
+            <!-- gap 4 edges: 20 logical x 3 bars -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_1" id="rgE4_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_2" id="rgE4_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_3" id="rgE4_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_4" id="rgE4_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_5" id="rgE4_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_6" id="rgE4_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_7" id="rgE4_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_8" id="rgE4_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_9" id="rgE4_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_10" id="rgE4_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_11" id="rgE4_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_12" id="rgE4_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_13" id="rgE4_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_14" id="rgE4_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_15" id="rgE4_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_16" id="rgE4_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_17" id="rgE4_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_18" id="rgE4_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_19" id="rgE4_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_20" id="rgE4_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_21" id="rgE4_21" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_22" id="rgE4_22" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_23" id="rgE4_23" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_24" id="rgE4_24" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_25" id="rgE4_25" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_26" id="rgE4_26" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_27" id="rgE4_27" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_28" id="rgE4_28" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_29" id="rgE4_29" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_30" id="rgE4_30" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_31" id="rgE4_31" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_32" id="rgE4_32" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_33" id="rgE4_33" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_34" id="rgE4_34" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_35" id="rgE4_35" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_36" id="rgE4_36" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_37" id="rgE4_37" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_38" id="rgE4_38" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_39" id="rgE4_39" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_40" id="rgE4_40" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_41" id="rgE4_41" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_42" id="rgE4_42" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_43" id="rgE4_43" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_44" id="rgE4_44" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_45" id="rgE4_45" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_46" id="rgE4_46" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_47" id="rgE4_47" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_48" id="rgE4_48" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_49" id="rgE4_49" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_50" id="rgE4_50" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_51" id="rgE4_51" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_52" id="rgE4_52" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_53" id="rgE4_53" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_54" id="rgE4_54" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_55" id="rgE4_55" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_56" id="rgE4_56" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_57" id="rgE4_57" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_58" id="rgE4_58" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_59" id="rgE4_59" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgE4_60" id="rgE4_60" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_1" id="rgLbl4_1" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_2" id="rgLbl4_2" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_3" id="rgLbl4_3" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_4" id="rgLbl4_4" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_5" id="rgLbl4_5" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_6" id="rgLbl4_6" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_7" id="rgLbl4_7" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_8" id="rgLbl4_8" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_9" id="rgLbl4_9" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_10" id="rgLbl4_10" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_11" id="rgLbl4_11" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_12" id="rgLbl4_12" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_13" id="rgLbl4_13" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_14" id="rgLbl4_14" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_15" id="rgLbl4_15" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_16" id="rgLbl4_16" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_17" id="rgLbl4_17" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_18" id="rgLbl4_18" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_19" id="rgLbl4_19" text="" visible="false" />
+            <Text profile="SDRowCell" position="0px 0px" size="96px 14px" textSize="10px"
+                  name="rgLbl4_20" id="rgLbl4_20" text="" visible="false" />
+            <!-- THE PER EDGE TOGGLE, on the two ROUTABLE gaps only. The middle gaps are the
+                 building's own plumbing and a chip there would offer to switch something that
+                 is not a setting. check_lists.py pins the absence as firmly as the presence. -->
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_1" id="rgTog4_1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_2" id="rgTog4_2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_3" id="rgTog4_3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_4" id="rgTog4_4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_5" id="rgTog4_5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_6" id="rgTog4_6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_7" id="rgTog4_7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_8" id="rgTog4_8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_9" id="rgTog4_9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_10" id="rgTog4_10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_11" id="rgTog4_11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_12" id="rgTog4_12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_13" id="rgTog4_13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_14" id="rgTog4_14" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_15" id="rgTog4_15" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_16" id="rgTog4_16" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_17" id="rgTog4_17" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_18" id="rgTog4_18" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_19" id="rgTog4_19" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+            <Bitmap position="0px 0px" size="2px 2px" name="rgTog4_20" id="rgTog4_20" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.55 0.57 0.60 0.9" />
+
+            <!-- column: Src -->
+            <Bitmap position="0px 636px" size="350px 44px" name="rgSrc1" id="rgSrc1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 584px" size="350px 44px" name="rgSrc2" id="rgSrc2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 532px" size="350px 44px" name="rgSrc3" id="rgSrc3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 480px" size="350px 44px" name="rgSrc4" id="rgSrc4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 428px" size="350px 44px" name="rgSrc5" id="rgSrc5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 376px" size="350px 44px" name="rgSrc6" id="rgSrc6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 324px" size="350px 44px" name="rgSrc7" id="rgSrc7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 272px" size="350px 44px" name="rgSrc8" id="rgSrc8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 220px" size="350px 44px" name="rgSrc9" id="rgSrc9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 168px" size="350px 44px" name="rgSrc10" id="rgSrc10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 116px" size="350px 44px" name="rgSrc11" id="rgSrc11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 64px" size="350px 44px" name="rgSrc12" id="rgSrc12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Bitmap position="0px 12px" size="350px 44px" name="rgSrc13" id="rgSrc13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="296px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="296px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="296px 14px" textSize="10px" name="line3" />
+            </Bitmap>
+            <Text profile="SDRowCell" position="0px 14px" size="350px 18px" textSize="11px"
+                  name="rgSrcMore" id="rgSrcMore" text="" />
+
+            <!-- column: In -->
+            <Bitmap position="420px 636px" size="150px 44px" name="rgIn1" id="rgIn1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 584px" size="150px 44px" name="rgIn2" id="rgIn2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 532px" size="150px 44px" name="rgIn3" id="rgIn3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 480px" size="150px 44px" name="rgIn4" id="rgIn4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 428px" size="150px 44px" name="rgIn5" id="rgIn5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 376px" size="150px 44px" name="rgIn6" id="rgIn6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 324px" size="150px 44px" name="rgIn7" id="rgIn7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 272px" size="150px 44px" name="rgIn8" id="rgIn8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 220px" size="150px 44px" name="rgIn9" id="rgIn9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 168px" size="150px 44px" name="rgIn10" id="rgIn10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 116px" size="150px 44px" name="rgIn11" id="rgIn11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 64px" size="150px 44px" name="rgIn12" id="rgIn12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="420px 12px" size="150px 44px" name="rgIn13" id="rgIn13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Text profile="SDRowCell" position="420px 14px" size="150px 18px" textSize="11px"
+                  name="rgInMore" id="rgInMore" text="" />
+
+            <!-- column 3: the BUILDING. Positioned and SIZED at runtime (layoutBuilding): it has
+                 no fixed height, because it wraps its name, its picture, the role's storage
+                 totals and one row per production line. Everything here is a placeholder. -->
+            <Bitmap position="640px 285px" size="200px 170px" name="rgBldBg" id="rgBldBg" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.20 0.22 0.25 0.90" />
+            <Bitmap position="640px 0px" size="64px 52px" name="rgBldIcon" id="rgBldIcon" visible="false"
+                    imageColor="1 1 1 1" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 22px" textSize="14px"
+                  name="rgBldName" id="rgBldName" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 18px" textSize="11px"
+                  name="rgBldType" id="rgBldType" text="" visible="false" />
+            <!-- THE ROLE'S OWN STORAGE, which is what the two tank columns used to carry. -->
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 16px" textSize="10px"
+                  name="rgBldSto1" id="rgBldSto1" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 16px" textSize="10px"
+                  name="rgBldSto2" id="rgBldSto2" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 16px" textSize="10px"
+                  name="rgBldSto3" id="rgBldSto3" text="" visible="false" />
+            <!-- one row per production line; the last becomes "+N" past the cap -->
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL1" id="rgBldL1" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL2" id="rgBldL2" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL3" id="rgBldL3" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL4" id="rgBldL4" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL5" id="rgBldL5" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL6" id="rgBldL6" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL7" id="rgBldL7" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL8" id="rgBldL8" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL9" id="rgBldL9" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL10" id="rgBldL10" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL11" id="rgBldL11" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL12" id="rgBldL12" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL13" id="rgBldL13" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL14" id="rgBldL14" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL15" id="rgBldL15" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL16" id="rgBldL16" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL17" id="rgBldL17" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL18" id="rgBldL18" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL19" id="rgBldL19" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL20" id="rgBldL20" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL21" id="rgBldL21" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL22" id="rgBldL22" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL23" id="rgBldL23" text="" visible="false" />
+            <Text profile="SDRowCellCenter" position="640px 0px" size="200px 15px" textSize="10px"
+                  name="rgBldL24" id="rgBldL24" text="" visible="false" />
+
+            <!-- column: Out -->
+            <Bitmap position="910px 636px" size="150px 44px" name="rgOut1" id="rgOut1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 584px" size="150px 44px" name="rgOut2" id="rgOut2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 532px" size="150px 44px" name="rgOut3" id="rgOut3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 480px" size="150px 44px" name="rgOut4" id="rgOut4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 428px" size="150px 44px" name="rgOut5" id="rgOut5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 376px" size="150px 44px" name="rgOut6" id="rgOut6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 324px" size="150px 44px" name="rgOut7" id="rgOut7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 272px" size="150px 44px" name="rgOut8" id="rgOut8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 220px" size="150px 44px" name="rgOut9" id="rgOut9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 168px" size="150px 44px" name="rgOut10" id="rgOut10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 116px" size="150px 44px" name="rgOut11" id="rgOut11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 64px" size="150px 44px" name="rgOut12" id="rgOut12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Bitmap position="910px 12px" size="150px 44px" name="rgOut13" id="rgOut13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="8px 6px" size="32px 32px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="46px 13px"  size="98px 15px" textSize="11px" name="line1" />
+                <Text profile="SDRowCell" position="46px 0px"   size="98px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="46px -13px" size="98px 14px" textSize="9px" name="line3" />
+            </Bitmap>
+            <Text profile="SDRowCell" position="910px 14px" size="150px 18px" textSize="11px"
+                  name="rgOutMore" id="rgOutMore" text="" />
+
+            <!-- column: Dst -->
+            <Bitmap position="1130px 636px" size="350px 44px" name="rgDst1" id="rgDst1" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 584px" size="350px 44px" name="rgDst2" id="rgDst2" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 532px" size="350px 44px" name="rgDst3" id="rgDst3" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 480px" size="350px 44px" name="rgDst4" id="rgDst4" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 428px" size="350px 44px" name="rgDst5" id="rgDst5" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 376px" size="350px 44px" name="rgDst6" id="rgDst6" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 324px" size="350px 44px" name="rgDst7" id="rgDst7" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 272px" size="350px 44px" name="rgDst8" id="rgDst8" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 220px" size="350px 44px" name="rgDst9" id="rgDst9" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 168px" size="350px 44px" name="rgDst10" id="rgDst10" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 116px" size="350px 44px" name="rgDst11" id="rgDst11" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 64px" size="350px 44px" name="rgDst12" id="rgDst12" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Bitmap position="1130px 12px" size="350px 44px" name="rgDst13" id="rgDst13" visible="false"
+                    imageFilename="dataS/menu/base/graph_pixel.png" imageColor="0.16 0.17 0.19 0.85">
+                <Bitmap position="6px 7px" size="36px 30px" name="icon" imageColor="1 1 1 1" />
+                <Text profile="SDRowCell" position="48px 13px"  size="244px 15px" textSize="12px" name="line1" />
+                <Text profile="SDRowCell" position="48px 0px"   size="244px 14px" textSize="10px" name="line2" />
+                <Text profile="SDRowCell" position="48px -13px" size="244px 14px" textSize="10px" name="line3" />
+                <Text profile="SDRankBadge" position="300px 0px" size="44px 44px" name="rank" />
+            </Bitmap>
+            <Text profile="SDRowCell" position="1130px 14px" size="350px 18px" textSize="11px"
+                  name="rgDstMore" id="rgDstMore" text="" />
+        </GuiElement>
+        </GuiElement>
+
+        <!-- CHANGE BUILDING sits here rather than in a row of its own, which is what buys the
+             graph the height. Its text is fixed; the building's NAME is on the title. -->
+        <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
+            <Button profile="buttonOK"   text="" onClick="onToggleAllSources" id="rgCtlSrcAll" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="" onClick="onToggleAllInputs" id="rgCtlInAll" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="" onClick="onToggleAllOutputs" id="rgCtlOutAll" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="" onClick="onToggleAllDests" id="rgCtlDstAll" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonOK"   text="$l10n_dr_rg_clearOrder" onClick="onClearOrder"
+                    id="rgClearOrder" inputAction="MENU_EXTRA_1" />
+            <Bitmap profile="fs25_dialogButtonBoxSeparator" />
+            <Button profile="buttonBack" text="$l10n_dr_btn_close" onClick="onClickBack" id="noButton" />
+        </BoxLayout>
+    </GuiElement>
+</GUI>

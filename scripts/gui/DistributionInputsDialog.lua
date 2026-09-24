@@ -16,7 +16,7 @@
 -- Caps therefore do NOT have to sum to 100%. Pooled products used to default to an even
 -- split (250k / 2 products -> 50% each), which broke down completely on a mod-heavy silo:
 -- past 200 products the rounded share reached 0% and the silo accepted nothing at all.
--- See defaultInputCapPct in SmartDistribution.lua for the full reasoning.
+-- See defaultInputCapLiters in SmartDistribution.lua for the full reasoning.
 --
 -- Individual per-product tanks (straw, water, a single-product silo) can't starve each
 -- other, so a max there is purely a fine-tune.
@@ -39,8 +39,12 @@
 DistributionInputsDialog = {}
 local Dlg_mt = Class(DistributionInputsDialog, MessageDialog)
 
-local CAP_STEP = 5      -- percent per -/+ Max press
-local TARGET_STEP = 5   -- percent per -/+ Target press
+-- BOTH RINGS SWEEP THEIR WHOLE RANGE IN 20 PRESSES, which is what the 5%-per-press percentage rings
+-- they replace did -- so the dialog feels exactly as it did while the value it stores is LITRES
+-- (2026-09-22). PRECISE entry is on the Routing tab, which carries a typed box; this stays the coarse
+-- control it has always been.
+local CAP_STEPS = 20     -- presses from empty to the product's whole ceiling
+local TARGET_STEPS = 20  -- ring positions between 0 L and the ceiling, plus Off
 
 local function fillTypeTitle(ft)
     if g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeByIndex ~= nil then
@@ -79,14 +83,10 @@ end
 -- ready but not being drawn from, RED is the one the player set and can unset; the two grey states are
 -- facts rather than faults, so they sit back and let the eye go to the actionable rows.
 local SRC_DIM = { 0.62, 0.62, 0.62, 1 }
-local SRC_STATUS = {
-    FEEDING          = { key = "dr_srcst_feeding",    fb = "Feeding" },
-    STANDBY          = { key = "dr_srcst_standby",    fb = "Standby" },
-    NO_STOCK         = { key = "dr_srcst_noStock",    fb = "No Stock" },
-    BLOCKED          = { key = "dr_srcst_blocked",    fb = "Blocked" },
-    NOT_DISTRIBUTING = { key = "dr_srcst_notDist",    fb = "Not Distributing" },
-    OUT_OF_RANGE     = { key = "dr_srcst_outOfRange", fb = "Out of Range" },
-}
+-- THE WORDS THEMSELVES LIVE ON SmartDistribution (SRC_STATUS_KEY / sourceStatusLabel), because the
+-- routing page's source column states the same six and a copy here would be free to drift from it.
+-- The COLOURS below stay local: this table paints by BUCKET for a list, and the routing page paints
+-- an EDGE with its own vocabulary -- two presentations of one fact, each written where it is read.
 
 -- Colour a cell so SELECTION AND FOCUS CANNOT OVERRIDE IT. TextElement:getColor prefers
 -- textFocusedSelectedColor / textSelectedColor / textFocusedColor over textColor whenever the row is in
@@ -222,7 +222,7 @@ function DistributionInputsDialog:refresh()
             for _, r in ipairs(self.rows) do
                 if r.pooled and not r.blocked then
                     shared = shared + 1
-                    if (r.pct or 100) < 100 then capped = capped + 1 end
+                    if r.explicit then capped = capped + 1 end
                 end
             end
             local msg
@@ -268,8 +268,7 @@ function DistributionInputsDialog:populateSourceCell(index, cell)
     -- litres it could actually hand over, not its total contents: providableLiters answers for the pools
     -- the allocator would really draw from. A dash where there is none, so a zero never reads as a figure.
     setc("srcHolds", (s.liters or 0) > 0 and fmtV(s.liters) or "-")
-    local st = SRC_STATUS[s.status]
-    setc("srcStatus", st ~= nil and SmartDistribution.l10n(st.key, st.fb) or "")
+    setc("srcStatus", SmartDistribution.sourceStatusLabel(s.status))
     -- Cells are RECYCLED by SmoothList, so every one is written and coloured on EVERY populate -- never
     -- left to inherit the previous row's (the 5.7 / 5.57 trap).
     -- COLOURED BY BUCKET, so the table reads as the three numbers in the status column beside it:
@@ -322,15 +321,18 @@ function DistributionInputsDialog:populateCellForItemInSection(list, section, in
         -- will actually go in right now -- the cap less what this product holds, and never more than the
         -- space the other products have left. Two different questions, so two columns; pairing "100%" with
         -- the elastic figure in one cell is what made a 75,000 L silo read "100%  (15,000 L)".
-        setc("cap", string.format("%d%%  (%s)", r.pct, fmtV(r.maxLiters)))
+        -- LITRES, since 2026-09-22 (the setting is stored in litres; a percentage here would be a
+        -- second unit for one number). The bracket is what the pool ACTUALLY allows right now, which
+        -- can be lower than the ceiling when the other products are holding stock.
+        setc("cap", string.format("%s  (%s)", fmtV(r.capL or 0), fmtV(r.maxLiters)))
         setc("avail", r.availLiters ~= nil and fmtV(r.availLiters) or "-")
         -- A DASH, not "Off", where a fill target cannot bind at all (silo / pallet store / heap / market
         -- and a pass-through store's tank): "Off" implies it could be switched on, and on a push-only
         -- receiver it would only duplicate Max in %. See SmartDistribution.fillTargetApplies.
         if r.targetApplies == false then
             setc("target", "-")
-        elseif r.targetPct ~= nil then
-            setc("target", string.format("%d%%  (%s)", r.targetPct, fmtV(r.targetLiters or 0)))
+        elseif r.targetL2 ~= nil then
+            setc("target", fmtV(r.targetLiters or r.targetL2))
         else
             setc("target", SmartDistribution.l10n("dr_label_off", "Off"))
         end
@@ -409,11 +411,13 @@ function DistributionInputsDialog:rcvUid()
     return SmartDistribution.settingUid(self.asset, r ~= nil and r.ft or nil, self.assetRole)
 end
 
-function DistributionInputsDialog:apply(act, ft, delta, flag)
+function DistributionInputsDialog:apply(act, ft, delta, flag, amount)
     local uid = self:rcvUid()
     if uid == nil then return end
     if DistributionControlEvent ~= nil and DistributionControlEvent.send ~= nil then
-        DistributionControlEvent.send(act, uid, ft, "", delta or 0, flag or false)
+        -- `amount` is the float the LITRE settings ride in; `delta` is an int8 and cannot carry one
+        -- (5.10). Both are passed on every call, and each action reads only the one it uses.
+        DistributionControlEvent.send(act, uid, ft, "", delta or 0, flag or false, amount)
     end
     local keepFt = ft
     self:rebuildRows()
@@ -468,15 +472,20 @@ end
 function DistributionInputsDialog:onCapDelta(dir)
     local r = self:selectedRow()
     if r == nil or r.blocked or r.readOnly then return end
-    local maxPct = 100
-    if r.pooled and SmartDistribution.inputCapPctHeadroom ~= nil then
-        maxPct = math.max(0, math.min(100, SmartDistribution.inputCapPctHeadroom(self.asset, r.ft) or 100))
-    end
-    local pct = (r.pct or 0) + dir * CAP_STEP
-    if pct > maxPct then pct = 0            -- wrap past the top
-    elseif pct < 0 then pct = maxPct end    -- wrap past the bottom
-    if pct == r.pct then return end
-    self:apply(DistributionControlEvent.ACT.INPUT_CAP, r.ft, pct, false)
+    -- LITRES. The ring still sweeps the whole range in CAP_STEPS presses, so it feels exactly as it
+    -- did -- but each press is now a round figure of litres rather than a percentage point, and the
+    -- stored value is the litre itself. PRECISE entry is on the Routing tab, which has a typed box;
+    -- this is the coarse control it always was.
+    local maxL = SmartDistribution.inputCapHeadroom ~= nil
+        and (SmartDistribution.inputCapHeadroom(self.asset, r.ft, self.assetRole) or 0) or 0
+    if maxL <= 0 then return end
+    local step = math.max(1, math.floor(maxL / CAP_STEPS))
+    local cur  = r.capL or maxL
+    local want = cur + dir * step
+    if want > maxL then want = 0                -- wrap past the top
+    elseif want < 0 then want = maxL end        -- wrap past the bottom
+    if math.abs(want - cur) < 0.5 then return end
+    self:apply(DistributionControlEvent.ACT.INPUT_CAP, r.ft, 0, false, want)
 end
 function DistributionInputsDialog:onCapDown() self:onCapDelta(-1) end
 function DistributionInputsDialog:onCapUp()   self:onCapDelta( 1) end
@@ -490,15 +499,22 @@ function DistributionInputsDialog:onTargetDelta(dir)
     -- and refuse to step a target the receiver can never act on, or the buttons would write a setting
     -- that is stored, displayed and silently ignored -- the failure shape this codebase chases most.
     if r.targetApplies == false then return end
-    local n = 2 + math.floor(100 / TARGET_STEP)          -- ring positions: Off(0), 0%(1) .. 100%(n-1)
-    local curIdx = (r.targetPct == nil) and 0 or (1 + math.floor((r.targetPct or 0) / TARGET_STEP))
+    -- LITRES, as a ring of TARGET_STEPS positions over the product's own ceiling, plus Off. Off and
+    -- 0 L stay DISTINCT: Off is the recipe's own demand, 0 L is a real "hold this at empty".
+    local maxL = SmartDistribution.inputCapLiters ~= nil
+        and (SmartDistribution.inputCapLiters(self.asset, r.ft, self.assetRole) or 0) or 0
+    if maxL <= 0 then return end
+    local step = maxL / TARGET_STEPS
+    local n = 2 + TARGET_STEPS                            -- Off(0), 0 L(1) .. maxL(n-1)
+    local curIdx = (r.targetL2 == nil) and 0
+                   or (1 + math.floor(((r.targetL2 or 0) / step) + 0.5))
+    if curIdx > n - 1 then curIdx = n - 1 end
     local newIdx = (curIdx + dir) % n
-    if newIdx < 0 then newIdx = newIdx + n end            -- (defensive; Lua % is already non-negative here)
     local A = DistributionControlEvent.ACT
     if newIdx == 0 then
-        self:apply(A.INPUT_TARGET, r.ft, -1, false)       -- Off (clear the target)
+        self:apply(A.INPUT_TARGET, r.ft, 0, false, -1)    -- Off (clear the target)
     else
-        self:apply(A.INPUT_TARGET, r.ft, (newIdx - 1) * TARGET_STEP, false)
+        self:apply(A.INPUT_TARGET, r.ft, 0, false, (newIdx - 1) * step)
     end
 end
 -- ---- FOOTER KEYS -----------------------------------------------------------

@@ -46,13 +46,13 @@
              OBĚ SMAZAT, až sonda skončí.                                          -->
 
         <!-- ================= názvy stránek a dialogů ================= -->
-        <text name="dr_title_overview" text="Distribuce - Přehled" />
+        <text name="dr_title_overview" text="Přehled" />
         <text name="dr_title_productions" text="Distribuce - Výroba" />
         <text name="dr_title_storage" text="Distribuce - Sklad" />
         <text name="dr_title_husbandry" text="Distribuce - Chov zvířat" />
         <text name="dr_title_markets" text="Distribuce - Trhy" />
-        <text name="dr_title_help" text="Distribuce - Nápověda" />
-        <text name="dr_title_settings" text="Distribuce - Nastavení" />
+        <text name="dr_title_help" text="Nápověda" />
+        <text name="dr_title_settings" text="Nastavení" />
         <text name="dr_title_advanced" text="Pokročilé" />
         <text name="dr_title_advancedInputs" text="Pokročilé vstupy" />
         <text name="dr_title_spawnPallets" text="Vytvořit palety" />
@@ -81,8 +81,6 @@
         <text name="dr_col_loaded" text="NALOŽ." />
         <text name="dr_col_consumedExp" text="SPOTŘ. (OČEK.)" />
         <text name="dr_col_unloaded" text="VYLOŽ." />
-        <text name="dr_col_heldMax" text="ZÁSOBA (MAX)" />
-        <text name="dr_col_freeStorage" text="VOLNÝ SKLAD" />
         <text name="dr_col_producedExp" text="VYROB. (OČEK.)" />
         <text name="dr_col_distributed" text="DISTRIBUOVÁNO" />
         <text name="dr_col_storedMoved" text="ULOŽ./PŘESUN" />
@@ -108,7 +106,6 @@
         <text name="dr_col_incomingProducts" text="PŘÍCHOZÍ PRODUKTY" />
         <text name="dr_col_incomingMaterials" text="PŘÍCHOZÍ MATERIÁLY" />
         <text name="dr_col_outgoingProducts" text="ODCHOZÍ PRODUKTY" />
-        <text name="dr_col_heldSlashMax" text="ZÁSOBA / MAX" />
         <text name="dr_col_distribution" text="DISTRIBUCE" />
         <text name="dr_col_consumed" text="SPOTŘEBOVÁNO" />
         <text name="dr_col_produced" text="VYROBENO" />
@@ -170,7 +167,6 @@
         <!-- ================= TLAČÍTKA V PATĚ (nastavená z Lua) =================
              Stejná spodní lišta jako tlačítka dr_btn_ výše, stejný tlak na délku. Sell Timing je
              FORMÁTOVACÍ řetězec: %s je aktuální časování ("Nejlepší cena" / "Okamžitě"). -->
-        <text name="dr_btn_cycleOutput" text="Přepnout výstup" />
         <text name="dr_btn_advanced" text="Pokročilé" />
         <text name="dr_btn_sellTiming" text="Časování prodeje" />
         <text name="dr_btn_sellTimingOff" text="Časování prodeje: prodej VYPNUT" />
@@ -259,7 +255,6 @@
              zapnutý, ale posílal by produkt v kruhu zpět tam, odkud vyšel. -->
         <text name="dr_adv_title" text="Pokročilé - %s" />
         <text name="dr_adv_activeInvalid" text="Aktivní - Neplatné" />
-        <text name="dr_adv_reserve" text="     Rezerva: " />
         <text name="dr_adv_noCapacity" text="Není kapacita, vůči které by šlo rezervovat" />
         <text name="dr_adv_reserveBad" text="Rezerva: zadejte počet litrů" />
         <text name="dr_adv_reserveClamped" text="Rezerva omezena kapacitou: %s" />

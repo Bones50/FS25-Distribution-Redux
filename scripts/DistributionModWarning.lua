@@ -17,7 +17,7 @@
 --
 -- MATCHED ON THE MOD'S FOLDER / ZIP NAME, never its title. The title is
 -- localised and editable; the name is what g_modIsLoaded is keyed by, which is
--- the same reasoning as persisting an animal subtype by name (Animal Redux 10.4).
+-- the same reasoning as persisting an animal subtype by name (Husbandry Redux 10.4).
 -- ============================================================================
 
 DistributionModWarning = {}

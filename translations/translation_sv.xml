@@ -36,14 +36,14 @@
         <text name="dr_input_openManager" text="Öppna Distributionsmeny" />
 
         <!-- ================= sid- och dialogtitlar ================= -->
-        <text name="dr_title_overview"        text="Distribution - Översikt" />
+        <text name="dr_title_overview"        text="Översikt" />
         <text name="dr_title_productions"     text="Distribution - Produktioner" />
         <text name="dr_title_storage"         text="Distribution - Förvaring" />
         <text name="dr_title_husbandry"       text="Distribution - Djurhållning" />
         <text name="dr_title_markets"         text="Distribution - Marknader" />
-        <text name="dr_title_help"            text="Distribution - Hjälp" />
+        <text name="dr_title_help"            text="Hjälp" />
         <text name="dr_tab_distribution"      text="DISTRIBUTION"/>
-        <text name="dr_title_settings"        text="Distribution - Inställningar" />
+        <text name="dr_title_settings"        text="Inställningar" />
         <text name="dr_title_advanced"        text="Avancerat" />
         <text name="dr_title_advancedInputs"  text="Avancerade inmatningar" />
         <text name="dr_title_spawnPallets"    text="Skapa pallar" />
@@ -72,8 +72,6 @@
         <text name="dr_col_loaded"        text="LASTAT" />
         <text name="dr_col_consumedExp"   text="FÖRBRUKAT (FÖRV.)" />
         <text name="dr_col_unloaded"      text="LOSSAT" />
-        <text name="dr_col_heldMax"       text="INNEHAV (MAX)" />
-        <text name="dr_col_freeStorage"   text="LED. LAG." />
         <text name="dr_col_producedExp"   text="PRODUC. (FÖRV.)" />
         <text name="dr_col_distributed"   text="DISTRI." />
         <text name="dr_col_storedMoved"   text="LAG./FLYTT." />

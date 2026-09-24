@@ -43,14 +43,80 @@
              DELETE BOTH when the probe goes.                                          -->
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Distribution - Overview" />
-        <text name="dr_title_productions"     text="Distribution - Productions" />
-        <text name="dr_title_storage"         text="Distribution - Storage" />
-        <text name="dr_title_husbandry"       text="Distribution - Animal Husbandry" />
-        <text name="dr_title_markets"         text="Distribution - Markets" />
-        <text name="dr_title_help"            text="Distribution - Help" />
+        <text name="dr_title_overview"        text="Overview" />
+        <text name="dr_title_productions"     text="Distribution Redux - Productions" />
+        <text name="dr_title_routing"         text="Distribution Redux - Routing" />
+        <text name="dr_title_storage"         text="Distribution Redux - Storage" />
+        <text name="dr_title_husbandry"       text="Distribution Redux - Animal Husbandry" />
+        <text name="dr_title_markets"         text="Distribution Redux - Markets" />
+        <text name="dr_title_help"            text="Help" />
         <text name="dr_tab_distribution" text="DISTRIBUTION"/>
-        <text name="dr_title_settings"        text="Distribution - Settings" />
+        <text name="dr_tab_productions" text="PRODUCTIONS" />
+        <text name="dr_tab_storage"     text="STORAGE" />
+        <text name="dr_tab_husbandry"   text="HUSBANDRY" />
+
+        <!-- The ROUTING graph tab. Column headings are UPPERCASE and sit over columns of
+             110 to 220 design px, so they clip rather than wrap: keep them to about 12
+             characters. dr_rg_hint takes the two product names in order. -->
+        <text name="dr_rg_hdrSources"         text="SOURCES" />
+        <text name="dr_rg_hdrInputs"          text="INPUTS" />
+        <text name="dr_rg_hdrBuilding"        text="BUILDING" />
+        <text name="dr_rg_hdrOutputs"         text="OUTPUTS" />
+        <text name="dr_rg_hdrDests"           text="DESTINATIONS" />
+        <text name="dr_rg_farmWide"           text="farm" />
+        <text name="dr_rg_hint"               text="Sources: %s   Destinations: %s" />
+        <text name="dr_rg_pickBuilding"       text="Select a building" />
+        <text name="dr_rg_used"               text="used %s" />
+        <text name="dr_rg_made"               text="made %s" />
+        <text name="dr_rg_holds"              text="holds %s" />
+        <text name="dr_rg_clearOrder"         text="Clear order" />
+        <text name="dr_rg_togBlock"      text="Click to block this link" />
+        <text name="dr_rg_togAllow"      text="Click to allow this link" />
+        <text name="dr_rg_jump"          text="Double-click to open %s" />
+        <text name="dr_rg_jumpRg"        text="Double-click to route %s" />
+        <!-- The CONTROL STRIP. dr_rg_range takes first, last, total; dr_rg_ctlIn / ctlOut take
+             the product name. Keep them short: the strip tiles to 1480px and clips rather than
+             wraps, and German runs about 30% longer (5.60). -->
+        <text name="dr_rg_ctlField"      text="%s  -  %s" />
+        <text name="dr_rg_lblMaxFill"    text="Max Fill" />
+        <text name="dr_rg_lblTarget"     text="Fill target" />
+        <text name="dr_rg_lblReserve"    text="Reserve" />
+        <text name="dr_rg_range"         text="%d-%d of %d  (scroll)" />
+        <text name="dr_rg_hiddenN"       text="+%d blocked" />
+        <text name="dr_rg_targetOff"     text="Off" />
+        <text name="dr_rg_loopSkipped"   text="%d skipped (would loop)" />
+        <!-- The strip's three TYPED fields. The placeholders sit inside a 138px box at 11px,
+             so about 24 characters. dr_rg_nodeIn is an input node's third line and dr_rg_nodeRes
+             an output's, both in a 98px column at 9px: keep them to about 20 characters. -->
+        <text name="dr_rg_hintLitres"    text="click to set litres" />
+        <text name="dr_rg_nodeIn"        text="max %s  tgt %s" />
+        <text name="dr_rg_nodeRes"       text="res %s" />
+        <text name="dr_rg_blockAllSrc"   text="Block all sources" />
+        <text name="dr_rg_allowAllSrc"   text="Allow all sources" />
+        <text name="dr_rg_blockAllDst"   text="Block all dests" />
+        <text name="dr_rg_allowAllDst"   text="Allow all dests" />
+        <text name="dr_rg_blockAllIn"    text="Block all inputs" />
+        <text name="dr_rg_allowAllIn"    text="Allow all inputs" />
+        <text name="dr_rg_blockAllOut"   text="Block all outputs" />
+        <text name="dr_rg_allowAllOut"   text="Allow all outputs" />
+        <text name="dr_rg_nInBlocked"    text="%d inputs blocked" />
+        <text name="dr_rg_nInAllowed"    text="%d inputs allowed" />
+        <text name="dr_rg_nOutBlocked"   text="%d output links blocked" />
+        <text name="dr_rg_nOutAllowed"   text="%d output links allowed" />
+        <!-- The grey prompt and the grey complaint sit INSIDE a 140px field at 12px,
+             so about 22 characters. dr_rg_hintTarget says "Off" because an empty target
+             field IS Off, which is a real setting and not an absence. -->
+        <text name="dr_rg_hintTarget"    text="Off - click to set" />
+        <text name="dr_rg_badRes"        text="above capacity" />
+        <!-- The building node's storage rows, which is what the two tank columns used to
+             carry. Two figures each: held then capacity. -->
+        <text name="dr_rg_bldStoIn"      text="IN  %s / %s" />
+        <text name="dr_rg_bldStoOut"     text="OUT  %s / %s" />
+        <text name="dr_rg_bldTanks"      text="%d tanks" />
+        <text name="dr_rg_capClamped"    text="Capped at the tank: %s" />
+        <text name="dr_rg_blockedNoSet"  text="That product is blocked" />
+        <text name="dr_tab_markets"     text="MARKETS" />
+        <text name="dr_title_settings"        text="Settings" />
         <text name="dr_title_advanced"        text="Advanced" />
         <text name="dr_title_advancedInputs"  text="Advanced Inputs" />
         <text name="dr_title_spawnPallets"    text="Spawn Pallets" />
@@ -79,8 +145,6 @@
         <text name="dr_col_loaded"        text="LOADED" />
         <text name="dr_col_consumedExp"   text="CONSUMED (EXP.)" />
         <text name="dr_col_unloaded"      text="UNLOADED" />
-        <text name="dr_col_heldMax"       text="HELD (MAX)" />
-        <text name="dr_col_freeStorage"   text="FREE STORAGE" />
         <text name="dr_col_producedExp"   text="PRODUCED (EXP.)" />
         <text name="dr_col_distributed"   text="DISTRIBUTED" />
         <text name="dr_col_sold"          text="SOLD" />
@@ -125,6 +189,13 @@
         <text name="dr_col_productionLines"   text="PRODUCTION LINES" />
         <text name="dr_col_lineInput"      text="INPUT" />
         <text name="dr_col_lineOutput"     text="OUTPUT" />
+        <!-- Hover tooltips on the throughput glyph at the left of each production line row. PARALLEL and
+             SERIES are the two ways a production point divides its rated speed across the lines that are
+             switched on: in parallel each line runs at its own full rate, in series they share one budget
+             between them (so two lines each go at about half speed). Free-length - these are tooltips, not
+             table cells, so they are not clipped. -->
+        <text name="dr_tip_parallel"       text="Parallel - each line runs at its own full rate" />
+        <text name="dr_tip_series"         text="Series - these lines share one throughput budget" />
         <!-- "/mo" = per month. The figure is the line's monthly target. -->
         <text name="dr_col_targetMo"          text="TARGET /mo" />
 
@@ -430,6 +501,10 @@
         <text name="dr_set_advancedRouting_tt"  text="Master switch for Advanced Outputs (source-side blocking / priority / Move To) and Advanced Inputs (input blocking / caps / fill targets). Off hides those buttons and reverts to the default nearest-first, distance-based distribution. WARNING: turning this OFF WIPES all existing advanced settings (every block, priority, Move To, input cap and fill target) -- they reset to default and will NOT come back if you turn it on again; you would have to set them up from scratch." />
         <text name="dr_set_advancedRouting_v1"  text="On" />
         <text name="dr_set_advancedRouting_v2"  text="Off" />
+        <text name="dr_set_routingView"         text="Routing view" />
+        <text name="dr_set_routingView_tt"      text="What the Advanced Inputs and Advanced Outputs buttons open. Graph shows the whole building as one picture - sources, storages, products and destinations - with a toggle on every link. Classic lists opens the original two list windows. Both change exactly the same settings; this only chooses the window. Has no effect while Advanced routing is Off." />
+        <text name="dr_set_routingView_v1"      text="Graph" />
+        <text name="dr_set_routingView_v2"      text="Classic lists" />
 
         <text name="dr_set_defaultOutputMode"     text="New building output mode" />
         <text name="dr_set_defaultOutputMode_tt"  text="The output mode given to a building at the moment you PLACE it. Distribute is the normal behaviour. Hold means a newly placed building keeps everything it makes until you set it otherwise, so nothing leaves a building you have not configured yet. On a building that makes pallets this shows as 'Hold Pallets', or as 'Hold Internal' when Pallet spawning is set to never. This ONLY affects buildings placed from now on: existing buildings are never changed, and changing this setting does not touch anything already built." />
@@ -549,7 +624,7 @@
         <text name="dr_set_menuRefresh_v3"  text="Relaxed (10s)" />
         <text name="dr_set_menuRefresh_v4"  text="Manual only" />
         <text name="dr_set_passProfiler"    text="Performance logging" />
-        <text name="dr_set_passProfiler_tt" text="Writes what DR's hourly pass cost to log.txt, and how many world scans it made. Leave on Slow passes only - it is silent unless an hourly pass takes longer than 150ms. Switch to Every pass if you are asked for a performance report: it then logs two lines every in-game hour, which is what lets a healthy farm be compared against a slow one. Animal Redux has the same setting and either one being on enables it." />
+        <text name="dr_set_passProfiler_tt" text="Writes what DR's hourly pass cost to log.txt, and how many world scans it made. Leave on Slow passes only - it is silent unless an hourly pass takes longer than 150ms. Switch to Every pass if you are asked for a performance report: it then logs two lines every in-game hour, which is what lets a healthy farm be compared against a slow one. Husbandry Redux has the same setting and either one being on enables it." />
         <text name="dr_set_passProfiler_v1" text="Off" />
         <text name="dr_set_passProfiler_v2" text="Slow passes only" />
         <text name="dr_set_passProfiler_v3" text="Every pass (diagnostic)" />
@@ -841,7 +916,8 @@
         <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
              characters; the four breakdown words share 740px with four money figures, so
              keep each under about 10. -->
-        <text name="dr_panel_profit" text="EST. FORECAST - PROFIT / MO" />
+        <text name="dr_panel_profit" text="EST. PROFIT / MO" />
+        <text name="dr_panel_pfCleared" text="if cleared:" />
         <text name="dr_panel_pfOutputs" text="outputs" />
         <text name="dr_panel_pfInputs" text="inputs" />
         <text name="dr_panel_pfAgeing" text="ageing" />

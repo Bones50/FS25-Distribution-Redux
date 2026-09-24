@@ -42,13 +42,13 @@
              DELETE BOTH when the probe goes.                                          -->
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Распределение - Обзор" />
+        <text name="dr_title_overview"        text="Обзор" />
         <text name="dr_title_productions"     text="Распределение - Производства" />
         <text name="dr_title_storage"         text="Распределение - Хранилища" />
         <text name="dr_title_husbandry"       text="Распределение - Животноводство" />
         <text name="dr_title_markets"         text="Распределение - Рынки" />
-        <text name="dr_title_help"            text="Распределение - Справка" />
-        <text name="dr_title_settings"        text="Распределение - Настройки" />
+        <text name="dr_title_help"            text="Справка" />
+        <text name="dr_title_settings"        text="Настройки" />
         <text name="dr_title_advanced"        text="Дополнительно" />
         <text name="dr_title_advancedInputs"  text="Дополнительные входы" />
         <text name="dr_title_spawnPallets"    text="Создать поддоны" />
@@ -77,8 +77,6 @@
         <text name="dr_col_loaded"        text="ЗАГРУЖЕНО" />
         <text name="dr_col_consumedExp"   text="РАСХОД (ПЛАН)" />
         <text name="dr_col_unloaded"      text="ВЫГРУЖЕНО" />
-        <text name="dr_col_heldMax"       text="ЗАПАС (МАКС)" />
-        <text name="dr_col_freeStorage"   text="СВОБОДНО" />
         <text name="dr_col_producedExp"   text="ПРОИЗВ. (ПЛАН)" />
         <text name="dr_col_distributed"   text="РАСПРЕДЕЛЕНО" />
         <text name="dr_col_storedMoved"   text="СКЛАД/ПЕРЕМ." />

@@ -140,70 +140,74 @@ local function withExpected(actual, expected)
     return (a == 0 and fmtV(0) or fmtV(actual)) .. "  (" .. fmtV(expected) .. ")"
 end
 
--- "12,345 +2p  (50,000)" -- what is held, then how much room there is for it. For a product the building
--- RECEIVES that room is the Advanced Inputs "Max in" figure, not the raw tank, so a capped or blocked
--- input reads honestly. nil capacity (unresolvable) falls back to the held figure alone.
+-- ---- THE STORAGE BAR -------------------------------------------------------------------------------
+-- Replaces the HELD (MAX) and FREE STORAGE text columns with the widget the building tabs already carry
+-- (5.69 / 5.80), in the same band those two occupied: this product GREEN, whatever else is sharing the
+-- tank RED behind it, the configured "Max in" ceiling as an ORANGE line, and the litres and share written
+-- underneath. The red band and the orange line are what FREE STORAGE used to spell out in figures.
 --
--- A production's output lives in two places at once: its internal buffer and whole pallets on its own
--- spawner. The leading figure is the INTERNAL litres and "+Np" is the pallets standing on the pad, so it
--- is obvious where the stock actually is. Pallets moved off the pad are no longer this building's and
--- drop out of both. Only shown when there is something on the spawner, so bulk rows are unchanged.
--- A COOP or SHEEP BARN has no separate buffer to split off (assetHeld already reports the pallet litres
--- as its held figure, and heldPallets is 0 for it), so there the leading number IS the pallet litres and
--- "+Np" says how many pallets those litres are spread across. Same reading either way: total, then pads.
-local function withCapacity(row)
-    local held, capacity = row.held, row.capacity
-    -- the COUNT drives the "(Np)" tag, not litres/1000: pallet capacity differs by fill type, and a
-    -- part-filled pallet is one pallet standing on the pad, not zero
-    local count   = row.heldPalletCount or 0
-    local pallets = row.heldPallets or 0
-    local shown   = (pallets > 0) and (row.heldInternal or 0) or held
-    local h = math.floor((shown or 0) + 0.5)
-    -- "473 L (55,000 L) + 3,000 L (3p)". The capacity bracket belongs directly BESIDE the figure it
-    -- qualifies -- trailing it after the pad part gave two bracketed groups in a row
-    -- ("473 L + 3,000 L (3p)  (6,000)") which read as though the last one qualified the pallets.
-    local text = (h == 0) and fmtV(0) or fmtV(shown)
-    -- Match the building tabs exactly: an INPUT row reads "held / max (pct%)", an output "held (max)".
-    -- A row that is both (a silo) takes the input form, because that is the side carrying a settable
-    -- percentage -- the litres are identical either way, so the figures still agree with the OUTGOING list.
-    if capacity ~= nil then
-        if row.role == "In" or row.role == "In/Out" then
-            local pct = nil
-            if SmartDistribution ~= nil and SmartDistribution.inputCapPct ~= nil and row.placeable ~= nil then
-                local ok, v = pcall(SmartDistribution.inputCapPct, row.placeable, row.ft)
-                if ok and type(v) == "number" then pct = math.max(0, math.min(100, math.floor(v + 0.5))) end
-            end
-            text = text .. " / " .. fmtV(capacity)
-            if pct ~= nil then text = text .. string.format(" (%d%%)", pct) end
-        else
-            text = text .. " (" .. fmtV(capacity) .. ")"
-        end
+-- ONE IMPLEMENTATION, IN SmartDistribution, called from all four pages. Copying it here is the 6.18 trap
+-- -- a three-mark widget with a clamp per mark and SmoothList cell recycling is the wrong thing to keep
+-- two of, and it is exactly why 5.69 promoted it out of a GUI file in the first place.
+--
+-- SIDE FOLLOWS THE ROW'S IN/OUT TAG, exactly as the old held text did: an input gets the MAX and TARGET
+-- marks, an output the RESERVE, and an (In/Out) silo all three -- it takes the input form because that is
+-- the side carrying a settable percentage. A row with NO tag (the flow view keeps one that survives on
+-- ledger history alone) takes the output form, which is the branch withCapacity used to give it.
+--
+-- ROLE IS THE BUILDING ROLE, recovered from the row's own role uid -- NOT the in/out tag. They are
+-- different things, and conflating them is what produced `uid#in` keys nothing ever writes (the bug
+-- settingsFor records having had to fix). nil for a single-role building, which is every ordinary one.
+--
+-- HELD IS HANDED IN on the output side and NOT re-derived, the rule every other caller follows
+-- (5.27 / 5.28 / 5.54c). roleHeld first so a multi-role building's held and its capacity are read off the
+-- SAME half -- outputBarValues scopes the total by role, so a placeable-wide held beside it could read
+-- past 100% (the 5.80 shape). It returns nil for a single-role building, where the row's own figure --
+-- buffer plus pad, the same basis the Productions tab passes -- stands.
+local function setStorageBar(cell, r, grouped)
+    if SmartDistribution == nil or SmartDistribution.drawStorageBar == nil then return end
+    local function hide()
+        if SmartDistribution.hideStorageBar ~= nil then SmartDistribution.hideStorageBar(cell) end
     end
-    if pallets > 0 then
-        text = text .. " + " .. fmtV(pallets) .. " (" .. tostring(count) .. "p)"
-    end
-    return text
-end
+    if r == nil or r.placeable == nil or r.ft == nil then return hide() end
 
--- FREE STORAGE, shared by the Overview and every building tab: how much more will fit. The COLOUR the
--- figure implies is painted on the HELD cell beside it, not on this one:
---   red    -- nothing left (or overfilled): this product cannot take any more
---   orange -- 10% or less of its ceiling still free
---   green  -- room to spare
--- nil capacity means nothing to measure against, so the cell shows a dash and HELD stays in the default
--- colour rather than carrying an invented judgement. Cells are RECYCLED by SmoothList, so every path MUST
--- set a colour or a row inherits whatever the previous row left there (the bug 5.7 already had to fix once
--- on this page).
-local function remainingText(remaining)
-    if remaining == nil then return "-" end
-    return fmtV(remaining)
-end
-local function remainingColor(remaining, capacity)
-    local C = (SmartDistribution ~= nil and SmartDistribution.LINK_COLOR) or {}
-    if remaining == nil or capacity == nil or capacity <= 0 then return nil end
-    if remaining <= 0.5 then return C.BLOCKED end                    -- full, or over
-    if remaining <= capacity * 0.10 then return C.IDLE end           -- nearly full
-    return C.ACTIVE
+    local side
+    if     r.role == "In"     then side = "input"
+    elseif r.role == "In/Out" then side = "both"
+    else                           side = "output" end
+
+    -- A GROUP HAS NO SINGLE TANK. "Bakery x2" sums its members' flows, so a bar resolved from ONE of
+    -- them would sit beside summed columns describing something else. The row already carries the summed
+    -- figures (groupRows adds capacity, heldInternal and the pallet count across the group), so they are
+    -- handed over rather than guessed at.
+    --   held is the INTERNAL total, which keeps it on the same basis as the summed capacity and means a
+    --   group of productions can never read past 100% the way 5.80 records for a single one.
+    --   No red band and no marks: "what else is in this tank", a ceiling, a target and a reserve are all
+    --   per building, and a summed one would be a figure DR cannot justify (5.45b: understate, never
+    --   invent). noMaxMark is what suppresses the ceiling line, which is otherwise drawn even when unset.
+    -- nil capacity -> no track at all, which is what the old cell did with it: show what is held and
+    -- refuse to invent a denominator (5.21).
+    if grouped then
+        local total = r.capacity
+        if type(total) ~= "number" or total <= 0 then return hide() end
+        return SmartDistribution.drawStorageBar(cell, r.placeable, r.ft, nil, side, nil, {
+            total   = total,
+            held    = math.max(0, r.heldInternal or r.held or 0),
+            others  = 0, capL = nil, pct = 100, blocked = false,
+            target  = nil, reserve = nil, noMaxMark = true,
+            pallets = r.heldPallets or 0, palletCount = r.heldPalletCount or 0,
+        })
+    end
+
+    local brole = (SmartDistribution.roleOfUid ~= nil) and SmartDistribution.roleOfUid(r.uid) or nil
+    local held = nil
+    if side == "output" then
+        if brole ~= nil and SmartDistribution.roleHeld ~= nil then
+            held = SmartDistribution.roleHeld(r.placeable, r.ft, brole)
+        end
+        if held == nil then held = r.held or 0 end
+    end
+    SmartDistribution.drawStorageBar(cell, r.placeable, r.ft, brole, side, held)
 end
 
 -- MET_TARGET: within 1% counts as MET, not a near miss -- a plant running at 14,390 against 14,400 is on
@@ -419,8 +423,116 @@ function DistributionOverviewPage:onRefresh()
     self:applySelectorChange()
 end
 
+
+-- ---- PAGE TABS -------------------------------------------------------------------------------------
+-- The Overview keeps its own left icon and carries a strip of its own, so a mod with a network-wide
+-- view of its own has somewhere to put it. DR's own tab is registered by this page, on every frame
+-- open, and registerPageTab pins an `own` entry to slot 1 whatever order registrations arrive in --
+-- a dependent mod registers at MISSION LOAD, far earlier than a page's first open (5.88).
+--
+-- WITH NO SECOND TAB THIS PAGE IS UNCHANGED. PAGE_TAB_MIN suppresses a strip of one, drawPageTabs
+-- gives the header band back to the title, and every branch below takes its own-tab path.
+DistributionOverviewPage.TAB_KEY = "overview"
+
+local function tabList()
+    if SmartDistribution == nil or SmartDistribution.pageTabs == nil then return {} end
+    return SmartDistribution.pageTabs(DistributionOverviewPage.TAB_KEY)
+end
+
+local function activeEntry(page)
+    local t = tabList()[(page ~= nil and page.currentTab) or 1]
+    return (t ~= nil) and t.entry or nil
+end
+
+---Is DR's own tab the one showing? True when nothing is registered at all, which is what
+-- keeps a stock install on every existing code path.
+function DistributionOverviewPage:ownTabActive()
+    local e = activeEntry(self)
+    return e == nil or e.own == true
+end
+
+---Show whichever page furniture belongs to the active tab.
+--
+-- EVERY ELEMENT IS SET ON EVERY PATH, never left to a default: this runs again on each tab change
+-- and each frame open, so an element hidden once and not re-shown would stay hidden for the session.
+function DistributionOverviewPage:applyTabContent()
+    local own = self:ownTabActive()
+    local on  = self:settingsViewOn()
+    local function vis(el, show) if el ~= nil and el.setVisible ~= nil then el:setVisible(show) end end
+
+    vis(self.ovFilterRow, own); vis(self.ovShowRow,  own)
+    vis(self.ovPeriodRow, own); vis(self.ovGroupRow, own)
+    vis(self.flowHeaderRow,     own and not on)
+    vis(self.flowListBox,       own and not on)
+    vis(self.settingsHeaderRow, own and on)
+    vis(self.settingsListBox,   own and on)
+
+    -- The foreign tab's stand-in. The TEXT is the registering mod's, already localised, because DR
+    -- cannot resolve another mod's l10n namespace (5.60). A tab that supplies none simply shows an
+    -- empty page rather than DR inventing a caption for it.
+    local e  = activeEntry(self)
+    local ph = self.ovPlaceholder
+    local txt = (not own) and type(e) == "table" and type(e.placeholder) == "string" and e.placeholder or nil
+    if ph ~= nil then
+        if ph.setText ~= nil then ph:setText(txt or "") end
+        vis(ph, txt ~= nil and txt ~= "")
+    end
+
+    -- A HIDDEN TABLE MUST NOT BE RE-ENUMERATED. The 2 Hz refresh re-reads every visible cell, and on
+    -- a large farm that is the most expensive thing this page does (5.46 / 5.52) -- paying it for a
+    -- list nobody can see would be the worst kind of cost.
+    self._realtimeLists = own and { on and "settingsList" or "statsList" } or {}
+    self:updateViewButton()
+end
+
+---Paint the strip, then apply the active tab. DR's own tab is (re)registered first so the page can
+-- never come up with no tabs at all.
+function DistributionOverviewPage:refreshPageTabs()
+    if SmartDistribution ~= nil and SmartDistribution.registerPageTab ~= nil then
+        -- The literal, as the other two tabbed pages use it. It is the REGISTRY key for
+        -- de-duplication, not anything the player sees, and `entry.own` (not the name) is
+        -- what pins DR's tab to slot 1 -- a name is what a player changes by renaming the zip.
+        SmartDistribution.registerPageTab(DistributionOverviewPage.TAB_KEY, "FS25_Distribution_Redux",
+            SmartDistribution.l10n("dr_tab_distribution", "DISTRIBUTION"), { own = true })
+    end
+    local list, labels = tabList(), {}
+    for i, t in ipairs(list) do labels[i] = t.label end
+    if self.currentTab == nil or self.currentTab > #list then self.currentTab = 1 end
+    if SmartDistribution ~= nil and SmartDistribution.drawPageTabs ~= nil then
+        SmartDistribution.drawPageTabs(self, labels, self.currentTab)
+    end
+    self:applyTabContent()
+end
+
+---Switch tab. The outgoing and incoming owners are told, so a mod can reveal and hide elements of
+-- its own without DR knowing anything about them -- the same contract the settings page offers.
+function DistributionOverviewPage:selectPageTab(i)
+    if i == nil or i == self.currentTab then return end
+    local t = tabList()[i]
+    if t == nil then return end
+    local prev = tabList()[self.currentTab]
+    self.currentTab = i
+    if prev ~= nil and type((prev.entry or {}).onHide) == "function" then pcall(prev.entry.onHide, self) end
+    if type((t.entry or {}).onShow) == "function" then pcall(t.entry.onShow, self) end
+    self:refreshPageTabs()
+end
+
+function DistributionOverviewPage:onPageTab1() self:selectPageTab(1) end
+function DistributionOverviewPage:onPageTab2() self:selectPageTab(2) end
+function DistributionOverviewPage:onPageTab3() self:selectPageTab(3) end
+function DistributionOverviewPage:onPageTab4() self:selectPageTab(4) end
+function DistributionOverviewPage:onPageTab5() self:selectPageTab(5) end
+function DistributionOverviewPage:onPageTab6() self:selectPageTab(6) end
+
+function DistributionOverviewPage:pageTabKey() return DistributionOverviewPage.TAB_KEY end
+function DistributionOverviewPage:onPageTabPrev() SmartDistribution.stepPageTab(self, DistributionOverviewPage.TAB_KEY, -1) end
+function DistributionOverviewPage:onPageTabNext() SmartDistribution.stepPageTab(self, DistributionOverviewPage.TAB_KEY,  1) end
+
 function DistributionOverviewPage:onFrameOpen()
     DistributionOverviewPage:superClass().onFrameOpen(self)
+    -- OPENS ON CYCLE, like every other tab. Set before the syncState block below picks
+    -- the widgets up, so the selector and the columns agree on the way in.
+    self.periodIndex = 1
     -- the view survives leaving and re-entering the tab, so everything here follows it rather than statsList
     local on = self:settingsViewOn()
     self._realtimeLists = { on and "settingsList" or "statsList" }
@@ -430,12 +542,11 @@ function DistributionOverviewPage:onFrameOpen()
     syncState(self.periodOption,     self.periodIndex)
     syncState(self.filterModeOption, self.filterMode)
     syncState(self.groupOption,      self.grouped and 2 or 1)
-    local function vis(el, show) if el ~= nil and el.setVisible ~= nil then el:setVisible(show) end end
-    vis(self.flowHeaderRow,     not on)
-    vis(self.flowListBox,       not on)
-    vis(self.settingsHeaderRow, on)
-    vis(self.settingsListBox,   on)
-    self:updateViewButton()
+    -- The strip decides what is on screen now, not just the flow/settings view: on a foreign tab
+    -- none of this page's own furniture shows at all. refreshPageTabs ends by calling
+    -- applyTabContent, which covers the four elements this block used to set plus the selector rows,
+    -- the placeholder, the realtime list set and the footer.
+    self:refreshPageTabs()
     -- The COLD first enumeration, timed as its own sample: memos are empty and this is the most expensive
     -- refresh the tab will ever do, so it is what should decide the backoff -- otherwise a farm big enough
     -- to hitch would hitch at least twice before the menu noticed. Not overlapped with the periodic timing
@@ -598,18 +709,11 @@ function DistributionOverviewPage:populateCellForItemInSection(list, section, in
     setc("loadedText",      flowV(r.loaded))
     setc("consumedText",    withExpected(r.consumed, r.consumedExpected))
     setc("unloadedText",    flowV(r.unloaded))
-    setc("heldText",        withCapacity(r))
-    setc("remainingText",   remainingText(r.remaining))
-    -- colour must be set on EVERY path (including the nil case), or a recycled cell keeps the last row's.
-    -- It goes on HELD, and FREE STORAGE is actively reset to white for that same recycling reason.
-    local rc = cell:getAttribute("remainingText")
-    if rc ~= nil and rc.setTextColor ~= nil then rc:setTextColor(1, 1, 1, 1) end
-    local hc = cell:getAttribute("heldText")
-    if hc ~= nil and hc.setTextColor ~= nil then
-        local col = remainingColor(r.remaining, r.capacity)
-        if col ~= nil then hc:setTextColor(col[1], col[2], col[3], col[4])
-        else hc:setTextColor(1, 1, 1, 1) end
-    end
+    -- THE BAR, in place of the HELD (MAX) and FREE STORAGE cells. Every path inside it sets or actively
+    -- hides each of its parts, which is not optional here: SmoothList RECYCLES cells, so a segment or a
+    -- mark left over from the previous row would report another building's tank (the trap 5.7 hit with
+    -- colours and 5.57 with the notice row).
+    setStorageBar(cell, r, self.grouped)
     setc("producedText",    withExpected(r.produced, r.producedExpected))
     setc("distributedText", flowV(r.distributed))
     setc("storedText",      flowV(r.stored))
@@ -695,14 +799,6 @@ local function setCellColor(cell, name, rgba)
     if rgba == nil then c:setTextColor(1, 1, 1, 1) else c:setTextColor(rgba[1], rgba[2], rgba[3], rgba[4]) end
 end
 
-local function pctText(pct, liters, explicit)
-    if type(pct) ~= "number" then return "-" end
-    local t = string.format("%d%%", math.floor(pct + 0.5))
-    if type(liters) == "number" and liters > 0 and liters < math.huge then t = t .. "  " .. fmtV(liters) end
-    if not explicit then t = t .. " *" end          -- * = auto (DR's default share), not a value you set
-    return t
-end
-
 function DistributionOverviewPage:settingsViewOn()
     return self._settingsView == true
 end
@@ -722,18 +818,14 @@ function DistributionOverviewPage:onToggleSettingsView()
         if self.filterMode == 2 then self.filterValue = nil end
         self._filterValuesJoined = nil
     end
-    local function vis(el, show) if el ~= nil and el.setVisible ~= nil then el:setVisible(show) end end
-    vis(self.flowHeaderRow,     not on)
-    vis(self.flowListBox,       not on)
-    vis(self.settingsHeaderRow, on)
-    vis(self.settingsListBox,   on)
     if self.groupOption ~= nil then
         if self.groupOption.setDisabled ~= nil then pcall(function() self.groupOption:setDisabled(on) end) end
         if self.groupOption.setState ~= nil then pcall(function() self.groupOption:setState(self.grouped and 2 or 1) end) end
     end
-    self._realtimeLists = { on and "settingsList" or "statsList" }
     self._scrollMap = { { on and "settingsSlider" or "statsSlider", on and "settingsList" or "statsList", 14 } }
-    self:updateViewButton()
+    -- ONE PLACE decides what is visible and which lists refresh, so the view toggle and the tab
+    -- switch cannot come to disagree about it. It sets _realtimeLists and the footer too.
+    self:applyTabContent()
     self:applySelectorChange()
 end
 
@@ -741,13 +833,17 @@ end
 function DistributionOverviewPage:updateViewButton()
     local all = self._allButtons
     if all == nil or self.applyFooterButtons == nil then return end
+    -- ON A FOREIGN TAB, BACK IS THE ONLY ACTION LEFT. "Show Settings" and "Refresh" both act on
+    -- this page's own table, which is not on screen -- a button that visibly does nothing is worse
+    -- than no button, and the footer is the one place a player looks for what a page can do.
+    local own = self:ownTabActive()
     local vis = {}
     for _, b in ipairs(all) do
         if b._role == "viewToggle" then
             b.text = self:settingsViewOn() and SmartDistribution.l10n("dr_btn_showFlows", "Show Flows")
                                             or SmartDistribution.l10n("dr_btn_showSettings", "Show Settings")
         end
-        vis[#vis + 1] = b
+        if own or b.inputAction == InputAction.MENU_BACK then vis[#vis + 1] = b end
     end
     self:applyFooterButtons(vis)
 end
@@ -773,7 +869,11 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
         setc("typeText", s.blocked and SmartDistribution.l10n("dr_type_blocked", "BLOCKED")
             or (s.pooled and SmartDistribution.l10n("dr_type_pooled", "Pooled") or SmartDistribution.l10n("dr_type_individual", "Individual")))
         setCellColor(cell, "typeText", s.blocked and col.BLOCKED or nil)
-        setc("maxInText", s.blocked and fmtV(0) or pctText(s.pct, s.maxL, s.explicit))
+        -- LITRES, since 2026-09-22: the setting IS litres now, so a percentage here would be a
+        -- second unit for one number. A `*` still marks DR's own default rather than a figure the
+        -- player set (5.37).
+        setc("maxInText", s.blocked and fmtV(0)
+             or ((s.capL ~= nil) and (fmtV(s.capL) .. (s.explicit and "" or "*")) or "-"))
         -- held of the effective ceiling, with the fill % that drives the highlight
         local held = (type(s.inHeld) == "number") and fmtV(s.inHeld) or "-"
         if type(s.fillRatio) == "number" then
@@ -787,7 +887,7 @@ function DistributionOverviewPage:populateSettingsCell(index, cell)
             elseif s.fillRatio >= CAP_NEAR then capCol = col.IDLE end    -- nearing it
         end
         setCellColor(cell, "heldOfMaxText", capCol)
-        setc("fillTargetText", (s.targetPct ~= nil) and pctText(s.targetPct, s.targetL, true) or "-")
+        setc("fillTargetText", (s.targetL2 ~= nil) and fmtV(s.targetL2) or "-")
         local st = s.inStatus
         setc("inStatusText", (st ~= nil and IN_WORD[st]) or "-")
         setCellColor(cell, "inStatusText", st ~= nil and col[st] or nil)

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!-- Distribution Redux: a generic "pick one from a long list" pop-up, standing in for the
+     dropdown FS25's GUI toolkit does not have. Own content on GIANTS' dialog frame.
+     Controls use anchorBottomCenter and POSITIVE Y, the base-game dialog convention. -->
+<GUI name="DistributionPickDialog" onOpen="onOpen" onClose="onClose">
+    <GuiElement type="empty" profile="newLayer" />
+    <Bitmap profile="dialogFullscreenBg" id="dialogBg" />
+
+    <GuiElement profile="SDPickDialogBox" id="dialogElement">
+        <ThreePartBitmap profile="fs25_dialogBgMiddle" />
+        <ThreePartBitmap profile="fs25_dialogBgTop" />
+        <ThreePartBitmap profile="fs25_dialogBgBottom" />
+
+        <GuiElement profile="fs25_dialogContentContainer">
+            <Text profile="fs25_dialogTitle" id="dialogTitleElement" text="$l10n_dr_rg_pickBuilding" position="0px -35px" />
+
+            <!-- The list is WRAPPED in a positioned panel and positioned inside it, because a
+                 SmoothList and a slider both bring their own anchoring from their profiles and
+                 an absolute x/y written on them means nothing (5.70). -->
+            <Bitmap profile="SDList" position="0px 100px" size="840px 600px">
+                <SmoothList profile="SDList" id="pickList" position="0px 0px" size="820px 600px"
+                            onClick="onPickClick" onSelectionChanged="onPickSelectionChanged"
+                            selectedWithoutFocus="false" focusInit="onOpen">
+                    <ListItem profile="SDListItem" name="rowTemplate" size="820px 52px">
+                        <Bitmap position="10px 6px" size="48px 40px" name="icon" imageColor="1 1 1 1" />
+                        <!-- positive Y moves UP inside a list row, so the secondary line is negative -->
+                        <Text profile="SDRowCell" position="66px 10px"  size="740px 26px" textSize="17px" name="name" />
+                        <Text profile="SDRowCell" position="66px -12px" size="740px 20px" textSize="13px" name="sub" />
+                    </ListItem>
+                </SmoothList>
+                <ThreePartBitmap profile="fs25_listSliderBox">
+                    <Slider profile="fs25_listSlider" dataElementId="pickList" />
+                </ThreePartBitmap>
+            </Bitmap>
+        </GuiElement>
+
+        <BoxLayout profile="fs25_dialogButtonBox" id="buttonsPC">
+            <Button profile="buttonBack" text="$l10n_dr_btn_cancel" onClick="onClickBack" id="noButton" />
+        </BoxLayout>
+    </GuiElement>
+</GUI>

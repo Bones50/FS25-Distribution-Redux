@@ -18,6 +18,11 @@
 DistributionProductionsPage = {}
 local DistributionProductionsPage_mt = Class(DistributionProductionsPage, DistributionMenuPage)
 
+---A member of the DISTRIBUTION GROUP: one left icon, these four as top tabs.
+-- Animal Husbandry and Markets are subclasses of this one and inherit it, which is why
+-- there are four tabs and only two declarations.
+DistributionProductionsPage.GROUP_MEMBER = true
+
 -- A row counts as "holding something" only when the HELD cell would actually SAY so.
 -- SmartDistribution.formatVolume renders litres as math.floor(v + 0.5), so anything below 0.5 L
 -- prints "0 L" -- while the row-inclusion tests further down used a bare `> 0`. A few hundredths of a
@@ -73,7 +78,7 @@ local function fmtV(n)
 end
 
 -- ---- BLOCKED-PRODUCT NOTICE (twin of the DistributionStoragePage helpers; keep the two in step) -------
-local NOTICE_CELLS = { "name", "amount", "remainingText", "received", "consumed", "produced", "distr",
+local NOTICE_CELLS = { "name", "amount", "received", "consumed", "produced", "distr",
                        "method", "statusText", "status", "prodMo",
                        "barHeld", "barCap" }
 
@@ -224,8 +229,8 @@ local function inputMaxLiters(placeable, ft)
     -- It used to return inputEffectiveMaxLiters, the elastic "what could still fit given what the others
     -- hold", which bore no relation to the percentage the player set. (Twin of the StoragePage helper.)
     local pct = 100
-    if SmartDistribution.inputCapPct ~= nil then
-        local okP, v = pcall(SmartDistribution.inputCapPct, placeable, ft)
+    if SmartDistribution.inputCapLiters ~= nil then
+        local okP, v = pcall(SmartDistribution.inputCapLiters, placeable, ft)
         if okP and type(v) == "number" then pct = v end
     end
     if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
@@ -343,97 +348,11 @@ local function fillTypeTitle(ft)
     return tostring(ft)
 end
 
--- ----- ICON TOOLTIPS ----------------------------------------------------------------------------
--- Hovering a product icon shows the product NAME next to the cursor. The label is never translated
--- here: it is the already localized text the page has (the recipe name, else the fill type title), so
--- modded products read exactly as the game names them. Icons register themselves in a weak-keyed
--- table when they are drawn, so recycled list cells cannot keep a stale label alive.
-local tooltipIcons = setmetatable({}, { __mode = "k" })
-local hoverTooltip = nil            -- { text, mx, my, t } -- t counts the dwell before showing
-local TOOLTIP_DELAY_MS = 250
-
-local function setIconTooltip(el, label)
-    if el == nil then return end
-    if type(label) ~= "string" or label == "" then
-        el.drTooltip = nil
-        tooltipIcons[el] = nil
-        return
-    end
-    el.drTooltip = label
-    tooltipIcons[el] = true
-end
-
--- visible for real: the element AND every ancestor up to the screen
-local function isTrulyVisible(el)
-    local e = el
-    while e ~= nil do
-        if e.visible == false then return false end
-        e = e.parent
-    end
-    return el.getIsVisible == nil or el:getIsVisible()
-end
-
-local function elementHovered(el, mx, my)
-    if el == nil or el.absPosition == nil or el.absSize == nil then return false end
-    if not isTrulyVisible(el) then return false end
-    local w, h = el.absSize[1], el.absSize[2]
-    if w == nil or h == nil or w <= 0 or h <= 0 then return false end
-    if GuiUtils == nil or GuiUtils.checkOverlayOverlap == nil then return false end
-    return GuiUtils.checkOverlayOverlap(mx, my, el.absPosition[1], el.absPosition[2], w, h)
-end
-
-local function findHoveredTooltip(mx, my)
-    for el in pairs(tooltipIcons) do
-        if type(el.drTooltip) == "string" and elementHovered(el, mx, my) then
-            return el.drTooltip
-        end
-    end
-    return nil
-end
-
--- One frame of hover tracking: the box only appears once the cursor has RESTED on an icon for
--- TOOLTIP_DELAY_MS, so it does not flicker while the mouse sweeps across the strip. Moving onto a
--- different icon restarts the dwell; leaving the icons clears the tooltip at once.
-local function updateHoverTooltip(dt)
-    if g_inputBinding == nil or g_inputBinding.getMousePosition == nil then hoverTooltip = nil; return end
-    local mx, my = g_inputBinding:getMousePosition()
-    if mx == nil or my == nil then hoverTooltip = nil; return end
-    local text = findHoveredTooltip(mx, my)
-    if text == nil then hoverTooltip = nil; return end
-    if hoverTooltip ~= nil and hoverTooltip.text == text then
-        hoverTooltip.t = hoverTooltip.t + (dt or 0)
-        hoverTooltip.mx, hoverTooltip.my = mx, my
-    else
-        hoverTooltip = { text = text, mx = mx, my = my, t = 0 }
-    end
-end
-
-
-
--- Game-styled box: black fill, thin green border, white text; nudged back inside the screen edges.
-local TOOLTIP_BORDER = { 0.22323, 0.40724, 0.00368 }
-local function renderTooltip(mx, my, text)
-    if renderText == nil or drawFilledRect == nil then return end
-    if new2DLayer ~= nil then new2DLayer() end
-    local textSize = (getCorrectTextSize ~= nil) and getCorrectTextSize(0.013) or 0.013
-    local textWidth = (getTextWidth ~= nil) and getTextWidth(textSize, text) or (#text * textSize * 0.55)
-    local padX, padY = 0.008, 0.008
-    local boxW, boxH = textWidth + 2 * padX, textSize + 2 * padY
-    local brdX = 2 * (g_pixelSizeX or 0.0005)
-    local brdY = 2 * (g_pixelSizeY or 0.0009)
-    local bx, by = mx + 0.005, my + 0.013
-    if bx + boxW + brdX > 0.99 then bx = 0.99 - boxW - brdX end
-    if bx - brdX < 0.01 then bx = 0.01 + brdX end
-    if by + boxH + brdY > 0.98 then by = my - boxH - 0.012 end
-    if by - brdY < 0 then by = brdY end
-    drawFilledRect(bx - brdX, by - brdY, boxW + 2 * brdX, boxH + 2 * brdY,
-                   TOOLTIP_BORDER[1], TOOLTIP_BORDER[2], TOOLTIP_BORDER[3], 1)
-    drawFilledRect(bx, by, boxW, boxH, 0, 0, 0, 1)
-    setTextColor(1, 1, 1, 1)
-    setTextAlignment(RenderText.ALIGN_LEFT)
-    setTextBold(false)
-    renderText(bx + padX, by + padY + textSize * 0.12, textSize, text)
-end
+-- ----- ICON TOOLTIPS -----------------------------------------------------------------------------
+-- The implementation is SmartDistribution's since step 3 of the routing graph, so two pages cannot
+-- drift apart (6.18). These are thin aliases: the ~20 call sites below are untouched.
+local function setIconTooltip(el, label) return SmartDistribution.setIconTooltip(el, label) end
+local function updateHoverTooltip(dt)    return SmartDistribution.updateHoverTooltip(dt) end
 -- ========================== end ICON TOOLTIPS ======================================
 
 -- The "+N blocked" notice row has no product name, so alphabetical sorting would float it to the top.
@@ -472,15 +391,29 @@ end
 -- cap is, so the scroll behaviour is unchanged.
 local MAX_LINE_INPUT_ICONS = 15
 local MAX_LINE_OUTPUT_ICONS = 8
-local LINE_IN_WINDOW_SLOTS = 6     -- inputs visible at once; a longer list scrolls inside the window
+-- TEN, up from five, because the AXIS MOVED RIGHT (2026-09-21) and the room had to go somewhere.
+-- The earlier note here weighed five slots against six and concluded that moving the axis was the
+-- expensive option because it meant re-cutting STATUS and TARGET/MO. It does NOT: the right end of
+-- the output block is unchanged (528 + 148 == 296 + 380), so only the SPLIT moved and those two
+-- columns never had to be touched. What the old split actually cost was ~250px of every row held
+-- open for outputs a single icon could never use, and 95% of lines have exactly one output.
+-- The window is bounded by the throughput glyph at the row's left edge (6..54): ten columns put
+-- winL at 528 - 16 - 440 = 72, clear of it, and eleven would land on 28 and collide.
+-- Measured across every production line in the base game and all installed mods, overflow (and so
+-- scrolling) was 10.3% at five slots and 7.1% at six; at ten it is a small fraction of that.
+local LINE_IN_WINDOW_SLOTS = 10    -- inputs visible at once; a longer list scrolls inside the window
 local LINE_SCROLL_SPEED_PX = 30    -- strip travel speed (reference px per second)
 local LINE_SCROLL_PAUSE = 1.2      -- hold at both ends of the ping-pong travel (seconds)
 local LINE_ICON_W_PX = 24          -- product icon width (matches the XML slots)
 local LINE_COL_PITCH_PX = 44       -- FIXED per-item column width: icon + room for the amount + gap
 local LINE_ARROW_PAD_PX = 16       -- clearance kept on both sides of the "-->"
 local LINE_UNIT_BASE_PX = 86       -- inIcon1 -> inIcon2 spacing in the XML (derives the pixel unit)
-local LINE_AXIS_PX = 296           -- the "-->" axis (matches XML inArrow and the column header)
-local LINE_OUT_AVAIL_PX = 380      -- room for the output block right of the arrow
+local LINE_AXIS_PX = 528           -- the "-->" axis (matches XML inArrow and the column header)
+-- OUTPUTS GET THREE COLUMNS AND NO MORE (author, 2026-09-21): 3 x LINE_COL_PITCH_PX = 132, plus the
+-- arrow pad. Beyond three the block SHRINKS rather than overflowing, and the floor is reachable now
+-- where 5.92a recorded it as dead: at seven outputs (the largest recipe measured anywhere) the scale
+-- clamps to LINE_MIN_SCALE and the block ends at ~710, still clear of STATUS at 726.
+local LINE_OUT_AVAIL_PX = 148      -- room for the output block right of the arrow (3 columns + pad)
 local LINE_MIN_SCALE = 0.5         -- outputs never shrink below this
 local NUM_FIT = 0.96               -- share of its column an amount may occupy before it shrinks
 
@@ -755,6 +688,49 @@ end
 
 -- THE WHOLE STRIP, aligned on the arrow axis:
 --    [inputs stacked right up to the arrow]  "-->"  [outputs growing rightwards]
+-- THE THROUGHPUT GLYPH: does this production point run its active lines in PARALLEL (each at its own
+-- rated speed) or in SERIES (one budget shared between them)? DR has known this since 5.28 --
+-- sharesThroughput reads pp.sharedThroughputCapacity and throughputShare divides the demand by it -- and
+-- it has never been visible anywhere in the UI, which makes a halved CONSUMED (EXP.) figure look like a
+-- bug. 5.28 records that costing an entire evening chasing a farm fault that did not exist.
+--
+-- A PROPERTY OF THE BUILDING, NOT THE LINE, so every line row of one production shows the same glyph.
+-- That is deliberate: the row is where a player looks at a line, and the answer is what governs THAT
+-- line's rate. It is resolved ONCE per rebuild (self._sharedThroughput) rather than per row.
+--
+-- Nothing is invented when DR cannot tell: sharesThroughput returns false for a modded point exposing no
+-- recognisable flag, and DR then sums the lines (the pre-5.28 behaviour). The glyph shows PARALLEL there
+-- because that is genuinely what DR is doing -- it reports DR's own model, not a claim about the building.
+--
+-- Declared BEFORE its caller. A `local function` further down the file parses clean and resolves to a nil
+-- GLOBAL at call time, which inside a populate aborts the row mid-render and shows as an EMPTY LIST --
+-- nothing like its cause (5.44 / 5.57, and it has been within one edit of shipping twice).
+-- shipped art, resolved once against the mod folder. setImageFilename is the only route -- an
+-- imageFilename in the XML cannot name a mod file (5.80).
+local LINE_ICON_PARALLEL = (SmartDistribution.modDir or "") .. "gui/icon_throughput_parallel.png"
+local LINE_ICON_SERIES   = (SmartDistribution.modDir or "") .. "gui/icon_throughput_series.png"
+
+local function setLineThroughputIcon(cell, shared)
+    if cell == nil or cell.getAttribute == nil then return end
+    local box = cell:getAttribute("thruIcon")
+    if box == nil or box.setImageFilename == nil then return end
+    local series = (shared == true)
+    -- if/else, not `a and b or c`: this codebase has been bitten twice by that collapse (5.44, 5.46c),
+    -- and cells are RECYCLED by SmoothList, so the file is set EVERY populate rather than only when it
+    -- changes -- otherwise a row inherits the previous line's glyph (the trap 5.7 and 5.57 both hit).
+    local file, tip
+    if series then
+        file = LINE_ICON_SERIES
+        tip  = SmartDistribution.l10n("dr_tip_series", "Series - these lines share one throughput budget")
+    else
+        file = LINE_ICON_PARALLEL
+        tip  = SmartDistribution.l10n("dr_tip_parallel", "Parallel - each line runs at its own full rate")
+    end
+    box:setImageFilename(file)
+    if box.setVisible ~= nil then box:setVisible(true) end
+    setIconTooltip(box, tip)
+end
+
 -- The arrow always sits on LINE_AXIS_PX, which is what keeps the rows aligned under each other.
 -- Inputs never shrink (the window is a fixed column count and a longer list scrolls); the output
 -- block shrinks on its own only when it would otherwise reach the STATUS column.
@@ -967,7 +943,7 @@ function DistributionProductionsPage:onGuiSetupFinished()
         self.inputList:setDataSource(self)
     end
     -- rows that fit each frame at the 42px SDListItemStats pitch (152/42 = 3, 277/42 = 6)
-    self._scrollMap = { { "inputSlider", "inputList", 3 }, { "lineSlider", "lineList", 3 }, { "outputSlider", "outputList", 6 } }
+    self._scrollMap = { { "inputSlider", "inputList", 3 }, { "lineSlider", "lineList", 4 }, { "outputSlider", "outputList", 6 } }
 end
 
 function DistributionProductionsPage:rebuildAssets()
@@ -996,8 +972,14 @@ end
 function DistributionProductionsPage:buildSections()
     self.inputs, self.lines, self.outputs = {}, {}, {}
     local p = self.selectedAsset
+    self._sharedThroughput = nil
     if p == nil or SmartDistribution == nil or SmartDistribution.productionLines == nil then return end
     local lines = SmartDistribution.productionLines(p) or {}
+    -- PER BUILDING, resolved once here rather than per row: sharesThroughput walks the production point's
+    -- fields looking for the shared-capacity flag, and the answer is identical for every line of it.
+    if SmartDistribution.sharesThroughput ~= nil and SmartDistribution.productionPointOf ~= nil then
+        self._sharedThroughput = SmartDistribution.sharesThroughput(SmartDistribution.productionPointOf(p))
+    end
 
     -- Which fill types belong to an ENABLED line (input side / output side). A row is only worth showing
     -- if some enabled line uses it OR there is stock of it -- an input/output tied only to disabled lines
@@ -1212,6 +1194,7 @@ end
 
 function DistributionProductionsPage:onFrameOpen()
     DistributionProductionsPage:superClass().onFrameOpen(self)
+    self:resetPeriodToCycle()
     self._realtimeLists = { "inputList", "outputList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
@@ -1244,13 +1227,11 @@ end
 -- arguments in some game versions, so they are passed straight through.
 function DistributionProductionsPage:draw(...)
     DistributionProductionsPage:superClass().draw(self, ...)
-    if hoverTooltip ~= nil and hoverTooltip.t >= TOOLTIP_DELAY_MS then
-        pcall(renderTooltip, hoverTooltip.mx, hoverTooltip.my, hoverTooltip.text)
-    end
+    SmartDistribution.drawHoverTooltip()
 end
 
 function DistributionProductionsPage:onFrameClose()
-    hoverTooltip = nil
+    SmartDistribution.clearHoverTooltip()
     DistributionProductionsPage:superClass().onFrameClose(self)
 end
 
@@ -1304,6 +1285,7 @@ function DistributionProductionsPage:populateCellForItemInSection(list, section,
         local ln = self.lines[index]
         if ln == nil then return end
         setc("name", ln.name)
+        setLineThroughputIcon(cell, self._sharedThroughput)
         setLineInputIcons(cell, ln.inputFts, ln.outputFts, ln.inputAmounts, ln.outputAmounts,
                           ln.inputNames, ln.outputNames)
 

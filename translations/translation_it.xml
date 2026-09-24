@@ -36,13 +36,13 @@
         <text name="dr_input_openManager" text="menu distribuzione" />                                          -->
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Distribuzione - Panoramica" />
+        <text name="dr_title_overview"        text="Panoramica" />
         <text name="dr_title_productions"     text="Distribuzione - Produzioni" />
         <text name="dr_title_storage"         text="Distribuzione - Stoccaggio" />
         <text name="dr_title_husbandry"       text="Distribuzione - Allevamento" />
         <text name="dr_title_markets"         text="Distribuzione - Mercati" />
-        <text name="dr_title_help"            text="Distribuzione - Aiuto" />
-        <text name="dr_title_settings"        text="Distribuzione - Impostazioni" />
+        <text name="dr_title_help"            text="Aiuto" />
+        <text name="dr_title_settings"        text="Impostazioni" />
         <text name="dr_title_advanced"        text="Avanzate" />
         <text name="dr_title_advancedInputs"  text="Ingressi avanzati" />
         <text name="dr_title_spawnPallets"    text="Genera pallet" />
@@ -71,8 +71,6 @@
         <text name="dr_col_loaded"        text="CARICATO" />
         <text name="dr_col_consumedExp"   text="CONSUMATO (PREV.)" />
         <text name="dr_col_unloaded"      text="SCARICATO" />
-        <text name="dr_col_heldMax"       text="DISPONIBILE (max)" />
-        <text name="dr_col_freeStorage"   text="SPAZIO LIBERO" />
         <text name="dr_col_producedExp"   text="PRODOTTO (PREV.)" />
         <text name="dr_col_distributed"   text="DISTRIBUITO" />
         <text name="dr_col_sold"          text="VENDUTO" />

@@ -143,6 +143,14 @@
         <textAlignment value="center" />
     </Profile>
 
+    <!-- THE ROUTING GRAPH's five column headings. SDHeaderCenter is a TABLE header: colorWhite_50
+         reads correctly above dense rows and disappears above a wide empty canvas, where these
+         five words are the only thing between the controls and the graph. Full white, and the
+         size is set on the elements. Reported 2026-09-23: "they just get lost in the page". -->
+    <Profile name="SDGraphHeader" extends="SDHeaderCenter">
+        <textColor value="$preset_colorWhite" />
+    </Profile>
+
     <!-- RIGHT-aligned data cell. Used by the IN half of the combined status so it hugs the "/" and the
          gap either side of the separator is the same on every row, whatever the word length. -->
     <Profile name="SDRowCellRight" extends="SDRowCell">
@@ -230,6 +238,31 @@
     <Profile name="SDInputsDialogBox" extends="SDAdvDialogBox">
         <size value="1400px 900px" />
     </Profile>
+    <!-- THE ROUTING GRAPH's box, and it is the only DR dialog sized as a PERCENTAGE.
+         That is deliberate and it is what makes it resolution-aware with no code at all.
+         6.15's widening hook multiplies every literal px WIDTH of DR content by the ultrawide
+         factor, and it SKIPS a percentage (a percentage resolves from the parent, which has
+         already been widened, so scaling it again compounds down the tree). So:
+           * in px, a box sized to fill 16:9 would land at ~104% of a 21:9 screen and hang off
+             the edge, because the factor there is about 1.46;
+           * as a percentage it fills the same fraction of ANY screen, and the CONTENT inside it
+             is still px and still widened, capped at LAYOUT_TARGET_WIDTH (84% of screen), which
+             a 96% box always contains.
+         The three chrome parts (fs25_dialogBgTop / Middle / Bottom) are anchorTopStretchingX /
+         anchorStretchingYStretchingX / anchorBottomStretchingX, so the frame follows whatever
+         size this is - read from guiProfiles.xml (8.1a), not assumed.
+         NOT extended from SDAdvDialogBox: that one is shared with the Advanced Outputs dialog
+         and must not grow with this, which is the same reason SDInputsDialogBox and
+         SDPickDialogBox each carry their own size. -->
+    <Profile name="SDRoutingDialogBox" extends="fs25_dialogBg">
+        <size value="1581px 1050px" />
+    </Profile>
+
+    <!-- the generic PICK-FROM-A-LIST pop-up. Its OWN size rather than SDInputsDialogBox's,
+         for 5.77's reason: that one is shared with a dialog that must not grow with it. -->
+    <Profile name="SDPickDialogBox" extends="SDAdvDialogBox">
+        <size value="900px 840px" />
+    </Profile>
     <!-- dropdown / stepper selector (left/right arrows + text) for the spawn pop-up.
          anchorBottomCenter + positive-Y positions is the base-game dialog convention. -->
     <Profile name="SDMultiTextOption" extends="baseReference" with="anchorBottomCenter">
@@ -267,6 +300,60 @@
          the anchoring every other cell in these rows is positioned by. -->
     <Profile name="SDRowArrowRight" extends="fs25_multiTextOptionRight" with="anchorStretchingYLeft" />
 
+    <!-- ================= PAGE TAB STRIP, IN THE HEADER =================
+         The strip lives in fs25_menuHeaderPanel, in the band the page TITLE used to
+         occupy, and the two are alternatives: when a strip is showing the active tab
+         already names the page, and when PAGE_TAB_MIN suppresses the strip the title
+         comes back. That is what makes this cost ZERO vertical space, where putting it
+         above the content would have taken 46px off the bottom list of every tabbed
+         page (all of them tile to exactly -810px) and moved every _scrollMap with it.
+
+         anchorMiddleLeft so it sits on the title's own centre line. It has to be on a
+         PROFILE: a with= written on an element is read by nothing and silently ignored
+         (5.87a).
+
+         WIDTH BUDGET. fs25_menuHeaderPanel is the container less its 56px
+         absoluteSizeOffset, about 1494px, and the icon occupies 15..81. Starting at 100
+         leaves ~1394. The strip uses 1336 of it:
+           prev arrow 0..40 | six 200px tabs from 48, 8px gutters, last ends 1288
+           next arrow 1296..1336
+         200px at 18px bold uppercase is about 13 characters, so TAB LABELS MUST BE
+         SHORT, shorter than the page titles they replace. German runs ~30% longer
+         (5.60) and a tab clips rather than wraps. -->
+    <Profile name="SDHeaderTabStrip" extends="emptyPanel" with="anchorMiddleLeft">
+        <position value="100px 0px" />
+        <size value="1336px 50px" />
+    </Profile>
+
+    <!-- The A / D hints at each end of the strip. TEXT GLYPHS, not the stock arrow art:
+         5.64 records fs25_multiTextOptionLeft/Right rendering as garbled blocks whenever
+         they are re-sized, because the icon is sampled from the UI atlas whose slice
+         geometry is not readable, and these need a letter beside them, so they would
+         have to be sized. A chevron in text cannot garble.
+         They are BUTTONS as well as hints: a mouse player can click them, which is free
+         once the element exists and is what the keyboard hint would otherwise deny them. -->
+    <!-- A page standing in for content that is not built yet. Big, centred, quiet:
+         it is a state, not a heading, so it sits in the body rather than the header. -->
+    <Profile name="SDPlaceholder" extends="fs25_textDefault">
+        <textSize value="30px" />
+        <textBold value="true" />
+        <textUpperCase value="true" />
+        <textAlignment value="center" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainLight" />
+    </Profile>
+
+    <Profile name="SDHeaderTabArrow" extends="emptyPanel">
+        <size value="40px 50px" />
+        <textBold value="true" />
+        <textSize value="20px" />
+        <textAlignment value="center" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainLight" />
+        <textFocusedColor value="$preset_fs25_colorMainHighlight" />
+        <textSelectedColor value="$preset_fs25_colorMainHighlight" />
+    </Profile>
+
     <Profile name="SDRowArrow" extends="baseReference" with="anchorStretchingYLeft">
         <size value="26px 26px" />
         <textBold value="true" />
@@ -291,5 +378,126 @@
         <textSize value="17px" />
         <textColor value="$preset_fs25_colorMainDark" />
         <textFocusedColor value="$preset_fs25_colorMainDark" />
+    </Profile>
+    <!-- The routing tab's building control: a WIDE TEXT BUTTON that opens the picker list.
+         Same shape as SDStep10Button, which is proven in game. A stretchable button
+         BACKGROUND is exactly the case 5.70 allows, unlike the atlas sampled arrow ART that
+         5.64 records garbling when it is re-sized. The inherited arrow icon is suppressed
+         outright so there is none to garble. -->
+    <Profile name="SDPickButton" extends="fs25_multiTextOptionLeft">
+        <size value="560px 40px" />
+        <iconSliceId value="noSlice" />
+        <imageSliceId value="gui.3dShop_button" />
+        <imageFocusedSliceId value="gui.3dShop_button_selected" />
+        <imageColor value="$preset_fs25_colorMainLight" />
+        <imageFocusedColor value="$preset_fs25_colorMainHighlight" />
+        <textSize value="18px" />
+        <textAlignment value="center" />
+        <textColor value="$preset_fs25_colorMainDark" />
+        <textFocusedColor value="$preset_fs25_colorMainDark" />
+    </Profile>
+
+    <!-- THE ROUTING TAB'S CONTROL STRIP. Both shapes are modelled on SDPickButton above, which is
+         proven in game: a STRETCHABLE button background (gui.3dShop_button, a ThreePartBitmap) is
+         exactly the case 5.70 allows, unlike the atlas sampled arrow ART that 5.64 records garbling
+         whenever it is re-sized. The inherited arrow icon is suppressed outright so there is none to
+         garble, and the glyph is TEXT, which has no UVs to get wrong and scales with textSize.
+         Anchoring is NOT overridden: fs25_multiTextOptionLeft brings anchorStretchingYLeft, which is
+         what places a fixed-height button inside a row from a plain y, the way the in-row mode arrows
+         are placed. -->
+    <Profile name="SDCtlButton" extends="fs25_multiTextOptionLeft" with="anchorTopLeft">
+        <size value="140px 44px" />
+        <iconSliceId value="noSlice" />
+        <iconSize value="0px 0px" />
+        <iconTextOffset value="0px 0px" />
+        <imageSliceId value="gui.colorPreset" />
+        <imageFocusedSliceId value="gui.colorPreset" />
+        <imageColor value="0.24 0.26 0.29 0.9" />
+        <imageHighlightedColor value="0.34 0.37 0.41 1" />
+        <imageFocusedColor value="0.34 0.37 0.41 1" />
+        <imageSelectedColor value="0.24 0.26 0.29 0.9" />
+        <imageDisabledColor value="0.24 0.26 0.29 0.4" />
+        <textSize value="12px" />
+        <textAlignment value="center" />
+        <textColor value="0.90 0.90 0.90 1" />
+        <textFocusedColor value="1 1 1 1" />
+        <textHighlightedColor value="1 1 1 1" />
+        <textDisabledColor value="0.55 0.57 0.60 1" />
+    </Profile>
+
+    <!-- THE TYPED NUMBER FIELD, and its grey prompt. Both are DR's own copies of Husbandry
+         Redux's ARNumberInput / ARNumberHint, the shape its auto trader uses: a real selector
+         BOX with the stock left and right arrows at its ends and a field between them. COPIED
+         rather than borrowed, because check_profiles.py requires each mod's layouts to resolve
+         against its own profiles and DR must never depend on AR, see 5.87.
+
+         PERCENTAGE SIZED with an 80px absoluteSizeOffset, so dropped into a box of any width the
+         field leaves exactly the two 40px arrows uncovered. absoluteSizeOffset is SUBTRACTED,
+         see GuiElement.lua:422, the same mechanism 5.90 uses to shrink the settings list.
+
+         THE PROMPT IS A SEPARATE ELEMENT because TextInputElement has no placeholder at all 
+         imePlaceholder reaches the console IME overlay and never the field, and because a
+         prompt held in the field's own text becomes real input the moment a character lands on
+         it. It cannot steal the click: TextElement declares no mouseEvent of its own and
+         GuiElement:mouseEvent only propagates.
+
+         SMALLER AND DIMMER THAN THE VALUE, so a prompt is never mistaken for a number that has
+         been chosen. -->
+    <!-- THE INTERIOR OF A NUMBER BOX, and it exists because of WHAT IS BEHIND IT.
+         fs25_multiTextOptionBg is an OUTLINE: its three slices are
+         gui.3dShop_button_outline_left / _middle / _right, read straight out of
+         guiProfiles.xml (8.1a). In Husbandry Redux the same control sits on
+         fs25_dialogBg, a solid panel, so the outline reads as a field with a dark
+         interior. On the routing PAGE there is nothing behind it but the dimmed
+         game world, and the identical element reads as a bare rail with a number
+         floating on it. Reported 2026-09-22 as "the controls still look completely
+         different" with both screens side by side.
+
+         So DR supplies its own interior. PERCENTAGE SIZED, which also keeps it out
+         of the 6.15 widening: a percentage resolves from the parent, which has
+         already been widened, and scaling it again would compound down the tree.
+         Declared FIRST inside the box so it draws behind the outline and behind
+         the text. -->
+    <!-- THE ROUTING GRAPH's field captions, the line above each typed box. SDBarLabel itself is
+         right in every respect except size: it is the storage bar's caption and lives in a 42px
+         table row, while these three are the only labelling on a strip nearly a screen wide.
+         NOT SDHeaderLeft, which is 16px bold UPPERCASE white-50: that is what this mod's TABLE
+         HEADERS use, and three of those in a row read as a header bar rather than as three
+         separate controls, which is exactly how this looked beside Husbandry Redux's Auto Trader
+         (reported 2026-09-23). -->
+    <Profile name="SDFieldLabel" extends="SDBarLabel">
+        <textSize value="14px" />
+    </Profile>
+
+    <!-- THE FILL-ORDER NUMBER on a routing destination: big, so the order reads at a glance from
+         across the column rather than having to be traced through the connectors. Deliberately
+         much larger than anything else on the node, because it is the one thing on that node the
+         player SETS rather than reads.
+         anchorStretchingYLeft like SDRowCell, so its y is an offset from the node's CENTRE
+         (5.107) and 0 centres it against the three text lines beside it. -->
+    <Profile name="SDRankBadge" extends="baseReference" with="anchorStretchingYLeft">
+        <textBold value="true" />
+        <textSize value="26px" />
+        <textAlignment value="center" />
+        <textVerticalAlignment value="middle" />
+        <textColor value="$preset_fs25_colorMainHighlight" />
+    </Profile>
+
+    <Profile name="SDNumberInput" extends="fs25_textInput" with="anchorStretchingYStretchingX">
+        <size value="100% 100%" />
+        <absoluteSizeOffset value="80px 0px" />
+        <textSize value="16px" />
+        <textAlignment value="center" />
+        <textColor value="0.9 0.9 0.9 1" />
+        <maxInputTextWidth value="100px" />
+    </Profile>
+
+    <Profile name="SDNumberHint" extends="fs25_textDefault" with="anchorStretchingYStretchingX">
+        <size value="100% 100%" />
+        <absoluteSizeOffset value="80px 0px" />
+        <textSize value="14px" />
+        <textAlignment value="center" />
+        <textColor value="0.5 0.5 0.5 1" />
+        <textMaxNumLines value="1" />
     </Profile>
 </GUIProfiles>

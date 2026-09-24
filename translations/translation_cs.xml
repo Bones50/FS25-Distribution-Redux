@@ -43,13 +43,13 @@
              DELETE BOTH when the probe goes.                                          -->
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="分发 - 总览" />
+        <text name="dr_title_overview"        text="总览" />
         <text name="dr_title_productions"     text="分发 - 生产" />
         <text name="dr_title_storage"         text="分发 - 仓储" />
         <text name="dr_title_husbandry"       text="分发 - 畜牧" />
         <text name="dr_title_markets"         text="分发 - 市场" />
-        <text name="dr_title_help"            text="分发 - 帮助" />
-        <text name="dr_title_settings"        text="分发 - 设置" />
+        <text name="dr_title_help"            text="帮助" />
+        <text name="dr_title_settings"        text="设置" />
         <text name="dr_title_advanced"        text="高级" />
         <text name="dr_title_advancedInputs"  text="高级输入" />
         <text name="dr_title_spawnPallets"    text="生成托盘" />
@@ -78,8 +78,6 @@
         <text name="dr_col_loaded"        text="已装入" />
         <text name="dr_col_consumedExp"   text="消耗(预期)" />
         <text name="dr_col_unloaded"      text="已卸出" />
-        <text name="dr_col_heldMax"       text="持有(最大)" />
-        <text name="dr_col_freeStorage"   text="可用容量" />
         <text name="dr_col_producedExp"   text="产出(预期)" />
         <text name="dr_col_distributed"   text="已分发" />
         <text name="dr_col_storedMoved"   text="入库/移动" />

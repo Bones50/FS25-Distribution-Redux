@@ -251,6 +251,19 @@ function DistributionHelpPage:onPageTab1() self:selectPageTab(1) end
 function DistributionHelpPage:onPageTab2() self:selectPageTab(2) end
 function DistributionHelpPage:onPageTab3() self:selectPageTab(3) end
 function DistributionHelpPage:onPageTab4() self:selectPageTab(4) end
+function DistributionHelpPage:onPageTab5() self:selectPageTab(5) end
+function DistributionHelpPage:onPageTab6() self:selectPageTab(6) end
+
+---Which registry key this page's strip reads. The menu's A / D handler asks the
+-- CURRENT page for this, so one key handler serves every tabbed page and none of
+-- them has to know about the keys (Gui:keyEvent reaches the menu, not the frame,
+-- which is why the handler lives there at all -- 5.64).
+function DistributionHelpPage:pageTabKey() return "help" end
+
+---The two arrow buttons. Same call the keys make, so a click and a key press
+-- cannot come to disagree about what "next" means.
+function DistributionHelpPage:onPageTabPrev() SmartDistribution.stepPageTab(self, "help", -1) end
+function DistributionHelpPage:onPageTabNext() SmartDistribution.stepPageTab(self, "help",  1) end
 
 function DistributionHelpPage:onListSelectionChanged(list, section, index)
     if list == self.topicList then self:selectTopic(index) end

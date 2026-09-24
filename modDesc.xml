@@ -3,7 +3,7 @@
      loads; 110 matches the current patch and silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>1.1.0.3</version>
+    <version>1.1.0.4</version>
 
     <title>
         <en>Distribution Redux</en>
@@ -243,6 +243,11 @@ v1.0.0.1
         <!-- Consolidated full-screen menu (TabbedMenu) with left-side tabs:
              Productions / Silos / Animal Husbandry / User Guide / Settings.
              Base page class loads first, then the page subclasses, then the menu screen. -->
+        <!-- The typed-number control, COPIED VERBATIM from Husbandry Redux (its own header
+             rules that it must be copied rather than called across mods, since DR must
+             never depend on AR). Keep the two files identical; tools/textpicker.lua
+             drives the DR copy and tools/check_lists.py diffs them. -->
+        <sourceFile filename="scripts/gui/TextPicker.lua"/>
         <sourceFile filename="scripts/gui/DistributionMenuPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionSettingsPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>
@@ -250,8 +255,13 @@ v1.0.0.1
         <sourceFile filename="scripts/gui/DistributionOverviewPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionHelpPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionSpawnDialog.lua"/>
+        <sourceFile filename="scripts/gui/DistributionPickDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionAdvancedDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionInputsDialog.lua"/>
+        <!-- THE ROUTING GRAPH. A dialog since 2026-09-23, not a tab: it is opened FOR a building
+             from that building's own page, the way the two windows above it are, and a dialog can
+             be made bigger than a page rather than smaller (see the XML's own header). -->
+        <sourceFile filename="scripts/gui/DistributionRoutingDialog.lua"/>
         <sourceFile filename="scripts/gui/DistributionMenu.lua"/>
         <sourceFile filename="scripts/DistributionModWarning.lua"/>
     </extraSourceFiles>

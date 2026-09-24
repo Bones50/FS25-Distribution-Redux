@@ -19,13 +19,13 @@
         <text name="input_DISTREDUX_OPEN_MANAGER" text="Avaa Distribution Redux -valikko" />
 
         <!-- ================= page + dialog titles ================= -->
-        <text name="dr_title_overview"        text="Jakelu - Yleiskatsaus" />
+        <text name="dr_title_overview"        text="Yleiskatsaus" />
         <text name="dr_title_productions"     text="Jakelu - Tuotannot" />
         <text name="dr_title_storage"         text="Jakelu - Varastot" />
         <text name="dr_title_husbandry"       text="Jakelu - Eläintenhoito" />
         <text name="dr_title_markets"         text="Jakelu - Markkinat" />
-        <text name="dr_title_help"            text="Jakelu - Ohje" />
-        <text name="dr_title_settings"        text="Jakelu - Asetukset" />
+        <text name="dr_title_help"            text="Ohje" />
+        <text name="dr_title_settings"        text="Asetukset" />
         <text name="dr_title_advanced"        text="Lisäasetukset" />
         <text name="dr_title_advancedInputs"  text="Lisäasetukset: Tulot" />
         <text name="dr_title_spawnPallets"    text="Luo lavoja" />
@@ -50,8 +50,6 @@
         <text name="dr_col_loaded"        text="LASTATTU" />
         <text name="dr_col_consumedExp"   text="KULUTUS (ODOT.)" />
         <text name="dr_col_unloaded"      text="PURETTU" />
-        <text name="dr_col_heldMax"       text="MÄÄRÄ (MAX)" />
-        <text name="dr_col_freeStorage"   text="VAPAA TILA" />
         <text name="dr_col_producedExp"   text="TUOTOS (ODOT.)" />
         <text name="dr_col_distributed"   text="JAETTU" />
         <text name="dr_col_storedMoved"   text="VARASTO/SIIRTO" />

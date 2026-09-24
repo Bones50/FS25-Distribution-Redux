@@ -12,6 +12,11 @@
 DistributionStoragePage = {}
 local DistributionStoragePage_mt = Class(DistributionStoragePage, DistributionMenuPage)
 
+---A member of the DISTRIBUTION GROUP: one left icon, these four as top tabs.
+-- Animal Husbandry and Markets are subclasses of this one and inherit it, which is why
+-- there are four tabs and only two declarations.
+DistributionStoragePage.GROUP_MEMBER = true
+
 -- English fallbacks; storageClassLabel resolves them through l10n at display time.
 local STORAGE_CLASSES = { SILO = "Silo", HUSBANDRY = "Barn", SHED = "Storage", HEAP = "Pit", MARKET = "Market" }
 local STORAGE_CLASS_KEYS = { SILO = "dr_class_silo", HUSBANDRY = "dr_class_barn", SHED = "dr_class_storage",
@@ -60,7 +65,7 @@ end
 -- (SmartDistribution.visibleProducts) and the count comes back as one final row, so a shortened table
 -- always explains itself rather than quietly losing rows. The row carries `notice` and NO `ft`, and every
 -- accessor that reaches for a product treats it as absent -- see selectedDetailRow.
-local NOTICE_CELLS = { "typeText", "fillName", "name", "heldText", "amount", "remainingText", "recvText", "received",
+local NOTICE_CELLS = { "typeText", "fillName", "name", "heldText", "amount", "recvText", "received",
                        "consumedText", "consumed", "prodText", "produced", "distText", "distr",
                        "modeText", "method", "statusText", "status",
                        "barHeld", "barCap",
@@ -284,13 +289,16 @@ local function inputMaxLiters(placeable, ft, role)
     -- could still fit given what the others hold" -- which made the figure shrink as neighbours filled up
     -- and had no relationship to the percentage the player had set. That elastic number is still shown, as
     -- AVAILABLE in the dialog, where it is labelled honestly.
-    local pct = 100
-    if SmartDistribution.inputCapPct ~= nil then
-        local ok, v = pcall(SmartDistribution.inputCapPct, placeable, ft)
-        if ok and type(v) == "number" then pct = v end
+    -- THE CEILING IS STORED IN LITRES (2026-09-22), so this is a plain read. The percentage is still
+    -- returned because heldOfMaxText prints it in the tail, but it is DERIVED here rather than being
+    -- the setting -- nothing decides anything with it.
+    local capL = cap
+    if SmartDistribution.inputCapLiters ~= nil then
+        local ok, v = pcall(SmartDistribution.inputCapLiters, placeable, ft, role)
+        if ok and type(v) == "number" then capL = v end
     end
-    if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
-    return cap * pct / 100, pct
+    if capL < 0 then capL = 0 elseif capL > cap then capL = cap end
+    return capL, (cap > 0) and math.floor((capL / cap) * 100 + 0.5) or 100
 end
 
 -- "619 L / 50,000 L (50%)" for an input row: what is there, the most that may go in, and the percentage
@@ -568,7 +576,7 @@ function DistributionStoragePage:onGuiSetupFinished()
     -- hides the scrollbar track when the list does NOT overflow its frame
     -- ONE list now, 672px at the 42px row pitch = 16 rows. The count is "rows that fit the frame", so it
     -- has to move with the height or the scrollbar track hides on a list that does overflow (5.55).
-    self._scrollMap = { { "detailSlider", "detailList", 16 } }
+    self._scrollMap = { { "detailSlider", "detailList", 17 } }
 end
 
 -- which configurable assets belong on this tab
@@ -635,6 +643,7 @@ end
 
 function DistributionStoragePage:onFrameOpen()
     DistributionStoragePage:superClass().onFrameOpen(self)
+    self:resetPeriodToCycle()                -- inherited by Animal Husbandry + Markets
     self._realtimeLists = { "detailList" }   -- 2 Hz live-refresh of the number rows (not the asset picker)
     self:rebuildAssets()
     if self.assetList ~= nil then self.assetList:reloadData() end
@@ -1163,11 +1172,25 @@ function DistributionAnimalHusbandryPage:onGuiSetupFinished()
     if self.outputList ~= nil then
         self.outputList:setDataSource(self); self.outputList:setDelegate(self)
     end
-    -- rows that fit each frame at the 42px SDListItemStats pitch (280/42 = 6, 340/42 = 8)
-    self._scrollMap = { { "inputSlider", "inputList", 6 }, { "outputSlider", "outputList", 8 } }
-    -- THE ANIMAL PANEL (API v4). Only an extension that has registered a provider moves anything;
-    -- with none registered this is one boolean and the tab is byte-identical to before. reflowForPanel
-    -- rewrites _scrollMap itself, so it must run AFTER the line above rather than before it.
+    -- rows that fit each frame at the 42px SDListItemStats pitch (280/42 = 6, 340/42 = 8).
+    -- applyPanelReflow rewrites this when a provider is registered, and runs later (see below).
+    self._scrollMap = { { "inputSlider", "inputList", 6 }, { "outputSlider", "outputList", 9 } }
+end
+
+---THE ANIMAL PANEL (API v4). Only an extension that has registered a provider moves anything; with
+-- none registered this is one boolean and the tab is byte-identical to before.
+--
+-- ASKED ON EVERY FRAME OPEN, NOT ONCE AT GUI SETUP, AND THAT IS NOT A STYLE CHOICE. Both mods append
+-- their work to Mission00.loadMission00Finished, so they run in MOD-LOAD ORDER -- which is
+-- ALPHABETICAL. DR registers its menu GUI from that hook and the extension registers its panel from
+-- its own, so whichever mod sorts first wins, and the answer this gate gets at setup time depends
+-- entirely on the two zips' names. It read TRUE while the extension was FS25_Animal_Redux (A < D)
+-- and FALSE the moment it became FS25_Husbandry_Redux (D < H): the reflow stopped running, and the
+-- page sat in its static no-panel layout with the panel drawn straight over the OUTGOING table.
+--
+-- By the time a player opens the tab every mod has loaded, so asking here cannot be raced. The
+-- one-shot still lives in reflowForPanel (_panelReflowed), so this costs one boolean per open.
+function DistributionAnimalHusbandryPage:applyPanelReflow()
     if SmartDistribution ~= nil and SmartDistribution.hasHusbandryPanel ~= nil
        and SmartDistribution.hasHusbandryPanel() and SmartDistribution.reflowForPanel ~= nil then
         SmartDistribution.reflowForPanel(self)
@@ -1180,6 +1203,10 @@ end
 -- read all figures live in populateCellForItemInSection, so a plain reloadData refreshes them; no
 -- rebuildRealtimeData needed. Safe from focus-stealing now that refreshRealtimeLists holds the _focusing guard.
 function DistributionAnimalHusbandryPage:onFrameOpen()
+    -- BEFORE super, which refreshes the lists and applies _scrollMap: the reflow changes both list
+    -- heights and rewrites _scrollMap, so running it after would leave the first open showing
+    -- scrollbars sized for the taller lists.
+    self:applyPanelReflow()
     DistributionStoragePage.onFrameOpen(self)
     self._realtimeLists = { "inputList", "outputList" }
     self:refreshAnimalPanel()
