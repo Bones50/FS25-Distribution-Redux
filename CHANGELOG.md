@@ -1,27 +1,39 @@
 # CHANGELOG
 
-Changelog Last updated: 23/09/2026
+Changelog Last updated: 17/09/2026
+<h2><b>1.1.0.4 Release Candidate</b></h2>
+
+Fixed
+1) Added back in the ability to manually load digestate from the BGA
+2) Added fixes for all-in-one cow barn and le mechet cow barns. Barns will now produce, store and distribute milk and manure as expected.
+
+Added
+1) Added new diagnostics for potential performance issues on large farms. Activate it in the settings and send me the log.txt if you have any issues.
+2) Added new API function V11 to support Husbandry Redux
+3) Added an indication of whether a production is parallel (i.e. individual inputs) or not (i.e. inputs split between lines) on the productions page.
+4) Rejigged the whole UI to support additional redux modules in future.
+5) Added fill bars to the overview to replace text.
+
+New
+1) Added a new advanced inputs/outputs management screen. This is optional, and you can switch back to the legacy page in the settings if you prefer that. The new advanced routing page is a graphical representation of the selected building and all of the inputs and outputs managed by DR. Includes:
+- A graphical representation of the flow of materials from the source building, into input storage, through the production, into output storage and on to the next building.
+- ability to double-click the source building or destination building to see the routing for that building. 
+- Drag and drop priorisation of outputs
+- scrollable inputs and outputs to support buildings with numerous inputs/outputs
+- Ability to just click on an input or output node to block it.
+- Colour coded connection lines that show material moved and link status.
+- Change to allow the player to input the exact target, max and reserve amounts rather than by percentage.
+- Block/activate All, and block/activate specific product buttons
+
 <h2><b>1.1.0.3 Release Candidate</b></h2>
+
 Fixed
 1) Simplified Chinese re-added to translations
 
 Added
 1) Production lines now drawn as icons and volumes with Tool tips added to icons (Thanks Martin!)
 2) Alphabetic, Locale Aware Lists (Thanks Martin!)
-4) API V10 Deployed to support AR
-
-NEW FEATURES
-1) New ADVANCED ROUTING screen. This replaces the old Advanced Inputs and Advanced Outputs dialogs with a single picture of everything going in and out of a building, and lets you change all of it from one place. Click Advanced on any building to open it.
-a) The screen reads left to right in seven columns, in the order product actually flows: SOURCES (buildings that could supply you) - INPUTS (the products you take in) - your input storage - the BUILDING itself - your output storage - OUTPUTS (the products you make or hold) - DESTINATIONS (buildings you can send to). Lines join them up so you can see the whole chain at a glance instead of opening two dialogs and holding it in your head.
-b) Click any product in the INPUTS or OUTPUTS column to point the screen at it. The SOURCES column then shows everyone who could feed you that product, and DESTINATIONS shows everyone you could send it to. When you first open a building it picks whichever product actually moved the most last cycle, so you land on the thing worth looking at rather than whatever happens to sort first alphabetically.
-c) Hover any icon to see what it is. Building tiles show their name, how far away they are, what they are holding, and their status; product tiles show what you hold, what you used or made, and your settings.
-d) The connecting lines are colour coded and tell you what is actually happening, not just what is configured: green is feeding you right now, grey is able to but isn't (usually because something closer is), amber has none in stock, violet is set to a mode that doesn't distribute (Hold, Sell, Store), dim grey is out of range, and red is blocked. Any line that actually moved product last cycle is labelled with how much. If nothing is arriving, the colours tell you why without any digging.
-e) BLOCKING. Every line in the two outer columns has a small square on it - green means the link is allowed, red means it's blocked - and clicking it flips it. There are also four buttons along the bottom, one per column: "Block all sources" and "Block all dests" do every link for the product you have selected, while "Block all inputs" and "Block all outputs" do every product in the building in one press (handy for taking a building out of the network entirely, or bringing it back). Each button flips to "Allow all..." once everything on that side is blocked, and tells you how many it changed.
-f) PRIORITY BY DRAG AND DROP. Destinations start ordered by distance with a big number on each one showing its priority, so 1 is your closest. If that isn't the order you want, just drag a building up or down the column and the numbers renumber themselves as you go. That order is what DR uses when it has to choose who gets product first. "Clear order" puts it back to distance.
-g) MAX FILL, FILL TARGET and RESERVE can now be TYPED IN rather than clicked up and down. The three boxes sit across the top over the columns they affect, and you can still use the arrows for quick changes. You can type it however you like - 12500, 12,500, "12500 L" or "12.5 kL" all work - and clearing the box switches the setting off.
-h) Double-click any source or destination to jump straight to routing THAT building, so you can walk a chain backwards or forwards without going back to the building list each time.
-NOTE: A blocked product is never hidden on this screen, even when it's empty (the building tabs still tidy them away). A blocked input says BLOCKED on its tile and every line feeding it turns red, so there's never any doubt about whether a setting took effect.
-NOTE: Blocking a link that would create a Move To loop is still refused, and the screen tells you how many it skipped. Blocking is always allowed - that's how you break a loop you already have.
+3) API V10 Deployed to support AR
 
 <h2><b>1.1.0.2 Release Candidate</b></h2>
 Fixed
