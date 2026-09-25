@@ -707,8 +707,8 @@ end
 -- nothing like its cause (5.44 / 5.57, and it has been within one edit of shipping twice).
 -- shipped art, resolved once against the mod folder. setImageFilename is the only route -- an
 -- imageFilename in the XML cannot name a mod file (5.80).
-local LINE_ICON_PARALLEL = (SmartDistribution.modDir or "") .. "gui/icon_throughput_parallel.png"
-local LINE_ICON_SERIES   = (SmartDistribution.modDir or "") .. "gui/icon_throughput_series.png"
+local LINE_ICON_PARALLEL = (SmartDistribution.modDir or "") .. "gui/icon_throughput_parallel.dds"
+local LINE_ICON_SERIES   = (SmartDistribution.modDir or "") .. "gui/icon_throughput_series.dds"
 
 local function setLineThroughputIcon(cell, shared)
     if cell == nil or cell.getAttribute == nil then return end

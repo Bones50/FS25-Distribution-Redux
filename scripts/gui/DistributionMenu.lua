@@ -281,10 +281,15 @@ function DistributionMenu:rebuildTabList()
     -- relative path, not something the engine could find on its own.
     local tab = (self.pageTabs or {})[rep]
     if tab ~= nil and SmartDistribution.GROUP_TAB_ICON ~= nil then
-        if self.setPageTabIcon ~= nil then
-            pcall(self.setPageTabIcon, self, rep,
-                  (SmartDistribution.modDir or "") .. SmartDistribution.GROUP_TAB_ICON)
-        end
+        -- SET DIRECTLY, NEVER THROUGH setPageTabIcon. That function rebuilds the tab list, and
+        -- this IS the tab list rebuild -- so calling it here re-entered rebuildTabList with no
+        -- guard, recursing until Lua ran out of C stack. The pcall swallowed the overflow, and
+        -- every level repopulated the list and reloaded the icon PNG: ~130 disk loads per menu
+        -- open, found in a player's log (6.44). The list is already being rebuilt, so the table
+        -- write is all that is needed.
+        self._tabIconFiles = self._tabIconFiles or {}
+        self._tabIconFiles[rep] = (SmartDistribution.modDir or "") .. SmartDistribution.GROUP_TAB_ICON
+        self:pinTabIconRecord(rep)
         -- CLICKING THE GROUP ROW RETURNS WHERE YOU WERE. The inherited callback always goes to the
         -- representative, so with four members you would lose your place every time you stepped out
         -- to the Overview and back. Wrapped once (_drGrouped), because rebuildTabList runs again on
@@ -580,8 +585,40 @@ end
 function DistributionMenu:setPageTabIcon(page, filename)
     if page == nil then return end
     self._tabIconFiles = self._tabIconFiles or {}
+    -- Unchanged means nothing to rebuild. A rebuild repopulates every tab cell, so rebuilding for
+    -- a no-op is not free (6.44).
+    if self._tabIconFiles[page] == filename then return end
     self._tabIconFiles[page] = filename
+    self:pinTabIconRecord(page)
     if self.rebuildTabList ~= nil then pcall(self.rebuildTabList, self) end
+end
+
+---Make the base tab RECORD agree with the icon file we paint, so the two stop fighting.
+--
+-- The inherited populate re-applies the icon from `self.pageTabs[page]` on EVERY populate. While
+-- that record still named the atlas slice, each populate put the slice back and ours then put the
+-- PNG back -- so the filename changed every time and GuiOverlay.createOverlay, which skips the
+-- load only when the filename is unchanged (GuiOverlay.lua:292), reloaded the PNG from disk each
+-- time. Writing the file onto the record means both sides set the same file and the reload is
+-- skipped. The original slice is remembered on the record, so clearing the file puts it back.
+function DistributionMenu:pinTabIconRecord(page)
+    local tab = (self.pageTabs or {})[page]
+    if tab == nil then return end
+    local file = (self._tabIconFiles or {})[page]
+    if file ~= nil then
+        if not tab._drPinned then
+            tab._drPinned = true
+            tab._drOrigSlice, tab._drOrigFile, tab._drOrigUVs = tab.iconSliceId, tab.iconFilename, tab.iconUVs
+        end
+        tab.iconSliceId  = nil
+        tab.iconFilename = file
+        if Overlay ~= nil and Overlay.DEFAULT_UVS ~= nil then
+            tab.iconUVs = (table.clone ~= nil) and table.clone(Overlay.DEFAULT_UVS) or Overlay.DEFAULT_UVS
+        end
+    elseif tab._drPinned then
+        tab._drPinned = nil
+        tab.iconSliceId, tab.iconFilename, tab.iconUVs = tab._drOrigSlice, tab._drOrigFile, tab._drOrigUVs
+    end
 end
 
 ---Give a page a corner badge, or clear it with nil. Applied on the next tab

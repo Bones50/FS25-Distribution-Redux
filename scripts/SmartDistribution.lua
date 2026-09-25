@@ -19747,7 +19747,7 @@ SmartDistribution.GROUP_TAB_KEY  = "distribution"
 -- wide in the 1024px original is 0.65px: every element collapses into texture. Measured by
 -- rendering it at the size it is actually drawn, which is the only size that decides
 -- anything here (5.80 -- when a picture looks wrong in a box, measure the picture).
-SmartDistribution.GROUP_TAB_ICON = "gui/icon_distributionRedux.png"
+SmartDistribution.GROUP_TAB_ICON = "gui/icon_distributionRedux.dds"
 
 ---How many tab slots the page layouts declare. Unused ones are hidden rather
 -- than repositioned (5.37).
