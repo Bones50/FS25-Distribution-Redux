@@ -162,23 +162,11 @@ function TextPicker.new(opts)
     return self
 end
 
----SAY SO WHENEVER A TYPED NUMBER IS THROWN AWAY.
---
--- TEMPORARY, added 2026-09-02 to chase a report that turning one switch on cleared
--- EVERY field rather than only the one it governs. Five explanations were built by
--- reading the dialog and not one of them survived, which is exactly the point 5.50
--- names as the trigger to stop reading and instrument.
---
--- There are only three ways a value can be discarded -- an explicit set(nil), a
--- refused commit, and a bound moving under it -- and they all pass through here,
--- so one line names WHICH field lost its value and WHY, in a single run.
---
--- `print`, not a debug-gated log: a player cannot be talked through enabling
--- anything (5.63). Silent on a farm where nothing is being discarded.
-function TextPicker:noteDiscard(why)
-    print(string.format("[TextPicker] %s: typed value discarded (%s)",
-                        tostring(self.name or "?"), tostring(why)))
-end
+---A HOOK WHENEVER A TYPED NUMBER IS THROWN AWAY (an explicit set(nil), a refused commit, or a
+-- bound moving under it). SILENT since 2026-09-29: it printed while a report was being chased
+-- (2026-09-02), and that is closed. Kept as the one place all three discard paths meet, so a
+-- diagnostic can be put back here, and so harnesses can observe it.
+function TextPicker:noteDiscard(why) end
 
 ---The elements. `hint` is optional: without one the control still works and simply
 -- shows an empty field instead of a grey prompt. The two ARROWS are optional too

@@ -36,6 +36,8 @@
 --   SmartDistribution.API.unregisterHelpTab(modName)                  -- v9
 --   SmartDistribution.API.registerOverviewTab(modName, label, content) -- v13
 --   SmartDistribution.API.unregisterOverviewTab(modName)               -- v13
+--   content.page on registerOverviewTab, a PAGE the tab navigates to   -- v15
+--   SmartDistribution.API.overviewTabs() / selectOverviewTab(i)        -- v15
 --
 --   A PAGE CONVENTION, not a function to call (v14): a page added with addMenuPage may
 --   define  page:stepPageTabBy(delta) -> boolean  to have the menu's A and D keys step
@@ -85,7 +87,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 14
+SmartDistribution.API.VERSION = 15
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -945,6 +947,15 @@ end
 --                        this runs inside DR's page, where a throw aborts the render and shows as
 --                        an EMPTY PAGE with nothing in the log (5.44 / 5.57).
 --
+-- `content.page` (v15)   a FRAME the mod has added with addMenuPage. Selecting the tab then
+--                        NAVIGATES to that page instead of swapping content in place, and the
+--                        page leaves the left list: it shows up as the Overview's row, so the
+--                        highlight stays there. The page draws the Overview's strip itself from
+--                        overviewTabs() and moves along it with selectOverviewTab(i) -- DR cannot
+--                        paint into another mod's layout, so those two calls are the whole seam.
+--                        Register it BEFORE addMenuPage, or the page is briefly a left row of
+--                        its own until the next list rebuild.
+--
 -- DR DOES NOT DRAW A DEFAULT CAPTION for a tab that supplies no placeholder. An empty page is an
 -- honest "this mod registered a tab and has not filled it in"; inventing a caption would put DR's
 -- words under another mod's name.
@@ -969,6 +980,7 @@ function SmartDistribution.API.registerOverviewTab(modName, label, content)
     if type(content.placeholder) == "string" then entry.placeholder = content.placeholder end
     if type(content.onShow) == "function" then entry.onShow = content.onShow end
     if type(content.onHide) == "function" then entry.onHide = content.onHide end
+    if type(content.page) == "table" then entry.page = content.page end
 
     local i, why = SmartDistribution.registerPageTab("overview", modName, label, entry)
     if i == nil then
@@ -977,6 +989,26 @@ function SmartDistribution.API.registerOverviewTab(modName, label, content)
     end
     log("overview tab '%s' registered as tab %d", modName, i)
     return true
+end
+
+---THE OVERVIEW'S TABS, for a page that draws the strip itself (v15). COPIES: the label and
+-- the owning mod's name, nothing that could reach back into the registry.
+function SmartDistribution.API.overviewTabs()
+    local out = {}
+    if SmartDistribution.pageTabs == nil then return out end
+    for i, t in ipairs(SmartDistribution.pageTabs("overview")) do
+        local e = type(t.entry) == "table" and t.entry or {}
+        out[i] = { label = t.label, owner = t.modName, own = e.own == true, page = e.page ~= nil }
+    end
+    return out
+end
+
+---GO TO OVERVIEW TAB `i` (v15), from wherever the player is. A tab with a page navigates to
+-- it; any other tab opens the Overview itself on that tab. Returns true if it went.
+function SmartDistribution.API.selectOverviewTab(i)
+    if SmartDistribution.selectOverviewTab == nil then return false end
+    local ok, res = pcall(SmartDistribution.selectOverviewTab, i)
+    return ok and res == true
 end
 
 function SmartDistribution.API.unregisterOverviewTab(modName)

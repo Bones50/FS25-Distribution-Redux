@@ -614,3 +614,6 @@ function DistributionAdvancedDialog:onClickBack()
     self:close()
     return false
 end
+
+-- FULL TEXT ON HOVER for any cell the layout cut short (TextTip.lua, 2026-09-29).
+if TextTip ~= nil and TextTip.install ~= nil then TextTip.install(DistributionAdvancedDialog) end

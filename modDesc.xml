@@ -248,6 +248,7 @@ v1.0.0.1
              never depend on AR). Keep the two files identical; tools/textpicker.lua
              drives the DR copy and tools/check_lists.py diffs them. -->
         <sourceFile filename="scripts/gui/TextPicker.lua"/>
+        <sourceFile filename="scripts/gui/TextTip.lua"/>
         <sourceFile filename="scripts/gui/DistributionMenuPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionSettingsPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>

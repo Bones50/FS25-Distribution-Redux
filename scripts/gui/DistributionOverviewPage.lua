@@ -498,6 +498,10 @@ function DistributionOverviewPage:refreshPageTabs()
     local list, labels = tabList(), {}
     for i, t in ipairs(list) do labels[i] = t.label end
     if self.currentTab == nil or self.currentTab > #list then self.currentTab = 1 end
+    -- A PAGE TAB IS NEVER THIS PAGE'S CURRENT TAB. It is shown by navigating away, so arriving
+    -- back here on it would draw an empty page with the strip claiming someone else is showing.
+    local cur = list[self.currentTab]
+    if cur ~= nil and type(cur.entry) == "table" and cur.entry.page ~= nil then self.currentTab = 1 end
     if SmartDistribution ~= nil and SmartDistribution.drawPageTabs ~= nil then
         SmartDistribution.drawPageTabs(self, labels, self.currentTab)
     end
@@ -510,11 +514,48 @@ function DistributionOverviewPage:selectPageTab(i)
     if i == nil or i == self.currentTab then return end
     local t = tabList()[i]
     if t == nil then return end
+    -- A TAB WITH A PAGE NAVIGATES (API v15) and leaves currentTab alone, so coming back to the
+    -- Overview lands on the tab that was showing here rather than on one this page cannot show.
+    if type(t.entry) == "table" and t.entry.page ~= nil then
+        SmartDistribution.selectOverviewTab(i)
+        return
+    end
     local prev = tabList()[self.currentTab]
     self.currentTab = i
     if prev ~= nil and type((prev.entry or {}).onHide) == "function" then pcall(prev.entry.onHide, self) end
     if type((t.entry or {}).onShow) == "function" then pcall(t.entry.onShow, self) end
     self:refreshPageTabs()
+end
+
+---GO TO OVERVIEW TAB `i` FROM ANYWHERE (API v15). A tab carrying a page navigates to that page;
+-- any other tab opens the Overview on it. Reached from the Overview's own strip AND from a
+-- mod's page drawing the same strip, which is what keeps the two agreeing about what a tab does.
+function SmartDistribution.selectOverviewTab(i)
+    local t = tabList()[i]
+    if t == nil then return false end
+    local menu = SmartDistribution._menu
+    if menu == nil or menu.goToPage == nil then return false end
+    local ov = menu.pageOverview
+    local e  = type(t.entry) == "table" and t.entry or {}
+    if e.page ~= nil then
+        if type(e.onShow) == "function" then pcall(e.onShow, ov) end
+        if menu.currentPage ~= e.page then pcall(menu.goToPage, menu, e.page) end
+        return true
+    end
+    if ov == nil then return false end
+    -- Set BEFORE the page change: onFrameOpen's refreshPageTabs applies it on the way in.
+    if ov.currentTab ~= i then
+        local prev = tabList()[ov.currentTab or 1]
+        if prev ~= nil and type((prev.entry or {}).onHide) == "function" then pcall(prev.entry.onHide, ov) end
+        if type(e.onShow) == "function" then pcall(e.onShow, ov) end
+        ov.currentTab = i
+    end
+    if menu.currentPage ~= ov then
+        pcall(menu.goToPage, menu, ov)
+    elseif ov.refreshPageTabs ~= nil then
+        ov:refreshPageTabs()
+    end
+    return true
 end
 
 function DistributionOverviewPage:onPageTab1() self:selectPageTab(1) end

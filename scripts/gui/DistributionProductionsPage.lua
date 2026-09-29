@@ -1230,6 +1230,9 @@ function DistributionProductionsPage:draw(...)
     SmartDistribution.drawHoverTooltip()
 end
 
+---A product-icon name is showing: the cut-text box stays out of its way (TextTip.lua).
+function DistributionProductionsPage:hasOwnTooltip() return SmartDistribution._hoverTip ~= nil end
+
 function DistributionProductionsPage:onFrameClose()
     SmartDistribution.clearHoverTooltip()
     DistributionProductionsPage:superClass().onFrameClose(self)

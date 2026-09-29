@@ -187,6 +187,18 @@ function DistributionMenu:isGroupPage(page)
     return false
 end
 
+---IS THIS A PAGE AN OVERVIEW TAB NAVIGATES TO (API v15)? Such a page has no left row of its own:
+-- it is shown as the Overview's row, exactly as a group member is shown as the group's. Asked of
+-- the registry each time rather than remembered, so unregistering the tab restores the row.
+function DistributionMenu:isOverviewTabPage(page)
+    if page == nil or page == self.pageOverview or SmartDistribution == nil
+       or SmartDistribution.MENU_V2 ~= true or SmartDistribution.pageTabs == nil then return false end
+    for _, t in ipairs(SmartDistribution.pageTabs("overview")) do
+        if type(t.entry) == "table" and t.entry.page == page then return true end
+    end
+    return false
+end
+
 ---The row the group occupies in the left list: the FIRST member, which is Productions and is the
 -- only one of the four with no enable predicate, so it is always there to stand for the group.
 function DistributionMenu:groupRepresentative()
@@ -261,6 +273,8 @@ function DistributionMenu:rebuildTabList()
         if self:isGroupPage(page) then
             -- every member is dropped EXCEPT the one standing for the group
             if page == rep then group[#group + 1] = page end
+        elseif self:isOverviewTabPage(page) then
+            -- shown as the Overview's row, never a row of its own
         elseif tail[page] then
             last[#last + 1] = page
         else
@@ -321,6 +335,7 @@ end
 function DistributionMenu:listIndexOf(page)
     if page == nil then return self.currentPageListIndex or 1 end
     local want = self:isGroupPage(page) and self:groupRepresentative() or page
+    if self:isOverviewTabPage(page) then want = self.pageOverview end
     for i, p in ipairs(self.enabledPages or {}) do
         if p == want then return i end
     end

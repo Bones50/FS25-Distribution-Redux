@@ -2507,6 +2507,9 @@ end
 
 ---Drawn AFTER the frame so it sits over the graph. The base draw takes clipping arguments in some
 -- game versions, so they are passed straight through.
+---A product-icon name is showing: the cut-text box stays out of its way (TextTip.lua).
+function DistributionRoutingDialog:hasOwnTooltip() return SmartDistribution._hoverTip ~= nil end
+
 function DistributionRoutingDialog:draw(...)
     DistributionRoutingDialog:superClass().draw(self, ...)
     SmartDistribution.drawHoverTooltip()
@@ -2546,3 +2549,6 @@ function DistributionRoutingDialog:onOpen()
     if #self.assets == 0 then self:rebuildAssets() end
     self:refreshGraph()
 end
+
+-- FULL TEXT ON HOVER for any cell the layout cut short (TextTip.lua, 2026-09-29).
+if TextTip ~= nil and TextTip.install ~= nil then TextTip.install(DistributionRoutingDialog) end

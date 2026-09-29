@@ -7448,6 +7448,8 @@ SmartDistribution._shedAttrMemo  = nil
 
 function SmartDistribution.invalidateShedScan()
     SmartDistribution._shedAttrMemo = nil
+    SmartDistribution._shedFtIndex  = nil      -- per-fill-type index over the list above (5.118)
+    SmartDistribution._shedSupMemo  = nil      -- shedSupportedFillTypes reads the list above (5.118)
 end
 
 local function shedStoredAttrs(shed)
@@ -7502,7 +7504,33 @@ end
 local _shedDiagSeen = setmetatable({}, { __mode = "k" })
 function shedStoredLiters(shed, ft)
     local total = 0
-    for _, a in ipairs(shedStoredAttrs(shed)) do
+    local list = shedStoredAttrs(shed)
+    -- PER-FILL-TYPE INDEX, inside the pass only (5.118). The read cache above made the LIST cheap to
+    -- fetch, but summing one product still walked every object in the shed -- and the SHED pool asks
+    -- for EVERY supported product in turn (poolShares, _shedLitresPerSlot), so one question about a
+    -- 780-object store cost F x 780. Built once per cached list and keyed on it by identity, so it
+    -- dies with the list on any membership change. It holds the objects' OWN attrs tables, so levels
+    -- are still read live and a partial drain needs no invalidation -- the same contract as the list.
+    local memo = SmartDistribution._shedAttrMemo
+    if memo ~= nil and (SmartDistribution._selfWrite or 0) > 0 and memo[shed] == list then
+        local idx = SmartDistribution._shedFtIndex
+        if idx == nil then idx = setmetatable({}, { __mode = "k" }); SmartDistribution._shedFtIndex = idx end
+        local e = idx[shed]
+        if e == nil or e.list ~= list then
+            e = { list = list, byFt = {} }
+            for _, a in ipairs(list) do
+                local f = a.fillType
+                if f ~= nil then
+                    local b = e.byFt[f]
+                    if b == nil then b = {}; e.byFt[f] = b end
+                    b[#b + 1] = a
+                end
+            end
+            idx[shed] = e
+        end
+        list = e.byFt[ft] or {}
+    end
+    for _, a in ipairs(list) do
         if a.fillType == ft and (a.fillLevel or 0) > 0 then total = total + a.fillLevel end
     end
     -- one-time diagnostic: the shed clearly holds objects but we resolved nothing -- helps pin the
@@ -7581,6 +7609,20 @@ SmartDistribution.shedStoredFillTypes = shedStoredFillTypes
 --             filename, so a "palletizable" test would wrongly admit wheat and every other crop.
 -- Enrolled assets only, so a class toggled off in Settings contributes nothing. Returns (pallets, bulk).
 function SmartDistribution.networkPalletBaleFillTypes()
+    -- A FULL WORLD WALK, and the hourly pass was calling it thousands of times (5.118): every
+    -- shedSupportedFillTypes asks it, and that is reached per sink, per pool build and per
+    -- receiverRoleUid. Measured 2,283 walks in one pass of a farm routing into pallet sheds, none of
+    -- them visible to the profiler. Inside the pass it is now a SNAPSHOT taken on first use and
+    -- cleared at the top of every pass: the set describes which products the NETWORK makes or holds,
+    -- which is an hour-scale fact, so a product first arriving mid-pass is admitted next hour.
+    -- Outside the pass (the menu) it is computed live, exactly as before.
+    local inPass = (SmartDistribution._selfWrite or 0) > 0
+    local sc = SmartDistribution._scan
+    if inPass and SmartDistribution._netPBMemo ~= nil then
+        sc.netHit = (sc.netHit or 0) + 1
+        return SmartDistribution._netPBMemo.pallets, SmartDistribution._netPBMemo.bulk
+    end
+    if inPass then sc.netWalk = (sc.netWalk or 0) + 1 end
     local pallets, bulk = {}, {}
     local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
     if ps == nil or type(ps.placeables) ~= "table" then return pallets, bulk end
@@ -7605,6 +7647,7 @@ function SmartDistribution.networkPalletBaleFillTypes()
             end
         end
     end
+    if inPass then SmartDistribution._netPBMemo = { pallets = pallets, bulk = bulk } end
     return pallets, bulk
 end
 
@@ -7648,6 +7691,20 @@ end
 function SmartDistribution.shedSupportedFillTypes(shed)
     local set, any = {}, false
     if shed == nil then return set, any end
+    -- PASS-SCOPED per shed (5.118). Its two inputs are the shed's stored list (membership-cached,
+    -- invalidated with it) and the network snapshot above, so inside the pass the answer cannot move
+    -- until invalidateShedScan drops it. A COPY is handed out, because callers are free to use the
+    -- set as their own and a shared one would let one caller's edit leak into the next.
+    local inPass = SmartDistribution.SHED_PASS_MEMO and (SmartDistribution._selfWrite or 0) > 0
+    if inPass then
+        local m = SmartDistribution._shedSupMemo
+        local e = m ~= nil and m[shed] or nil
+        if e ~= nil then
+            local copy = {}
+            for k, v in pairs(e.set) do copy[k] = v end
+            return copy, e.any
+        end
+    end
     -- (a) physically present now -- always shown, even if off-network / unsupported
     for _, a in ipairs(shedStoredAttrs(shed)) do
         if a.fillType ~= nil and (a.fillLevel or 0) > 0 and not set[a.fillType] then
@@ -7668,6 +7725,13 @@ function SmartDistribution.shedSupportedFillTypes(shed)
     end
     for ft in pairs(pallets) do offer(ft) end                          -- produced pallets (planks / eggs / wool / honey / ...)
     for ft in pairs(bulk) do if baleable[ft] then offer(ft) end end    -- bulk on hand: baleable crops only
+    if inPass then
+        local m = SmartDistribution._shedSupMemo
+        if m == nil then m = setmetatable({}, { __mode = "k" }); SmartDistribution._shedSupMemo = m end
+        local keep = {}
+        for k, v in pairs(set) do keep[k] = v end
+        m[shed] = { set = keep, any = any }
+    end
     return set, any
 end
 -- count a shed's stored objects of one fill type (each stored object = one slot)
@@ -8550,7 +8614,7 @@ end
 SmartDistribution.PASS_PROFILE_MS = 150
 SmartDistribution._scan = { gather = 0, placeables = 0, sinks = 0, padScan = 0, vehicles = 0,
                             shedScan = 0, shedRead = 0, matCalls = 0, matBuilt = 0, matMs = 0,
-                            padIndex = 0, sinkVisits = 0, shedSinks = 0 }
+                            padIndex = 0, sinkVisits = 0, shedSinks = 0, netWalk = 0, netHit = 0 }
 SmartDistribution._passProf = nil
 SmartDistribution._profArmed = false
 
@@ -8597,6 +8661,7 @@ function SmartDistribution.beginPassProfile()
     sc.gather, sc.placeables, sc.sinks, sc.padScan, sc.vehicles = 0, 0, 0, 0, 0
     sc.shedScan, sc.shedRead, sc.matCalls, sc.matBuilt, sc.matMs = 0, 0, 0, 0, 0
     sc.padIndex, sc.sinkVisits, sc.shedSinks = 0, 0, 0
+    sc.netWalk, sc.netHit = 0, 0
     if getTimeSec == nil then SmartDistribution._passProf = nil; return end
     local now = getTimeSec()
     SmartDistribution._passProf = { t0 = now, last = now, marks = {}, order = {},
@@ -8692,12 +8757,13 @@ function SmartDistribution.reportPassProfile()
     -- shed's stored objects or a materialised pallet, so the phase that WAS the freeze reported
     -- nothing about itself. Printed only when there is something to report, so an ordinary farm
     -- (no pallet sheds, or nothing routed into one) gains no line at all.
-    if sc.shedRead > 0 or sc.matCalls > 0 then
+    if sc.shedRead > 0 or sc.matCalls > 0 or (sc.netWalk or 0) > 0 then
         print(string.format(
             "[SmartDistribution]   store: shed reads %d over %d scans | materialise %d call(s), "
-            .. "%d pallet(s) built%s",
+            .. "%d pallet(s) built%s | network fill-type walks %d (%d cached)",
             sc.shedRead, sc.shedScan, sc.matCalls, sc.matBuilt,
-            (getTimeSec ~= nil) and string.format(", %.0f ms", sc.matMs) or ""))
+            (getTimeSec ~= nil) and string.format(", %.0f ms", sc.matMs) or "",
+            sc.netWalk or 0, sc.netHit or 0))
     end
 end
 
@@ -8722,6 +8788,7 @@ function SmartDistribution.runHourly(manager)
     SmartDistribution.beginPassProfile()                       -- hourly-pass profiler: zero the clocks + scan counters
     SmartDistribution.invalidatePalletScan()                   -- the pallet-scan cache is PASS-SCOPED: never carry one across
     SmartDistribution.invalidateShedScan()                     -- ...and so is the shed-read cache
+    SmartDistribution._netPBMemo = nil                         -- ...and the network fill-type set (5.118)
     SmartDistribution._matBudgetLeft = SmartDistribution.MATERIALISE_BUDGET   -- refill the per-pass materialise budget
     SmartDistribution.invalidateMenuMemos()                    -- the display memos must not carry across a pass
     resetCycleMoney()                                         -- open this hour's money tally (flushed at the END of this tick, after the appended surplus-sell pass)
