@@ -3,7 +3,7 @@
      loads; 110 matches the current patch and silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>1.1.0.4</version>
+    <version>1.1.0.5</version>
 
     <title>
         <en>Distribution Redux</en>

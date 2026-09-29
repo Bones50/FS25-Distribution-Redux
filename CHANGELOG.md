@@ -1,6 +1,13 @@
 # CHANGELOG
 
 Changelog Last updated: 17/09/2026
+<h2><b>1.1.0.5 Release Candidate</b></h2>
+
+Added
+1) DR API v15 to support Husbandry Redux Changes
+2) Added hover over tooltips to all table cells that will show if the cell is cut off due to resolution or just pure text size.
+3) New performance fix to address hourly stutter on extremly large farms.
+
 <h2><b>1.1.0.4 Release Candidate</b></h2>
 
 Fixed
