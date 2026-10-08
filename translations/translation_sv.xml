@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="no" ?>
 <!--
-  Distribution Redux : Svenska (översättning)
+  Distribution Redux : Svensk översättning.
+  Mod Version: 1.1.0.5
   Översatt av: soderholmm
 
   OBS! En XML-kommentar får inte innehålla två bindestreck i rad. Det är ett
@@ -37,12 +38,79 @@
 
         <!-- ================= sid- och dialogtitlar ================= -->
         <text name="dr_title_overview"        text="Översikt" />
-        <text name="dr_title_productions"     text="Distribution - Produktioner" />
-        <text name="dr_title_storage"         text="Distribution - Förvaring" />
-        <text name="dr_title_husbandry"       text="Distribution - Djurhållning" />
-        <text name="dr_title_markets"         text="Distribution - Marknader" />
+        <text name="dr_title_productions"     text="Distribution Redux - Produktioner" />
+        <text name="dr_title_routing"         text="Distribution Redux - Routing" />
+        <text name="dr_title_storage"         text="Distribution Redux - Förvaring" />
+        <text name="dr_title_husbandry"       text="Distribution Redux - Djurhållning" />
+        <text name="dr_title_markets"         text="Distribution Redux - Marknader" />
         <text name="dr_title_help"            text="Hjälp" />
         <text name="dr_tab_distribution"      text="DISTRIBUTION"/>
+        <text name="dr_tab_productions"       text="PRODUKTIONER" />
+        <text name="dr_tab_storage"           text="FÖRVARING" />
+        <text name="dr_tab_husbandry"         text="DJURHÅLLNING" />
+
+        <!-- ROUTING-grafen. Kolumnrubriker är i VERSALER och sitter över kolumner på
+             110 till 220 design-px, så de klipps snarare än bryts: håll dem till cirka 12
+             tecken. dr_rg_hint tar de två produktnamnen i ordning. -->
+        <text name="dr_rg_hdrSources"         text="KÄLLOR" />
+        <text name="dr_rg_hdrInputs"          text="INSATSER" />
+        <text name="dr_rg_hdrBuilding"        text="BYGGNAD" />
+        <text name="dr_rg_hdrOutputs"         text="UTMATNING" />
+        <text name="dr_rg_hdrDests"           text="DESTINATIONER" />
+        <text name="dr_rg_farmWide"           text="gård" />
+        <text name="dr_rg_hint"               text="Källor: %s   Destinationer: %s" />
+        <text name="dr_rg_pickBuilding"       text="Välj en byggnad" />
+        <text name="dr_rg_used"               text="använt %s" />
+        <text name="dr_rg_made"               text="tillverkat %s" />
+        <text name="dr_rg_holds"              text="innehåller %s" />
+        <text name="dr_rg_clearOrder"         text="Rensa ordning" />
+        <text name="dr_rg_togBlock"           text="Klicka för att blockera denna länk" />
+        <text name="dr_rg_togAllow"           text="Klicka för att tillåta denna länk" />
+        <text name="dr_rg_jump"               text="Dubbelklicka för att öppna %s" />
+        <text name="dr_rg_jumpRg"             text="Dubbelklicka för att dirigera %s" />
+        <!-- KONTROLLRADEN. dr_rg_range tar första, sista, totalt; dr_rg_ctlIn / ctlOut tar
+             produktnamnet. Håll dem korta: raden breder ut sig till 1480px och klipps snarare
+             än bryts, och tyska är cirka 30% längre (5.60). -->
+        <text name="dr_rg_ctlField"           text="%s  -  %s" />
+        <text name="dr_rg_lblMaxFill"         text="Max fyllning" />
+        <text name="dr_rg_lblTarget"          text="Fyllnadsmål" />
+        <text name="dr_rg_lblReserve"         text="Reserv" />
+        <text name="dr_rg_range"              text="%d-%d av %d  (rulla)" />
+        <text name="dr_rg_hiddenN"            text="+%d blockerade" />
+        <text name="dr_rg_targetOff"          text="Av" />
+        <text name="dr_rg_loopSkipped"        text="%d överhoppade (skulle skapa loop)" />
+        <!-- Radens tre TYPADE fält. Platshållarna sitter i en 138px-ruta vid 11px,
+             alltså cirka 24 tecken. dr_rg_nodeIn är en inmatningsnodens tredje rad och
+             dr_rg_nodeRes en utmatnings, båda i en 98px-kolumn vid 9px: håll dem till
+             cirka 20 tecken. -->
+        <text name="dr_rg_hintLitres"         text="klicka för att ange liter" />
+        <text name="dr_rg_nodeIn"             text="max %s  mål %s" />
+        <text name="dr_rg_nodeRes"            text="res %s" />
+        <text name="dr_rg_blockAllSrc"        text="Blockera alla källor" />
+        <text name="dr_rg_allowAllSrc"        text="Tillåt alla källor" />
+        <text name="dr_rg_blockAllDst"        text="Blockera alla destinationer" />
+        <text name="dr_rg_allowAllDst"        text="Tillåt alla destinationer" />
+        <text name="dr_rg_blockAllIn"         text="Blockera alla inmatningar" />
+        <text name="dr_rg_allowAllIn"         text="Tillåt alla inmatningar" />
+        <text name="dr_rg_blockAllOut"        text="Blockera alla utmatningar" />
+        <text name="dr_rg_allowAllOut"        text="Tillåt alla utmatningar" />
+        <text name="dr_rg_nInBlocked"         text="%d inmatningar blockerade" />
+        <text name="dr_rg_nInAllowed"         text="%d inmatningar tillåtna" />
+        <text name="dr_rg_nOutBlocked"        text="%d utmatningslänkar blockerade" />
+        <text name="dr_rg_nOutAllowed"        text="%d utmatningslänkar tillåtna" />
+        <!-- Den grå prompten och den grå klagomålet sitter INUTI ett 140px-fält vid 12px,
+             alltså cirka 22 tecken. dr_rg_hintTarget säger "Av" eftersom ett tomt mål-
+             fält ÄR Av, vilket är en riktig inställning och inte en frånvaro. -->
+        <text name="dr_rg_hintTarget"         text="Av - klicka för att ange" />
+        <text name="dr_rg_badRes"             text="över kapacitet" />
+        <!-- Byggnadsnodens lagerrader, vilket är vad de två tank-kolumnerna brukade
+             bära. Två siffror vardera: innehav sedan kapacitet. -->
+        <text name="dr_rg_bldStoIn"           text="IN  %s / %s" />
+        <text name="dr_rg_bldStoOut"          text="UT  %s / %s" />
+        <text name="dr_rg_bldTanks"           text="%d tankar" />
+        <text name="dr_rg_capClamped"         text="Begränsad till tanken: %s" />
+        <text name="dr_rg_blockedNoSet"       text="Den produkten är blockerad" />
+        <text name="dr_tab_markets"           text="MARKNADER" />
         <text name="dr_title_settings"        text="Inställningar" />
         <text name="dr_title_advanced"        text="Avancerat" />
         <text name="dr_title_advancedInputs"  text="Avancerade inmatningar" />
@@ -113,9 +181,17 @@
         <text name="dr_status_short_idle"     text="Väntar" />
         <text name="dr_status_short_blocked"  text="Block" />
         <text name="dr_status_short_none"     text="-" />
-        <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
-        <text name="dr_col_lineInput"      text="INKOMMANDE" />
-        <text name="dr_col_lineOutput"     text="UTGÅENDE" />
+        <text name="dr_col_productionLines"   text="PRODUKTIONSLINJER" />
+        <text name="dr_col_lineInput"         text="INKOMMANDE" />
+        <text name="dr_col_lineOutput"        text="UTGÅENDE" />
+        <!-- Verktygstexter på genomströmningssymbolen till vänster på varje produktionslinje-
+             rad. PARALLELL och SERIE är de två sätten en produktionspunkt delar sin
+             nominella hastighet mellan de linjer som är påslagna: parallellt kör varje linje
+             i sin egen fulla takt, i serie delar de en budget mellan sig (så två linjer går
+             i ungefär halv takt). Fri längd - dessa är verktygstexter, inte tabellceller,
+             så de klipps inte. -->
+        <text name="dr_tip_parallel"       text="Parallell - varje linje körs i sin egen fulla takt" />
+        <text name="dr_tip_series"         text="Serie - dessa linjer delar en genomströmningsbudget" />
         <!-- "/mo" = per månad. Siffran är linjens månatliga mål. -->
         <text name="dr_col_targetMo"          text="MÅL /mån" />
 
@@ -136,7 +212,7 @@
         <!-- Nedre tabellen i samma dialog: varje byggnad som skulle kunna leverera till den VALDA inmatningen.
              Den första rubriken fungerar även som sektionstitel, så håll den läsbar som en rubrik.
              Budget: POTENTIELLA KÄLLOR 500px, RÄCKVIDD 110px, INNEHAV återanvänds från ovan, STATUS 226px. -->
-        <text name="dr_col_potentialSources" text="POT. KÄLLOR" />
+        <text name="dr_col_potentialSources" text="POTENTIELLA KÄLLOR" />
         <text name="dr_col_range"            text="RÄCKVIDD" />
 
         <!-- ================= knappar =================
@@ -263,11 +339,11 @@
         <text name="dr_inp_pooledCapped" text="Samlad lagring: %s delas av %d produkter, %d har tak. Allt utan tak kan använda hela poolen." />
         <text name="dr_inp_pooled"       text="Samlad lagring: %s delas av %d produkter. Var och en kan använda allt - sätt ett max för att reservera plats åt de andra." />
         <text name="dr_inp_individual"   text="Sätt varje produkts max, eller blockera den. Denna byggnad har individuell lagring per produkt." />
-        
+
         <!-- Visas i stället för källraderna när ingen byggnad på gården kan leverera den valda
              produkten. En tom tabell under en rubrik ser ut som en bugg; en mening läses som ett svar. -->
         <text name="dr_inp_noSources"    text="Ingen byggnad på gården kan leverera denna produkt." />
-        
+
         <!-- STATUS för en potentiell källa, i en 226px cell vid 12px: cirka 30 tecken.
              Dessa är de tre kategorierna som statuskolumnen räknar, i ordning.
              LEVERERAR
@@ -333,7 +409,7 @@
 
         <!-- ================= SILOS/BUNKERS ================= -->
         <text name="dr_bunker_fermenting"    text="Fermenterar" />
-        <text name="dr_bunker_fermented"     text="Fermenterad - Redo att öppnas" />
+        <text name="dr_bunker_fermented"     text="Fermenterad - Öppna för åtkomst" />
         <text name="dr_bunker_filling"       text="Fyll" />
         <text name="dr_bunker_fermentPct"    text="Fermentering: %d%%"/>
         <text name="dr_bunker_compactPct"    text="Kompaktering: %d%%"/>
@@ -426,6 +502,10 @@
         <text name="dr_set_advancedRouting_tt"  text="Huvudströmbrytare för Avancerade utmatningar (källsidans blockering / prioritet / Flytta till) och Avancerade inmatningar (inmatningsblockering / tak / fyllnadsmål). Av döljer dessa knappar och återgår till standarddistributionen närmast-först baserad på avstånd. VARNING: att stänga AV detta RENSAR ALLA befintliga avancerade inställningar (varje blockering, prioritet, Flytta till, inmatningstak och fyllnadsmål) -- de återställs till standard och KOMMER INTE TILLBAKA om du slår på det igen; du måste ställa in dem från början." />
         <text name="dr_set_advancedRouting_v1"  text="På" />
         <text name="dr_set_advancedRouting_v2"  text="Av" />
+        <text name="dr_set_routingView"         text="Routingvy" />
+        <text name="dr_set_routingView_tt"      text="Vad knapparna Avancerade inmatningar och Avancerade utmatningar öppnar. Graf visar hela byggnaden som en bild - källor, lager, produkter och destinationer - med en växling på varje länk. Klassiska listor öppnar de ursprungliga två listfönstren. Båda ändrar exakt samma inställningar; detta väljer bara fönstret. Har ingen effekt när Avancerad routing är Av." />
+        <text name="dr_set_routingView_v1"      text="Graf" />
+        <text name="dr_set_routingView_v2"      text="Klassiska listor" />
 
         <text name="dr_set_defaultOutputMode"     text="Utmatningsläge för nya byggnader" />
         <text name="dr_set_defaultOutputMode_tt"  text="Det utmatningsläge som ges till en byggnad när du PLACERAR den. Distribuera är normalt beteende. Håll innebär att en nyligen placerad byggnad behåller allt den producerar tills du ändrar det, så inget lämnar en byggnad som du inte har konfigurerat än. På en byggnad som gör pallar visas detta som 'Håll pallar', eller som 'Håll internt' när Pally skapande är inställt på aldrig. Detta påverkar ENDAST byggnader som placeras från och med nu: befintliga byggnader ändras aldrig, och att ändra denna inställning påverkar inte redan byggda." />
@@ -522,14 +602,16 @@
         <text name="dr_set_palletSpawnMode_v1"  text="Vanilla (fylls gradvis)" />
         <text name="dr_set_palletSpawnMode_v2"  text="Endast hela pallar" />
         <text name="dr_set_palletSpawnMode_v3"  text="Skapa aldrig pallar" />
+
         <text name="dr_set_passThroughStores"     text="Förmedlingslager" />
         <text name="dr_set_passThroughStores_tt"  text="Vissa moddar lägger till en förvaringsbyggnad med en påkopplad fejkproduktion, där varje produktions linje omvandlar en produkt till sig själv. Produktionen gör ingenting; den finns bara där för att spelet ska kunna leverera till byggnaden. Behandla som förvaring får Distribution Redux att se byggnaden som den silo den egentligen är, så den slutar efterfråga varje liter på gården, och dess riktiga produktions linjer (om den har några) visas fortfarande under Produktioner. Det tredje alternativet stänger även av dessa fejklinjer i själva spelet – snyggare, men ändringen skrivs in i din sparfil och förblir avstängd även om du tar bort modden." />
         <text name="dr_set_passThroughStores_v1"  text="Behandla som produktion" />
         <text name="dr_set_passThroughStores_v2"  text="Behandla som förvaring" />
         <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av produktion" />
-         <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
-              pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
-              ett byggnadsnamn i en lista med fast bredd. -->
+
+        <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
+             pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
+             ett byggnadsnamn i en lista med fast bredd. -->
         <text name="dr_role_nameFmt"      text="%s (%s)" />
         <text name="dr_role_silo"         text="Silo" />
         <text name="dr_role_shed"         text="Pallförråd" />
@@ -546,11 +628,16 @@
         <text name="dr_set_menuRefresh_v3"  text="Avslappnad (10s)" />
         <text name="dr_set_menuRefresh_v4"  text="Endast manuell" />
 
+        <text name="dr_set_passProfiler"    text="Prestandaloggning" />
+        <text name="dr_set_passProfiler_tt" text="Skriver vad DR:s timpassage kostar till log.txt, och hur många världsskanningar den gjorde. Lämna på Endast långsamma pass - den är tyst om en timpassage inte tar längre än 150ms. Byt till Varje pass om du blir ombedd att skicka en prestandarapport: då loggas två rader varje spel-timme, vilket är vad som låter en frisk gård jämföras med en långsam. Husbandry Redux har samma inställning och att endera är på aktiverar den." />
+        <text name="dr_set_passProfiler_v1" text="Av" />
+        <text name="dr_set_passProfiler_v2" text="Endast långsamma pass" />
+        <text name="dr_set_passProfiler_v3" text="Varje pass (diagnostiskt)" />
+
         <text name="dr_set_debugEnabled"     text="Debug-loggning" />
         <text name="dr_set_debugEnabled_tt"  text="Skriv detaljerad distributionsaktivitet till log.txt (flyttar, försäljningar, lagringar, vattenpåfyllningar och avgifter). Stäng av för en tystare logg." />
         <text name="dr_set_debugEnabled_v1"  text="Aktiverad" />
         <text name="dr_set_debugEnabled_v2"  text="Inaktiverad" />
-
 
         <!-- ============ ANVÄNDARGUIDE (genererad: gen_guide_l10n.py) ============
              11 ämnen, en nyckel per icke-tomt stycke. Markörer i början av ett
@@ -818,7 +905,7 @@
 
         <!-- DJURPANELEN, ritas endast när ett tillägg registrerar en leverantör (API v4).
              Budget: blocketiketterna sitter i 234-480px kolumner med 11px, så håll dem korta. -->
-        <text name="dr_col_animalPanel" text="DJUR, FODER OCH BESÄTTNINGSVÄRDE" />
+        <text name="dr_col_animalPanel" text="DJUR, FODER OCH UPPFÖDNINGSVÄRDE" />
         <text name="dr_panel_animals" text="DJUR" />
         <text name="dr_panel_health" text="HÄLSA" />
         <text name="dr_panel_productivity" text="PRODUKTIVITET" />
@@ -827,16 +914,17 @@
         <text name="dr_panel_foodFactor" text="Foderfaktor %s" />
         <text name="dr_panel_grazing" text="betesgång" />
         <text name="dr_panel_noFeedData" text="inga foderdata" />
-        <text name="dr_panel_herdValue" text="BESÄTTNINGSVÄRDE" />
+        <text name="dr_panel_herdValue" text="UPPFÖDNINGSVÄRDE" />
         <text name="dr_panel_ofPeak" text="av %s vid maxålder" />
-        <text name="dr_panel_pastPeak" text="efter max - värdet sjunker med åldern" />
+        <text name="dr_panel_pastPeak" text="passerat max - värdet sjunker med åldern" />
         <!-- resultatrader. Teckenbudget: apProfitLabel är 130px med 11px, alltså ca 20
              tecken; de fyra uppdelningsorden delar på 740px med fyra siffror, så
              håll varje under ca 10. -->
         <text name="dr_panel_profit" text="BERÄKN. PROGNOS - VINST / MÅN" />
+        <text name="dr_panel_pfCleared" text="om tömd:" />
         <text name="dr_panel_pfOutputs" text="produktion" />
         <text name="dr_panel_pfInputs" text="insatser" />
-        <text name="dr_panel_pfAgeing" text="åldring" />
+        <text name="dr_panel_pfAgeing" text="åldrande" />
         <text name="dr_panel_pfBirths" text="födsel" />
 
         <!-- varningen för kända problem-moddar som visas en gång vid laddning -->
