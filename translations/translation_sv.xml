@@ -528,6 +528,7 @@
         <text name="dr_set_passThroughStores_v2"  text="Behandla som förvaring" />
         <text name="dr_set_passThroughStores_v3"  text="Behandla som förvaring + stäng av produktion" />
 
+
          <!-- Roll-etiketter. Visas ENDAST på en byggnad som gör två saker samtidigt (en silo som också är ett
               pallförråd), för att skilja dess halvor åt i byggnadslistan. Håll dem korta - de läggs till
               ett byggnadsnamn i en lista med fast bredd. -->
@@ -546,6 +547,11 @@
         <text name="dr_set_menuRefresh_v2"  text="Normal (2s)" />
         <text name="dr_set_menuRefresh_v3"  text="Avslappnad (10s)" />
         <text name="dr_set_menuRefresh_v4"  text="Endast manuell" />
+        <text name="dr_set_passProfiler"    text="Prestandaloggning" />
+        <text name="dr_set_passProfiler_tt" text="Loggar DR:s timarbete till log.txt. Endast långsamma pass loggas, >150ms. Varje pass loggar två rader per timme för prestandaanalys. Animal Redux har samma inställning." />
+        <text name="dr_set_passProfiler_v1" text="Av" />
+        <text name="dr_set_passProfiler_v2" text="Endast långsamma pass" />
+        <text name="dr_set_passProfiler_v3" text="Varje pass (diagnostiskt)" />
         <text name="dr_set_passProfiler"    text="Prestandaloggning" />
         <text name="dr_set_passProfiler_tt" text="Loggar DR:s timarbete till log.txt. Endast långsamma pass loggas, >150ms. Varje pass loggar två rader per timme för prestandaanalys. Animal Redux har samma inställning." />
         <text name="dr_set_passProfiler_v1" text="Av" />
@@ -833,7 +839,9 @@
         <text name="dr_panel_grazing" text="betesgång" />
         <text name="dr_panel_noFeedData" text="inga foderdata" />
         <text name="dr_panel_herdValue" text="UPPFÖDNINGSVÄRDE" />
+        <text name="dr_panel_herdValue" text="UPPFÖDNINGSVÄRDE" />
         <text name="dr_panel_ofPeak" text="av %s vid maxålder" />
+        <text name="dr_panel_pastPeak" text="passerat max - värdet sjunker med åldern" />
         <text name="dr_panel_pastPeak" text="passerat max - värdet sjunker med åldern" />
         <!-- resultatrader. Teckenbudget: apProfitLabel är 130px med 11px, alltså ca 20
              tecken; de fyra uppdelningsorden delar på 740px med fyra siffror, så
@@ -841,6 +849,7 @@
         <text name="dr_panel_profit" text="BERÄKN. PROGNOS - VINST / MÅN" />
         <text name="dr_panel_pfOutputs" text="produktion" />
         <text name="dr_panel_pfInputs" text="insatser" />
+        <text name="dr_panel_pfAgeing" text="åldrande" />
         <text name="dr_panel_pfAgeing" text="åldrande" />
         <text name="dr_panel_pfBirths" text="födsel" />
 
