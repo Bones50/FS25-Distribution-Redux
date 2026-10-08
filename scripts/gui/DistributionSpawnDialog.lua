@@ -35,12 +35,14 @@ function DistributionSpawnDialog.new(target, custom_mt)
     self.optIndex  = 1
     self.count     = 1
     self.onConfirm = nil
+    self.shed      = nil
     return self
 end
 
 -- Populate the dialog for a production output. onConfirm(option, count) fires on Spawn.
 function DistributionSpawnDialog:setup(pp, ft, held, onConfirm)
     self.pp = pp
+    self.shed = nil
     self.husbandry = nil
     self.ft = ft
     self.held = held or 0
@@ -51,10 +53,25 @@ function DistributionSpawnDialog:setup(pp, ft, held, onConfirm)
     self.count = (#self.options > 0 and (self.options[1].maxCount or 0) > 0) and 1 or 0
 end
 
+-- Populate for a Pallet Storage Shed (object storage). Releases stored pallet objects back out.
+function DistributionSpawnDialog:setupShed(p, ft, held, onConfirm)
+    self.shed = p
+    self.pp = nil
+    self.husbandry = nil
+    self.ft = ft
+    self.held = held or 0
+    self.onConfirm = onConfirm
+    self.options = (SmartDistribution ~= nil and SmartDistribution.getSpawnOptionsShed ~= nil)
+        and SmartDistribution.getSpawnOptionsShed(p, ft) or {}
+    self.optIndex = 1
+    self.count = (#self.options > 0 and (self.options[1].maxCount or 0) > 0) and 1 or 0
+end
+
 -- Populate for a pallet-spawner HUSBANDRY output (coop / sheep). Source is the coop's internal buffer
 -- (pending litres), not a production storage; otherwise identical to setup(). onConfirm(option, count).
 function DistributionSpawnDialog:setupHusbandry(p, ft, held, onConfirm)
     self.pp = nil
+    self.shed = nil
     self.husbandry = p
     self.ft = ft
     self.held = held or 0
@@ -77,6 +94,18 @@ function DistributionSpawnDialog:onOpen()
         self.typeElement:setState(math.min(self.optIndex, #names), false)
         if self.typeElement.setDisabled ~= nil then self.typeElement:setDisabled(#self.options <= 1) end
     end
+    -- the header follows the selected type: a shed spawning bales says "Spawn Bales", everything
+    -- else keeps "Spawn Pallets". Re-checked on every open; the type dropdown is locked when there
+    -- is only one option, so no on-the-fly swap is needed while the dialog is up.
+    if self.dialogTitleElement ~= nil then
+        local o = self:option()
+        if o ~= nil and o.kind == "bale" then
+            self.dialogTitleElement:setText(SmartDistribution.l10n("dr_title_spawnBales", "Spawn Bales"))
+        else
+            self.dialogTitleElement:setText(SmartDistribution.l10n("dr_title_spawnPallets", "Spawn Pallets"))
+        end
+    end
+
     self:rebuildCountTexts()
     self:refresh()
 end
@@ -93,16 +122,20 @@ function DistributionSpawnDialog:heldNow()
     if self.husbandry ~= nil and SmartDistribution ~= nil and SmartDistribution.palletPendingLiters ~= nil then
         return SmartDistribution.palletPendingLiters(self.husbandry, self.ft) or 0
     end
+    if self.shed ~= nil and SmartDistribution ~= nil and SmartDistribution.shedStoredLiters ~= nil then
+        return SmartDistribution.shedStoredLiters(self.shed, self.ft) or 0
+    end
     return self.held or 0
 end
 
--- LITRES the chosen count actually moves: n full pallets, CLAMPED to what is held. The clamp is what
--- makes the top step a partial pallet rather than a full one -- maxCount already counts that remainder
--- as a pallet (SmartDistribution.palletCountForLiters).
+-- LITRES the chosen count actually moves: n full pallets, CLAMPED to what is held, floored to WHOLE
+-- litres. Raw fill levels carry float noise (a "1,000 L" storage often reads 1,000.6), and the volume
+-- display rounds -- so an un-floored budget displayed "1,001 L" for a 1,000 L pallet. Whole litres are
+-- also what the spawn engine should spend.
 function DistributionSpawnDialog:litersFor(n)
     local o = self:option()
     if o == nil or (o.capacity or 0) <= 0 then return 0 end
-    return math.min(n * o.capacity, self:heldNow())
+    return math.floor(math.min(n * o.capacity, self:heldNow()) + 1e-6)
 end
 
 -- (re)build the quantity stepper to 1..max for the selected type. Each entry reads "2 / 3 (2,000 L)":
@@ -133,11 +166,19 @@ function DistributionSpawnDialog:refresh()
     if self.dialogTextElement ~= nil then
         local capTxt = (o ~= nil and o.capacity ~= nil) and fmtV(o.capacity) or "?"
         -- "Spawning" is the exact total the current count moves; the last pallet is partial whenever
-        -- that total does not divide evenly by the pallet's capacity.
+        -- that total does not divide evenly by the pallet's capacity. The middle label follows the
+        -- selected type: "Bale: <size>" for a bale option, "Pallet: <size>" otherwise.
+        local key, fallback
+        if o ~= nil and o.kind == "bale" then
+            key, fallback = "dr_spawn_info_bale", "Held: %s    Bale: %s    Max: %d    Spawning: %s"
+        else
+            key, fallback = "dr_spawn_info", "Held: %s    Pallet: %s    Max: %d    Spawning: %s"
+        end
         self.dialogTextElement:setText(string.format(
-            SmartDistribution.l10n("dr_spawn_info", "Held: %s    Pallet: %s    Max: %d    Spawning: %s"),
+            SmartDistribution.l10n(key, fallback),
             fmtV(self:heldNow()), capTxt, maxN, fmtV(self:litersFor(self.count or 0))))
     end
+
     if self.yesButton ~= nil and self.yesButton.setDisabled ~= nil then self.yesButton:setDisabled(maxN <= 0) end
 end
 
