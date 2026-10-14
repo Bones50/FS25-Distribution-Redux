@@ -1,0 +1,929 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Dutch (Nederlands)
+
+  NOTE TO EDITORS: an XML comment may not contain two hyphens in a row. It is a
+  parse error and the whole file is then ignored. Attribute VALUES below are fine
+  and several deliberately contain a double hyphen; keep them exactly as they are.
+
+  HOW TO ADD A LANGUAGE
+    1. Copy this file to translations/translation_<code>.xml
+       Codes FS25 uses: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Translate ONLY the text="..." values. Never change a name="..." key.
+    3. Open a pull request. You do not need to translate everything: any key you
+       leave out falls back to English, so a partial file is welcome.
+
+  RULES THAT MATTER
+    * Keys ending _tt are TOOLTIPS. They are long and wrap freely, so length is
+      not a problem there.
+    * Keys starting dr_col_ are TABLE COLUMN HEADERS in a fixed width cell. The
+      character budget is given in a comment above each block. A header that
+      overruns is CLIPPED, which has caused a real bug before: an output mode
+      reading "Distribute + S..." looked like plain Distribute and hid a building
+      that was selling everything. Prefer a short word or an accepted abbreviation.
+    * Keys starting dr_btn_ are BUTTONS sharing one footer bar. Keep them short.
+    * "L" is litres and "kL" kilolitres. Volumes are formatted in code, not here.
+    * Leave XML entities alone: &amp; is an ampersand, &quot; a double quote.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= keybindings (shown in Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Distributie instellen (dichtstbijzijnde object)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Open het Distribution Redux-menu" />
+        <text name="dr_input_openManager" text="Distributiemenu" />
+
+        <!-- ================= TEMPORARY: money-type probe =================
+             Titles handed to MoneyType.register. If the base finances screen renders a
+             row per registered TYPE, one of these is what that row will read; if it
+             renders per persisted BUCKET, neither appears and the money shows under an
+             existing row instead. The two are worded differently ON PURPOSE so the log
+             is not needed to tell which registration produced a row.
+             DELETE BOTH when the probe goes.                                          -->
+
+        <!-- ================= page + dialog titles ================= -->
+        <text name="dr_title_overview" text="Overzicht" />
+        <text name="dr_title_productions" text="Distribution Redux - Producties" />
+        <text name="dr_title_routing" text="Distribution Redux - Routering" />
+        <text name="dr_title_storage" text="Distribution Redux - Opslag" />
+        <text name="dr_title_husbandry" text="Distribution Redux - Veehouderij" />
+        <text name="dr_title_markets" text="Distribution Redux - Markten" />
+        <text name="dr_title_help" text="Hulp" />
+        <text name="dr_tab_distribution" text="VERDELING" />
+        <text name="dr_tab_productions" text="PRODUCTIES" />
+        <text name="dr_tab_storage" text="OPSLAG" />
+        <text name="dr_tab_husbandry" text="VEEHOUDERIJ" />
+
+        <!-- The ROUTING graph tab. Column headings are UPPERCASE and sit over columns of
+             110 to 220 design px, so they clip rather than wrap: keep them to about 12
+             characters. dr_rg_hint takes the two product names in order. -->
+        <text name="dr_rg_hdrSources" text="BRONNEN" />
+        <text name="dr_rg_hdrInputs" text="BENODIGDHEDEN" />
+        <text name="dr_rg_hdrBuilding" text="GEBOUW" />
+        <text name="dr_rg_hdrOutputs" text="EINDPRODUCTEN" />
+        <text name="dr_rg_hdrDests" text="BESTEMMINGEN" />
+        <text name="dr_rg_farmWide" text="hele boerderij" />
+        <text name="dr_rg_hint" text="Bronnen: %s   Bestemmingen: %s" />
+        <text name="dr_rg_pickBuilding" text="Selecteer een gebouw" />
+        <text name="dr_rg_used" text="%s verbruikt" />
+        <text name="dr_rg_made" text="%s gemaakt" />
+        <text name="dr_rg_holds" text="%s opgeslagen" />
+        <text name="dr_rg_clearOrder" text="Volgorde wissen" />
+        <text name="dr_rg_togBlock" text="Klik om deze link te blokkeren" />
+        <text name="dr_rg_togAllow" text="Klik om deze link toe te staan" />
+        <text name="dr_rg_jump" text="Dubbelklik om %s te openen" />
+        <text name="dr_rg_jumpRg" text="Dubbelklik om %s te routeren" />
+        <!-- The CONTROL STRIP. dr_rg_range takes first, last, total; dr_rg_ctlIn / ctlOut take
+             the product name. Keep them short: the strip tiles to 1480px and clips rather than
+             wraps, and German runs about 30% longer (5.60). -->
+        <text name="dr_rg_ctlField" text="%s  -  %s" />
+        <text name="dr_rg_lblMaxFill" text="Max. vulling" />
+        <text name="dr_rg_lblTarget" text="Vuldoel" />
+        <text name="dr_rg_lblReserve" text="Reserve" />
+        <text name="dr_rg_range" text="%d-%d van %d (scrollen)" />
+        <text name="dr_rg_hiddenN" text="+%d geblokkeerd" />
+        <text name="dr_rg_targetOff" text="Uit" />
+        <text name="dr_rg_loopSkipped" text="%d overgeslagen (lus)" />
+        <!-- The strip's three TYPED fields. The placeholders sit inside a 138px box at 11px,
+             so about 24 characters. dr_rg_nodeIn is an input node's third line and dr_rg_nodeRes
+             an output's, both in a 98px column at 9px: keep them to about 20 characters. -->
+        <text name="dr_rg_hintLitres" text="klik om liters in te stellen" />
+        <text name="dr_rg_nodeIn" text="max %s  doel %s" />
+        <text name="dr_rg_nodeRes" text="res. %s" />
+        <text name="dr_rg_blockAllSrc" text="Blokkeer alle bronnen" />
+        <text name="dr_rg_allowAllSrc" text="Sta alle bronnen toe" />
+        <text name="dr_rg_blockAllDst" text="Blokkeer alle bestemmingen" />
+        <text name="dr_rg_allowAllDst" text="Sta alle bestemmingen toe" />
+        <text name="dr_rg_blockAllIn" text="Blokkeer alle benodigdheden" />
+        <text name="dr_rg_allowAllIn" text="Sta alle benodigdheden toe" />
+        <text name="dr_rg_blockAllOut" text="Blokkeer alle eindproducten" />
+        <text name="dr_rg_allowAllOut" text="Sta alle eindproducten toe" />
+        <text name="dr_rg_nInBlocked" text="%d benodigdheden geblokkeerd" />
+        <text name="dr_rg_nInAllowed" text="%d benodigdheden toegestaan" />
+        <text name="dr_rg_nOutBlocked" text="%d eindproductlinks geblokkeerd" />
+        <text name="dr_rg_nOutAllowed" text="%d eindproductlinks toegestaan" />
+        <!-- The grey prompt and the grey complaint sit INSIDE a 140px field at 12px,
+             so about 22 characters. dr_rg_hintTarget says "Off" because an empty target
+             field IS Off, which is a real setting and not an absence. -->
+        <text name="dr_rg_hintTarget" text="Uit - klik om in te stellen" />
+        <text name="dr_rg_badRes" text="boven capaciteit" />
+        <!-- The building node's storage rows, which is what the two tank columns used to
+             carry. Two figures each: held then capacity. -->
+        <text name="dr_rg_bldStoIn" text="IN %s / %s" />
+        <text name="dr_rg_bldStoOut" text="UIT %s / %s" />
+        <text name="dr_rg_bldTanks" text="%d tanks" />
+        <text name="dr_rg_capClamped" text="Begrensd door tank: %s" />
+        <text name="dr_rg_blockedNoSet" text="Dat product is geblokkeerd" />
+        <text name="dr_tab_markets" text="MARKTEN" />
+        <text name="dr_title_settings" text="Instellingen" />
+        <text name="dr_title_advanced" text="Geavanceerd" />
+        <text name="dr_title_advancedInputs" text="Geavanceerde ingangen" />
+        <text name="dr_title_spawnPallets" text="Pallets spawnen" />
+
+        <!-- ================= building-list headers (left column, ~40 chars) ================= -->
+        <text name="dr_col_buildings" text="GEBOUWEN" />
+        <text name="dr_col_husbandries" text="VEEHOUDERIJEN" />
+        <text name="dr_col_markets" text="MARKTEN" />
+        <text name="dr_col_productions" text="PRODUCTIES" />
+
+        <!-- ================= selector labels above the tables ================= -->
+        <text name="dr_lbl_timescale" text="Tijdschaal" />
+        <text name="dr_lbl_filterBy" text="Filter op" />
+        <text name="dr_lbl_show" text="Tonen" />
+        <text name="dr_lbl_grouping" text="Groepering" />
+        <text name="dr_lbl_modeKeys" text="X / Z: uitvoermodus wisselen" />
+        <text name="dr_lbl_sellingOff" text="VERKOPEN IS UIT - elke markt verkoopt bij aankomst, waar deze rijen ook op staan" />
+        <text name="dr_lbl_overviewPointer" text="Volledig overzicht + toeleveringsketens: tabblad Overzicht" />
+
+        <!-- ================= Overview: FLOW view column headers =================
+             Budget roughly 10 to 16 characters each; these sit at 11px in narrow
+             cells. "(EXP.)" is short for "expected", the recipe's target figure. -->
+        <text name="dr_col_building" text="GEBOUW" />
+        <text name="dr_col_product" text="PRODUCT" />
+        <text name="dr_col_received" text="ONTVANGEN" />
+        <text name="dr_col_loaded" text="GELADEN" />
+        <text name="dr_col_consumedExp" text="VERBRUIKT (VERW.)" />
+        <text name="dr_col_unloaded" text="GELOST" />
+        <text name="dr_col_producedExp" text="GEPROD. (VERW.)" />
+        <text name="dr_col_distributed" text="VERDEELD" />
+        <text name="dr_col_sold" text="VERKOCHT" />
+        <text name="dr_col_storedMoved" text="OPSL./VERPLAATST" />
+        <text name="dr_col_distrCost" text="DISTR. KOSTEN" />
+
+        <!-- ================= Overview: SETTINGS view column headers =================
+             Same budget as above. DEST means "active of total destinations" and is
+             the narrowest cell on the page, about 6 characters. Abbreviate freely. -->
+        <text name="dr_col_storageType" text="OPSLAGTYPE" />
+        <text name="dr_col_maxInPctL" text="MAX IN (% - L)" />
+        <text name="dr_col_heldOfMax" text="INHOUD / MAX" />
+        <text name="dr_col_inStatus" text="STATUS IN" />
+        <text name="dr_col_lines" text="LIJNEN" />
+        <text name="dr_col_outMode" text="UIT-MODUS" />
+        <text name="dr_col_reserve" text="RESV." />
+        <text name="dr_col_priority" text="PRIO." />
+        <text name="dr_col_dest" text="BEST." />
+        <text name="dr_col_outStatus" text="STATUS UIT" />
+
+        <!-- ================= building-tab table headers =================
+             Shared by Silos / Animal Husbandry / Markets / Productions. -->
+        <text name="dr_col_incomingProducts" text="INKOMENDE PRODUCTEN" />
+        <text name="dr_col_incomingMaterials" text="INKOMENDE MATERIALEN" />
+        <text name="dr_col_outgoingProducts" text="UITGAANDE PRODUCTEN" />
+        <text name="dr_col_distribution" text="VERDELING" />
+        <text name="dr_col_consumed" text="VERBRUIKT" />
+        <text name="dr_col_produced" text="GEPRODUCEERD" />
+        <text name="dr_col_outputMode" text="UITVOERMODUS" />
+        <text name="dr_col_status" text="STATUS" />
+        <text name="dr_col_products" text="PRODUCTEN" />
+        <text name="dr_pct_lessThanOne" text="&lt;1%" />
+        <text name="dr_btn_advIn" text="Geav. invoer" />
+        <text name="dr_btn_advOut" text="Geav. uitvoer" />
+        <text name="dr_col_statusInOut" text="STATUS (IN / UIT)" />
+        <text name="dr_status_short_recv" text="Ontv." />
+        <text name="dr_status_short_send" text="Verz." />
+        <text name="dr_status_short_sold" text="Verkocht" />
+        <text name="dr_status_short_idle" text="Inactief" />
+        <text name="dr_status_short_blocked" text="Geblokkeerd" />
+        <text name="dr_status_short_none" text="-" />
+        <text name="dr_col_productionLines" text="PRODUCTIELIJNEN" />
+        <text name="dr_col_lineInput" text="INGANG" />
+        <text name="dr_col_lineOutput" text="UITGANG" />
+        <!-- Hover tooltips on the throughput glyph at the left of each production line row. PARALLEL and
+             SERIES are the two ways a production point divides its rated speed across the lines that are
+             switched on: in parallel each line runs at its own full rate, in series they share one budget
+             between them (so two lines each go at about half speed). Free-length - these are tooltips, not
+             table cells, so they are not clipped. -->
+        <text name="dr_tip_parallel" text="Parallel - elke lijn draait op zijn eigen volle snelheid" />
+        <text name="dr_tip_series" text="Serie - deze lijnen delen één doorvoerbudget" />
+        <!-- "/mo" = per month. The figure is the line's monthly target. -->
+        <text name="dr_col_targetMo" text="DOEL /mnd" />
+
+        <!-- ================= Advanced Outputs dialog ================= -->
+        <text name="dr_col_demands" text="VRAAG" />
+        <text name="dr_col_storage" text="OPSLAG" />
+        <text name="dr_col_distance" text="AFSTAND" />
+        <text name="dr_col_order" text="VOLGORDE" />
+
+        <!-- ================= Advanced Inputs dialog ================= -->
+        <text name="dr_col_incomingProduct" text="INKOMEND PRODUCT" />
+        <text name="dr_col_type" text="TYPE" />
+        <text name="dr_col_held" text="INHOUD" />
+        <text name="dr_col_maxIn" text="MAX IN" />
+        <text name="dr_col_available" text="BESCHIKBAAR" />
+        <text name="dr_col_fillTarget" text="VULDOEL" />
+        <!-- Lower table on the same dialog: every building that could supply the SELECTED input.
+             The first header doubles as the section title, so keep it readable as a heading.
+             Budget: POTENTIAL SOURCES 500px, RANGE 110px, HELD is reused from above, STATUS 226px. -->
+        <text name="dr_col_potentialSources" text="POTENTIËLE BRONNEN" />
+        <text name="dr_col_range" text="BEREIK" />
+
+        <!-- ================= buttons =================
+             These share one footer bar, so every extra character squeezes its
+             neighbours. Aim for the length of the English or shorter. -->
+        <text name="dr_btn_priorityUp" text="Prioriteit +" />
+        <text name="dr_btn_priorityDown" text="Prioriteit -" />
+        <text name="dr_btn_toggle" text="Wisselen" />
+        <text name="dr_btn_clear" text="Wissen" />
+        <text name="dr_btn_blockAll" text="Alles blok." />
+        <text name="dr_btn_reserveDown" text="- Reserve" />
+        <text name="dr_btn_reserveUp" text="+ Reserve" />
+        <text name="dr_lbl_reserveLitres" text="Reserve:" />
+        <text name="dr_btn_maxDown" text="- Max" />
+        <text name="dr_btn_maxUp" text="+ Max" />
+        <text name="dr_btn_targetDown" text="- Doel" />
+        <text name="dr_btn_targetUp" text="+ Doel" />
+        <text name="dr_btn_block" text="Blokkeer" />
+        <text name="dr_btn_spawn" text="Spawnen" />
+        <text name="dr_btn_cancel" text="Annuleren" />
+        <text name="dr_btn_close" text="Sluiten" />
+
+        <!-- ================= FOOTER BUTTONS (set from Lua) =================
+             Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
+             FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
+        <text name="dr_btn_advanced" text="Geavanceerd" />
+        <text name="dr_btn_sellTiming" text="Verkooptiming" />
+        <text name="dr_btn_sellTimingOff" text="Verkooptiming: verkopen is UIT" />
+        <text name="dr_btn_sellTimingValue" text="Verkooptiming: %s" />
+        <text name="dr_btn_toggleLine" text="Lijn wisselen" />
+        <text name="dr_btn_showSettings" text="Instellingen" />
+        <text name="dr_btn_showFlows" text="Stromen tonen" />
+        <text name="dr_btn_refresh" text="Vernieuwen" />
+        <text name="dr_btn_advancedOutputs" text="Geav. uitvoer" />
+        <text name="dr_btn_activate" text="Activeren" />
+        <text name="dr_btn_activateAll" text="Alles activeren" />
+        <text name="dr_btn_allow" text="Toestaan" />
+        <text name="dr_btn_allowAll" text="Alles toest." />
+
+        <!-- ================= TIMESCALE SELECTOR =================
+             One in-game hour is one distribution cycle, which is why the building tabs spell it
+             out; the Overview's column is narrower and just says "Hour". -->
+        <text name="dr_period_hourLong" text="Cyclus (uur)" />
+        <text name="dr_period_hour" text="Uur" />
+        <text name="dr_period_month" text="Maand" />
+        <text name="dr_period_year" text="Jaar" />
+
+        <!-- ================= OVERVIEW SELECTORS =================
+             "End product (full chain)" shows every building feeding one finished product, back
+             through the whole supply chain. Grouping collapses buildings of the same type into
+             one summed row, labelled e.g. "Bakery x2". -->
+        <text name="dr_filter_nothing" text="Niets (toon alles)" />
+        <text name="dr_filter_building" text="Gebouw" />
+        <text name="dr_filter_product" text="Product" />
+        <text name="dr_filter_endProduct" text="Eindproduct (volledige keten)" />
+        <text name="dr_group_off" text="Uit (één rij per gebouw)" />
+        <text name="dr_group_on" text="Aan (combineer hetzelfde gebouwtype)" />
+
+        <!-- ================= OVERVIEW SHORT STATUS =================
+             The same three states as dr_status_* above, but the Overview's column is 140px and
+             its header already says IN or OUT, so the qualifier is dropped. Keep these SHORT. -->
+        <text name="dr_statusShort_receiving" text="Ontvangen" />
+        <text name="dr_statusShort_sending" text="Verzenden" />
+        <text name="dr_statusShort_idle" text="Inactief" />
+        <text name="dr_statusShort_blocked" text="Geblokkeerd" />
+
+        <!-- ================= STORAGE TYPE =================
+             Pooled: one tank shared by several products. Individual: a separate tank per
+             product. Shown in the Advanced Inputs dialog and the Overview settings view, which
+             deliberately use identical wording. -->
+        <text name="dr_type_pooled" text="Gedeeld" />
+        <text name="dr_type_individual" text="Individueel" />
+        <text name="dr_type_pooledShort" text="Pool" />
+        <text name="dr_type_poolN" text="Pool %s" />
+        <text name="dr_type_poolNShort" text="P%s" />
+        <text name="dr_type_individualShort" text="Ind" />
+        <text name="dr_type_linkedShort" text="Link" />
+        <text name="dr_type_internal" text="Intern" />
+        <text name="dr_type_blocked" text="GEBLOKKEERD" />
+
+        <!-- ================= OUTPUT PRIORITY =================
+             "Distance" is the default: nearest consumer first. "Ranked (n)" means the player
+             has ordered n destinations by hand in Advanced Outputs. -->
+        <text name="dr_priority_ranked" text="Gerangschikt (%d)" />
+        <text name="dr_priority_distance" text="Afstand" />
+
+        <!-- ================= BUILDING KIND =================
+             The right-hand column of the building list on the Silos tab. Very narrow. -->
+        <text name="dr_class_silo" text="Silo" />
+        <text name="dr_class_barn" text="Schuur" />
+        <text name="dr_class_storage" text="Opslag" />
+        <text name="dr_class_pit" text="Hoop" />
+        <text name="dr_class_market" text="Markt" />
+
+        <!-- ================= NOTICES AND SMALL LABELS =================
+             The blocked notice is the last row of a building's input list when Advanced routing
+             has hidden products the building is not holding. SEPARATE singular and plural keys:
+             English used to make the singular by deleting the final "s", which does not survive
+             translation. If your language needs no distinction, give both the same text. -->
+        <text name="dr_notice_blockedInput" text="+%d ingang geblokkeerd (zie Geav. invoer)" />
+        <text name="dr_notice_blockedInputs" text="+%d ingangen geblokkeerd (zie Geav. invoer)" />
+        <text name="dr_label_off" text="Uit" />
+        <text name="dr_label_blocked" text="Geblokkeerd" />
+        <text name="dr_label_building" text="Gebouw" />
+        <!-- Fallback name for a production line the game does not name itself; %d is its number. -->
+        <text name="dr_label_line" text="Lijn %d" />
+
+        <!-- ================= ADVANCED OUTPUTS DIALOG =================
+             %s in the title is the building name. "Active - Invalid" marks a destination that
+             is switched on but would send the product in a circle back to where it started. -->
+        <text name="dr_adv_title" text="Geavanceerd - %s" />
+        <text name="dr_adv_activeInvalid" text="Actief - Ongeldig" />
+        <text name="dr_adv_noCapacity" text="Geen capaciteit om tegen te reserveren" />
+        <text name="dr_adv_reserveBad" text="Reserve: voer een aantal liters in" />
+        <text name="dr_adv_reserveClamped" text="Reserve beperkt tot capaciteit: %s" />
+        <text name="dr_adv_loopOne" text="Kan %s niet activeren - het product zou hier terugkomen." />
+        <text name="dr_adv_loopMany" text="%d bestemming(en) blijven geblokkeerd - ze zouden een lus veroorzaken." />
+
+        <!-- ================= ADVANCED INPUTS DIALOG =================
+             Subtitle, one of three depending on the building's storage. %s is the pool's total
+             capacity; the %d are how many products share it and how many have a max set. -->
+        <text name="dr_inp_title" text="Geavanceerde invoer - %s" />
+        <text name="dr_inp_pooledCapped" text="Gedeelde opslag: %s gedeeld door %d producten, %d begrensd. Producten zonder limiet mogen de hele pool gebruiken." />
+        <text name="dr_inp_pooled" text="Gedeelde opslag: %s gedeeld door %d producten. Elk product mag alle ruimte gebruiken. Stel een maximum in om ruimte voor andere producten te reserveren." />
+        <text name="dr_inp_individual" text="Stel het maximum van elk product in of blokkeer het. Dit gebouw heeft een individuele opslag per product." />
+        <!-- Shown in place of the source rows when nothing on the farm could supply the selected
+             product. An empty table under a header reads as a bug; a sentence reads as an answer. -->
+        <text name="dr_inp_noSources" text="Geen enkel gebouw op deze boerderij kan dit product leveren." />
+        <!-- STATUS of one potential source, in a 226px cell at 12px: about 30 characters.
+             These are the three buckets the status column counts, in order.
+             FEEDING
+               Feeding         it moved product here on the last pass
+             COULD FEED, BUT ISN'T
+               Standby         ready and allowed, just not the one being drawn from
+               No Stock        allowed and in range, but holds none of it this instant
+             CAN'T FEED
+               Blocked         this source has blocked this receiver in its own Advanced Outputs
+               Not Distributing its mode does not feed consumers (Hold, Sell, plain Store...)
+               Out of Range    beyond the distribution radius, so no setting can make it supply -->
+        <!-- STATUS of one PRODUCTION LINE on the Productions tab: switched off, running, or on but
+             not currently producing (starved of an input, or its output buffer is full). -->
+        <text name="dr_lineStatus_off" text="Uit" />
+        <text name="dr_lineStatus_running" text="Actief" />
+        <text name="dr_lineStatus_idle" text="Inactief" />
+        <text name="dr_srcst_feeding" text="Voeden" />
+        <text name="dr_srcst_standby" text="Stand-by" />
+        <text name="dr_srcst_noStock" text="Geen voorraad" />
+        <text name="dr_srcst_blocked" text="Geblokkeerd" />
+        <text name="dr_srcst_notDist" text="Niet op Distribueren" />
+        <text name="dr_srcst_outOfRange" text="Buiten bereik" />
+
+        <!-- ================= SPAWN PALLETS DIALOG =================
+             Quantity word beside the stepper, and the summary line above it. -->
+        <text name="dr_spawn_info" text="Opgeslagen: %s    Pallet: %s    Max.: %d    Spawnen: %s" />
+        <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
+             name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Pallet" />
+        <!-- Quantity stepper: chosen count, maximum, and the exact litres that count moves.
+             Reads "2 / 3  (2,000 L)". Keep all three placeholders and their order. -->
+        <text name="dr_spawn_count" text="%d / %d  (%s)" />
+
+        <!-- ================= OUTPUT MODES =================
+             What a building does with a product. Shown in the OUTPUT MODE / OUT MODE column
+             on every building tab and on the Overview, and cycled with the "Cycle Output"
+             button. The widest column that holds these fits about 39 characters at the
+             current text size, and "Distribute + Market Supply" is the longest English one.
+
+             The compound modes read "first half + second half" and the ORDER IS MEANINGFUL:
+             the first action always happens first, and product is never sold or shipped to a
+             market until it has been offered to consumers at least once. Keep that sense.
+
+             The numbers are the internal mode ids. Do not renumber them; they are what the
+             save file stores. -->
+        <text name="dr_mode_0" text="Overnemen" />
+        <text name="dr_mode_1" text="Vasthouden" />
+        <text name="dr_mode_2" text="Verdeel" />
+        <text name="dr_mode_3" text="Distribueren + verkopen" />
+        <text name="dr_mode_4" text="Verkopen" />
+        <text name="dr_mode_5" text="Distribueren + opslaan" />
+        <text name="dr_mode_6" text="Opslaan" />
+        <text name="dr_mode_7" text="Marktlevering" />
+        <text name="dr_mode_8" text="Distribueren + marktlevering" />
+        <text name="dr_mode_9" text="Intern vasthouden" />
+        <text name="dr_mode_10" text="Verplaats naar" />
+        <text name="dr_mode_11" text="Distribueren + verplaatsen naar" />
+        <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
+             the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
+             and spawns nothing. The distinction is the whole point, so keep them distinct. -->
+        <text name="dr_mode_holdPallets" text="Pallets vasthouden" />
+
+        <!-- ================= SILOS/BUNKERS ================= -->
+        <text name="dr_bunker_fermenting" text="Fermenteren" />
+        <text name="dr_bunker_fermented" text="Gefermenteerd - openmaken voor toegang" />
+        <text name="dr_bunker_filling" text="Vullen" />
+        <text name="dr_bunker_fermentPct" text="Fermenteren: %d%%" />
+        <text name="dr_bunker_compactPct" text="Gecomprimeerd: %d%%" />
+
+
+        <!-- ================= LINK STATUS =================
+             The STATUS column. Three states: product actually moved on the last hourly pass,
+             the link is live but nothing needed to move, or it is blocked in Advanced routing.
+             A receiver RECEIVES and a source SENDS, which is the only difference between the
+             two sets. Narrow column, about 20 characters. -->
+        <text name="dr_status_in_ACTIVE" text="Actief (Ontvangend)" />
+        <text name="dr_status_in_IDLE" text="Actief (Wachten)" />
+        <text name="dr_status_in_BLOCKED" text="Geblokkeerd" />
+        <text name="dr_status_out_ACTIVE" text="Actief (Verzenden)" />
+        <text name="dr_status_out_IDLE" text="Actief (Wachten)" />
+        <text name="dr_status_out_BLOCKED" text="Geblokkeerd" />
+
+        <!-- ================= PRODUCT ROLE =================
+             Tagged after a product name on the Overview, e.g. "Flour (In)". A building can
+             both receive and supply the same product (a silo), which is what (In/Out) means.
+             VERY tight: it sits inside the product-name cell, so 3 to 7 characters. -->
+        <text name="dr_role_in" text="In" />
+        <text name="dr_role_out" text="Uit" />
+        <text name="dr_role_inout" text="In/uit" />
+
+        <!-- ================= SELL TIMING =================
+             "Best price" holds the product until its best month before selling; "Immediate"
+             sells as soon as it is available. The dr_market_* forms appear in the Markets
+             tab's OUTPUT MODE column, where Hold means the market stocks the product and
+             sells nothing until told to. -->
+        <text name="dr_timing_bestPrice" text="Beste prijs" />
+        <text name="dr_timing_immediate" text="Onmiddellijk" />
+        <text name="dr_market_sellsNow" text="Verkoopt nu" />
+        <text name="dr_market_sellsNowSet" text="%s (ingesteld: %s)" />
+        <text name="dr_market_hold" text="Vasthouden" />
+        <text name="dr_market_best" text="Verkopen - Beste prijs" />
+        <text name="dr_market_immediate" text="Verkopen - onmiddellijk" />
+
+        <!-- ================= UNITS =================
+             Volumes read in litres below 1,000 and in kilolitres above it, so 1,001 L shows as
+             "1.001 kL". These are appended to a formatted number and INCLUDE their leading
+             space. Keep the space, and keep them short. -->
+        <text name="dr_unit_litre" text=" L" />
+        <text name="dr_unit_kilolitre" text=" kL" />
+
+        <!-- ================= MONEY NOTIFICATIONS =================
+             The on-screen finance popup when DR sells or charges for haulage. Each is a label
+             followed by a money figure, so keep any trailing space and punctuation. -->
+        <text name="dr_money_biogas" text="Biogasopbrengsten:" />
+        <text name="dr_money_sales" text="Productverkoop:" />
+        <text name="dr_money_distCost" text="Distributiekosten: -" />
+
+        <!-- ================= MISC ENGINE LABELS ================= -->
+        <!-- Stands in for the map's water where there is no physical tank to name. -->
+        <text name="dr_label_waterSource" text="Waterbron" />
+
+        <!-- ================= SETTINGS =================
+             One block per setting: the row title, its tooltip (_tt), then the
+             selector's values (_v1, _v2, ...) IN ORDER. The order is meaningful,
+             because _v1 is the first option the left/right arrows land on and the
+             INDEX is what the save file stores. Translate each value in place;
+             never reorder them, and never drop one. -->
+
+        <text name="dr_set_scope" text="Bereik" />
+        <text name="dr_set_scope_tt" text="Bereik: elk eigendomsmiddel bereikt de hele boerderij.  Nabijheid: activa bereiken alleen bronnen binnen de onderstaande nabijheidsradius." />
+        <text name="dr_set_scope_v1" text="Bedrijfsbreed" />
+        <text name="dr_set_scope_v2" text="Nabijheid (straal)" />
+
+        <text name="dr_set_includeHusbandry" text="Veehouderijen" />
+        <text name="dr_set_includeHusbandry_tt" text="Neem Veehouderijen – stallen, hokken en bijenkorven, plus mesthopen en drijfmestputten – op in het distributienetwerk. Uit verwijdert ze volledig: ze krijgen geen voer en hun producten (melk / mest / drijfmest / eieren / wol / honing) worden niet gedistribueerd of verkocht." />
+        <text name="dr_set_includeHusbandry_v1" text="Aan" />
+        <text name="dr_set_includeHusbandry_v2" text="Uit" />
+
+        <text name="dr_set_includeSilosSheds" text="Silo's en palletopslag" />
+        <text name="dr_set_includeSilosSheds_tt" text="Neem gewas-/materiaalsilo's en palletopslagloodsen op in het distributienetwerk. Uit verwijdert ze: silo's voeden de productie niet langer, en palletloodsen ontvangen geen pallets en geven deze ook niet meer vrij. (Mest- en mestputten volgen de instelling Veehouderijen.)" />
+        <text name="dr_set_includeSilosSheds_v1" text="Aan" />
+        <text name="dr_set_includeSilosSheds_v2" text="Uit" />
+
+        <text name="dr_set_includeMarkets" text="Markten en kiosken" />
+        <text name="dr_set_includeMarkets_tt" text="Neem markten en kiosken op in het distributienetwerk. Met Uit worden ze verwijderd: producten van de boerderij worden niet langer naar hen doorgestuurd om te worden verkocht, en het tabblad Markten is verborgen." />
+        <text name="dr_set_includeMarkets_v1" text="Aan" />
+        <text name="dr_set_includeMarkets_v2" text="Uit" />
+
+        <text name="dr_set_includeMapStorage" text="Openbare kaartopslag" />
+        <text name="dr_set_includeMapStorage_tt" text="Voeg kaartopslaggebouwen toe waarvan u niet de eigenaar bent, maar waarin u nog steeds goederen kunt opslaan, zoals een graanpoel op de spoorweg. Standaard uitgeschakeld: deze gebouwen rekenen normaal gesproken huur voor elke liter die ze in bezit hebben, dus ze worden alleen aan het netwerk toegevoegd als je daarom vraagt. Als ze zijn ingeschakeld, verschijnen ze als opslaggebouwen waarbij elk product is ingesteld op Vasthouden, en verplaatsen ze niets totdat je ze instelt." />
+        <text name="dr_set_includeMapStorage_v1" text="Aan" />
+        <text name="dr_set_includeMapStorage_v2" text="Uit" />
+
+        <text name="dr_set_advancedRouting" text="Geavanceerde routering" />
+        <text name="dr_set_advancedRouting_tt" text="Hoofdschakelaar voor geavanceerde uitgangen (bronzijde blokkeren / prioriteit / verplaatsen naar) en geavanceerde ingangen (ingang blokkeren / caps / fill-doelen). Uit verbergt deze knoppen en keert terug naar de standaard dichtstbijzijnde, op afstand gebaseerde distributie. WAARSCHUWING: door dit UIT te zetten, worden alle bestaande geavanceerde instellingen gewist (elk blok, prioriteit, Verplaatsen naar, invoerlimiet en vuldoel) - ze worden teruggezet naar de standaardinstellingen en komen NIET terug als u ze weer inschakelt; je zou ze helemaal opnieuw moeten opzetten." />
+        <text name="dr_set_advancedRouting_v1" text="Aan" />
+        <text name="dr_set_advancedRouting_v2" text="Uit" />
+        <text name="dr_set_routingView" text="Routeweergave" />
+        <text name="dr_set_routingView_tt" text="Wat de knoppen Geavanceerde invoer en Geavanceerde uitvoer openen. Grafiek toont het hele gebouw als één afbeelding - bronnen, opslagplaatsen, producten en bestemmingen - met een schakelaar op elke link. Klassieke lijsten openen de oorspronkelijke twee lijstvensters. Beide veranderen exact dezelfde instellingen; dit kiest alleen het venster. Heeft geen effect als Geavanceerde routering is uitgeschakeld." />
+        <text name="dr_set_routingView_v1" text="Grafiek" />
+        <text name="dr_set_routingView_v2" text="Klassieke lijsten" />
+
+        <text name="dr_set_defaultOutputMode" text="Uitvoermodus voor nieuwe gebouwen" />
+        <text name="dr_set_defaultOutputMode_tt" text="De uitvoermodus die aan een gebouw wordt gegeven op het moment dat u het PLAATST. Verdelen is het normale gedrag. Vasthouden betekent dat een nieuw geplaatst gebouw alles wat het maakt bewaart totdat u het anders instelt, zodat niets een gebouw verlaat dat u nog niet hebt geconfigureerd. Op een gebouw dat pallets maakt, wordt dit weergegeven als 'Pallets vasthouden', of als 'Intern vasthouden' wanneer Palletspawning is ingesteld op nooit. Dit heeft ALLEEN invloed op gebouwen die vanaf nu worden geplaatst: bestaande gebouwen worden nooit gewijzigd, en het wijzigen van deze instelling heeft geen invloed op iets dat al gebouwd is." />
+        <text name="dr_set_defaultOutputMode_v1" text="Verdeel" />
+        <text name="dr_set_defaultOutputMode_v2" text="Vasthouden" />
+
+        <text name="dr_set_defaultInputMode" text="Invoermodus voor nieuwe gebouwen" />
+        <text name="dr_set_defaultInputMode_tt" text="Of een nieuw GEPLAATST gebouw leveringen accepteert. Alles accepteren is normaal gedrag. Blokkeer alle blokkeert elke invoer in het nieuwe gebouw, zodat er niets wordt afgeleverd totdat u producten toestaat vanuit Geavanceerde invoer. OPMERKING: Alles blokkeren werkt alleen als Geavanceerde routering is ingeschakeld, omdat invoerblokkering deel uitmaakt van Geavanceerde routering en wordt gewist wanneer u deze functie uitschakelt. Dit heeft ALLEEN invloed op gebouwen die vanaf nu geplaatst worden: bestaande gebouwen worden nooit veranderd." />
+        <text name="dr_set_defaultInputMode_v1" text="Accepteer alles" />
+        <text name="dr_set_defaultInputMode_v2" text="Blokkeer alles" />
+
+        <text name="dr_set_radius" text="Nabijheidsradius" />
+        <text name="dr_set_radius_tt" text="Hoe ver een consument naar bronnen reikt in de nabijheidsmodus." />
+        <text name="dr_set_radius_v1" text="25 m" />
+        <text name="dr_set_radius_v2" text="50 m" />
+        <text name="dr_set_radius_v3" text="75 m" />
+        <text name="dr_set_radius_v4" text="100 m" />
+        <text name="dr_set_radius_v5" text="150 m" />
+        <text name="dr_set_radius_v6" text="200 m" />
+        <text name="dr_set_radius_v7" text="400 m" />
+
+        <text name="dr_set_bufferHours" text="Consumentenbuffer" />
+        <text name="dr_set_bufferHours_tt" text="Uren aan grondstoffen die bij elke consument per cyclus worden bijgevuld." />
+        <text name="dr_set_bufferHours_v1" text="1 uur" />
+        <text name="dr_set_bufferHours_v2" text="2 uur" />
+        <text name="dr_set_bufferHours_v3" text="4 uur" />
+        <text name="dr_set_bufferHours_v4" text="8 uur" />
+        <text name="dr_set_bufferHours_v5" text="12 uur" />
+        <text name="dr_set_bufferHours_v6" text="24 uur" />
+
+        <text name="dr_set_sellEnabled" text="Verkopen" />
+        <text name="dr_set_sellEnabled_tt" text="Globale schakelaar voor alle automatische verkopen (modi Verkopen / Distribueren + Verkopen)." />
+        <text name="dr_set_sellEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_sellEnabled_v2" text="Uitgeschakeld" />
+
+        <text name="dr_set_waterSupplyEnabled" text="Auto-water" />
+        <text name="dr_set_waterSupplyEnabled_tt" text="Automatisch water leveren aan waterinputproducties en dierenweiden (gefactureerd op basis van de afstand tot de dichtstbijzijnde waterbron)." />
+        <text name="dr_set_waterSupplyEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_waterSupplyEnabled_v2" text="Uitgeschakeld" />
+
+        <text name="dr_set_distCostEnabled" text="Distributiekosten" />
+        <text name="dr_set_distCostEnabled_tt" text="Breng transportkosten per uur in rekening voor elke actieve distributie (schalen met transportafstand)." />
+        <text name="dr_set_distCostEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_distCostEnabled_v2" text="Uitgeschakeld" />
+
+        <text name="dr_set_distCostBase" text="Kostentarief" />
+        <text name="dr_set_distCostBase_tt" text="Basistransportkosten per uur voor een korte afstand (op of onder de onderstaande kostenafstand)." />
+        <!-- MONEY VALUES: "%s" is the amount, formatted by the GAME in the player's own currency.
+             DO NOT write a currency symbol here. FS25 takes the currency from the SAVEGAME rather than
+             the language, so a symbol baked into any translation would be wrong for anyone playing that
+             language with a different currency. Translate only the "/h" (per hour) part, and keep the
+             "%s". The five are identical in English on purpose; a language needing different word order
+             per amount can still vary them. -->
+        <text name="dr_set_distCostBase_v1" text="%s /u" />
+        <text name="dr_set_distCostBase_v2" text="%s /u" />
+        <text name="dr_set_distCostBase_v3" text="%s /u" />
+        <text name="dr_set_distCostBase_v4" text="%s /u" />
+        <text name="dr_set_distCostBase_v5" text="%s /u" />
+
+        <text name="dr_set_distCostThreshold" text="Kosten afstand" />
+        <text name="dr_set_distCostThreshold_tt" text="Voor afstanden op of onder deze afstand wordt het vaste basistarief betaald; langere afstanden schalen lineair op." />
+        <text name="dr_set_distCostThreshold_v1" text="25 m" />
+        <text name="dr_set_distCostThreshold_v2" text="50 m" />
+        <text name="dr_set_distCostThreshold_v3" text="100 m" />
+        <text name="dr_set_distCostThreshold_v4" text="200 m" />
+        <text name="dr_set_distCostThreshold_v5" text="500 m" />
+
+        <text name="dr_set_seasonalReserveEnabled" text="Seizoensgebonden oogstreserve" />
+        <text name="dr_set_seasonalReserveEnabled_tt" text="Gewassen die zijn ingesteld op Distribueren+Verkopen houden voldoende grondstoffen over om de productie te voeden tot de volgende oogst; alleen het overschot wordt verkocht." />
+        <text name="dr_set_seasonalReserveEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_seasonalReserveEnabled_v2" text="Uitgeschakeld" />
+
+        <text name="dr_set_seasonalFallbackMonths" text="Reservemaanden (totdat geleerd)" />
+        <text name="dr_set_seasonalFallbackMonths_tt" text="Maanden aan grondstoffen voor een gewas voordat de mod zijn echte oogstperiode heeft waargenomen." />
+        <text name="dr_set_seasonalFallbackMonths_v1" text="6 maanden" />
+        <text name="dr_set_seasonalFallbackMonths_v2" text="12 maanden" />
+        <text name="dr_set_seasonalFallbackMonths_v3" text="13 maanden" />
+        <text name="dr_set_seasonalFallbackMonths_v4" text="18 maanden" />
+        <text name="dr_set_seasonalFallbackMonths_v5" text="24 maanden" />
+
+        <text name="dr_set_bestPriceEnabled" text="Verkoop tegen de beste prijs" />
+        <text name="dr_set_bestPriceEnabled_tt" text="Hoofdschakelaar: houd Verkopen / Verdelen + Verkopen overschot vast tot de beste maand voordat u het verkoopt. Uit: alles wordt onmiddellijk verkocht." />
+        <text name="dr_set_bestPriceEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_bestPriceEnabled_v2" text="Uitgeschakeld" />
+
+        <text name="dr_set_bestPriceDefault" text="Standaard verkooptiming" />
+        <text name="dr_set_bestPriceDefault_tt" text="Standaard voor alle verkoop-/distributie+verkoop-uitvoer en voor elk marktproduct, totdat u de eigen schakelaar voor dat gebouw instelt. Markten die u al heeft geconfigureerd, behouden hun instelling." />
+        <text name="dr_set_bestPriceDefault_v1" text="Verkoop tegen de beste prijs" />
+        <text name="dr_set_bestPriceDefault_v2" text="Verkoop onmiddellijk" />
+
+        <text name="dr_set_palletSpawnMode" text="Pallets spawnen" />
+        <text name="dr_set_palletSpawnMode_tt" text="Hele pallets: pennen houden het product intern vast en geven een VOLLEDIGE pallet vrij, net als bij producties. Vanilla: een pallet verschijnt in één keer en vult zich geleidelijk. Nooit: niets brengt vanzelf pallets voort, het product blijft intern en wordt nog steeds van daaruit gedistribueerd, opgeslagen en verkocht. Je kunt er altijd eentje met de hand vrijgeven met Spawn Pallets. Nooit alleen van toepassing op uw hokken en producties - bijenkorven blijven normaal voortplanten (ze hebben geen interne buffer om uit te verkopen), en winkels waar u pallets koopt, worden nooit beïnvloed." />
+        <text name="dr_set_palletSpawnMode_v1" text="Vanilla (geleidelijk vullen)" />
+        <text name="dr_set_palletSpawnMode_v2" text="Alleen hele pallets" />
+        <text name="dr_set_palletSpawnMode_v3" text="Spawn nooit pallets" />
+        <text name="dr_set_passThroughStores" text="Doorvoeropslag" />
+        <text name="dr_set_passThroughStores_tt" text="Sommige mods voegen een opslaggebouw toe met daaraan een nepproductie, waarbij elke regel een product rechtstreeks weer in zichzelf verandert. De productie doet niets; het is er alleen, zodat het spel in het gebouw wordt afgeleverd. Behandelen als opslag zorgt ervoor dat Distribution Redux het ziet als de silo die het werkelijk is, dus vraagt ​​het niet langer om elke liter op de boerderij en worden de echte lijnen (als die er zijn) nog steeds weergegeven op Productions. De derde optie schakelt die nepregels ook uit in het spel zelf - netter, maar het wordt in je savegame geschreven en blijft uit als je deze mod verwijdert." />
+        <text name="dr_set_passThroughStores_v1" text="Behandelen als productie" />
+        <text name="dr_set_passThroughStores_v2" text="Behandelen als opslag" />
+        <text name="dr_set_passThroughStores_v3" text="Als opslag + lijnen uitschakelen" />
+        <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
+             pallet store), to tell its halves apart in the building list. Keep them short - they are
+             appended to a building name in a fixed-width list. -->
+        <text name="dr_role_nameFmt" text="%s (%s)" />
+        <text name="dr_role_silo" text="Silo" />
+        <text name="dr_role_shed" text="Palletopslag" />
+        <text name="dr_role_production" text="Productie" />
+        <text name="dr_role_husbandry" text="Veehouderijen" />
+        <text name="dr_role_heap" text="Hoop" />
+        <text name="dr_role_market" text="Markt" />
+        <text name="dr_type_linked" text="Gekoppeld" />
+
+        <text name="dr_set_menuRefresh" text="Vernieuwingssnelheid van menu" />
+        <text name="dr_set_menuRefresh_tt" text="Hoe vaak het geopende menu de boerderij opnieuw leest. In het overzicht wordt elk gebouw en product opnieuw opgesomd, dus op een grote boerderij zorgt een lagere snelheid ervoor dat het menu responsief blijft. Handmatig stopt alleen het vernieuwen van de achtergrond volledig - de cijfers worden nog steeds bijgewerkt wanneer u iets selecteert of op Vernieuwen drukt in het overzicht." />
+        <text name="dr_set_menuRefresh_v1" text="Live (0,5s)" />
+        <text name="dr_set_menuRefresh_v2" text="Normaal (2s)" />
+        <text name="dr_set_menuRefresh_v3" text="Traag (10 s)" />
+        <text name="dr_set_menuRefresh_v4" text="Alleen handmatig" />
+        <text name="dr_set_passProfiler" text="Prestatiemeting" />
+        <text name="dr_set_passProfiler_tt" text="Schrijft wat DR's uurpas voor log.txt kostte, en hoeveel wereldscans hij maakte. Alleen langzaam passeren - het is stil tenzij een pass per uur langer dan 150 ms duurt. Schakel over naar Elke cyclus als u om een ​​prestatierapport wordt gevraagd: er worden vervolgens elk uur in de game twee regels geregistreerd, waardoor een gezonde boerderij kan worden vergeleken met een langzame boerderij. Husbandry Redux heeft dezelfde instelling en als een van beide is ingeschakeld, wordt deze ingeschakeld." />
+        <text name="dr_set_passProfiler_v1" text="Uit" />
+        <text name="dr_set_passProfiler_v2" text="Alleen trage cycli" />
+        <text name="dr_set_passProfiler_v3" text="Elke cyclus (diagnose)" />
+
+        <text name="dr_set_debugEnabled" text="Foutopsporingslogboekregistratie" />
+        <text name="dr_set_debugEnabled_tt" text="Schrijf gedetailleerde distributieactiviteiten naar log.txt (verhuizingen, verkopen, winkels, wateraanvullingen en kosten). Schakel uit voor een rustiger logboek." />
+        <text name="dr_set_debugEnabled_v1" text="Ingeschakeld" />
+        <text name="dr_set_debugEnabled_v2" text="Uitgeschakeld" />
+
+
+        <!-- ============ USER GUIDE (generated: gen_guide_l10n.py) ============
+             11 topics, one key per non-blank paragraph. Markers at the start of a
+             value are STRUCTURE, not words, and must be kept exactly as they are:
+               "## "   a heading
+               "### "  a sub heading
+               "- "    a bullet in a list
+             Everything after the marker is ordinary prose. A key you leave out falls
+             back to English, so a topic can be translated a paragraph at a time.
+             DO NOT reorder or renumber these; the numbers are positions in the guide. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Aan de slag" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux vervangt het distributiesysteem van het basisspel volledig. Er zijn geen extra plaatsbare objecten nodig. Het werkt met alle standaardgebouwen en met gebouwmods die het standaard GIANTS-schema voor hun gebouwtype volgen. Dit is een zeer gecompliceerde modificatie en het kan gemakkelijk zijn om per ongeluk problemen/blokkades te creëren. Lees vóór gebruik de volledige helpgids door." />
+        <text name="dr_guide_gettingStarted_2" text="## Toegang tot de gebruikersinterface" />
+        <text name="dr_guide_gettingStarted_3" text="Backslash-toets: open het Distribution Redux-menu - een venster op volledig scherm met een tabblad voor elk soort gebouw, plus deze handleiding en de instellingen." />
+        <text name="dr_guide_gettingStarted_4" text="Toets linkerhaakje: kijk terwijl u te voet bent naar het laad- of lospunt van een gebouw om het menu rechtstreeks naar de pagina van dat gebouw te openen. De prompt verschijnt alleen als u naar een van uw eigen gebouwen kijkt die deel uitmaakt van het netwerk." />
+        <text name="dr_guide_gettingStarted_5" text="Beide toetsen kunnen terugspringen onder Opties - Bediening." />
+        <text name="dr_guide_gettingStarted_6" text="## Het idee" />
+        <text name="dr_guide_gettingStarted_7" text="Open het menu, kies het gebouw dat u interesseert en stel elk product in op Vasthouden, Distribueren, Verkopen, enzovoort. Dat is de hele lus; al het andere is detail." />
+        <text name="dr_guide_gettingStarted_8" text="## Wat het anders doet dan het basisspel" />
+        <text name="dr_guide_gettingStarted_9" text="- Maakt het mogelijk dat elk gebouw dat opslaat, produceert, voedt of verkoopt, deelneemt aan de distributie." />
+        <text name="dr_guide_gettingStarted_10" text="- Zal alleen leveren wat de vraag nodig heeft, in plaats van te proberen de capaciteit volledig te vullen" />
+        <text name="dr_guide_gettingStarted_11" text="- Kosten voor distributie op basis van afstand" />
+        <text name="dr_guide_gettingStarted_12" text="- Hiermee kunt u onmiddellijk verkopen of wachten tot de beste prijs is bereikt" />
+        <text name="dr_guide_gettingStarted_13" text="- Maakt het mogelijk om een ​​seizoensreserve aan te houden voor seizoensgewassen om ervoor te zorgen dat de productie kan doorgaan, waarbij alleen het onnodige deel van de oogst wordt verkocht" />
+        <text name="dr_guide_gettingStarted_14" text="- Automatische bewatering haalt water uit elke opslagplaats of de dichtstbijzijnde waterbron (bijvoorbeeld een meer) om aan de vraag te voldoen" />
+        <text name="dr_guide_gettingStarted_15" text="- Hiermee kunt u het standaarddistributiemechanisme overschrijven om prioriteiten te stellen aan de vraag, specifieke inputs en outputs te blokkeren, outputreserves in te stellen en doelen voor de inputvraag in te stellen" />
+        <text name="dr_guide_gettingStarted_16" text="## Wat het elke cyclus doet" />
+        <text name="dr_guide_gettingStarted_17" text="- Toewijzen - Stel een lijst met eisen op van elke consument: productie-inputs, diervoeding, voerrobotbunkers, stro, veewater. Stem vervolgens de bronnen af ​​op de vraag die het dichtst bij de vraag staat, waarbij u per productblokken, prioriteiten en invoerlimieten respecteert." />
+        <text name="dr_guide_gettingStarted_18" text="- Verplaats de rest - Bewaar restjes in beschikbare opslaggebouwen, verplaats de voorraad naar beschikbare markten en verplaats vervolgens de voorraad tussen opslagplaatsen, waarbij u de blokken per product, prioriteiten en invoerlimieten respecteert." />
+        <text name="dr_guide_gettingStarted_19" text="- Kosten - Op afstand gebaseerde transportfacturering, plus de lopende productiekosten per uur (die anders verloren gaan omdat DR de basisuurpas onderdrukt)." />
+        <text name="dr_guide_gettingStarted_20" text="- Verkopen/marktaanbod - Verkoop overtollige producten, verkoop buiten de marktbuffers, verkoop vervolgens directe output (bijvoorbeeld elektriciteit, methaan), waarbij u rekening houdt met seizoensoogsten, en verkoop onmiddellijk versus verkoop tegen de beste prijsregels." />
+        <text name="dr_guide_gettingStarted_21" text="- Account - Registreer de productie- en veehouderijdoorvoer, bereken handmatige laad-/losdelta's, verzend het geldoverzicht." />
+
+        <text name="dr_guide_theMenu_title" text="Het menu" />
+        <text name="dr_guide_theMenu_1" text="Met de backslash-toets wordt het samengevoegde menu geopend. Aan de linkerkant bevinden zich tabbladen." />
+        <text name="dr_guide_theMenu_2" text="## Tabbladen" />
+        <text name="dr_guide_theMenu_3" text="- Producties - fabrieken en productiepunten." />
+        <text name="dr_guide_theMenu_4" text="- Silo's - bulksilo's en opslagloodsen voor pallets/balen, plus mest- en mestputten." />
+        <text name="dr_guide_theMenu_5" text="- Veehouderij - schuren, hokken, hokken en bijenkorven." />
+        <text name="dr_guide_theMenu_6" text="- Markten - de kiosken en markten die u op de kaart hebt geplaatst." />
+        <text name="dr_guide_theMenu_7" text="- Overzicht - gedetailleerde cijfers voor elk gebouw en elk product in één tabel." />
+        <text name="dr_guide_theMenu_8" text="- Gebruikershandleiding - deze handleiding." />
+        <text name="dr_guide_theMenu_9" text="- Instellingen - de globale opties." />
+        <text name="dr_guide_theMenu_10" text="Elk gebouwtabblad bestaat uit twee vensters: uw gebouwen staan ​​aan de linkerkant en de inkomende producten, productielijnen en uitgaande producten van het geselecteerde gebouw aan de rechterkant. Welke van deze drie lijsten precies verschijnt, hangt af van wat het gebouw doet." />
+        <text name="dr_guide_theMenu_11" text="## Tijdschaal" />
+        <text name="dr_guide_theMenu_12" text="Elk gebouwtabblad en het tabblad Overzicht heeft bovenaan een Tijdschaalkiezer met Uur, Maand en Jaar. Het herschaalt de stroomcijfers op die pagina: wat er in dat venster is ontvangen, geconsumeerd, geproduceerd, gedistribueerd en verkocht." />
+        <text name="dr_guide_theMenu_13" text="Een Distribution Redux-&quot;maand&quot; bestaat uit 24 uren per uur, dus 'Maand' betekent grofweg de laatste in-game-dag, ongeacht het aantal echte dagen dat je per periode hebt ingesteld. Vasthouden wordt nooit aangepast: het is een voorraad, geen stroom, dus het laat altijd zien wat zich op dit moment in het gebouw bevindt." />
+        <text name="dr_guide_theMenu_14" text="Jaargegevens worden in de loop van de tijd opgebouwd. Er was geen record op jaarschaal voordat deze functie bestond, dus bij een oudere versie begint de kolom Jaar leeg en wordt deze gevuld naarmate elke in-game maand is voltooid." />
+        <text name="dr_guide_theMenu_15" text="## Verborgen tabbladen" />
+        <text name="dr_guide_theMenu_16" text="De tabbladen Silo's, Veehouderijen en Markten verschijnen alleen als die groep is ingeschakeld in Instellingen. Schakel een groep uit en de gebouwen verlaten het distributienetwerk volledig en het tabblad verdwijnt. Schakel de groep weer in om beide terug te krijgen." />
+
+        <text name="dr_guide_buildingPages_title" text="Gebouwpagina's" />
+        <text name="dr_guide_buildingPages_1" text="De tabbladen Producties, Silo's, Markten en Veehouderijen hebben één indeling: kies een gebouw aan de linkerkant en configureer vervolgens de producten aan de rechterkant. Tabellen- en Kolommensets verschillen enigszins per gebouwtype, omdat niet elk gebouw consumeert of produceert." />
+        <text name="dr_guide_buildingPages_2" text="## Tabelinhoud" />
+        <text name="dr_guide_buildingPages_3" text="### Binnenkomende producten" />
+        <text name="dr_guide_buildingPages_4" text="- PRODUCT - de naam en het pictogram." />
+        <text name="dr_guide_buildingPages_5" text="- INHOUD/MAX - hoeveel ervan bevindt zich nu in het gebouw, de maximale hoeveelheid die kan worden opgeslagen en de maximale ingestelde hoeveelheid tussen haakjes als percentage." />
+        <text name="dr_guide_buildingPages_6" text="- GRATIS OPSLAG - Hoeveel meer van dit product het gebouw kan bevatten, rekening houdend met de maximaal ingestelde hoeveelheid (%) en de resterende ruimte." />
+        <text name="dr_guide_buildingPages_7" text="- ONTVANGEN - hoeveel van het product Distribution Redux aan dit gebouw is geleverd in de geselecteerde tijdschaal." />
+        <text name="dr_guide_buildingPages_8" text="- VERBRUIKT - hoeveel van het product het gebouw heeft gebruikt in de geselecteerde tijdschaal. Alleen producties en veehouderijen." />
+        <text name="dr_guide_buildingPages_9" text="- STATUS - Actief (ontvangend) of Actief (inactief), gebaseerd op activiteit in de laatste cyclus, of Geblokkeerd." />
+        <text name="dr_guide_buildingPages_10" text="### Productielijnen (alleen producties)" />
+        <text name="dr_guide_buildingPages_11" text="- PRODUCTIELIJNEN - het product dat de lijn maakt, met de input tussen haakjes." />
+        <text name="dr_guide_buildingPages_12" text="- STATUS - Actief, Inactief (ingeschakeld maar er ontbreken ingangen) of Uit." />
+        <text name="dr_guide_buildingPages_13" text="- DOEL /maand - hoeveel die lijn naar verwachting per maand zal produceren als alle input wordt geleverd." />
+        <text name="dr_guide_buildingPages_14" text="### Uitgaande producten" />
+        <text name="dr_guide_buildingPages_15" text="- PRODUCT - de naam en het pictogram." />
+        <text name="dr_guide_buildingPages_16" text="- GEHOUDEN (MAX) - hoeveel van dit product bevindt zich nu in het gebouw, met de capaciteit tussen haakjes." />
+        <text name="dr_guide_buildingPages_17" text="- GRATIS OPSLAG - Hoeveel meer van dit product kan het gebouw bevatten" />
+        <text name="dr_guide_buildingPages_18" text="- GEPRODUCEERD - hoeveel er is geproduceerd in de geselecteerde tijdschaal. Alleen producties en veehouderijen." />
+        <text name="dr_guide_buildingPages_19" text="- GEDISTRIBUEERD - alles wat overblijft: gedistribueerd, opgeslagen, verplaatst en gecombineerd verkocht, met de verkoopwaarde tussen haakjes wanneer iets ervan is verkocht." />
+        <text name="dr_guide_buildingPages_20" text="- OUTPUT MODE - de modus waarop deze uitgang momenteel is ingesteld." />
+        <text name="dr_guide_buildingPages_21" text="- STATUS - Actief (verzenden) of Actief (inactief), gebaseerd op activiteit in de laatste cyclus, of Geblokkeerd." />
+        <text name="dr_guide_buildingPages_22" text="## OPMERKING" />
+        <text name="dr_guide_buildingPages_23" text="- Als een gebouw zowel interne opslag als pallets kan hebben, toont het display de interne hoeveelheid en vervolgens de hoeveelheid opgeslagen in pallets op de palletspawner van het gebouw" />
+        <text name="dr_guide_buildingPages_24" text="- Het geselecteerde tijdsbestek toont alleen materiaal dat in dat tijdsbestek is verplaatst. Als je de productie nog maar net hebt geactiveerd en Jaarlijks toont, zie je alleen wat er is verplaatst sinds je deze hebt geactiveerd." />
+        <text name="dr_guide_buildingPages_25" text="- Meer details over wat waar naartoe gaat, zijn beschikbaar op het tabblad Overzicht" />
+        <text name="dr_guide_buildingPages_26" text="- Volumewisseleenheid op 1.000 liter. Tot 999 L lezen ze in liters; vanaf 1.000 L lezen ze in kiloliters waarbij alle overbodige nullen zijn weggelaten, dus 1.001 L wordt weergegeven als 1,001 kL, 123.123 L als 123,123 kL en 600.000 L eenvoudigweg als 600 kL. Drie decimalen is precies één liter, dus er gaat niets verloren bij het veranderen van eenheid." />
+        <text name="dr_guide_buildingPages_27" text="- Om te zien of een wijziging effect heeft (dat wil zeggen inactief of actief), moet u één cyclus (1 uur) doorlopen voordat de UI-kolom wordt vernieuwd. Als u een reeks distributies heeft, moet u mogelijk een aantal uren doorlopen totdat alle stappen zijn vernieuwd." />
+        <text name="dr_guide_buildingPages_28" text="## Instellingen wijzigen" />
+        <text name="dr_guide_buildingPages_29" text="- Om een ​​productielijn in of uit te schakelen, selecteert u de lijn en drukt u op Lijn wisselen." />
+        <text name="dr_guide_buildingPages_30" text="- Om te wijzigen wat er met een uitgang gebeurt, selecteert u deze en drukt u op Cycle Output." />
+        <text name="dr_guide_buildingPages_31" text="- Geavanceerd opent de routeringsopties per product (zie Geavanceerde invoer en uitvoer)." />
+        <text name="dr_guide_buildingPages_32" text="- Verkooptiming verschijnt voor een output in een verkoopmodus." />
+        <text name="dr_guide_buildingPages_33" text="Het wijzigen van een productie-uitvoer of het wisselen van een productielijn hier is dezelfde instelling als de uitvoerschakelaar van het vanilleproductiescherm, dus de ene plaats werkt de andere bij - en het vanillescherm toont ook de modusnamen van de mod." />
+
+        <text name="dr_guide_outputModes_title" text="Uitvoermodi" />
+        <text name="dr_guide_outputModes_1" text="## Welke modi elk gebouwtype biedt" />
+        <text name="dr_guide_outputModes_2" text="- Producties - Distribueren, opslaan, pallets vasthouden, intern vasthouden, verkopen, marktaanbod." />
+        <text name="dr_guide_outputModes_3" text="- Silo's en opslag - Distribueren, verplaatsen naar, vasthouden, verkopen, marktaanbod." />
+        <text name="dr_guide_outputModes_4" text="- Veehouderijen - Distribueren, opslaan, pallets vasthouden, intern vasthouden, verkopen, marktaanbod." />
+        <text name="dr_guide_outputModes_5" text="- Markten - Alleen verkopen of vasthouden." />
+        <text name="dr_guide_outputModes_6" text="Niet elke modus wordt altijd aangeboden. Als een modus geen mogelijk eindpunt heeft, wordt deze verborgen in plaats van als een doodlopende weg weergegeven. Bijvoorbeeld Als er geen markt is of geen markt die het product accepteert, verschijnt Marktaanbod niet in de lijst." />
+        <text name="dr_guide_outputModes_7" text="## De modi" />
+        <text name="dr_guide_outputModes_8" text="- Verdelen - voer nabijgelegen producties en dieren die dit product nodig hebben, eerst de dichtstbijzijnde bron, volgens wat hun recepten vereisen. Het overschot blijft staan." />
+        <text name="dr_guide_outputModes_9" text="- Opslaan - verplaats de uitvoer naar het dichtstbijzijnde opslaggebouw dat deze accepteert en ga naar het volgende als er één vol raakt. Alleen producties en veehouderijen." />
+        <text name="dr_guide_outputModes_10" text="- Verplaatsen naar - verplaats het product van het ene opslaggebouw naar het andere dat het accepteert. Alleen opslaggebouwen. Zie de waarschuwing hieronder." />
+        <text name="dr_guide_outputModes_11" text="- Intern vasthouden - bewaar de uitvoer als bulk binnen het gebouw; geen pallets spawnen vanzelf en je spawnt ze zelf op aanvraag (zie Palletspawning)." />
+        <text name="dr_guide_outputModes_12" text="- Pallets vasthouden - bewaar de uitvoer waar deze is, zoals pallets, en laat deze zich ophopen." />
+        <text name="dr_guide_outputModes_13" text="- Verkopen - verkoop het product, onmiddellijk of tegen de beste prijs (zie Verkooptiming)." />
+        <text name="dr_guide_outputModes_14" text="- Marktaanbod: breng de output over naar een markt of kiosk die u hebt geplaatst, waar deze tegen een premie wordt verkocht." />
+        <text name="dr_guide_outputModes_15" text="## Gecombineerde modi" />
+        <text name="dr_guide_outputModes_16" text="- Distribueren + verkopen - eerst aan alle vraag voldoen en vervolgens verkopen wat er nog over is." />
+        <text name="dr_guide_outputModes_17" text="- Distribueren + opslaan - voer eerst de vraag in en verplaats het overschot vervolgens naar uw opslag in plaats van het te verkopen. Alleen producties en veehouderijen." />
+        <text name="dr_guide_outputModes_18" text="- Verdelen + Verplaatsen naar - voer eerst de vraag in en verplaats vervolgens het overschot naar de door u gekozen opslagplaats. Alleen opslaggebouwen." />
+        <text name="dr_guide_outputModes_19" text="- Distribueer + marktaanbod - voed eerst de vraag en breng vervolgens het overschot over naar uw markt of kiosk." />
+        <text name="dr_guide_outputModes_20" text="In elke gecombineerde modus gebeurt de eerste helft echt als eerste. Er wordt niets verkocht, opgeslagen of naar een markt verscheept totdat het aan de consument is aangeboden." />
+        <text name="dr_guide_outputModes_21" text="Verplaatsen naar wordt alleen aangeboden als geavanceerde routering is geactiveerd (zie Geavanceerde routering)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Geavanceerde routering en regels" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Geavanceerde routering" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Met geavanceerde routing kunt u elke individuele in- en uitgang van elk gebouw controleren. Het is standaard ingeschakeld en kan worden uitgeschakeld in Instellingen." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Geavanceerde invoer" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Selecteer een binnenkomend product en druk op Geavanceerde invoer." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Blokkeren / Toestaan ​​- voorkom dat dit gebouw dat product ooit ontvangt." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Alles blokkeren/alles toestaan ​​- draai elke invoer in één keer om." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Max In - het meeste van dat product dat het gebouw kan bevatten. Dit is van belang voor gepoolde opslag, waarbij meerdere producten één tank delen. Bij een pool geldt: wie het eerst komt, het eerst maalt: standaard mag elk product alles ervan gebruiken, precies zoals het basisspel zich gedraagt. Dat betekent dat een druk product een silo kan vullen en weinig ruimte overlaat voor de anderen. Zet dus Max In op dat product om het af te dekken en ruimte vrij te houden voor de rest. Caps zijn onafhankelijk en hoeven niet op te tellen tot 100 procent; alles wat je met rust laat, blijft onbeperkt." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Doel - een vuldoel voor dat product. In plaats van alleen te leveren wat de volgende cyclus nodig heeft, werkt het netwerk naar dit niveau toe en houdt het vervolgens vast – in feite een inputreserve." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Geavanceerde uitgangen" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Selecteer het uitgaande product dat u wilt aanpassen en druk op Geavanceerde uitgangen." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Blokkeren / Toestaan ​​- stuur deze uitvoer nooit naar die bestemming." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Prioriteren - rangschik de eisen en opslagopties voor deze uitvoer. Dit overschrijft het standaardgedrag 'dichtstbijzijnde eerst en dan morsen'." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Reserveren (+/-) - houd dit aantal liters altijd in het gebouw. Niets – distributie, verkoop, opslag, verplaatsing of marktaanbod – mag het product onder dit cijfer brengen." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### &quot;Verplaatsen naar&quot; uitvoermodus" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Deze modus is alleen beschikbaar als uitvoermodus wanneer Geavanceerde routering is ingeschakeld en het gebouw van het type: Opslag is" />
+        <text name="dr_guide_advancedRoutingRules_16" text="- In deze modus kun je de materialen in die opslag verplaatsen naar een andere opslag die dit ondersteunt" />
+        <text name="dr_guide_advancedRoutingRules_17" text="- Wanneer u dit activeert, wordt standaard elke mogelijke bestemming geblokkeerd om onbedoelde creatie van productlussen te voorkomen" />
+        <text name="dr_guide_advancedRoutingRules_18" text="- Om dit te activeren selecteert u een willekeurige uitgang en drukt u op Geavanceerde uitgangen. Aan de rechterkant ziet u een lijst met ondersteunende bestemmingen (Alles geblokkeerd) en u kunt indien nodig gebouwen toestaan. Alle andere geavanceerde uitvoerfuncties zijn ook beschikbaar voor deze verplaatsing (prioriteit geven, reserveren enz.)." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- Standaard probeert Verplaatsen naar het gebouw in elke cyclus zo veel mogelijk te vullen. U kunt een &quot;Max In&quot; instellen op de ingangen van het ontvangende gebouw om ervoor te zorgen dat u ruimte heeft om meerdere producten te verplaatsen (in plaats van alleen de silo volledig te vullen met het eerste product)." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Voordat u Geavanceerde routering uitschakelt" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Elke geavanceerde instelling die u heeft gemaakt, wordt gewist en niet alleen genegeerd: alle blokken, prioriteiten, reserves, Max In-waarden en doelen. Als u Geavanceerde routering later weer inschakelt, krijgt u een schone lei, dus u zult alles opnieuw moeten instellen." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Geavanceerde regels" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Deze geavanceerde regels gelden ongeacht of Geavanceerde routering is ingeschakeld. Seizoensoogstreserve en Auto-Water kunnen desgewenst in de instellingen worden in- of uitgeschakeld." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Verkoopmodi" />
+        <text name="dr_guide_advancedRoutingRules_25" text="Voor elke output in een verkoopmodus kunt u ervoor kiezen om onmiddellijk te verkopen of te wachten op de beste prijs. Wachten betekent dat het product zich ophoopt in het gebouw tot de piek aanbreekt, zorg er dus voor dat er ruimte voor is." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Seizoensoogstreserve" />
+        <text name="dr_guide_advancedRoutingRules_27" text="Standaard uitgeschakeld. Wanneer u deze inschakelt, zal een opbrengst die een jaarlijkse oogstoogst is, de waarde van ongeveer een jaar achterhouden om uw eigen productie te voeden en alleen het overschot te verkopen. Gras en andere gewassen die het hele jaar door teruggroeien, houden in plaats daarvan drie maanden aan. Totdat de mod een gewas geoogst heeft gezien, weet hij niet wanneer de volgende oogst moet plaatsvinden, dus valt hij terug naar de instelling Reservemaanden." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### Auto-Water" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Water wordt automatisch geleverd aan elk gebouw dat het nodig heeft, vanaf de dichtstbijzijnde waterbron, terwijl Auto-Water ingeschakeld is. Als er geen waterbron is geplaatst, zal het systeem deze uit het dichtstbijzijnde water halen (houd er rekening mee dat als het dichtstbijzijnde water ver weg is, de distributiekosten hoog zullen zijn)" />
+
+        <text name="dr_guide_overviewTab_title" text="Overzicht tabblad" />
+        <text name="dr_guide_overviewTab_1" text="Op het tabblad Overzicht wordt het hele netwerk in één tabel geplaatst: elk ingeschreven gebouw en elk product dat er in of uit gaat. Het is de plek om te kijken als je wilt weten wat er daadwerkelijk gebeurt, in plaats van wat een enkel gebouw te bieden heeft." />
+        <text name="dr_guide_overviewTab_2" text="Elk product is getagd (In), (Uit) of (In/Uit), zodat u in één oogopslag kunt zien aan welke kant van het gebouw het zich bevindt. Silo's en loodsen zijn voor alles in/uit, omdat ze zowel ontvangen als leveren." />
+        <text name="dr_guide_overviewTab_3" text="## De vier selectors" />
+        <text name="dr_guide_overviewTab_4" text="- Filter op - Niets (alles weergeven), Gebouw, Product of Eindproduct (volledige keten)." />
+        <text name="dr_guide_overviewTab_5" text="- Tonen - kiest op welk gebouw of product het filter van toepassing is." />
+        <text name="dr_guide_overviewTab_6" text="- Tijdschaal - Uur, maand of jaar, zoals op de gebouwentabbladen." />
+        <text name="dr_guide_overviewTab_7" text="- Groeperen - Uit toont één rij per gebouw; On combineert gebouwen van hetzelfde type in één enkele opgetelde rij, bijvoorbeeld met het label 'Bakkerij x2'." />
+        <text name="dr_guide_overviewTab_8" text="Het eindproduct (volledige keten) is hiervan het meest bruikbaar. Kies een eindproduct, zoals een taart, en de tabel toont elk gebouw en elk tussenproduct dat het voedt, gerangschikt vanaf het voltooide item verderop in de keten. Het is de snelste manier om het knelpunt of het overaanbod in een productielijn te vinden." />
+        <text name="dr_guide_overviewTab_9" text="## De kolommen" />
+        <text name="dr_guide_overviewTab_10" text="- ONTVANGEN - afgeleverd aan dit gebouw door Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- GELADEN - in dit gebouw geplaatst door alles dat NIET Distribution Redux is: jij met een aanhanger, een baal, een AI-helper, een andere mod." />
+        <text name="dr_guide_overviewTab_12" text="- CONSUMED (EXP.) - opgebruikt, met het verwachte cijfer tussen haakjes." />
+        <text name="dr_guide_overviewTab_13" text="- ONTLADEN - uit dit gebouw gehaald door alles wat niet Distribution Redux is, inclusief een pallet die u wegrijdt." />
+        <text name="dr_guide_overviewTab_14" text="- HELD (CAP) - wat zich momenteel in het gebouw bevindt, met capaciteit. Nooit aangepast door Timescale." />
+        <text name="dr_guide_overviewTab_15" text="- GEPRODUCEERD (EXP.) - gemaakt door dit gebouw, met het verwachte cijfer tussen haakjes." />
+        <text name="dr_guide_overviewTab_16" text="- GEDISTRIBUEERD - geleverd aan consumenten." />
+        <text name="dr_guide_overviewTab_17" text="- OPGESLAGEN/VERPLAATST - verzonden naar opslag of verplaatst naar een andere winkel." />
+        <text name="dr_guide_overviewTab_18" text="- VERKOCHT - verkocht, rechtstreeks of via een markt." />
+        <text name="dr_guide_overviewTab_19" text="- DISTR. KOSTEN - wat het transport voor de leveringen van dit gebouw kost. Wordt alleen in rekening gebracht aan het verzendende gebouw, dus de kolom telt op voor het daadwerkelijk uitgegeven geld, in plaats van dat elke levering twee keer wordt geteld." />
+        <text name="dr_guide_overviewTab_20" text="## De verwachte figuren en hun kleuren" />
+        <text name="dr_guide_overviewTab_21" text="VERBRUIKT en GEPRODUCEERD staan ​​tussen haakjes de verwachte hoeveelheid, uitgewerkt op basis van de recepten van de ingeschakelde productielijnen. Het figuurtje is groen gekleurd als hij op of heel dichtbij het doel is, oranje als hij iets kort is, en rood als hij heel kort is. Alleen producties hebben een recept, dus de veehouderijen en de silorijen tonen eerder een simpel figuur zonder doelwit dan een verzonnen figuur." />
+        <text name="dr_guide_overviewTab_22" text="Een rode GEPRODUCEERDE figuur is de snelste manier om een ​​uitgehongerde lijn te herkennen." />
+        <text name="dr_guide_overviewTab_23" text="## Instellingen tonen" />
+        <text name="dr_guide_overviewTab_24" text="Onderaan de pagina heb je een knop om te schakelen tussen Stromen tonen en Instellingen tonen. Als er een productielijn geblokkeerd is, kunt u snel overschakelen naar de pagina Instellingen weergeven om te zien welke instelling deze mogelijk blokkeert." />
+        <text name="dr_guide_overviewTab_25" text="Als u in een van beide weergaven op een lijn dubbelklikt, gaat u rechtstreeks naar die gebouwenpagina." />
+
+        <text name="dr_guide_palletManagement_title" text="Palletbeheer" />
+        <text name="dr_guide_palletManagement_1" text="Veel producten worden op pallets afgeleverd: planken, planken, groenten in kratten, eieren, wol enzovoort. Om ervoor te zorgen dat de Distribution Redux naar verwachting werkt, is de werking van pallets volledig herschreven" />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux houdt rekening met zowel producten die intern in het gebouw worden bewaard als met elke pallet die zich op de palletspawner van het gebouw bevindt, voor zowel informatieve displays als uitvoermodi. Distributie zal altijd eerst uit de palletspawner komen en daarna uit de interne opslag. Als de palletspawner geblokkeerd is, zal het product zich ophopen in de interne opslag van het gebouw en van daaruit worden gedistribueerd. Een pallet die handmatig uit de spawner wordt verwijderd, wordt onmiddellijk uit het gebouwentotaal verwijderd." />
+        <text name="dr_guide_palletManagement_3" text="Gebouwen zonder een goed palletkussen in hun model (sommige aangepaste spawners en een paar bijenkorven) vallen in plaats daarvan terug op de eenvoudige regel voor het dichtstbijzijnde gebouw." />
+        <text name="dr_guide_palletManagement_4" text="## Handmatig spawnen" />
+        <text name="dr_guide_palletManagement_5" text="- Stel de uitgang in op Hold Internal. Zodra er minimaal één volledige pallet in zit, verschijnt er een Spawn Pallets-knop, zowel op het tabblad Producties als op het productiescherm van het basisspel. Druk erop om het spawn-venster te openen." />
+        <text name="dr_guide_palletManagement_6" text="- Type - het pallettype. Als de uitvoer er slechts één ondersteunt, wordt deze ter referentie weergegeven; als er meerdere worden ondersteund, gebruik dan de pijlen om te kiezen." />
+        <text name="dr_guide_palletManagement_7" text="- Hoeveelheid - hoeveel er moeten spawnen. De pijlen worden stapsgewijs weergegeven, de knoppen -10/+10 springen in tientallen en het totaal wordt beperkt door de aandelen die u in uw bezit heeft." />
+        <text name="dr_guide_palletManagement_8" text="- Spawn laat zoveel gevulde pallets vallen op het palletpunt van het gebouw en verwijdert de bijbehorende voorraad. Annuleren sluit zonder spawnen." />
+        <text name="dr_guide_palletManagement_9" text="De knop verschijnt alleen voor een uitvoer op Hold Internal met een waarde van ten minste één volledige pallet. Daaronder valt niets te spawnen. Het gebouw moet ook een palletspawnpunt in zijn model hebben, wat de meeste palletiserende gebouwen hebben. In multiplayer voert de host de spawn uit, zodat de pallets voor iedereen verschijnen." />
+        <text name="dr_guide_palletManagement_10" text="## Pallets uit dierenhokken" />
+        <text name="dr_guide_palletManagement_11" text="In het standaardspel spawnen dierenhokken een pallet en laden deze elk uur met wat zich in de interne opslag bevindt, ongeacht of er genoeg is voor een volledige pallet of niet (in tegenstelling tot producties). Om alles consistent te houden, zijn de veehouderijen standaard zo veranderd dat ze op dezelfde manier werken als de productie. Dit kan worden gewijzigd in de instellingen om terug te keren naar de basisspelmodus, maar dit kan van invloed zijn op de distributie- en distributietrackinggegevens (niet aanbevolen)" />
+        <text name="dr_guide_palletManagement_12" text="Er is ook een optie in dezelfde instelling om nooit pallets te spawnen. Dit voorkomt dat er ooit pallets ontstaan ​​en gebruikt alleen de interne opslag van het gebouw om te distribueren." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Andere wijzigingen in de mechanica van het basisspel" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Bunkersilo's" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- Bij het openen van een bunkersilo hoef je nu alleen maar op R te drukken en de mod zal de volledige afdekking van de silo verwijderen (geen gedeeltelijke afdekkingen meer die niet kunnen worden verwijderd)" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- Bunkersilo's verwachten dat je de output creëert door materiaal erin te laden, af te dekken, te wachten tot het gaat gisten en het vervolgens bloot te leggen. Als zodanig toont Distribution Redux alleen de uitvoertabel en opties, en zal de voorraad pas worden weergegeven zodra het materiaal is blootgelegd." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Mestbergen en mestputten" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Mestbergen en mestputten kunnen nu overal op de kaart worden geplaatst en worden NIET automatisch aan een veehouderij gekoppeld. Om materiaal van een veehouderij naar deze objecten te verplaatsen, plaatst u het en op de schuur selecteert u &quot;Opslaan&quot; als uitvoermodus. Mest en drijfmest zullen net als alle andere producten naar deze gebouwen worden verplaatst." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Silo-uitbreidingen" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Silo-extensies zijn uitgebreid herschreven en werken nu anders dan het basisspel. Silo-uitbreiding kan nu alleen binnen 50 meter van een bestaande silo, hoop of put worden geplaatst en ALLEEN opslagruimte aan dat gebouw toevoegen." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Handmatig lossen bij markten" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Op uw eigen markten/kramen kunt u nog steeds handmatig producten tippen/afgeven. In plaats van gewoon onmiddellijk te verkopen, zoals in het basisspel, zullen deze producten de uitvoermodus respecteren die op de markt is ingesteld." />
+
+        <text name="dr_guide_settings_title" text="Instellingen" />
+        <text name="dr_guide_settings_1" text="Algemene instellingen staan ​​live op het tabblad Instellingen. Ze worden opgeslagen met je SaveGame en door de host in multiplayer gesynchroniseerd. Keuzes per gebouw overschrijven altijd deze globale waarden voor dat gebouw." />
+        <text name="dr_guide_settings_2" text="## De opties" />
+        <text name="dr_guide_settings_3" text="- Vermeld in de volgorde waarin ze op het tabblad verschijnen." />
+        <text name="dr_guide_settings_4" text="- Bereik - Bereik (hele bedrijf) of nabijheid (binnen een straal)." />
+        <text name="dr_guide_settings_5" text="- Veehouderijen - inclusief of exclusief schuren, hokken, hokken en bijenkorven." />
+        <text name="dr_guide_settings_6" text="- Silo's en palletopslag - inclusief of exclusief bulksilo's, pallet- en balenschuren, en mest- en mestputten." />
+        <text name="dr_guide_settings_7" text="- Markten en kiosken - neem uw markten en kiosken op of sluit deze uit." />
+        <text name="dr_guide_settings_8" text="- Geavanceerde routing - hoofdschakelaar voor geavanceerde ingangen en geavanceerde uitgangen. Uit verwijdert ook Verplaatsen naar en wist alle geavanceerde instellingen (zie Geavanceerde invoer en uitvoer)." />
+        <text name="dr_guide_settings_9" text="- Nabijheidsradius - hoe ver een bron reikt in het nabijheidsbereik. Standaard 50 m." />
+        <text name="dr_guide_settings_10" text="- Consumentenbuffer - uren aan grondstoffen die bij elke consument per cyclus worden bijgevuld. Standaard 2." />
+        <text name="dr_guide_settings_11" text="- Verkopen - beheer aan/uit voor alle verkopen. Uit betekent dat er nooit iets wordt verkocht, ongeacht de individuele uitgangen die zijn ingesteld." />
+        <text name="dr_guide_settings_12" text="- Auto-Water - levert automatisch water aan gebouwen die het verbruiken." />
+        <text name="dr_guide_settings_13" text="- Distributiekosten: of er überhaupt transportkosten in rekening worden gebracht." />
+        <text name="dr_guide_settings_14" text="- Kostentarief - het basistarief per link per uur. Standaard 10." />
+        <text name="dr_guide_settings_15" text="- Kostenafstand - de afstandsverhoging waarmee het tarief wordt vermenigvuldigd. Standaard 50 m." />
+        <text name="dr_guide_settings_16" text="- Seizoensoogstreserve: houd voldoende grondstoffen bij voor de volgende oogst en verkoop alleen het overschot. Standaard uitgeschakeld." />
+        <text name="dr_guide_settings_17" text="- Reservemaanden (totdat geleerd) - hoeveel maanden er moeten worden vastgehouden voordat de mod het oogstvenster van een gewas heeft geleerd. Standaard 13." />
+        <text name="dr_guide_settings_18" text="- Verkoop tegen de beste prijs - beheer aan/uit voor verkopen tegen de beste prijs. Uit betekent dat alles onmiddellijk wordt verkocht." />
+        <text name="dr_guide_settings_19" text="- Standaard verkooptiming - wat een nieuwe output gebruikt als u deze niet hebt ingesteld: wacht op de piek of verkoop onmiddellijk." />
+        <text name="dr_guide_settings_20" text="- Palletspawning - Drie opties: standaardspel (gedeeltelijke pallets spawnen), alleen volledige pallets spawnen (STANDAARD) en nooit pallets spawnen." />
+        <text name="dr_guide_settings_21" text="- Menuvernieuwingsfrequentie - Kan worden aangepast als u vertraging of haperingen ervaart in de gebruikersinterface. Handmatig activeert een vernieuwingsknop die u kunt gebruiken om de gebruikersinterface te vernieuwen." />
+        <text name="dr_guide_settings_22" text="- Foutopsporing in logboekregistratie - schrijf gedetailleerde activiteiten naar log.txt. Ga weg voor een rustiger logboek." />
+
+        <text name="dr_guide_support_title" text="Ondersteuning" />
+        <text name="dr_guide_support_1" text="## Problemen oplossen" />
+        <text name="dr_guide_support_2" text="- Een gebouw verschijnt niet. Controleer Bereik en de groep schakelt. Nabijheid reikt alleen binnen de straal, en een gebouw waarvan de groep is uitgeschakeld, wordt uit het netwerk verwijderd en het tabblad ervan verborgen." />
+        <text name="dr_guide_support_3" text="- Er wordt niets afgeleverd. Zorg ervoor dat de bron is ingesteld op een Distribute-modus in plaats van Hold, dat de productielijn van de consument is ingeschakeld en dat de twee binnen bereik zijn voor het huidige bereik." />
+        <text name="dr_guide_support_4" text="- Een Verplaatsen naar-uitvoer verplaatst niets. Verplaatsen naar begint met elke bestemming geblokkeerd. Open Geavanceerde uitvoer en activeer de gewenste bestemming. Als een bestemming &quot;Actief - Ongeldig&quot; in het rood weergeeft, zou het activeren ervan een lus veroorzaken." />
+        <text name="dr_guide_support_5" text="- Er is iets aangekomen, maar dit uur is het niet verkocht. Dat is de bedoeling. Het product dat net is aangekomen, wacht één keer, zodat consumenten de eerste weigering krijgen." />
+        <text name="dr_guide_support_6" text="- Een dierenhok houdt eieren of wol vast. Als &quot;Hele pallets uit pennen&quot; is ingeschakeld, stapelt een pen zich op tot er een volle pallet is voordat er één wordt vrijgegeven. Consumenten kunnen nog steeds uit de voorraad putten terwijl deze vol raakt; verkopen en opslaan, wachten op de pallet." />
+        <text name="dr_guide_support_7" text="- Een fabriek krijgt geen water. Er wordt automatisch water geleverd terwijl Auto-Water is ingeschakeld; Als een waterinputinstallatie er uitgehongerd uitziet, bevestig dan de instelling." />
+        <text name="dr_guide_support_8" text="- Geen prompt bij een gebouw. De prompt tussen de linkerhaakjes wordt alleen weergegeven voor gebouwen die deel uitmaken van het netwerk. Als je die groep hebt uitgesloten in Instellingen, is de prompt verdwenen." />
+        <text name="dr_guide_support_9" text="- De mod gedraagt ​​zich niet zoals verwacht. Voer dit niet naast andere modificaties voor distributierevisie uit: ze haken aan hetzelfde systeem en zullen vechten. De mod werkt met gebouwen uit het basisspel en met aangepaste gebouwen die het standaard GIANTS-schema volgen; Sommige aangepaste gebouwen gedragen zich mogelijk anders en kunnen deze modificatie beïnvloeden." />
+        <text name="dr_guide_support_10" text="## Gidsen en overzichten" />
+        <text name="dr_guide_support_11" text="Overzichten en handleidingen staan ​​op mijn YouTube-kanaal, @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Bugrapportage" />
+        <text name="dr_guide_support_13" text="Bugs, functieverzoeken en mod-compatibiliteitsverzoeken kunnen als ticket worden ingediend in mijn GitHub-repository:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Wijzigingen" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Talrijke bugfixes (zie GitHub voor volledige details)." />
+        <text name="dr_guide_changelog_3" text="2. Talrijke toevoegingen aan de kwaliteit van leven (zie GitHub voor volledige details)." />
+        <text name="dr_guide_changelog_4" text="3. Compatibiliteit toegevoegd voor veel mods, en de code is versterkt om de mod-compatibiliteit in het algemeen te verbeteren (zie GitHub voor volledige details)." />
+        <text name="dr_guide_changelog_5" text="4. Een tabblad Overzicht toegevoegd waarmee u alle distributieactiviteiten en distributie-instellingen voor alle gebouwen op één plek kunt zien (inclusief filters en kan worden ingesteld om alle bronnen en producties weer te geven die bijdragen aan een specifiek eindproduct)" />
+        <text name="dr_guide_changelog_6" text="5. Geavanceerd invoer- en uitvoerbeheer toegevoegd (blokkeren, prioriteren, voorraad reserveren, doel invullen, max. in)." />
+        <text name="dr_guide_changelog_7" text="6. De mogelijkheid toegevoegd om producten tussen opslagplaatsen (d.w.z. silo's, palletopslagplaatsen enz.) te verplaatsen en te sorteren" />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Hernoemen van gebouwen - elk gebouw in het distributienetwerk kan nu een aangepaste naam krijgen vanuit het bouwmenu van het basisspel. De game staat dit standaard alleen op sommige gebouwen toe; Distribution Redux maakt het mogelijk voor al zijn gebouwen (inclusief silo's, loodsen, putten en markten). De mod gebruikt dan overal in dit menu jouw naam, met de originele gebouwnaam eronder als referentie, zodat een boerderij met acht identieke kassen eindelijk leesbaar is." />
+        <text name="dr_guide_changelog_10" text="2. Productcorrectie voor mesthoop/drijfmestput - beide vermeldden het product van de ander als uitvoer. De mesthoop toont nu alleen mest en de drijfmestput alleen drijfmest." />
+        <text name="dr_guide_changelog_11" text="3. Inkomende oplossing mesthoop/mestput - geen van beide vertoonde een binnenkomend product. Ze vermelden nu wat er daadwerkelijk in stroomt (respectievelijk mest en drijfmest)." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. UI-verbeteringen en een consistentiepas, inclusief schuifbalken, opnieuw gepositioneerde tabellen en de waarde van verkochte producten toegevoegd aan de verkochte kolom." />
+        <text name="dr_guide_changelog_14" text="2. Markten en kiosken toegevoegd aan het distributiesysteem - alle gebouwen hebben nu een marktaanbodoptie om hun output naar een markt te leiden die je hebt geplaatst. Artikelen die via jouw markt worden verkocht, krijgen een prijsbonus van 20%, hoewel bulkverkoop de prijs die je krijgt verlaagt, net als bij het basisspel." />
+        <text name="dr_guide_changelog_15" text="3. Verkoop tegen de beste prijs - zonder prijsgeschiedenis werd het systeem eerder verkocht dan verwacht. Het valt nu terug op de in-game prijsgrafiek totdat het voldoende eigen gegevens heeft verzameld." />
+        <text name="dr_guide_changelog_16" text="4. De modus Intern vasthouden en handmatig pallets spawnen toegevoegd - palletiseerbare uitvoer kan als bulkvoorraad worden bewaard in plaats van automatisch pallets te spawnen. Daarna kun je ze handmatig spawnen via een venster waarin je het pallettype en aantal kiest. Beschikbaar via het tabblad Producties en het productiescherm van het basisspel." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. De mogelijkheid toegevoegd om te specificeren of goederen onmiddellijk moeten worden verkocht of zodra ze de beste prijs bereiken." />
+        <text name="dr_guide_changelog_19" text="2. Volledig opnieuw opgebouwde gebruikersinterface die distributietypen uitsplitst en de instellingen en hulpgidsen in het menu consolideert." />
+        <text name="dr_guide_changelog_20" text="3. Oplossingen voor silo-uitbreidingen, zodat ze op een consistente manier werken. Er moet nu een uitbreiding geplaatst worden in de nabijheid van een bijpassend silotype; alle distributie wordt beheerd in de primaire silo en de uitbreiding voegt er eenvoudigweg opslag aan toe." />
+        <text name="dr_guide_changelog_21" text="4. Pallet- en balenloodsen geven nu alle actieve pallets in het netwerk weer, zodat ze vooraf kunnen worden geconfigureerd voordat de artikelen arriveren. Een reservefunctie toegevoegd die pallets verkoopt (minst waardevolle eerst) om ruimte vrij te houden voor de volgende cyclus. Deze wordt omzeild als een andere palletloods ruimte heeft, in welk geval de pallets daarheen worden verplaatst." />
+        <text name="dr_guide_changelog_22" text="5. Interactie met palletschuur opgelost: kijk naar het laadpuntpictogram in het spel om de distributiepagina van dat gebouw direct te openen." />
+        <text name="dr_guide_changelog_23" text="6. Probleem opgelost dat een kleine hoeveelheid uitvoer in de bron achterbleef na distributie (een timingprobleem)." />
+        <text name="dr_guide_changelog_24" text="7. Biogasinstallatie opgelost: bij de verkoop van methaan en elektrische lading wordt nu rekening gehouden met de moeilijkheidsgraad van het spel, en digestaat wordt nu correct geregistreerd als inkomen uit de biogasinstallatie op het financiële blad." />
+        <text name="dr_guide_changelog_25" text="8. Instellingen zijn opnieuw bewerkt om gedetailleerder te zijn: u kunt nu silo's / palletschuren opnemen of uitsluiten, en veehouderijgebouwen opnemen of uitsluiten. Producties registreren zich altijd en nemen deel aan de distributie, net als het basisspel." />
+        <text name="dr_guide_changelog_26" text="9. Gewijzigde modusnamen: Vasthouden bewaart producten nu in het gebouw (voorheen &amp;quot;Opgeslagen&amp;quot;); Opslaan verplaatst producten naar externe opslag als daar ruimte is." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Pre-release." />
+
+        <!-- ============ end USER GUIDE ============ -->
+
+        <!-- the ANIMAL PANEL, drawn only when an extension registers a provider (API v4).
+             Budgets: the block labels sit in 234-480px columns at 11px, so keep them short. -->
+        <text name="dr_col_animalPanel" text="DIEREN, VOER EN KUDDEWAARDE" />
+        <text name="dr_panel_animals" text="DIEREN" />
+        <text name="dr_panel_health" text="GEZONDHEID" />
+        <text name="dr_panel_productivity" text="PRODUCTIVITEIT" />
+        <text name="dr_panel_na" text="n.v.t" />
+        <text name="dr_panel_feed" text="VOER" />
+        <text name="dr_panel_foodFactor" text="Voedselfactor %s" />
+        <text name="dr_panel_grazing" text="grazen" />
+        <text name="dr_panel_noFeedData" text="geen voergegevens" />
+        <text name="dr_panel_herdValue" text="KUDDEWAARDE" />
+        <text name="dr_panel_ofPeak" text="van %s op de piekleeftijd" />
+        <text name="dr_panel_pastPeak" text="voorbij de piek - de waarde daalt met de leeftijd" />
+        <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
+             characters; the four breakdown words share 740px with four money figures, so
+             keep each under about 10. -->
+        <text name="dr_panel_profit" text="GESCH. WINST / MND" />
+        <text name="dr_panel_pfCleared" text="bij verkoop:" />
+        <text name="dr_panel_pfOutputs" text="uitgangen" />
+        <text name="dr_panel_pfInputs" text="ingangen" />
+        <text name="dr_panel_pfAgeing" text="veroudering" />
+        <text name="dr_panel_pfBirths" text="geboorten" />
+
+        <!-- the known-problem-mod warning shown once on load -->
+        <text name="dr_modwarn_body" text="WAARSCHUWING! Er zijn momenteel mods actief waarvan bekend is dat ze problemen met Distribution Redux veroorzaken. Je kunt doorgaan, maar de prestaties van het spel en de mod kunnen niet worden gegarandeerd zolang deze mods actief zijn. Sluit het spel en laad de savegame opnieuw zonder de onderstaande mods om deze waarschuwing te voorkomen:" />
+    </texts>
+</l10n>
