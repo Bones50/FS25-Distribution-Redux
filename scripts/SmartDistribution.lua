@@ -5869,8 +5869,35 @@ function SmartDistribution._hasDirectSellOutput(pp)
     return c
 end
 
+-- Every storage the engine's tick may draw this point's inputs from. The tick does not consume from
+-- pp.storage directly: it calls loadingStation:removeFillLevel, which walks loadingStation.sourceStorages
+-- (dataS LoadingStation.lua) -- the point's own storage plus anything attached to its loading station.
+-- Measuring pp.storage alone under-counted as soon as a second storage was in that list. MEASURED IN GAME
+-- 2026-10-27: on a PnH plant one CHP burned 499 L/h every hour yet was paid nothing, because the litres
+-- left a storage the meter was not watching.
+function SmartDistribution._inputStorages(pp)
+    local list, seen = {}, {}
+    if pp.storage ~= nil then list[1] = pp.storage; seen[pp.storage] = true end
+    local ls = pp.loadingStation
+    if type(ls) == "table" and type(ls.sourceStorages) == "table" then
+        for _, st in pairs(ls.sourceStorages) do
+            if type(st) == "table" and not seen[st] then list[#list + 1] = st; seen[st] = true end
+        end
+    end
+    return list
+end
+
+-- summed level of one fill type across a list of storages
+function SmartDistribution._levelAcross(storages, ft)
+    local sum = 0
+    for _, st in ipairs(storages) do sum = sum + getLevel(st, ft) end
+    return sum
+end
+
 -- credit the cycles each sellDirectly line completed in one engine tick, from its inputs' level drop
-function SmartDistribution._meterDirectSell(pp, lines, before)
+-- (`before` holds each input's level summed over `storages`, taken just before the tick)
+function SmartDistribution._meterDirectSell(pp, lines, before, storages)
+    storages = storages or { pp.storage }
     local draw = {}                                   -- ft -> summed hourly draw of every active line using it
     for _, prod in ipairs(lines) do
         for _, i in ipairs(prod.inputs or {}) do
@@ -5885,7 +5912,7 @@ function SmartDistribution._meterDirectSell(pp, lines, before)
             for _, i in ipairs(prod.inputs or {}) do
                 local amt, total = i.amount or 0, (i.type ~= nil) and draw[i.type] or 0
                 if amt > 0 and total > 0 then
-                    local used  = math.max(0, (before[i.type] or 0) - getLevel(pp.storage, i.type))
+                    local used  = math.max(0, (before[i.type] or 0) - SmartDistribution._levelAcross(storages, i.type))
                     local share = used * (amt * (prod.cyclesPerHour or 0)) / total
                     local c     = share / amt
                     if cycles == nil or c < cycles then cycles = c end
@@ -5917,11 +5944,14 @@ function SmartDistribution.installDirectSellMeter()
             SmartDistribution._directSellMeter[self] = nil
             return orig(self, ...)
         end
-        local lines  = getActiveProductionDefs(self)
-        local before = {}
+        local lines    = getActiveProductionDefs(self)
+        local storages = SmartDistribution._inputStorages(self)
+        local before   = {}
         for _, prod in ipairs(lines) do
             for _, i in ipairs(prod.inputs or {}) do
-                if i.type ~= nil and before[i.type] == nil then before[i.type] = getLevel(self.storage, i.type) end
+                if i.type ~= nil and before[i.type] == nil then
+                    before[i.type] = SmartDistribution._levelAcross(storages, i.type)
+                end
             end
         end
         local a, b = orig(self, ...)
@@ -5932,7 +5962,7 @@ function SmartDistribution.installDirectSellMeter()
         end
         SmartDistribution._directSellMetered[self] = true
         -- pcall'd: a fault in the meter must never take the production tick down with it
-        local ok, err = pcall(SmartDistribution._meterDirectSell, self, lines, before)
+        local ok, err = pcall(SmartDistribution._meterDirectSell, self, lines, before, storages)
         if not ok then log("sellDirectly meter failed: %s", tostring(err)) end
         return a, b
     end
