@@ -5818,6 +5818,168 @@ local function productionCanRun(pp, prod)
     return true
 end
 
+-- ---- MEASURED sellDirectly production (drip-fed plants) ----------------------
+-- productionCanRun asks "is a full hour of input on hand right now?". That holds for a plant the player
+-- fills from a bunker, but NOT for one fed continuously by another building. The Pumps N Hoses biogas
+-- plant is exactly that: its fermenter pushes METHANE into the CHP units ("Distribute across biogas
+-- plant") as it makes it, and each CHP burns it as fast as it arrives -- so a CHP holds 0-20 L at any
+-- instant against an hourly draw far above that. The gate failed every hour and the CHPs' electricity,
+-- which the engine produced and DR had suppressed the payout of, was never paid at all.
+-- MEASURED IN A SAVE 2026-10-27: ~190k/day Biogas income before DR; with DR the figure froze for 8 game
+-- hours while the fermenter kept consuming and the digestate tank kept rising.
+--
+-- So instead of guessing, MEASURE: wrap the engine's own production tick, read each input's level before
+-- and after it, and convert what was consumed into completed cycles per line. A delivery into the plant
+-- happens on the SUPPLIER's tick, never inside this one, so the delta is pure consumption. An input
+-- shared by several active lines is split by each line's hourly draw of it. The pass then pays exactly
+-- the cycles that ran -- the same figure vanilla pays, for a bunker-fed plant and a drip-fed one alike.
+--
+-- Falls back to the old productionCanRun estimate for a point the meter has never seen tick (a subclass
+-- that does not route through ProductionPoint.updateProduction) and for a line with no inputs to measure.
+-- Fields, not locals: the main chunk is at the 200-local ceiling (CLAUDE.md 1.1).
+SmartDistribution._directSellMeter   = setmetatable({}, { __mode = "k" })   -- pp -> { [lineKey] = cycles } since the last sell pass
+SmartDistribution._directSellMetered = setmetatable({}, { __mode = "k" })   -- pp -> true once the meter has seen it tick
+SmartDistribution._directSellPoints  = setmetatable({}, { __mode = "k" })   -- pp -> has any sellDirectly output (cached)
+
+function SmartDistribution._directSellLineKey(prod) return prod.id or prod end
+
+function SmartDistribution._lineSellsDirectly(prod)
+    for _, o in ipairs(prod.outputs or {}) do
+        if o.sellDirectly and (o.amount or 0) > 0 then return true end
+    end
+    return false
+end
+
+function SmartDistribution._lineHasMeasurableInput(prod)
+    for _, i in ipairs(prod.inputs or {}) do
+        if i.type ~= nil and (i.amount or 0) > 0 then return true end
+    end
+    return false
+end
+
+function SmartDistribution._hasDirectSellOutput(pp)
+    local c = SmartDistribution._directSellPoints[pp]
+    if c == nil then
+        c = false
+        for _, prod in ipairs(type(pp.productions) == "table" and pp.productions or {}) do
+            if SmartDistribution._lineSellsDirectly(prod) then c = true; break end
+        end
+        SmartDistribution._directSellPoints[pp] = c
+    end
+    return c
+end
+
+-- Every storage the engine's tick may draw this point's inputs from. The tick does not consume from
+-- pp.storage directly: it calls loadingStation:removeFillLevel, which walks loadingStation.sourceStorages
+-- (dataS LoadingStation.lua) -- the point's own storage plus anything attached to its loading station.
+-- Measuring pp.storage alone under-counted as soon as a second storage was in that list. MEASURED IN GAME
+-- 2026-10-27: on a PnH plant one CHP burned 499 L/h every hour yet was paid nothing, because the litres
+-- left a storage the meter was not watching.
+function SmartDistribution._inputStorages(pp)
+    local list, seen = {}, {}
+    if pp.storage ~= nil then list[1] = pp.storage; seen[pp.storage] = true end
+    local ls = pp.loadingStation
+    if type(ls) == "table" and type(ls.sourceStorages) == "table" then
+        for _, st in pairs(ls.sourceStorages) do
+            if type(st) == "table" and not seen[st] then list[#list + 1] = st; seen[st] = true end
+        end
+    end
+    return list
+end
+
+-- summed level of one fill type across a list of storages
+function SmartDistribution._levelAcross(storages, ft)
+    local sum = 0
+    for _, st in ipairs(storages) do sum = sum + getLevel(st, ft) end
+    return sum
+end
+
+-- credit the cycles each sellDirectly line completed in one engine tick, from its inputs' level drop
+-- (`before` holds each input's level summed over `storages`, taken just before the tick)
+function SmartDistribution._meterDirectSell(pp, lines, before, storages)
+    storages = storages or { pp.storage }
+    local draw = {}                                   -- ft -> summed hourly draw of every active line using it
+    for _, prod in ipairs(lines) do
+        for _, i in ipairs(prod.inputs or {}) do
+            if i.type ~= nil and (i.amount or 0) > 0 then
+                draw[i.type] = (draw[i.type] or 0) + i.amount * (prod.cyclesPerHour or 0)
+            end
+        end
+    end
+    for _, prod in ipairs(lines) do
+        if SmartDistribution._lineSellsDirectly(prod) then
+            local cycles = nil                        -- the scarcest input bounds the line
+            for _, i in ipairs(prod.inputs or {}) do
+                local amt, total = i.amount or 0, (i.type ~= nil) and draw[i.type] or 0
+                if amt > 0 and total > 0 then
+                    local used  = math.max(0, (before[i.type] or 0) - SmartDistribution._levelAcross(storages, i.type))
+                    local share = used * (amt * (prod.cyclesPerHour or 0)) / total
+                    local c     = share / amt
+                    if cycles == nil or c < cycles then cycles = c end
+                end
+            end
+            if cycles ~= nil and cycles > 0 then
+                local m = SmartDistribution._directSellMeter[pp]
+                if m == nil then m = {}; SmartDistribution._directSellMeter[pp] = m end
+                local k = SmartDistribution._directSellLineKey(prod)
+                m[k] = (m[k] or 0) + cycles
+            end
+        end
+    end
+end
+
+function SmartDistribution.installDirectSellMeter()
+    if ProductionPoint == nil or type(ProductionPoint.updateProduction) ~= "function" then
+        log("updateProduction missing; sellDirectly output falls back to the hourly estimate")
+        return
+    end
+    local orig = ProductionPoint.updateProduction
+    ProductionPoint.updateProduction = function(self, ...)
+        -- HOT PATH: this runs on every production tick. The cached test goes first so the great majority
+        -- of buildings (no sellDirectly output) pay one table lookup and nothing else.
+        if not SmartDistribution._hasDirectSellOutput(self) then return orig(self, ...) end
+        -- master off: vanilla pays its own sellDirectly income, so there is nothing to meter (and a stale
+        -- tally must not be paid on top of it if the master is switched back on)
+        if not S.master or self.storage == nil or g_currentMission == nil or not g_currentMission:getIsServer() then
+            SmartDistribution._directSellMeter[self] = nil
+            return orig(self, ...)
+        end
+        local lines    = getActiveProductionDefs(self)
+        local storages = SmartDistribution._inputStorages(self)
+        local before   = {}
+        for _, prod in ipairs(lines) do
+            for _, i in ipairs(prod.inputs or {}) do
+                if i.type ~= nil and before[i.type] == nil then
+                    before[i.type] = SmartDistribution._levelAcross(storages, i.type)
+                end
+            end
+        end
+        local a, b = orig(self, ...)
+        if not SmartDistribution._directSellMetered[self] then
+            -- once per point per session: proves this building's ticks reach the meter (no line at all for a
+            -- sellDirectly building means it is on the old productionCanRun estimate)
+            log("direct-sell meter active for %s", placeableName(self.owningPlaceable))
+        end
+        SmartDistribution._directSellMetered[self] = true
+        -- pcall'd: a fault in the meter must never take the production tick down with it
+        local ok, err = pcall(SmartDistribution._meterDirectSell, self, lines, before, storages)
+        if not ok then log("sellDirectly meter failed: %s", tostring(err)) end
+        return a, b
+    end
+end
+SmartDistribution.installDirectSellMeter()
+
+-- Cycles of `prod` to pay this pass. Measured when the meter covers this line, else the old estimate:
+-- a full hour if productionCanRun says the line could run, nothing otherwise.
+function SmartDistribution.directSellCycles(pp, prod)
+    if SmartDistribution._directSellMetered[pp] and SmartDistribution._lineHasMeasurableInput(prod) then
+        local m = SmartDistribution._directSellMeter[pp]
+        return (m ~= nil and m[SmartDistribution._directSellLineKey(prod)]) or 0
+    end
+    if productionCanRun(pp, prod) then return prod.cyclesPerHour or 1 end
+    return 0
+end
+
 -- ---- virtual (sellDirectly) outputs as a DISTRIBUTE source -----------------
 -- sellDirectly outputs (biogas electricity / methane, and any modded intangible) never enter pp.storage --
 -- vanilla sells them the instant they are produced. That made them impossible to distribute: gatherSources
@@ -5858,12 +6020,12 @@ function SmartDistribution.collectVirtualProduction(manager)
             local placeable = pp.owningPlaceable
             if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil and isEnrolled(placeable) then
                 for _, prod in ipairs(getActiveProductionDefs(pp)) do
-                    if productionCanRun(pp, prod) then
-                        local cph = prod.cyclesPerHour or 1
+                    local cycles = SmartDistribution.directSellCycles(pp, prod)
+                    if cycles > 0 then
                         for _, o in ipairs(prod.outputs or {}) do
                             if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type]
                                and SmartDistribution.modeDistributes(resolveMode(placeable, o.type)) then
-                                local amount = (o.amount or 0) * cph
+                                local amount = (o.amount or 0) * cycles
                                 local vs = SmartDistribution._virtualStock[pp]
                                 if vs == nil then vs = {}; SmartDistribution._virtualStock[pp] = vs end
                                 local e = vs[o.type]
@@ -5891,11 +6053,11 @@ local function sellDirectProduction(manager)
             if placeable ~= nil and pp.storage ~= nil then
                 local farmId = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
                 for _, prod in ipairs(getActiveProductionDefs(pp)) do
-                    if productionCanRun(pp, prod) then
-                        local cph = prod.cyclesPerHour or 1
+                    local cycles = SmartDistribution.directSellCycles(pp, prod)
+                    if cycles > 0 then
                         for _, o in ipairs(prod.outputs or {}) do
                             if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type] then
-                                local amount = (o.amount or 0) * cph
+                                local amount = (o.amount or 0) * cycles
                                 -- DISTRIBUTE-FIRST for virtual outputs: if this output was set to a Distribute
                                 -- mode it was offered to consumers this cycle from the virtual stock, so sell
                                 -- only what is LEFT -- and only if the mode also sells. Pure DISTRIBUTE sells
@@ -5928,6 +6090,9 @@ local function sellDirectProduction(manager)
             end
         end
     end
+    -- this pass has paid what the meter recorded (collectVirtualProduction read the same tally before
+    -- allocation); start the next hour from zero
+    SmartDistribution._directSellMeter = setmetatable({}, { __mode = "k" })
 end
 
 -- ---- vanilla production RUNNING COSTS (costsPerActiveHour) -----------------

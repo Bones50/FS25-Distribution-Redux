@@ -250,6 +250,48 @@ local function isSellDirectlyOutput(pp, ft)
     return c[ft] == true
 end
 
+-- PUMPS N HOSES BIOGAS PLANT: output modes belong to PnH, not DR.
+--
+-- Every part of a PnH plant (fermenter, CHP units) is a SandboxProductionPoint, and PnH adds its own
+-- output mode, "Distribute across biogas plant": the fermenter hands METHANE and DIGESTATE to the
+-- plant's CHPs and tanks the moment it makes them. PnH tracks that choice in its own set,
+-- pp.outputFillTypeIdsAutoDistribution -- it is NOT one of the engine's OUTPUT_MODE values (the engine
+-- reports KEEP for those outputs). DR's ring has no such state, so a single DR cycle threw it away and
+-- the player could never pick it again: methane then sat in the fermenter until DR's hourly pass moved
+-- at most a tank's worth to each CHP, and the CHPs starved between passes (issues #105 / #112).
+-- MEASURED IN GAME 2026-10-27 (diagnostic build): after one cycle, METHANE had left the set; the
+-- fermenter made 990 L/h which waited for DR's pass, while its DIGESTATE, still in the set, left the
+-- instant it was made.
+--
+-- So for these points DR stands aside completely: the base production menu's output toggle goes
+-- straight to the engine/PnH (which is where the PnH mode is offered), and DR's own cycle / set / MP
+-- apply are no-ops. Anything PnH hands on instantly never sits in storage, so DR's distributor finds
+-- nothing to move and needs no change.
+--
+-- Identified by PnH's placeable specialization (spec_<mod>.sandboxPlaceableProductionPoint), whose
+-- productionPoint IS this point -- the same shape _uncachedProductionPoint already relies on.
+local PNH_CACHE = setmetatable({}, { __mode = "k" })   -- pp -> boolean
+local function isPnHPlantPoint(pp)
+    if pp == nil then return false end
+    local c = PNH_CACHE[pp]
+    if c ~= nil then return c end
+    c = false
+    local pl = pp.owningPlaceable
+    if type(pl) == "table" then
+        for k, v in pairs(pl) do
+            if type(k) == "string" and type(v) == "table" and v.productionPoint == pp
+               and string.sub(k, -string.len("sandboxPlaceableProductionPoint")) == "sandboxPlaceableProductionPoint" then
+                c = true
+                break
+            end
+        end
+    end
+    -- cache only a positive answer: the spec may not be attached yet when a point is first seen at load
+    if c then PNH_CACHE[pp] = true end
+    return c
+end
+SD.isPnHPlantPoint = isPnHPlantPoint
+
 -- THE ENGINE WRITE MUST NEVER BE ABLE TO LOSE DR'S OWN RECORD.
 --
 -- Every branch of applyVLocal calls origSet (the vanilla setOutputDistributionMode) BEFORE
@@ -280,6 +322,7 @@ end
 -- output flag, and set the mod override -- all with noEventSend, so this never
 -- emits a network event. Callers fire ProductionOutputModeEvent to sync peers.
 local function applyVLocal(pp, ft, v)
+    if isPnHPlantPoint(pp) then return end               -- PnH owns this point's output modes (see isPnHPlantPoint)
     setV(pp, ft, v)
     -- A production's v-mode decides which destination kinds outputDestinationsForMode resolves, so the
     -- Overview's cached DEST / OUT STATUS columns are stale the moment it changes.
@@ -585,6 +628,10 @@ local function vSellMask(v, allowed)
 end
 
 local function cycleVirtual(pp, ft, back)
+    if isPnHPlantPoint(pp) then                          -- PnH owns this point's output modes: change nothing
+        dbg("cycle ignored on PnH plant point %s: use the base production menu", tostring(ft))
+        return getV(pp, ft)
+    end
     local pl = placeableOf(pp)
     -- market modes only when a market can actually take THIS product (a market that doesn't accept, say,
     -- slurry is not an endpoint for it), not merely when some market is in range.
@@ -624,6 +671,7 @@ function SD.cycleProductionOutputModeBack(pp, ft) return cycleVirtual(pp, ft, tr
 -- set an output to a SPECIFIC virtual mode (not just the next one), applied
 -- locally and synced in MP. Backs "cycle all"-style unify operations.
 local function setVirtual(pp, ft, v)
+    if isPnHPlantPoint(pp) then return getV(pp, ft) end  -- PnH owns this point's output modes
     applyVLocal(pp, ft, v)
     if isMP() then ProductionOutputModeEvent.sendEvent(placeableOf(pp), ft, v) end
     return v
@@ -643,6 +691,10 @@ end
 ProductionPoint.setOutputDistributionMode = function(self, ft, mode, noEventSend, ...)
     local cpp, cft = pPp, pFt
     pPp, pFt = nil, nil                              -- consume
+    if isPnHPlantPoint(self) then                        -- PnH plant: the base menu's choice (incl. PnH's
+        if VTAB[self] ~= nil then VTAB[self][ft] = nil end   -- "distribute across biogas plant") goes through untouched
+        return origSet(self, ft, mode, noEventSend, ...)
+    end
     if SD.PRODUCTION_DISTSELL_ENABLED and cpp == self and cft == ft then
         cycleVirtual(self, ft)                           -- same seam as the dialog
         return
@@ -666,6 +718,7 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.populateCellFo
         if self.getSelectedProduction == nil then return end
         local _, pp = self:getSelectedProduction()
         if pp == nil or pp.sortedProductions == nil then return end
+        if isPnHPlantPoint(pp) then return end           -- keep PnH's own label (e.g. its plant-distribution mode)
         local production = pp.sortedProductions[index]
         if production == nil then return end
         local ft = production.primaryProductFillType
