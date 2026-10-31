@@ -43,6 +43,7 @@ end
 
 -- build (and cache) the analysed curve: factors + peak period + flatness
 local function getCurve(ft)
+    if ft == nil then return nil end
     local c = factorCache[ft]
     if c == false then return nil end       -- known-absent (don't re-probe each tick)
     if c ~= nil then return c end

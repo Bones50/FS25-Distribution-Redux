@@ -1,0 +1,929 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<!--
+  Distribution Redux : Ukrainian (uk)
+
+  NOTE TO EDITORS: an XML comment may not contain two hyphens in a row. It is a
+  parse error and the whole file is then ignored. Attribute VALUES below are fine
+  and several deliberately contain a double hyphen; keep them exactly as they are.
+
+  HOW TO ADD A LANGUAGE
+    1. Copy this file to translations/translation_<code>.xml
+       Codes FS25 uses: br cs ct cz da de ea en es fc fi fr hu id it jp kr nl no
+                        pl pt ro ru sv tr uk vi
+    2. Translate ONLY the text="..." values. Never change a name="..." key.
+    3. Open a pull request. You do not need to translate everything: any key you
+       leave out falls back to English, so a partial file is welcome.
+
+  RULES THAT MATTER
+    * Keys ending _tt are TOOLTIPS. They are long and wrap freely, so length is
+      not a problem there.
+    * Keys starting dr_col_ are TABLE COLUMN HEADERS in a fixed width cell. The
+      character budget is given in a comment above each block. A header that
+      overruns is CLIPPED, which has caused a real bug before: an output mode
+      reading "Distribute + S..." looked like plain Distribute and hid a building
+      that was selling everything. Prefer a short word or an accepted abbreviation.
+    * Keys starting dr_btn_ are BUTTONS sharing one footer bar. Keep them short.
+    * "L" is litres and "kL" kilolitres. Volumes are formatted in code, not here.
+    * Leave XML entities alone: &amp; is an ampersand, &quot; a double quote.
+-->
+<l10n>
+    <texts>
+
+        <!-- ================= keybindings (shown in Options > Controls) ================= -->
+        <text name="input_DISTREDUX_OPEN_DIALOG" text="Налаштувати розподіл (найближчий об’єкт)" />
+        <text name="input_DISTREDUX_OPEN_MANAGER" text="Відкрити меню Distribution Redux" />
+        <text name="dr_input_openManager" text="Меню розподілу" />
+
+        <!-- ================= TEMPORARY: money-type probe =================
+             Titles handed to MoneyType.register. If the base finances screen renders a
+             row per registered TYPE, one of these is what that row will read; if it
+             renders per persisted BUCKET, neither appears and the money shows under an
+             existing row instead. The two are worded differently ON PURPOSE so the log
+             is not needed to tell which registration produced a row.
+             DELETE BOTH when the probe goes.                                          -->
+
+        <!-- ================= page + dialog titles ================= -->
+        <text name="dr_title_overview"        text="Огляд" />
+        <text name="dr_title_productions"     text="Distribution Redux — Виробництва" />
+        <text name="dr_title_routing"         text="Distribution Redux — Маршрути" />
+        <text name="dr_title_storage"         text="Distribution Redux — Сховища" />
+        <text name="dr_title_husbandry"       text="Distribution Redux — Тваринництво" />
+        <text name="dr_title_markets"         text="Distribution Redux — Ринки" />
+        <text name="dr_title_help"            text="Довідка" />
+        <text name="dr_tab_distribution" text="РОЗПОДІЛ"/>
+        <text name="dr_tab_productions" text="ВИРОБНИЦТВА" />
+        <text name="dr_tab_storage"     text="СХОВИЩА" />
+        <text name="dr_tab_husbandry"   text="ТВАРИННИЦТВО" />
+
+        <!-- The ROUTING graph tab. Column headings are UPPERCASE and sit over columns of
+             110 to 220 design px, so they clip rather than wrap: keep them to about 12
+             characters. dr_rg_hint takes the two product names in order. -->
+        <text name="dr_rg_hdrSources"         text="ДЖЕРЕЛА" />
+        <text name="dr_rg_hdrInputs"          text="ВХОДИ" />
+        <text name="dr_rg_hdrBuilding"        text="БУДІВЛЯ" />
+        <text name="dr_rg_hdrOutputs"         text="ВИХОДИ" />
+        <text name="dr_rg_hdrDests"           text="ОДЕРЖУВАЧІ" />
+        <text name="dr_rg_farmWide"           text="ферма" />
+        <text name="dr_rg_hint"               text="Джерела: %s   Одержувачі: %s" />
+        <text name="dr_rg_pickBuilding"       text="Виберіть будівлю" />
+        <text name="dr_rg_used"               text="витрачено %s" />
+        <text name="dr_rg_made"               text="вироблено %s" />
+        <text name="dr_rg_holds"              text="у запасі %s" />
+        <text name="dr_rg_clearOrder"         text="Скинути порядок" />
+        <text name="dr_rg_togBlock"      text="Натисніть, щоб заблокувати цей зв’язок" />
+        <text name="dr_rg_togAllow"      text="Натисніть, щоб дозволити цей зв’язок" />
+        <text name="dr_rg_jump"          text="Подвійне натискання — відкрити: %s" />
+        <text name="dr_rg_jumpRg"        text="Подвійне натискання — маршрути: %s" />
+        <!-- The CONTROL STRIP. dr_rg_range takes first, last, total; dr_rg_ctlIn / ctlOut take
+             the product name. Keep them short: the strip tiles to 1480px and clips rather than
+             wraps, and German runs about 30% longer (5.60). -->
+        <text name="dr_rg_ctlField"      text="%s  -  %s" />
+        <text name="dr_rg_lblMaxFill"    text="Макс. запас" />
+        <text name="dr_rg_lblTarget"     text="Ціль запасу" />
+        <text name="dr_rg_lblReserve"    text="Резерв" />
+        <text name="dr_rg_range"         text="%d-%d із %d  (прокрутка)" />
+        <text name="dr_rg_hiddenN"       text="+%d заблоковано" />
+        <text name="dr_rg_targetOff"     text="Вимк." />
+        <text name="dr_rg_loopSkipped"   text="%d пропущено (цикл)" />
+        <!-- The strip's three TYPED fields. The placeholders sit inside a 138px box at 11px,
+             so about 24 characters. dr_rg_nodeIn is an input node's third line and dr_rg_nodeRes
+             an output's, both in a 98px column at 9px: keep them to about 20 characters. -->
+        <text name="dr_rg_hintLitres"    text="задати літри" />
+        <text name="dr_rg_nodeIn"        text="макс.%s ц.%s" />
+        <text name="dr_rg_nodeRes"       text="рез. %s" />
+        <text name="dr_rg_blockAllSrc"   text="Блок. усі джерела" />
+        <text name="dr_rg_allowAllSrc"   text="Дозв. усі джерела" />
+        <text name="dr_rg_blockAllDst"   text="Блок. усіх одерж." />
+        <text name="dr_rg_allowAllDst"   text="Дозв. усіх одерж." />
+        <text name="dr_rg_blockAllIn"    text="Блок. усі входи" />
+        <text name="dr_rg_allowAllIn"    text="Дозв. усі входи" />
+        <text name="dr_rg_blockAllOut"   text="Блок. усі виходи" />
+        <text name="dr_rg_allowAllOut"   text="Дозв. усі виходи" />
+        <text name="dr_rg_nInBlocked"    text="Входів заблоковано: %d" />
+        <text name="dr_rg_nInAllowed"    text="Входів дозволено: %d" />
+        <text name="dr_rg_nOutBlocked"   text="Вихідних зв’язків заблоковано: %d" />
+        <text name="dr_rg_nOutAllowed"   text="Вихідних зв’язків дозволено: %d" />
+        <!-- The grey prompt and the grey complaint sit INSIDE a 140px field at 12px,
+             so about 22 characters. dr_rg_hintTarget says "Off" because an empty target
+             field IS Off, which is a real setting and not an absence. -->
+        <text name="dr_rg_hintTarget"    text="Вимк. — задати" />
+        <text name="dr_rg_badRes"        text="понад місткість" />
+        <!-- The building node's storage rows, which is what the two tank columns used to
+             carry. Two figures each: held then capacity. -->
+        <text name="dr_rg_bldStoIn"      text="ВХ.  %s / %s" />
+        <text name="dr_rg_bldStoOut"     text="ВИХ.  %s / %s" />
+        <text name="dr_rg_bldTanks"      text="Відсіків: %d" />
+        <text name="dr_rg_capClamped"    text="Обмежено місткістю: %s" />
+        <text name="dr_rg_blockedNoSet"  text="Цей продукт заблоковано" />
+        <text name="dr_tab_markets"     text="РИНКИ" />
+        <text name="dr_title_settings"        text="Налаштування" />
+        <text name="dr_title_advanced"        text="Додатково" />
+        <text name="dr_title_advancedInputs"  text="Додаткові входи" />
+        <text name="dr_title_spawnPallets"    text="Створити піддони" />
+
+        <!-- ================= building-list headers (left column, ~40 chars) ================= -->
+        <text name="dr_col_buildings"     text="БУДІВЛІ" />
+        <text name="dr_col_husbandries"   text="ТВАРИННИЦТВО" />
+        <text name="dr_col_markets"       text="РИНКИ" />
+        <text name="dr_col_productions"   text="ВИРОБНИЦТВА" />
+
+        <!-- ================= selector labels above the tables ================= -->
+        <text name="dr_lbl_timescale"        text="Період" />
+        <text name="dr_lbl_filterBy"         text="Фільтр" />
+        <text name="dr_lbl_show"             text="Показати" />
+        <text name="dr_lbl_grouping"         text="Групування" />
+        <text name="dr_lbl_modeKeys" text="X / Z: змінити режим вибраного виходу" />
+        <text name="dr_lbl_sellingOff"       text="КЕРУВАННЯ ПРОДАЖЕМ ВИМКНЕНО — кожен ринок продає після надходження незалежно від цих налаштувань" />
+        <text name="dr_lbl_overviewPointer"  text="Повна статистика й ланцюги постачання: вкладка «Огляд»" />
+
+        <!-- ================= Overview: FLOW view column headers =================
+             Budget roughly 10 to 16 characters each; these sit at 11px in narrow
+             cells. "(EXP.)" is short for "expected", the recipe's target figure. -->
+        <text name="dr_col_building"      text="БУДІВЛЯ" />
+        <text name="dr_col_product"       text="ПРОДУКТ" />
+        <text name="dr_col_received"      text="ОТРИМАНО" />
+        <text name="dr_col_loaded"        text="ЗАВАНТАЖЕНО" />
+        <text name="dr_col_consumedExp"   text="ВИТР. (ОЧІК.)" />
+        <text name="dr_col_unloaded"      text="ВИВАНТАЖЕНО" />
+        <text name="dr_col_producedExp"   text="ВИРОБ. (ОЧІК.)" />
+        <text name="dr_col_distributed"   text="РОЗПОДІЛЕНО" />
+        <text name="dr_col_sold"          text="ПРОДАНО" />
+        <text name="dr_col_storedMoved"   text="НА СКЛАД/ПЕРЕМ." />
+        <text name="dr_col_distrCost"     text="ВАРТ. РОЗПОД." />
+
+        <!-- ================= Overview: SETTINGS view column headers =================
+             Same budget as above. DEST means "active of total destinations" and is
+             the narrowest cell on the page, about 6 characters. Abbreviate freely. -->
+        <text name="dr_col_storageType"   text="ТИП СХОВИЩА" />
+        <text name="dr_col_maxInPctL"     text="МАКС. ВХ. (%-Л)" />
+        <text name="dr_col_heldOfMax"     text="ЗАПАС / МАКС." />
+        <text name="dr_col_inStatus"      text="СТАН ВХОДУ" />
+        <text name="dr_col_lines"         text="ЛІНІЇ" />
+        <text name="dr_col_outMode"       text="РЕЖИМ ВИХОДУ" />
+        <text name="dr_col_reserve"       text="РЕЗЕРВ" />
+        <text name="dr_col_priority"      text="ПРІОРИТЕТ" />
+        <text name="dr_col_dest"          text="ОДЕРЖ." />
+        <text name="dr_col_outStatus"     text="СТАН ВИХОДУ" />
+
+        <!-- ================= building-tab table headers =================
+             Shared by Silos / Animal Husbandry / Markets / Productions. -->
+        <text name="dr_col_incomingProducts"  text="ВХІДНІ ПРОДУКТИ" />
+        <text name="dr_col_incomingMaterials" text="ВХІДНІ МАТЕРІАЛИ" />
+        <text name="dr_col_outgoingProducts"  text="ВИХІДНІ ПРОДУКТИ" />
+        <text name="dr_col_distribution"      text="РОЗПОДІЛ" />
+        <text name="dr_col_consumed"          text="ВИТРАЧЕНО" />
+        <text name="dr_col_produced"          text="ВИРОБЛЕНО" />
+        <text name="dr_col_outputMode"        text="РЕЖИМ ВИХОДУ" />
+        <text name="dr_col_status"            text="СТАН" />
+        <text name="dr_col_products"          text="ПРОДУКТИ" />
+        <text name="dr_pct_lessThanOne"       text="&lt;1%" />
+        <text name="dr_btn_advIn"             text="Дод. входи" />
+        <text name="dr_btn_advOut"            text="Дод. виходи" />
+        <text name="dr_col_statusInOut"       text="СТАН (ВХ. / ВИХ.)" />
+        <text name="dr_status_short_recv"     text="Прийом" />
+        <text name="dr_status_short_send"     text="Відпр." />
+        <text name="dr_status_short_sold"     text="Продано" />
+        <text name="dr_status_short_idle"     text="Простій" />
+        <text name="dr_status_short_blocked"  text="Заблок." />
+        <text name="dr_status_short_none"     text="-" />
+        <text name="dr_col_productionLines"   text="ВИРОБНИЧІ ЛІНІЇ" />
+        <text name="dr_col_lineInput"      text="ВХІД" />
+        <text name="dr_col_lineOutput"     text="ВИХІД" />
+        <!-- Hover tooltips on the throughput glyph at the left of each production line row. PARALLEL and
+             SERIES are the two ways a production point divides its rated speed across the lines that are
+             switched on: in parallel each line runs at its own full rate, in series they share one budget
+             between them (so two lines each go at about half speed). Free-length - these are tooltips, not
+             table cells, so they are not clipped. -->
+        <text name="dr_tip_parallel"       text="Паралельно — кожна лінія працює на повній потужності" />
+        <text name="dr_tip_series"         text="Спільна потужність — ці лінії ділять один виробничий ліміт" />
+        <!-- "/mo" = per month. The figure is the line's monthly target. -->
+        <text name="dr_col_targetMo"          text="ЦІЛЬ /міс." />
+
+        <!-- ================= Advanced Outputs dialog ================= -->
+        <text name="dr_col_demands"   text="ПОТРЕБИ" />
+        <text name="dr_col_storage"   text="СХОВИЩА" />
+        <text name="dr_col_distance"  text="ВІДСТАНЬ" />
+        <text name="dr_col_order"     text="ПОРЯДОК" />
+
+        <!-- ================= Advanced Inputs dialog ================= -->
+        <text name="dr_col_incomingProduct" text="ВХІДНИЙ ПРОДУКТ" />
+        <text name="dr_col_type"            text="ТИП" />
+        <text name="dr_col_held"            text="ЗАПАС" />
+        <text name="dr_col_maxIn"           text="МАКС. ВХІД" />
+        <text name="dr_col_available"       text="ДОСТУПНО" />
+        <text name="dr_col_fillTarget"      text="ЦІЛЬ ЗАПАСУ" />
+        <!-- Lower table on the same dialog: every building that could supply the SELECTED input.
+             The first header doubles as the section title, so keep it readable as a heading.
+             Budget: POTENTIAL SOURCES 500px, RANGE 110px, HELD is reused from above, STATUS 226px. -->
+        <text name="dr_col_potentialSources" text="МОЖЛИВІ ДЖЕРЕЛА" />
+        <text name="dr_col_range"            text="РАДІУС" />
+
+        <!-- ================= buttons =================
+             These share one footer bar, so every extra character squeezes its
+             neighbours. Aim for the length of the English or shorter. -->
+        <text name="dr_btn_priorityUp"    text="Пріоритет ↑" />
+        <text name="dr_btn_priorityDown"  text="Пріоритет ↓" />
+        <text name="dr_btn_toggle"        text="Перемкнути" />
+        <text name="dr_btn_clear"         text="Очистити" />
+        <text name="dr_btn_blockAll"      text="Блок. усе" />
+        <text name="dr_btn_reserveDown"   text="- Резерв" />
+        <text name="dr_btn_reserveUp"     text="+ Резерв" />
+        <text name="dr_lbl_reserveLitres" text="Резерв:" />
+        <text name="dr_btn_maxDown"       text="-Макс" />
+        <text name="dr_btn_maxUp"         text="+Макс" />
+        <text name="dr_btn_targetDown"    text="- Ціль" />
+        <text name="dr_btn_targetUp"      text="+ Ціль" />
+        <text name="dr_btn_block"         text="Блок." />
+        <text name="dr_btn_spawn"         text="Створити" />
+        <text name="dr_btn_cancel"        text="Скас." />
+        <text name="dr_btn_close"         text="Закр." />
+
+        <!-- ================= FOOTER BUTTONS (set from Lua) =================
+             Same footer bar as the dr_btn_ keys above, same length pressure. Sell Timing is a
+             FORMAT string: %s is the current timing ("Best price" / "Immediate"). -->
+        <text name="dr_btn_advanced"         text="Додатково" />
+        <text name="dr_btn_sellTiming"       text="Час продажу" />
+        <text name="dr_btn_sellTimingOff"    text="Час продажу: керув. ВИМК." />
+        <text name="dr_btn_sellTimingValue"  text="Час продажу: %s" />
+        <text name="dr_btn_toggleLine"       text="Стан лінії" />
+        <text name="dr_btn_showSettings"     text="Налаштування" />
+        <text name="dr_btn_showFlows"        text="Потоки" />
+        <text name="dr_btn_refresh"          text="Оновити" />
+        <text name="dr_btn_advancedOutputs"  text="Додаткові виходи" />
+        <text name="dr_btn_activate"         text="Увімк." />
+        <text name="dr_btn_activateAll"      text="Увімк. усе" />
+        <text name="dr_btn_allow"            text="Дозв." />
+        <text name="dr_btn_allowAll"         text="Дозв. усе" />
+
+        <!-- ================= TIMESCALE SELECTOR =================
+             One in-game hour is one distribution cycle, which is why the building tabs spell it
+             out; the Overview's column is narrower and just says "Hour". -->
+        <text name="dr_period_hourLong" text="Цикл (година)" />
+        <text name="dr_period_hour"     text="Година" />
+        <text name="dr_period_month"    text="Місяць" />
+        <text name="dr_period_year"     text="Рік" />
+
+        <!-- ================= OVERVIEW SELECTORS =================
+             "End product (full chain)" shows every building feeding one finished product, back
+             through the whole supply chain. Grouping collapses buildings of the same type into
+             one summed row, labelled e.g. "Bakery x2". -->
+        <text name="dr_filter_nothing"    text="Немає (показати все)" />
+        <text name="dr_filter_building"   text="Будівля" />
+        <text name="dr_filter_product"    text="Продукт" />
+        <text name="dr_filter_endProduct" text="Кінцевий продукт (увесь ланцюг)" />
+        <text name="dr_group_off"         text="Вимк. (окремий рядок для будівлі)" />
+        <text name="dr_group_on"          text="Увімк. (об’єднати будівлі одного типу)" />
+
+        <!-- ================= OVERVIEW SHORT STATUS =================
+             The same three states as dr_status_* above, but the Overview's column is 140px and
+             its header already says IN or OUT, so the qualifier is dropped. Keep these SHORT. -->
+        <text name="dr_statusShort_receiving" text="Отримує" />
+        <text name="dr_statusShort_sending"   text="Відправляє" />
+        <text name="dr_statusShort_idle"      text="Простій" />
+        <text name="dr_statusShort_blocked"   text="Заблоковано" />
+
+        <!-- ================= STORAGE TYPE =================
+             Pooled: one tank shared by several products. Individual: a separate tank per
+             product. Shown in the Advanced Inputs dialog and the Overview settings view, which
+             deliberately use identical wording. -->
+        <text name="dr_type_pooled"     text="Спільне" />
+        <text name="dr_type_individual" text="Окреме" />
+        <text name="dr_type_pooledShort"     text="Спільне" />
+        <text name="dr_type_poolN"          text="Спільне %s" />
+        <text name="dr_type_poolNShort"     text="С%s" />
+        <text name="dr_type_individualShort" text="Окр." />
+        <text name="dr_type_linkedShort"     text="Зв’язок" />
+        <text name="dr_type_internal"   text="Внутрішнє" />
+        <text name="dr_type_blocked"    text="ЗАБЛОКОВАНО" />
+
+        <!-- ================= OUTPUT PRIORITY =================
+             "Distance" is the default: nearest consumer first. "Ranked (n)" means the player
+             has ordered n destinations by hand in Advanced Outputs. -->
+        <text name="dr_priority_ranked"   text="За пріоритетом (%d)" />
+        <text name="dr_priority_distance" text="Відстань" />
+
+        <!-- ================= BUILDING KIND =================
+             The right-hand column of the building list on the Silos tab. Very narrow. -->
+        <text name="dr_class_silo"    text="Силос" />
+        <text name="dr_class_barn"    text="Хлів" />
+        <text name="dr_class_storage" text="Сховище" />
+        <text name="dr_class_pit"     text="Яма" />
+        <text name="dr_class_market"  text="Ринок" />
+
+        <!-- ================= NOTICES AND SMALL LABELS =================
+             The blocked notice is the last row of a building's input list when Advanced routing
+             has hidden products the building is not holding. SEPARATE singular and plural keys:
+             English used to make the singular by deleting the final "s", which does not survive
+             translation. If your language needs no distinction, give both the same text. -->
+        <text name="dr_notice_blockedInput"  text="Заблоковані входи: +%d (див. «Додаткові входи»)" />
+        <text name="dr_notice_blockedInputs" text="Заблоковані входи: +%d (див. «Додаткові входи»)" />
+        <text name="dr_label_off"      text="Вимк." />
+        <text name="dr_label_blocked"  text="Заблоковано" />
+        <text name="dr_label_building" text="Будівля" />
+        <!-- Fallback name for a production line the game does not name itself; %d is its number. -->
+        <text name="dr_label_line"     text="Лінія %d" />
+
+        <!-- ================= ADVANCED OUTPUTS DIALOG =================
+             %s in the title is the building name. "Active - Invalid" marks a destination that
+             is switched on but would send the product in a circle back to where it started. -->
+        <text name="dr_adv_title"         text="Додатково — %s" />
+        <text name="dr_adv_activeInvalid" text="Активний — некоректний" />
+        <text name="dr_adv_noCapacity"    text="Немає місткості для резерву" />
+        <text name="dr_adv_reserveBad"     text="Резерв: введіть кількість літрів" />
+        <text name="dr_adv_reserveClamped" text="Резерв обмежено місткістю: %s" />
+        <text name="dr_adv_loopOne"       text="Неможливо дозволити одержувача «%s»: продукт повертатиметься сюди по колу." />
+        <text name="dr_adv_loopMany"      text="Одержувачів залишено заблокованими: %d — продукт повертатиметься сюди по колу." />
+
+        <!-- ================= ADVANCED INPUTS DIALOG =================
+             Subtitle, one of three depending on the building's storage. %s is the pool's total
+             capacity; the %d are how many products share it and how many have a max set. -->
+        <text name="dr_inp_title"        text="Додаткові входи — %s" />
+        <text name="dr_inp_pooledCapped" text="Спільне сховище: %s; кількість продуктів: %d, з обмеженням: %d. Продукт без обмеження може зайняти весь простір." />
+        <text name="dr_inp_pooled"       text="Спільне сховище: %s; кількість продуктів: %d. Кожен може зайняти весь простір — задайте максимум, щоб лишити місце іншим." />
+        <text name="dr_inp_individual"   text="Задайте максимум для кожного продукту або заблокуйте його. У цій будівлі кожен продукт має окреме сховище." />
+        <!-- Shown in place of the source rows when nothing on the farm could supply the selected
+             product. An empty table under a header reads as a bug; a sentence reads as an answer. -->
+        <text name="dr_inp_noSources"    text="Жодна будівля цієї ферми не може постачати цей продукт." />
+        <!-- STATUS of one potential source, in a 226px cell at 12px: about 30 characters.
+             These are the three buckets the status column counts, in order.
+             FEEDING
+               Feeding         it moved product here on the last pass
+             COULD FEED, BUT ISN'T
+               Standby         ready and allowed, just not the one being drawn from
+               No Stock        allowed and in range, but holds none of it this instant
+             CAN'T FEED
+               Blocked         this source has blocked this receiver in its own Advanced Outputs
+               Not Distributing its mode does not feed consumers (Hold, Sell, plain Store...)
+               Out of Range    beyond the distribution radius, so no setting can make it supply -->
+        <!-- STATUS of one PRODUCTION LINE on the Productions tab: switched off, running, or on but
+             not currently producing (starved of an input, or its output buffer is full). -->
+        <text name="dr_lineStatus_off"     text="Вимк." />
+        <text name="dr_lineStatus_running" text="Працює" />
+        <text name="dr_lineStatus_idle"    text="Простій" />
+        <text name="dr_srcst_feeding"    text="Постачає" />
+        <text name="dr_srcst_standby"    text="Очікування" />
+        <text name="dr_srcst_noStock"    text="Немає запасу" />
+        <text name="dr_srcst_blocked"    text="Заблоковано" />
+        <text name="dr_srcst_notDist"    text="Не розподіляє" />
+        <text name="dr_srcst_outOfRange" text="Поза радіусом" />
+
+        <!-- ================= SPAWN PALLETS DIALOG =================
+             Quantity word beside the stepper, and the summary line above it. -->
+        <text name="dr_spawn_info"    text="Запас: %s    Піддон: %s    Макс.: %d    Буде створено: %s" />
+        <!-- Name of a pallet TYPE in the dropdown; the capacity and, for a modded pallet, the mod's
+             name are appended in code, e.g. "Pallet - 1,000 L (Liftable Pallets and Bales)". -->
+        <text name="dr_spawn_palletType" text="Піддон" />
+        <!-- Quantity stepper: chosen count, maximum, and the exact litres that count moves.
+             Reads "2 / 3  (2,000 L)". Keep all three placeholders and their order. -->
+        <text name="dr_spawn_count"   text="%d / %d  (%s)" />
+
+        <!-- ================= OUTPUT MODES =================
+             What a building does with a product. Shown in the OUTPUT MODE / OUT MODE column
+             on every building tab and on the Overview, and cycled with the "Cycle Output"
+             button. The widest column that holds these fits about 39 characters at the
+             current text size, and "Distribute + Market Supply" is the longest English one.
+
+             The compound modes read "first half + second half" and the ORDER IS MEANINGFUL:
+             the first action always happens first, and product is never sold or shipped to a
+             market until it has been offered to consumers at least once. Keep that sense.
+
+             The numbers are the internal mode ids. Do not renumber them; they are what the
+             save file stores. -->
+        <text name="dr_mode_0"   text="Успадкувати" />
+        <text name="dr_mode_1"   text="Утримувати" />
+        <text name="dr_mode_2"   text="Розподіляти" />
+        <text name="dr_mode_3"   text="Розподіл + продаж" />
+        <text name="dr_mode_4"   text="Продавати" />
+        <text name="dr_mode_5"   text="Розподіл + склад" />
+        <text name="dr_mode_6"   text="На склад" />
+        <text name="dr_mode_7"   text="Постачати ринку" />
+        <text name="dr_mode_8"   text="Розподіл + ринок" />
+        <text name="dr_mode_9"   text="Утримувати всередині" />
+        <text name="dr_mode_10"  text="Перемістити до" />
+        <text name="dr_mode_11"  text="Розподіл + переміщення" />
+        <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
+             the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
+             and spawns nothing. The distinction is the whole point, so keep them distinct. -->
+        <text name="dr_mode_holdPallets" text="Утримувати піддони" />
+
+        <!-- ================= SILOS/BUNKERS ================= -->
+        <text name="dr_bunker_fermenting"    text="Ферментація" />
+        <text name="dr_bunker_fermented"     text="Ферментацію завершено — відкрийте для доступу" />
+        <text name="dr_bunker_filling"       text="Заповнення" />
+        <text name="dr_bunker_fermentPct"    text="Ферментація: %d%%"/>
+        <text name="dr_bunker_compactPct"    text="Ущільнення: %d%%"/>
+
+
+        <!-- ================= LINK STATUS =================
+             The STATUS column. Three states: product actually moved on the last hourly pass,
+             the link is live but nothing needed to move, or it is blocked in Advanced routing.
+             A receiver RECEIVES and a source SENDS, which is the only difference between the
+             two sets. Narrow column, about 20 characters. -->
+        <text name="dr_status_in_ACTIVE"   text="Активний (отримує)" />
+        <text name="dr_status_in_IDLE"     text="Активний (простій)" />
+        <text name="dr_status_in_BLOCKED"  text="Заблоковано" />
+        <text name="dr_status_out_ACTIVE"  text="Активний (надсилає)" />
+        <text name="dr_status_out_IDLE"    text="Активний (простій)" />
+        <text name="dr_status_out_BLOCKED" text="Заблоковано" />
+
+        <!-- ================= PRODUCT ROLE =================
+             Tagged after a product name on the Overview, e.g. "Flour (In)". A building can
+             both receive and supply the same product (a silo), which is what (In/Out) means.
+             VERY tight: it sits inside the product-name cell, so 3 to 7 characters. -->
+        <text name="dr_role_in"    text="Вхід" />
+        <text name="dr_role_out"   text="Вихід" />
+        <text name="dr_role_inout" text="Вх/вих" />
+
+        <!-- ================= SELL TIMING =================
+             "Best price" holds the product until its best month before selling; "Immediate"
+             sells as soon as it is available. The dr_market_* forms appear in the Markets
+             tab's OUTPUT MODE column, where Hold means the market stocks the product and
+             sells nothing until told to. -->
+        <text name="dr_timing_bestPrice" text="Найкраща ціна" />
+        <text name="dr_timing_immediate" text="Одразу" />
+        <text name="dr_market_sellsNow"    text="Продає зараз" />
+        <text name="dr_market_sellsNowSet" text="%s (задано: %s)" />
+        <text name="dr_market_hold"      text="Утримувати" />
+        <text name="dr_market_best"      text="Продаж — найкраща ціна" />
+        <text name="dr_market_immediate" text="Продаж — одразу" />
+
+        <!-- ================= UNITS =================
+             Volumes read in litres below 1,000 and in kilolitres above it, so 1,001 L shows as
+             "1.001 kL". These are appended to a formatted number and INCLUDE their leading
+             space. Keep the space, and keep them short. -->
+        <text name="dr_unit_litre"      text=" л" />
+        <text name="dr_unit_kilolitre"  text=" кл" />
+
+        <!-- ================= MONEY NOTIFICATIONS =================
+             The on-screen finance popup when DR sells or charges for haulage. Each is a label
+             followed by a money figure, so keep any trailing space and punctuation. -->
+        <text name="dr_money_biogas"    text="Дохід від біогазу: " />
+        <text name="dr_money_sales"     text="Продаж продукції: " />
+        <text name="dr_money_distCost"  text="Витрати на розподіл: -" />
+
+        <!-- ================= MISC ENGINE LABELS ================= -->
+        <!-- Stands in for the map's water where there is no physical tank to name. -->
+        <text name="dr_label_waterSource"      text="Джерело води" />
+
+        <!-- ================= SETTINGS =================
+             One block per setting: the row title, its tooltip (_tt), then the
+             selector's values (_v1, _v2, ...) IN ORDER. The order is meaningful,
+             because _v1 is the first option the left/right arrows land on and the
+             INDEX is what the save file stores. Translate each value in place;
+             never reorder them, and never drop one. -->
+
+        <text name="dr_set_scope"     text="Охоплення" />
+        <text name="dr_set_scope_tt"  text="Уся ферма: кожен власний об’єкт охоплює всю ферму. Поруч: об’єкти використовують лише джерела в межах указаного нижче радіуса." />
+        <text name="dr_set_scope_v1"  text="Уся ферма" />
+        <text name="dr_set_scope_v2"  text="Поруч (радіус)" />
+
+        <text name="dr_set_includeHusbandry"     text="Тваринництво" />
+        <text name="dr_set_includeHusbandry_tt"  text="Додати до мережі розподілу тваринницькі об’єкти — хліви, курники, вулики, а також гноєсховища й ями для гноївки. Вимкнення повністю вилучає їх: вони не отримують корм, а їхня продукція (молоко, гній, гноївка, яйця, вовна, мед) не розподіляється й не продається." />
+        <text name="dr_set_includeHusbandry_v1"  text="Увімк." />
+        <text name="dr_set_includeHusbandry_v2"  text="Вимк." />
+
+        <text name="dr_set_includeSilosSheds"     text="Силоси й склади піддонів" />
+        <text name="dr_set_includeSilosSheds_tt"  text="Додати силоси для врожаю й матеріалів та склади піддонів до мережі розподілу. Після вимкнення силоси не постачають виробництва, а склади не приймають і не віддають піддони. (Гноєсховища й ями для гноївки залежать від налаштування «Тваринництво».)" />
+        <text name="dr_set_includeSilosSheds_v1"  text="Увімк." />
+        <text name="dr_set_includeSilosSheds_v2"  text="Вимк." />
+
+        <text name="dr_set_includeMarkets"     text="Ринки й кіоски" />
+        <text name="dr_set_includeMarkets_tt"  text="Додати ринки й кіоски до мережі розподілу. Після вимкнення продукція ферми більше не постачається туди на продаж, а вкладка «Ринки» приховується." />
+        <text name="dr_set_includeMarkets_v1"  text="Увімк." />
+        <text name="dr_set_includeMarkets_v2"  text="Вимк." />
+
+        <text name="dr_set_includeMapStorage"     text="Громадські сховища мапи" />
+        <text name="dr_set_includeMapStorage_tt"  text="Додати сховища мапи, якими ви не володієте, але можете користуватися, наприклад залізничний елеватор. Типово вимкнено: такі будівлі зазвичай беруть орендну плату за кожен літр запасу, тому додаються лише за вашим бажанням. Після ввімкнення всі їхні продукти мають режим «Утримувати» й нічого не переміщується, доки ви їх не налаштуєте." />
+        <text name="dr_set_includeMapStorage_v1"  text="Увімк." />
+        <text name="dr_set_includeMapStorage_v2"  text="Вимк." />
+
+        <text name="dr_set_advancedRouting"     text="Розширені маршрути" />
+        <text name="dr_set_advancedRouting_tt"  text="Головний перемикач додаткових виходів (блокування, пріоритет, «Перемістити до») і входів (блокування, ліміти, цілі запасу). Вимкнення приховує ці кнопки й повертає типовий розподіл: спочатку найближчі джерела. УВАГА: вимкнення СТИРАЄ всі додаткові налаштування — блокування, пріоритети, переміщення, ліміти входів і цілі запасу. Повторне ввімкнення їх НЕ відновлює: доведеться налаштувати все заново." />
+        <text name="dr_set_advancedRouting_v1"  text="Увімк." />
+        <text name="dr_set_advancedRouting_v2"  text="Вимк." />
+        <text name="dr_set_routingView"         text="Вигляд маршрутів" />
+        <text name="dr_set_routingView_tt"      text="Що відкривають кнопки «Додаткові входи» й «Додаткові виходи». Схема показує всю будівлю: джерела, сховища, продукти й одержувачів із перемикачами зв’язків. Класичні списки відкривають два початкові вікна. Обидва варіанти змінюють ті самі налаштування; відрізняється лише вигляд. Не діє, коли розширені маршрути вимкнено." />
+        <text name="dr_set_routingView_v1"      text="Схема" />
+        <text name="dr_set_routingView_v2"      text="Класичні списки" />
+
+        <text name="dr_set_defaultOutputMode"     text="Виходи нових будівель" />
+        <text name="dr_set_defaultOutputMode_tt"  text="Режим виходу, який будівля отримує під час РОЗМІЩЕННЯ. «Розподіляти» — звичайна поведінка. «Утримувати» залишає всю продукцію в новій будівлі, доки ви не задасте інший режим. Для будівель із піддонами він відображається як «Утримувати піддони» або «Утримувати всередині», якщо створення піддонів заборонено. Стосується ЛИШЕ будівель, розміщених надалі: уже збудовані не змінюються." />
+        <text name="dr_set_defaultOutputMode_v1"  text="Розподіляти" />
+        <text name="dr_set_defaultOutputMode_v2"  text="Утримувати" />
+
+        <text name="dr_set_defaultInputMode"     text="Входи нових будівель" />
+        <text name="dr_set_defaultInputMode_tt"  text="Чи приймає нова РОЗМІЩЕНА будівля постачання. «Приймати все» — звичайна поведінка. «Блокувати все» блокує всі входи, доки ви не дозволите продукти в додаткових входах. ПРИМІТКА: блокування діє лише з увімкненими розширеними маршрутами й скидається при їх вимкненні. Стосується ЛИШЕ будівель, розміщених надалі: уже збудовані не змінюються." />
+        <text name="dr_set_defaultInputMode_v1"  text="Приймати все" />
+        <text name="dr_set_defaultInputMode_v2"  text="Блокувати все" />
+
+        <text name="dr_set_radius"     text="Радіус пошуку" />
+        <text name="dr_set_radius_tt"  text="Відстань пошуку джерел споживачем у режимі «Поруч»." />
+        <text name="dr_set_radius_v1"  text="25 м" />
+        <text name="dr_set_radius_v2"  text="50 м" />
+        <text name="dr_set_radius_v3"  text="75 м" />
+        <text name="dr_set_radius_v4"  text="100 м" />
+        <text name="dr_set_radius_v5"  text="150 м" />
+        <text name="dr_set_radius_v6"  text="200 м" />
+        <text name="dr_set_radius_v7"  text="400 м" />
+
+        <text name="dr_set_bufferHours"     text="Запас споживача" />
+        <text name="dr_set_bufferHours_tt"  text="На скільки годин поповнювати сировину кожного споживача за цикл." />
+        <text name="dr_set_bufferHours_v1"  text="1 година" />
+        <text name="dr_set_bufferHours_v2"  text="2 години" />
+        <text name="dr_set_bufferHours_v3"  text="4 години" />
+        <text name="dr_set_bufferHours_v4"  text="8 годин" />
+        <text name="dr_set_bufferHours_v5"  text="12 годин" />
+        <text name="dr_set_bufferHours_v6"  text="24 години" />
+
+        <text name="dr_set_sellEnabled"     text="Продаж" />
+        <text name="dr_set_sellEnabled_tt"  text="Загальний перемикач автоматичного продажу (режими «Продавати» й «Розподіл + продаж»)." />
+        <text name="dr_set_sellEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_sellEnabled_v2"  text="Вимкнено" />
+
+        <text name="dr_set_waterSupplyEnabled"     text="Автопостачання води" />
+        <text name="dr_set_waterSupplyEnabled_tt"  text="Автоматично постачати воду виробництвам і пасовищам. Плата залежить від відстані до найближчого джерела води." />
+        <text name="dr_set_waterSupplyEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_waterSupplyEnabled_v2"  text="Вимкнено" />
+
+        <text name="dr_set_distCostEnabled"     text="Вартість розподілу" />
+        <text name="dr_set_distCostEnabled_tt"  text="Стягувати погодинну плату за кожне активне постачання (залежить від відстані перевезення)." />
+        <text name="dr_set_distCostEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_distCostEnabled_v2"  text="Вимкнено" />
+
+        <text name="dr_set_distCostBase"     text="Базова ставка" />
+        <text name="dr_set_distCostBase_tt"  text="Базова погодинна вартість короткого перевезення (у межах указаної нижче базової відстані)." />
+        <!-- MONEY VALUES: "%s" is the amount, formatted by the GAME in the player's own currency.
+             DO NOT write a currency symbol here. FS25 takes the currency from the SAVEGAME rather than
+             the language, so a symbol baked into any translation would be wrong for anyone playing that
+             language with a different currency. Translate only the "/h" (per hour) part, and keep the
+             "%s". The five are identical in English on purpose; a language needing different word order
+             per amount can still vary them. -->
+        <text name="dr_set_distCostBase_v1"  text="%s /год" />
+        <text name="dr_set_distCostBase_v2"  text="%s /год" />
+        <text name="dr_set_distCostBase_v3"  text="%s /год" />
+        <text name="dr_set_distCostBase_v4"  text="%s /год" />
+        <text name="dr_set_distCostBase_v5"  text="%s /год" />
+
+        <text name="dr_set_distCostThreshold"     text="Базова відстань" />
+        <text name="dr_set_distCostThreshold_tt"  text="У межах цієї відстані діє фіксована базова ставка; далі вартість зростає пропорційно відстані." />
+        <text name="dr_set_distCostThreshold_v1"  text="25 м" />
+        <text name="dr_set_distCostThreshold_v2"  text="50 м" />
+        <text name="dr_set_distCostThreshold_v3"  text="100 м" />
+        <text name="dr_set_distCostThreshold_v4"  text="200 м" />
+        <text name="dr_set_distCostThreshold_v5"  text="500 м" />
+
+        <text name="dr_set_seasonalReserveEnabled"     text="Сезонний резерв урожаю" />
+        <text name="dr_set_seasonalReserveEnabled_tt"  text="Культури в режимі «Розподіл + продаж» зберігають достатньо сировини для виробництв до наступного врожаю; продаються лише надлишки." />
+        <text name="dr_set_seasonalReserveEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_seasonalReserveEnabled_v2"  text="Вимкнено" />
+
+        <text name="dr_set_seasonalFallbackMonths"     text="Місяці резерву (до уточнення)" />
+        <text name="dr_set_seasonalFallbackMonths_tt"  text="На скільки місяців зберігати запас культури, доки мод не визначить її фактичний період збирання." />
+        <text name="dr_set_seasonalFallbackMonths_v1"  text="6 місяців" />
+        <text name="dr_set_seasonalFallbackMonths_v2"  text="12 місяців" />
+        <text name="dr_set_seasonalFallbackMonths_v3"  text="13 місяців" />
+        <text name="dr_set_seasonalFallbackMonths_v4"  text="18 місяців" />
+        <text name="dr_set_seasonalFallbackMonths_v5"  text="24 місяці" />
+
+        <text name="dr_set_bestPriceEnabled"     text="Продаж за найкращою ціною" />
+        <text name="dr_set_bestPriceEnabled_tt"  text="Головний перемикач: зберігати надлишки режимів «Продавати» й «Розподіл + продаж» до місяця з найкращою ціною. Вимкнено: усе продається одразу." />
+        <text name="dr_set_bestPriceEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_bestPriceEnabled_v2"  text="Вимкнено" />
+
+        <text name="dr_set_bestPriceDefault"     text="Типовий час продажу" />
+        <text name="dr_set_bestPriceDefault_tt"  text="Типове налаштування виходів «Продавати» / «Розподіл + продаж» і кожного продукту ринку, доки ви не задасте власне для будівлі. Уже налаштовані ринки зберігають свій вибір." />
+        <text name="dr_set_bestPriceDefault_v1"  text="За найкращою ціною" />
+        <text name="dr_set_bestPriceDefault_v2"  text="Продавати одразу" />
+
+        <text name="dr_set_palletSpawnMode"     text="Створення піддонів" />
+        <text name="dr_set_palletSpawnMode_tt"  text="Лише повні: тваринницькі будівлі накопичують продукцію всередині й випускають ПОВНИЙ піддон, як виробництва. Стандартно: піддон з’являється відразу й поступово заповнюється. Ніколи: піддони не створюються автоматично; продукція лишається всередині, звідки її можна розподіляти, зберігати й продавати. Піддони завжди можна створити вручну. Заборона стосується лише ваших тваринницьких будівель і виробництв: вулики працюють як завжди (вони не мають внутрішнього запасу для продажу), а магазини, де ви купуєте піддони, не змінюються." />
+        <text name="dr_set_palletSpawnMode_v1"  text="Стандартно (поступово)" />
+        <text name="dr_set_palletSpawnMode_v2"  text="Лише повні піддони" />
+        <text name="dr_set_palletSpawnMode_v3"  text="Не створювати піддони" />
+        <text name="dr_set_passThroughStores"     text="Транзитні склади" />
+        <text name="dr_set_passThroughStores_tt"  text="Деякі моди додають склади з фіктивним виробництвом: кожна лінія перетворює продукт на нього ж. Виробництво потрібне лише для того, щоб гра доставляла товари до будівлі. «Вважати сховищем» дозволяє Distribution Redux бачити її як справжній склад: він перестає вимагати всі запаси ферми, а реальні лінії, якщо є, лишаються на вкладці виробництв. Третій варіант також вимикає фіктивні лінії в самій грі. Це впорядковує будівлю, але записується у збереження: лінії лишаться вимкненими навіть після видалення мода." />
+        <text name="dr_set_passThroughStores_v1"  text="Вважати виробництвом" />
+        <text name="dr_set_passThroughStores_v2"  text="Вважати сховищем" />
+        <text name="dr_set_passThroughStores_v3"  text="Сховище + вимкнути лінії" />
+        <!-- Role labels. Shown ONLY on a building that does two jobs at once (a silo that is also a
+             pallet store), to tell its halves apart in the building list. Keep them short - they are
+             appended to a building name in a fixed-width list. -->
+        <text name="dr_role_nameFmt"      text="%s (%s)" />
+        <text name="dr_role_silo"         text="Силос" />
+        <text name="dr_role_shed"         text="Склад піддонів" />
+        <text name="dr_role_production"   text="Виробництво" />
+        <text name="dr_role_husbandry"    text="Тварини" />
+        <text name="dr_role_heap"         text="Яма" />
+        <text name="dr_role_market"       text="Ринок" />
+        <text name="dr_type_linked"       text="Пов’язане" />
+
+        <text name="dr_set_menuRefresh"     text="Частота оновлення меню" />
+        <text name="dr_set_menuRefresh_tt"  text="Як часто відкрите меню перечитує дані ферми. «Огляд» перебирає всі будівлі й продукти, тому на великій фермі рідше оновлення покращує чутливість меню. «Лише вручну» повністю зупиняє фонове оновлення; дані все одно оновлюються при виборі елемента або натисканні «Оновити» в огляді." />
+        <text name="dr_set_menuRefresh_v1"  text="Наживо (0,5 с)" />
+        <text name="dr_set_menuRefresh_v2"  text="Звичайна (2 с)" />
+        <text name="dr_set_menuRefresh_v3"  text="Повільна (10 с)" />
+        <text name="dr_set_menuRefresh_v4"  text="Лише вручну" />
+        <text name="dr_set_passProfiler"    text="Журнал швидкодії" />
+        <text name="dr_set_passProfiler_tt" text="Записує в log.txt тривалість погодинного циклу DR і кількість сканувань світу. Рекомендовано «Лише повільні цикли»: запис з’являється лише тоді, коли цикл триває понад 150 мс. Якщо вас попросили надати звіт про швидкодію, виберіть «Кожен цикл»: щогодини записуватимуться два рядки для порівняння швидкої й повільної ферми. Husbandry Redux має таке саме налаштування; достатньо ввімкнути будь-яке з них." />
+        <text name="dr_set_passProfiler_v1" text="Вимк." />
+        <text name="dr_set_passProfiler_v2" text="Лише повільні цикли" />
+        <text name="dr_set_passProfiler_v3" text="Кожен цикл (діагностика)" />
+
+        <text name="dr_set_debugEnabled"     text="Журнал налагодження" />
+        <text name="dr_set_debugEnabled_tt"  text="Записувати в log.txt докладні відомості про розподіл: переміщення, продаж, зберігання, поповнення води та оплату. Вимкніть, щоб зменшити обсяг журналу." />
+        <text name="dr_set_debugEnabled_v1"  text="Увімкнено" />
+        <text name="dr_set_debugEnabled_v2"  text="Вимкнено" />
+
+
+        <!-- ============ USER GUIDE (generated: gen_guide_l10n.py) ============
+             11 topics, one key per non-blank paragraph. Markers at the start of a
+             value are STRUCTURE, not words, and must be kept exactly as they are:
+               "## "   a heading
+               "### "  a sub heading
+               "- "    a bullet in a list
+             Everything after the marker is ordinary prose. A key you leave out falls
+             back to English, so a topic can be translated a paragraph at a time.
+             DO NOT reorder or renumber these; the numbers are positions in the guide. -->
+
+        <text name="dr_guide_gettingStarted_title" text="Початок роботи" />
+        <text name="dr_guide_gettingStarted_1" text="Distribution Redux повністю замінює стандартну систему розподілу гри. Додаткові будівлі не потрібні. Мод працює з усіма стандартними будівлями й модифікованими будівлями, що дотримуються схеми GIANTS для свого типу. Це складний мод, у якому легко ненавмисно створити проблему чи заблокувати постачання. Перед використанням прочитайте весь довідник." />
+        <text name="dr_guide_gettingStarted_2" text="## Доступ до інтерфейсу" />
+        <text name="dr_guide_gettingStarted_3" text="Клавіша зворотної скісної риски: відкриває меню Distribution Redux — повноекранне вікно з вкладками для кожного типу будівель, довідником і налаштуваннями." />
+        <text name="dr_guide_gettingStarted_4" text="Клавіша лівої квадратної дужки: пішки подивіться на точку завантаження чи розвантаження будівлі, щоб відкрити її сторінку. Підказка з’являється лише для ваших будівель, що входять до мережі." />
+        <text name="dr_guide_gettingStarted_5" text="Обидві клавіші можна змінити в «Налаштування — Керування»." />
+        <text name="dr_guide_gettingStarted_6" text="## Основна ідея" />
+        <text name="dr_guide_gettingStarted_7" text="Відкрийте меню, виберіть потрібну будівлю й задайте для кожного продукту режим: «Утримувати», «Розподіляти», «Продавати» тощо. Це основа роботи; усе інше — подробиці." />
+        <text name="dr_guide_gettingStarted_8" text="## Відмінності від стандартної гри" />
+        <text name="dr_guide_gettingStarted_9" text="- У розподілі можуть брати участь будь-які будівлі, що зберігають, виробляють, годують тварин або продають." />
+        <text name="dr_guide_gettingStarted_10" text="- Доставляється лише потрібна кількість, а не все до заповнення сховища." />
+        <text name="dr_guide_gettingStarted_11" text="- Вартість розподілу залежить від відстані." />
+        <text name="dr_guide_gettingStarted_12" text="- Можна продавати одразу або чекати найкращої ціни." />
+        <text name="dr_guide_gettingStarted_13" text="- Для сезонних культур можна зберігати резерв для безперервної роботи виробництв, продаючи лише непотрібну частину врожаю." />
+        <text name="dr_guide_gettingStarted_14" text="- Автопостачання води бере її зі сховищ або найближчого джерела, наприклад озера, щоб задовольнити потребу." />
+        <text name="dr_guide_gettingStarted_15" text="- Можна змінити типовий розподіл: задати пріоритет потреб, блокувати окремі входи й виходи, резервувати вихідні запаси та визначати цілі для входів." />
+        <text name="dr_guide_gettingStarted_16" text="## Що відбувається кожного циклу" />
+        <text name="dr_guide_gettingStarted_17" text="- Розподіл: формується список потреб усіх споживачів — виробнича сировина, корм, бункери кормових роботів, солома й вода для тварин. Джерела добираються від найближчого з урахуванням блокувань, пріоритетів і лімітів входів." />
+        <text name="dr_guide_gettingStarted_18" text="- Переміщення залишків: надлишки надходять до доступних сховищ, потім до ринків і між сховищами з урахуванням блокувань, пріоритетів і лімітів входів." />
+        <text name="dr_guide_gettingStarted_19" text="- Оплата: нараховуються витрати на перевезення за відстанню та стандартні погодинні витрати виробництв, які інакше втрачалися б через заміну стандартного погодинного циклу модом." />
+        <text name="dr_guide_gettingStarted_20" text="- Продаж / постачання ринків: продаються надлишки, запаси ринків і продукція прямого продажу, наприклад електроенергія й метан. Враховуються сезонний резерв та правила негайного продажу чи очікування найкращої ціни." />
+        <text name="dr_guide_gettingStarted_21" text="- Облік: записуються обсяги роботи виробництв і тваринницьких будівель, обчислюється ручне завантаження й розвантаження, виводиться фінансовий підсумок." />
+
+        <text name="dr_guide_theMenu_title" text="Меню" />
+        <text name="dr_guide_theMenu_1" text="Клавіша зворотної скісної риски відкриває спільне меню. Вкладки розташовані ліворуч." />
+        <text name="dr_guide_theMenu_2" text="## Вкладки" />
+        <text name="dr_guide_theMenu_3" text="- Виробництва — фабрики й виробничі точки." />
+        <text name="dr_guide_theMenu_4" text="- Силоси — силоси для сипучих матеріалів, склади піддонів і тюків, а також гноєсховища й ями для гноївки." />
+        <text name="dr_guide_theMenu_5" text="- Тваринництво — хліви, курники, загони й вулики." />
+        <text name="dr_guide_theMenu_6" text="- Ринки — кіоски й ринки, розміщені вами на мапі." />
+        <text name="dr_guide_theMenu_7" text="- Огляд — докладні дані кожної будівлі та продукту в одній таблиці." />
+        <text name="dr_guide_theMenu_8" text="- Довідник — цей посібник." />
+        <text name="dr_guide_theMenu_9" text="- Налаштування — загальні параметри." />
+        <text name="dr_guide_theMenu_10" text="Кожна вкладка будівель має дві частини: ліворуч — список ваших будівель, праворуч — входи, виробничі лінії й виходи вибраної будівлі. Наявність цих трьох списків залежить від призначення будівлі." />
+        <text name="dr_guide_theMenu_11" text="## Період" />
+        <text name="dr_guide_theMenu_12" text="Угорі кожної вкладки будівель та огляду є вибір періоду: година, місяць і рік. Він змінює часовий проміжок для показників потоку: отримано, витрачено, вироблено, розподілено й продано." />
+        <text name="dr_guide_theMenu_13" text="«Місяць» Distribution Redux дорівнює 24 погодинним циклам, тобто приблизно останній ігровій добі незалежно від кількості днів у періоді. Показник запасу не залежить від періоду: це поточна кількість у будівлі, а не потік." />
+        <text name="dr_guide_theMenu_14" text="Річні дані накопичуються поступово. До появи цієї функції річного обліку не було, тому в старому збереженні річний показник спочатку порожній і поповнюється після завершення кожного ігрового місяця." />
+        <text name="dr_guide_theMenu_15" text="## Приховані вкладки" />
+        <text name="dr_guide_theMenu_16" text="Вкладки силосів, тваринництва й ринків з’являються лише тоді, коли відповідну групу ввімкнено в налаштуваннях. Вимкнення групи повністю вилучає її будівлі з мережі й приховує вкладку. Повторне ввімкнення повертає і будівлі, і вкладку." />
+
+        <text name="dr_guide_buildingPages_title" text="Сторінки будівель" />
+        <text name="dr_guide_buildingPages_1" text="Вкладки виробництв, силосів, ринків і тваринництва мають спільну структуру: виберіть будівлю ліворуч і налаштуйте продукти праворуч. Таблиці й стовпці дещо відрізняються залежно від типу, адже не кожна будівля споживає чи виробляє." />
+        <text name="dr_guide_buildingPages_2" text="## Вміст таблиць" />
+        <text name="dr_guide_buildingPages_3" text="### Вхідні продукти" />
+        <text name="dr_guide_buildingPages_4" text="- ПРОДУКТ — назва й піктограма." />
+        <text name="dr_guide_buildingPages_5" text="- ЗАПАС / МАКС. — поточний запас, максимальна місткість і задане обмеження у відсотках у дужках." />
+        <text name="dr_guide_buildingPages_6" text="- ВІЛЬНЕ МІСЦЕ — скільки ще продукту може прийняти будівля з урахуванням заданого максимуму (%) та залишку місця." />
+        <text name="dr_guide_buildingPages_7" text="- ОТРИМАНО — скільки продукту Distribution Redux доставив до будівлі за вибраний період." />
+        <text name="dr_guide_buildingPages_8" text="- ВИТРАЧЕНО — скільки продукту використано за вибраний період. Лише для виробництв і тваринницьких будівель." />
+        <text name="dr_guide_buildingPages_9" text="- СТАН — активний (отримує), активний (простій) за результатами останнього циклу або заблоковано." />
+        <text name="dr_guide_buildingPages_10" text="### Виробничі лінії (лише виробництва)" />
+        <text name="dr_guide_buildingPages_11" text="- ВИРОБНИЧІ ЛІНІЇ — продукт лінії та її сировина в дужках." />
+        <text name="dr_guide_buildingPages_12" text="- СТАН — працює, простій (увімкнено, але бракує сировини) або вимкнено." />
+        <text name="dr_guide_buildingPages_13" text="- ЦІЛЬ /міс. — очікуваний місячний обсяг виробництва за наявності всієї сировини." />
+        <text name="dr_guide_buildingPages_14" text="### Вихідні продукти" />
+        <text name="dr_guide_buildingPages_15" text="- ПРОДУКТ — назва й піктограма." />
+        <text name="dr_guide_buildingPages_16" text="- ЗАПАС (МАКС.) — поточний запас продукту, місткість у дужках." />
+        <text name="dr_guide_buildingPages_17" text="- ВІЛЬНЕ МІСЦЕ — скільки ще продукту вмістить будівля." />
+        <text name="dr_guide_buildingPages_18" text="- ВИРОБЛЕНО — скільки виготовлено за вибраний період. Лише для виробництв і тваринницьких будівель." />
+        <text name="dr_guide_buildingPages_19" text="- РОЗПОДІЛЕНО — усе, що залишило будівлю: розподіл, зберігання, переміщення й продаж разом. Якщо щось продано, вартість продажу вказана в дужках." />
+        <text name="dr_guide_buildingPages_20" text="- РЕЖИМ ВИХОДУ — поточний режим цього продукту." />
+        <text name="dr_guide_buildingPages_21" text="- СТАН — активний (відправляє), активний (простій) за результатами останнього циклу або заблоковано." />
+        <text name="dr_guide_buildingPages_22" text="## ПРИМІТКА" />
+        <text name="dr_guide_buildingPages_23" text="- Якщо будівля має внутрішнє сховище й піддони, показується внутрішній запас, а потім кількість на піддонах у зоні їх появи." />
+        <text name="dr_guide_buildingPages_24" text="- Вибраний період показує лише переміщення за цей час. Якщо ви щойно ввімкнули виробництво й вибрали рік, побачите лише те, що переміщено після ввімкнення." />
+        <text name="dr_guide_buildingPages_25" text="- Докладніші відомості про напрямки переміщення доступні на вкладці огляду." />
+        <text name="dr_guide_buildingPages_26" text="- Одиниці об’єму змінюються на позначці 1000 літрів. До 999 л значення показується в літрах, від 1000 л — у кілолітрах без зайвих нулів: 1001 л — це 1.001 кл, 123123 л — 123.123 кл, а 600000 л — 600 кл. Три знаки після крапки відповідають одному літру, тому точність не втрачається." />
+        <text name="dr_guide_buildingPages_27" text="- Щоб побачити зміну стану, наприклад простій чи роботу, дочекайтеся одного циклу (1 години). У ланцюгу розподілу для оновлення всіх ланок може знадобитися кілька годин." />
+        <text name="dr_guide_buildingPages_28" text="## Зміна налаштувань" />
+        <text name="dr_guide_buildingPages_29" text="- Щоб увімкнути або вимкнути виробничу лінію, виберіть її та натисніть «Стан лінії»." />
+        <text name="dr_guide_buildingPages_30" text="- Щоб змінити поведінку виходу, виберіть його та натисніть кнопку зміни режиму виходу." />
+        <text name="dr_guide_buildingPages_31" text="- «Додатково» відкриває керування маршрутами продукту (див. додаткові входи й виходи)." />
+        <text name="dr_guide_buildingPages_32" text="- «Час продажу» з’являється для виходів у режимі продажу." />
+        <text name="dr_guide_buildingPages_33" text="Зміна режиму виходу чи стану виробничої лінії тут змінює те саме налаштування, що й стандартний екран виробництв. Обидва інтерфейси синхронізуються, а стандартний екран також показує назви режимів мода." />
+
+        <text name="dr_guide_outputModes_title" text="Режими виходу" />
+        <text name="dr_guide_outputModes_1" text="## Доступні режими за типом будівлі" />
+        <text name="dr_guide_outputModes_2" text="- Виробництва — «Розподіляти», «На склад», «Утримувати піддони», «Утримувати всередині», «Продавати», «Постачати ринку»." />
+        <text name="dr_guide_outputModes_3" text="- Силоси й сховища — «Розподіляти», «Перемістити до», «Утримувати», «Продавати», «Постачати ринку»." />
+        <text name="dr_guide_outputModes_4" text="- Тваринництво — «Розподіляти», «На склад», «Утримувати піддони», «Утримувати всередині», «Продавати», «Постачати ринку»." />
+        <text name="dr_guide_outputModes_5" text="- Ринки — лише «Продавати» або «Утримувати»." />
+        <text name="dr_guide_outputModes_6" text="Не всі режими доступні завжди. Якщо немає придатного одержувача, режим приховується. Наприклад, без розміщеного ринку або якщо жоден ринок не приймає продукт, «Постачати ринку» не з’являється." />
+        <text name="dr_guide_outputModes_7" text="## Режими" />
+        <text name="dr_guide_outputModes_8" text="- Розподіляти — постачати продукт виробництвам і тваринам, що його потребують, починаючи з найближчого джерела й у межах потреб рецептів. Надлишок лишається на місці." />
+        <text name="dr_guide_outputModes_9" text="- На склад — переміщувати продукцію до найближчого сховища, що її приймає; після його заповнення — до наступного. Для виробництв і тваринництва." />
+        <text name="dr_guide_outputModes_10" text="- Перемістити до — переміщувати продукт між сховищами, що його приймають. Лише для сховищ. Див. попередження нижче." />
+        <text name="dr_guide_outputModes_11" text="- Утримувати всередині — зберігати продукцію у внутрішньому сховищі без автоматичного створення піддонів; створюйте їх вручну за потреби (див. створення піддонів)." />
+        <text name="dr_guide_outputModes_12" text="- Утримувати піддони — залишати продукцію на піддонах і накопичувати її." />
+        <text name="dr_guide_outputModes_13" text="- Продавати — продавати продукт одразу або за найкращою ціною (див. час продажу)." />
+        <text name="dr_guide_outputModes_14" text="- Постачати ринку — передавати продукцію до розміщеного вами ринку чи кіоску для продажу з націнкою." />
+        <text name="dr_guide_outputModes_15" text="## Комбіновані режими" />
+        <text name="dr_guide_outputModes_16" text="- Розподіл + продаж — спочатку задовольнити всі потреби, потім продати залишок." />
+        <text name="dr_guide_outputModes_17" text="- Розподіл + склад — спочатку задовольнити потреби, потім перемістити надлишок до сховища замість продажу. Лише для виробництв і тваринництва." />
+        <text name="dr_guide_outputModes_18" text="- Розподіл + переміщення — спочатку задовольнити потреби, потім перемістити надлишок до вибраного сховища. Лише для сховищ." />
+        <text name="dr_guide_outputModes_19" text="- Розподіл + ринок — спочатку задовольнити потреби, потім передати надлишок до свого ринку чи кіоску." />
+        <text name="dr_guide_outputModes_20" text="У кожному комбінованому режимі спочатку справді виконується перша дія. Нічого не продається й не надходить на склад або ринок, доки продукт не запропоновано споживачам." />
+        <text name="dr_guide_outputModes_21" text="«Перемістити до» доступний лише з увімкненими розширеними маршрутами (див. відповідний розділ)." />
+
+        <text name="dr_guide_advancedRoutingRules_title" text="Розширені маршрути й правила" />
+        <text name="dr_guide_advancedRoutingRules_1" text="## Розширені маршрути" />
+        <text name="dr_guide_advancedRoutingRules_2" text="Розширені маршрути дають змогу керувати кожним входом і виходом кожної будівлі. Типово ввімкнені; вимкнути їх можна в налаштуваннях." />
+        <text name="dr_guide_advancedRoutingRules_3" text="### Додаткові входи" />
+        <text name="dr_guide_advancedRoutingRules_4" text="- Виберіть вхідний продукт і натисніть «Додаткові входи»." />
+        <text name="dr_guide_advancedRoutingRules_5" text="- Блокувати / дозволити — заборонити або дозволити будівлі отримувати цей продукт." />
+        <text name="dr_guide_advancedRoutingRules_6" text="- Блокувати все / дозволити все — змінити всі входи одночасно." />
+        <text name="dr_guide_advancedRoutingRules_7" text="- Макс. вхід — найбільша кількість продукту, яку будівля може зберігати. Важливо для спільного сховища, де кілька продуктів ділять одну місткість. Місце займає той, хто надходить першим: типово кожен продукт може зайняти весь простір, як у стандартній грі. Щоб один продукт не заповнив силос і не витіснив інші, обмежте його максимум. Ліміти незалежні й не зобов’язані сумарно дорівнювати 100 відсоткам; незмінені продукти лишаються без обмежень." />
+        <text name="dr_guide_advancedRoutingRules_8" text="- Ціль — бажаний рівень запасу продукту. Замість постачання лише на наступний цикл мережа накопичує й підтримує цей рівень — фактично вхідний резерв." />
+        <text name="dr_guide_advancedRoutingRules_9" text="### Додаткові виходи" />
+        <text name="dr_guide_advancedRoutingRules_10" text="- Виберіть вихідний продукт і натисніть «Додаткові виходи»." />
+        <text name="dr_guide_advancedRoutingRules_11" text="- Блокувати / дозволити — заборонити або дозволити надсилання цього продукту одержувачу." />
+        <text name="dr_guide_advancedRoutingRules_12" text="- Пріоритет — упорядкувати споживачів і сховища для цього виходу. Це замінює типовий порядок: найближчий, потім наступний." />
+        <text name="dr_guide_advancedRoutingRules_13" text="- Резерв (+/-) — постійно зберігати задану кількість літрів у будівлі. Розподіл, продаж, зберігання, переміщення й постачання ринків не можуть зменшити запас нижче цього значення." />
+        <text name="dr_guide_advancedRoutingRules_14" text="### Режим виходу «Перемістити до»" />
+        <text name="dr_guide_advancedRoutingRules_15" text="- Цей режим доступний лише з увімкненими розширеними маршрутами для будівель типу «Сховище»." />
+        <text name="dr_guide_advancedRoutingRules_16" text="- Він дає змогу перемістити матеріал з одного сховища до іншого, яке його приймає." />
+        <text name="dr_guide_advancedRoutingRules_17" text="- Після ввімкнення всі можливі одержувачі типово заблоковані, щоб уникнути випадкового зациклення продукту." />
+        <text name="dr_guide_advancedRoutingRules_18" text="- Для налаштування виберіть вихід і натисніть «Додаткові виходи». Праворуч буде список придатних одержувачів (усі заблоковані). Дозвольте потрібні будівлі. Для переміщення також доступні пріоритет, резерв та інші додаткові налаштування." />
+        <text name="dr_guide_advancedRoutingRules_19" text="- Типово переміщення намагається максимально заповнити будівлю за цикл. Задайте «Макс. вхід» у будівлі-одержувачі, щоб залишити місце кільком продуктам, а не заповнити весь силос першим із них." />
+        <text name="dr_guide_advancedRoutingRules_20" text="### Перед вимкненням розширених маршрутів" />
+        <text name="dr_guide_advancedRoutingRules_21" text="- Усі додаткові налаштування стираються, а не просто ігноруються: блокування, пріоритети, резерви, максимальні входи й цілі. Після повторного ввімкнення доведеться налаштувати все заново." />
+        <text name="dr_guide_advancedRoutingRules_22" text="## Додаткові правила" />
+        <text name="dr_guide_advancedRoutingRules_23" text="Ці правила діють незалежно від розширених маршрутів. Сезонний резерв і автопостачання води можна окремо ввімкнути чи вимкнути в налаштуваннях." />
+        <text name="dr_guide_advancedRoutingRules_24" text="### Режими продажу" />
+        <text name="dr_guide_advancedRoutingRules_25" text="Для кожного виходу в режимі продажу можна вибрати негайний продаж або очікування найкращої ціни. Під час очікування продукт накопичується до піку ціни, тому переконайтеся, що для нього є місце." />
+        <text name="dr_guide_advancedRoutingRules_26" text="### Сезонний резерв урожаю" />
+        <text name="dr_guide_advancedRoutingRules_27" text="Типово ВИМКНЕНО. Після ввімкнення для однорічної культури зберігається приблизно річний запас на потреби власних виробництв; продається лише надлишок. Для трави та інших культур, що відростають протягом року, зберігається запас на три місяці. Доки мод не побачить збирання врожаю, він не знає часу наступного, тому використовує налаштування місяців резерву." />
+        <text name="dr_guide_advancedRoutingRules_28" text="### Автопостачання води" />
+        <text name="dr_guide_advancedRoutingRules_29" text="Коли автопостачання ввімкнено, вода надходить до всіх будівель, що її потребують, із найближчого джерела. Якщо розміщеного джерела немає, використовується найближча водойма. Якщо вона далеко, вартість доставки буде високою." />
+
+        <text name="dr_guide_overviewTab_title" text="Вкладка огляду" />
+        <text name="dr_guide_overviewTab_1" text="Вкладка огляду показує всю мережу в одній таблиці: кожну залучену будівлю та кожен її вхідний і вихідний продукт. Тут видно, що справді відбувається, а не лише налаштування окремої будівлі." />
+        <text name="dr_guide_overviewTab_2" text="Кожен продукт позначено як «Вхід», «Вихід» або «Вх/вих», щоб одразу було видно його роль. У силосах і складах усі продукти мають роль «Вх/вих», адже вони і приймають, і постачають." />
+        <text name="dr_guide_overviewTab_3" text="## Чотири селектори" />
+        <text name="dr_guide_overviewTab_4" text="- Фільтр — немає (показати все), будівля, продукт або кінцевий продукт (увесь ланцюг)." />
+        <text name="dr_guide_overviewTab_5" text="- Показати — вибирає будівлю чи продукт для фільтра." />
+        <text name="dr_guide_overviewTab_6" text="- Період — година, місяць або рік, як на вкладках будівель." />
+        <text name="dr_guide_overviewTab_7" text="- Групування — вимкнено: окремий рядок для кожної будівлі; увімкнено: будівлі одного типу об’єднуються в підсумковий рядок, наприклад «Пекарня x2»." />
+        <text name="dr_guide_overviewTab_8" text="Найкорисніший фільтр — кінцевий продукт (увесь ланцюг). Виберіть, наприклад, торт, і таблиця покаже всі будівлі й проміжні продукти його ланцюга від готового виробу до початкової сировини. Так найшвидше знайти нестачу або надлишок у виробничому ланцюгу." />
+        <text name="dr_guide_overviewTab_9" text="## Стовпці" />
+        <text name="dr_guide_overviewTab_10" text="- ОТРИМАНО — доставлено до будівлі модом Distribution Redux." />
+        <text name="dr_guide_overviewTab_11" text="- ЗАВАНТАЖЕНО — доставлено будь-ким, КРІМ Distribution Redux: вами з причепом, тюком, помічником чи іншим модом." />
+        <text name="dr_guide_overviewTab_12" text="- ВИТР. (ОЧІК.) — витрачено; очікувана кількість у дужках." />
+        <text name="dr_guide_overviewTab_13" text="- ВИВАНТАЖЕНО — забрано будь-ким, крім Distribution Redux, зокрема вивезено вами на піддоні." />
+        <text name="dr_guide_overviewTab_14" text="- ЗАПАС (МІСТК.) — поточний запас і місткість будівлі. Не залежить від вибраного періоду." />
+        <text name="dr_guide_overviewTab_15" text="- ВИРОБ. (ОЧІК.) — виготовлено будівлею; очікувана кількість у дужках." />
+        <text name="dr_guide_overviewTab_16" text="- РОЗПОДІЛЕНО — доставлено споживачам." />
+        <text name="dr_guide_overviewTab_17" text="- НА СКЛАД/ПЕРЕМ. — відправлено на зберігання або переміщено до іншого сховища." />
+        <text name="dr_guide_overviewTab_18" text="- ПРОДАНО — продано безпосередньо або через ринок." />
+        <text name="dr_guide_overviewTab_19" text="- ВАРТ. РОЗПОД. — вартість перевезень для цієї будівлі. Витрати записуються лише відправнику, тому сума стовпця відповідає фактичній оплаті без подвійного обліку." />
+        <text name="dr_guide_overviewTab_20" text="## Очікувані значення та їхні кольори" />
+        <text name="dr_guide_overviewTab_21" text="Показники витраченого й виробленого містять у дужках очікувану кількість за рецептами ввімкнених ліній. Зелений колір означає досягнення або майже досягнення цілі, помаранчевий — невелике відставання, червоний — значне. Рецепти є лише у виробництв, тому для тваринницьких будівель і силосів показуються фактичні значення без вигаданих цілей." />
+        <text name="dr_guide_overviewTab_22" text="Червоне значення виробництва — найшвидший спосіб помітити лінію, якій бракує сировини." />
+        <text name="dr_guide_overviewTab_23" text="## Налаштування" />
+        <text name="dr_guide_overviewTab_24" text="Кнопка внизу сторінки перемикає потоки й налаштування. Якщо виробнича лінія заблокована, перейдіть до налаштувань, щоб швидко знайти можливу причину." />
+        <text name="dr_guide_overviewTab_25" text="Подвійне натискання рядка в будь-якому вигляді відкриває сторінку відповідної будівлі." />
+
+        <text name="dr_guide_palletManagement_title" text="Керування піддонами" />
+        <text name="dr_guide_palletManagement_1" text="Багато продуктів постачаються на піддонах: дошки, пиломатеріали, овочі в ящиках, яйця, вовна тощо. Для належної роботи Distribution Redux механіку піддонів повністю перероблено." />
+        <text name="dr_guide_palletManagement_2" text="Distribution Redux враховує внутрішній запас і піддони в зоні появи будівлі як у показниках, так і в режимах виходу. Спочатку продукт забирається з піддонів, потім із внутрішнього сховища. Якщо зона появи заблокована, продукція накопичується всередині й розподіляється звідти. Піддон, який ви забрали вручну, одразу вилучається із загального запасу будівлі." />
+        <text name="dr_guide_palletManagement_3" text="Для будівель без належної зони піддонів у моделі, зокрема деяких модифікованих точок появи й вуликів, натомість діє просте правило найближчої будівлі." />
+        <text name="dr_guide_palletManagement_4" text="## Створення вручну" />
+        <text name="dr_guide_palletManagement_5" text="- Задайте виходу режим «Утримувати всередині». Коли накопичиться щонайменше один повний піддон, кнопка «Створити піддони» з’явиться на вкладці виробництв і стандартному екрані гри. Натисніть її, щоб відкрити вікно." />
+        <text name="dr_guide_palletManagement_6" text="- Тип — тип піддона. Якщо підтримується один, він показується для довідки; якщо кілька, виберіть стрілками." />
+        <text name="dr_guide_palletManagement_7" text="- Кількість — скільки створити. Стрілки змінюють значення на один, кнопки -10 / +10 — на десять. Максимум обмежено наявним запасом." />
+        <text name="dr_guide_palletManagement_8" text="- «Створити» розміщує вказану кількість заповнених піддонів у зоні будівлі та віднімає відповідний запас. «Скас.» закриває вікно без створення." />
+        <text name="dr_guide_palletManagement_9" text="Кнопка з’являється лише для виходу «Утримувати всередині» із запасом щонайменше на один повний піддон. Будівля також повинна мати точку появи піддонів у моделі, як більшість відповідних будівель. У мультиплеєрі піддони створює хост, тому вони з’являються для всіх." />
+        <text name="dr_guide_palletManagement_10" text="## Піддони тваринницьких будівель" />
+        <text name="dr_guide_palletManagement_11" text="У стандартній грі тваринницькі будівлі щогодини створюють піддон і заповнюють його з внутрішнього запасу, навіть якщо для повного піддона недостатньо продукції, на відміну від виробництв. Для узгодженості їхню типову поведінку змінено на виробничу. У налаштуваннях можна повернути стандартну поведінку, але це може вплинути на розподіл і його облік (не рекомендовано)." />
+        <text name="dr_guide_palletManagement_12" text="У тому самому налаштуванні можна повністю заборонити автоматичне створення піддонів. Тоді розподіл використовуватиме лише внутрішнє сховище будівлі." />
+
+        <text name="dr_guide_otherChangesToBaseGameMechanics_title" text="Інші зміни механік гри" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_1" text="## Силосні траншеї" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_2" text="- Щоб відкрити силосну траншею, достатньо натиснути R: мод зніме все накриття, без залишків, які неможливо прибрати." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_3" text="- Для отримання продукції траншею потрібно завантажити, накрити, дочекатися ферментації й відкрити. Тому Distribution Redux показує лише вихідну таблицю та налаштування, а запас стає видимим після зняття накриття." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_4" text="## Гноєсховища й ями для гноївки" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_5" text="- Гноєсховища й ями для гноївки можна розміщувати будь-де на мапі; вони НЕ приєднуються до тваринницької будівлі автоматично. Щоб постачати їх, розмістіть сховище й задайте відповідному виходу хліва режим «На склад». Гній і гноївка переміщуватимуться як будь-яка інша продукція." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_6" text="## Розширення силосів" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_7" text="- Механіку розширень силосів суттєво змінено. Тепер їх можна розміщувати лише в межах 50 м від наявного силосу, гноєсховища чи ями, і вони збільшують місткість ЛИШЕ цієї будівлі." />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_8" text="## Ручне розвантаження на ринках" />
+        <text name="dr_guide_otherChangesToBaseGameMechanics_9" text="- Ви й надалі можете вручну привозити продукцію на власні ринки чи прилавки. Замість негайного продажу, як у стандартній грі, вона підпорядковується заданому ринковому режиму виходу." />
+
+        <text name="dr_guide_settings_title" text="Налаштування" />
+        <text name="dr_guide_settings_1" text="Загальні параметри розташовані на вкладці налаштувань. Вони записуються у збереження, а в мультиплеєрі синхронізуються хостом. Власні налаштування будівлі завжди мають перевагу над загальними." />
+        <text name="dr_guide_settings_2" text="## Параметри" />
+        <text name="dr_guide_settings_3" text="- Наведено в порядку їх розташування на вкладці." />
+        <text name="dr_guide_settings_4" text="- Охоплення — уся ферма або поруч (у межах радіуса)." />
+        <text name="dr_guide_settings_5" text="- Тваринництво — додати або вилучити хліви, курники, загони й вулики." />
+        <text name="dr_guide_settings_6" text="- Силоси й склади піддонів — додати або вилучити силоси, склади піддонів і тюків, гноєсховища й ями для гноївки." />
+        <text name="dr_guide_settings_7" text="- Ринки й кіоски — додати або вилучити власні ринки й кіоски." />
+        <text name="dr_guide_settings_8" text="- Розширені маршрути — головний перемикач додаткових входів і виходів. Вимкнення також прибирає «Перемістити до» та стирає всі додаткові налаштування (див. відповідний розділ)." />
+        <text name="dr_guide_settings_9" text="- Радіус пошуку — дальність у режимі «Поруч». Типово 50 м." />
+        <text name="dr_guide_settings_10" text="- Запас споживача — на скільки годин поповнювати сировину кожного споживача за цикл. Типово 2." />
+        <text name="dr_guide_settings_11" text="- Продаж — загальний перемикач продажу. Якщо вимкнено, нічого не продається незалежно від режимів окремих виходів." />
+        <text name="dr_guide_settings_12" text="- Автопостачання води — автоматично постачати воду будівлям, що її споживають." />
+        <text name="dr_guide_settings_13" text="- Вартість розподілу — чи стягується плата за перевезення." />
+        <text name="dr_guide_settings_14" text="- Базова ставка — погодинна плата за зв’язок. Типово 10." />
+        <text name="dr_guide_settings_15" text="- Базова відстань — відстань, від якої залежить множник ставки. Типово 50 м." />
+        <text name="dr_guide_settings_16" text="- Сезонний резерв урожаю — зберігати сировину до наступного врожаю та продавати лише надлишок. Типово вимкнено." />
+        <text name="dr_guide_settings_17" text="- Місяці резерву (до уточнення) — скільки місяців запасу зберігати, доки мод не визначить період збирання культури. Типово 13." />
+        <text name="dr_guide_settings_18" text="- Продаж за найкращою ціною — головний перемикач очікування піку. Якщо вимкнено, усе продається одразу." />
+        <text name="dr_guide_settings_19" text="- Типовий час продажу — що робитиме новий вихід без власного налаштування: чекатиме піку чи продаватиме одразу." />
+        <text name="dr_guide_settings_20" text="- Створення піддонів — три варіанти: стандартна поведінка (неповні піддони), лише повні піддони (ТИПОВО) або без автоматичного створення." />
+        <text name="dr_guide_settings_21" text="- Частота оновлення меню — зменште її, якщо інтерфейс пригальмовує. У ручному режимі користуйтеся кнопкою оновлення." />
+        <text name="dr_guide_settings_22" text="- Журнал налагодження — записувати докладну активність у log.txt. Вимкніть, щоб зменшити обсяг журналу." />
+
+        <text name="dr_guide_support_title" text="Підтримка" />
+        <text name="dr_guide_support_1" text="## Усунення несправностей" />
+        <text name="dr_guide_support_2" text="- Будівля не відображається. Перевірте охоплення та перемикачі груп. Режим «Поруч» працює лише в межах радіуса, а вимкнена група вилучає свої будівлі з мережі й приховує вкладку." />
+        <text name="dr_guide_support_3" text="- Нічого не доставляється. Переконайтеся, що джерело має режим розподілу, а не утримання, виробничу лінію споживача ввімкнено, а будівлі доступні одна одній за поточного охоплення." />
+        <text name="dr_guide_support_4" text="- Режим «Перемістити до» нічого не переміщує. Спочатку всі одержувачі заблоковані. Відкрийте додаткові виходи й дозвольте потрібного одержувача. Червоний стан «Активний — некоректний» означає, що його ввімкнення створить цикл." />
+        <text name="dr_guide_support_5" text="- Продукт надійшов, але не продався цієї години. Так і задумано: нові надходження чекають один цикл, щоб споживачі мали першість." />
+        <text name="dr_guide_support_6" text="- Тваринницька будівля накопичує яйця чи вовну. Якщо ввімкнено лише повні піддони, продукція накопичується до заповнення цілого піддона. Споживачі можуть брати її під час накопичення, а продаж і зберігання чекають піддона." />
+        <text name="dr_guide_support_7" text="- Виробництво не отримує воду. Вода постачається автоматично, коли ввімкнено відповідний параметр; якщо її бракує, перевірте налаштування." />
+        <text name="dr_guide_support_8" text="- Біля будівлі немає підказки. Підказка клавіші лівої дужки з’являється лише для будівель мережі. Якщо ви вимкнули цю групу, відсутність підказки є нормальною." />
+        <text name="dr_guide_support_9" text="- Мод працює не так, як очікується. Не використовуйте його разом з іншими модами, що перебудовують розподіл: вони втручаються в ту саму систему й конфліктуватимуть. Мод працює зі стандартними будівлями та модифікованими будівлями за схемою GIANTS. Деякі нестандартні будівлі можуть поводитися інакше та впливати на його роботу." />
+        <text name="dr_guide_support_10" text="## Посібники й огляди" />
+        <text name="dr_guide_support_11" text="Посібники й огляди є на моєму YouTube-каналі @AussieSimmer." />
+        <text name="dr_guide_support_12" text="## Повідомлення про помилки" />
+        <text name="dr_guide_support_13" text="Про помилки, побажання та сумісність з іншими модами можна повідомити через issue в моєму репозиторії GitHub:" />
+        <text name="dr_guide_support_14" text="https://github.com/Bones50/FS25-Distribution-Redux" />
+
+        <text name="dr_guide_changelog_title" text="Історія змін" />
+        <text name="dr_guide_changelog_1" text="## v1.1.0.0" />
+        <text name="dr_guide_changelog_2" text="1. Численні виправлення помилок (подробиці на GitHub)." />
+        <text name="dr_guide_changelog_3" text="2. Численні покращення зручності (подробиці на GitHub)." />
+        <text name="dr_guide_changelog_4" text="3. Додано сумісність із багатьма модами й підвищено надійність коду для кращої загальної сумісності (подробиці на GitHub)." />
+        <text name="dr_guide_changelog_5" text="4. Додано вкладку огляду: активність і налаштування розподілу всіх будівель в одному місці. Є фільтри, зокрема показ усіх джерел і виробництв для певного кінцевого продукту." />
+        <text name="dr_guide_changelog_6" text="5. Додано розширене керування входами й виходами: блокування, пріоритети, резерви, цілі запасу та максимальні входи." />
+        <text name="dr_guide_changelog_7" text="6. Додано переміщення й упорядкування продукції між сховищами, наприклад силосами та складами піддонів." />
+        <text name="dr_guide_changelog_8" text="## v1.0.0.2" />
+        <text name="dr_guide_changelog_9" text="1. Перейменування будівель: тепер кожна будівля мережі може отримати власну назву через стандартне меню будівництва. Гра дозволяє це лише для частини будівель, а Distribution Redux — для всіх своїх об’єктів, зокрема силосів, складів, ям і ринків. Мод використовує вашу назву в усьому меню, показуючи початкову нижче для довідки. Тепер навіть вісім однакових теплиць легко розрізнити." />
+        <text name="dr_guide_changelog_10" text="2. Виправлено продукцію гноєсховища та ями для гноївки: раніше вони показували продукт одне одного. Тепер гноєсховище показує лише гній, а яма — лише гноївку." />
+        <text name="dr_guide_changelog_11" text="3. Виправлено входи гноєсховища та ями для гноївки: раніше вони були порожні. Тепер відображаються фактичні надходження — відповідно гній і гноївка." />
+        <text name="dr_guide_changelog_12" text="## v1.0.0.1" />
+        <text name="dr_guide_changelog_13" text="1. Покращено й узгоджено інтерфейс: смуги прокрутки, розташування таблиць і вартість проданої продукції в стовпці продажу." />
+        <text name="dr_guide_changelog_14" text="2. Додано ринки й кіоски до системи розподілу. Будівлі отримали режим «Постачати ринку» для надсилання продукції на розміщений вами ринок. Продаж через власний ринок дає націнку 20%, хоча великий обсяг знижує ціну, як у стандартній грі." />
+        <text name="dr_guide_changelog_15" text="3. Виправлено продаж за найкращою ціною: без історії цін система продавала зарано. Тепер до накопичення власних даних вона використовує ігровий графік цін." />
+        <text name="dr_guide_changelog_16" text="4. Додано режим «Утримувати всередині» й ручне створення піддонів. Продукцію можна зберігати всередині замість автоматичного створення піддонів, а потім випускати вручну з вибором типу й кількості. Доступно на вкладці виробництв і стандартному екрані гри." />
+        <text name="dr_guide_changelog_17" text="## v1.0.0.0" />
+        <text name="dr_guide_changelog_18" text="1. Додано вибір між негайним продажем і очікуванням найкращої ціни." />
+        <text name="dr_guide_changelog_19" text="2. Повністю перебудовано інтерфейс: розділено типи розподілу, а налаштування й довідник об’єднано в меню." />
+        <text name="dr_guide_changelog_20" text="3. Узгоджено роботу розширень силосів. Розширення потрібно розміщувати поруч із силосом відповідного типу; розподіл керується основним силосом, а розширення лише додає місткість." />
+        <text name="dr_guide_changelog_21" text="4. Склади піддонів і тюків тепер показують усі активні піддони мережі, щоб їх можна було налаштувати до надходження. Додано резервування вільного місця: піддони продаються від найдешевших, щоб звільнити місце на наступний цикл. Якщо інший склад має місце, піддони натомість переміщуються туди." />
+        <text name="dr_guide_changelog_22" text="5. Виправлено взаємодію зі складом піддонів: подивіться на піктограму точки завантаження, щоб одразу відкрити сторінку розподілу будівлі." />
+        <text name="dr_guide_changelog_23" text="6. Виправлено залишок невеликої кількості продукції в джерелі після розподілу через неузгодженість часу." />
+        <text name="dr_guide_changelog_24" text="7. Виправлено біогазову установку: продаж метану й електроенергії враховує складність гри, а дигестат правильно обліковується як дохід біогазової установки у фінансах." />
+        <text name="dr_guide_changelog_25" text="8. Деталізовано налаштування: можна окремо додавати чи вилучати силоси, склади піддонів і тваринницькі будівлі. Виробництва завжди реєструються й беруть участь у розподілі, як у стандартній грі." />
+        <text name="dr_guide_changelog_26" text="9. Змінено назви режимів: «Утримувати» залишає продукт у будівлі (раніше «Зберігається»), а «На склад» переміщує його назовні за наявності сховища." />
+        <text name="dr_guide_changelog_27" text="## v0.0.0.1" />
+        <text name="dr_guide_changelog_28" text="Попередній випуск." />
+
+        <!-- ============ end USER GUIDE ============ -->
+
+        <!-- the ANIMAL PANEL, drawn only when an extension registers a provider (API v4).
+             Budgets: the block labels sit in 234-480px columns at 11px, so keep them short. -->
+        <text name="dr_col_animalPanel" text="ТВАРИНИ, КОРМ І ВАРТІСТЬ СТАДА" />
+        <text name="dr_panel_animals" text="ТВАРИНИ" />
+        <text name="dr_panel_health" text="ЗДОРОВ’Я" />
+        <text name="dr_panel_productivity" text="ПРОДУКТИВНІСТЬ" />
+        <text name="dr_panel_na" text="н/д" />
+        <text name="dr_panel_feed" text="КОРМ" />
+        <text name="dr_panel_foodFactor" text="Коефіцієнт корму %s" />
+        <text name="dr_panel_grazing" text="випас" />
+        <text name="dr_panel_noFeedData" text="немає даних про корм" />
+        <text name="dr_panel_herdValue" text="ВАРТІСТЬ СТАДА" />
+        <text name="dr_panel_ofPeak" text="із %s у віці пікової вартості" />
+        <text name="dr_panel_pastPeak" text="пік минув — вартість падає з віком" />
+        <!-- the profit line. Character budget: apProfitLabel is 130px at 11px, so about 20
+             characters; the four breakdown words share 740px with four money figures, so
+             keep each under about 10. -->
+        <text name="dr_panel_profit" text="ОЧІК. ПРИБ. / МІС." />
+        <text name="dr_panel_pfCleared" text="якщо є місце:" />
+        <text name="dr_panel_pfOutputs" text="продукція" />
+        <text name="dr_panel_pfInputs" text="витрати" />
+        <text name="dr_panel_pfAgeing" text="вік" />
+        <text name="dr_panel_pfBirths" text="народження" />
+
+        <!-- the known-problem-mod warning shown once on load -->
+        <text name="dr_modwarn_body" text="УВАГА! Зараз увімкнені моди, які спричиняють відомі проблеми з Distribution Redux. Ви можете продовжити, але швидкодія гри та робота мода не гарантуються, доки ці моди активні. Щоб уникнути цього попередження, вийдіть і завантажте збереження без наведених нижче модів:" />
+    </texts>
+</l10n>

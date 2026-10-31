@@ -1,0 +1,61 @@
+name: Mod quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - validate
+          - test-lua
+          - test-bats
+          - test-localization
+          - check-localization-keys
+          - lint-shell
+          - lint-actionlint
+          - lint-zizmor
+    env:
+      CHECK_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install tools for this check
+        run: bash .github/scripts/install-ci-tools.sh "$CHECK_TARGET"
+      - name: Run check
+        run: make "$CHECK_TARGET"
+
+  localization:
+    name: Localization limits (all languages)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install localization tools
+        run: bash .github/scripts/install-ci-tools.sh check-localization
+      - name: Report all phrases exceeding localization limits
+        run: make check-localization

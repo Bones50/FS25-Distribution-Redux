@@ -70,3 +70,18 @@ About the User Guide (the dr_guide_ keys)
 - Each key is one paragraph. A value starting "## ", "### " or "- " is a heading, a sub-heading or a
   bullet: that marker is STRUCTURE, not words, so keep it exactly and translate only what follows.
 - Do not renumber the keys. The numbers are positions in the guide.
+
+## Development and checks
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for Docker commands for Windows PowerShell,
+Linux and macOS, native dependencies, test coverage and contribution instructions.
+
+```sh
+make docker-check          # All tools inside Docker
+make check                 # Native tools: Lua 5.1
+make check LUA=luajit       # LuaJIT alternative
+```
+
+GitHub Actions runs the same Make targets for Lua/XML validation, Lua and Bats
+regression tests, ShellCheck, actionlint and zizmor. No project Python scripts
+or Python test framework are needed.
