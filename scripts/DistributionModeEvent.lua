@@ -66,11 +66,15 @@ function DistributionModeEvent:readStream(streamId, connection)
 end
 
 function DistributionModeEvent:run(connection)
-    -- received on the server from a client: relay to the other clients
-    if not connection:getIsServer() then
-        g_server:broadcastEvent(self, false, connection)
-    end
     if SmartDistribution == nil then return end
+    -- Relay only resolved objects, with an identity derived by the server.
+    -- A client's local UID may differ and must never become another client's key.
+    if not connection:getIsServer() then
+        if self.placeable == nil then return end
+        local role = (self.role ~= nil and self.role ~= "") and self.role or nil
+        local relay = DistributionModeEvent.new(self.placeable, self.fillTypeIndex, self.mode, role)
+        g_server:broadcastEvent(relay, false, connection)
+    end
     -- A CLIENT prefers the uid STRING: it is the server's own key, it needs no node resolution, and
     -- the placeable may not have finished loading yet. The SERVER prefers the placeable and derives
     -- its own uid from it, so a client can never write state under a key the server does not own.

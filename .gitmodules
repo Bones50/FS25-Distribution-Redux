@@ -1,0 +1,3 @@
+[submodule ".agents/skills/fs25-upstream"]
+	path = .agents/skills/fs25-upstream
+	url = https://github.com/Paint-a-Farm/fs25-skills.git

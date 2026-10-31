@@ -1,0 +1,6 @@
+# The image contains tools only. Source is supplied at run time, read-only.
+**
+!Dockerfile.checks
+!.github/
+!.github/scripts/
+!.github/scripts/install-linters.sh

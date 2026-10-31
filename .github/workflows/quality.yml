@@ -12,18 +12,19 @@ concurrency:
   group: quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  validate:
-    name: Lua and mod assets
+  checks:
+    name: Lua, Bats, ShellCheck, actionlint and zizmor (Docker)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install Lua 5.1
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y lua5.1
-      - name: Validate mod
-        run: python3 tools/check_mod.py --lua lua5.1
+      - name: Build tools and run all checks in a read-only checkout
+        run: make docker-check
