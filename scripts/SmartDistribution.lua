@@ -4065,7 +4065,7 @@ local FAST_FORWARD_GAP_SEC = 4.0    -- hourly ticks closer than this (real secon
 local cycleMoney = nil   -- { sales, biogas, cost, any, ff } while a cycle is open; nil between cycles
 
 local function resetCycleMoney()
-    cycleMoney = { sales = 0, biogas = 0, cost = 0, any = false, ff = SmartDistribution._fastForward == true }
+    cycleMoney = { sales = 0, biogas = 0, cost = 0, pf = 0, any = false, ff = SmartDistribution._fastForward == true }
 end
 
 -- `category` names DR's own summary bucket EXPLICITLY ("cost" / "biogas"); nil keeps the
@@ -4086,6 +4086,8 @@ local function tallyMoney(delta, mt, category)
         cycleMoney.cost = cycleMoney.cost + delta            -- costs arrive as negative deltas
     elseif category == "biogas" then
         cycleMoney.biogas = cycleMoney.biogas + delta
+    elseif category == "pf" then
+        cycleMoney.pf = cycleMoney.pf + delta                -- Precision Farming environmental-score bonus (or penalty, negative)
     elseif PM ~= nil and mt == PM then
         cycleMoney.cost = cycleMoney.cost + delta            -- costs arrive as negative deltas
     elseif BG ~= nil and mt == BG then
@@ -4286,9 +4288,11 @@ function SmartDistribution.emitSummary(acc)
     if acc == nil then return end
     if acc.biogas ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_biogas", "Biogas income: ") .. fmtMoney(acc.biogas)) end
     if acc.sales  ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_sales", "Product sales: ") .. fmtMoney(acc.sales))  end
+    if (acc.pf or 0) > 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_pf", "Environmental bonus: ") .. fmtMoney(acc.pf))
+    elseif (acc.pf or 0) < 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_pfNeg", "Environmental penalty: -") .. fmtMoney(math.abs(acc.pf))) end
     if acc.cost   ~= 0 then SmartDistribution.notify(SmartDistribution.l10n("dr_money_distCost", "Distribution costs: -") .. fmtMoney(math.abs(acc.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
     if DistributionMoneyNotifyEvent ~= nil and DistributionMoneyNotifyEvent.broadcast ~= nil then
-        DistributionMoneyNotifyEvent.broadcast(acc.biogas, acc.sales, acc.cost)   -- MP: mirror the summary to clients
+        DistributionMoneyNotifyEvent.broadcast(acc.biogas, acc.sales, acc.cost, acc.pf)   -- MP: mirror the summary to clients
     end
 end
 
@@ -4301,10 +4305,11 @@ function SmartDistribution.flushCycleSummary()
     -- deferred distribution cost AND the PDS production / biogas pass all land in ONE notification
     -- (they otherwise flush a frame -- and thus an hour -- apart).
     local acc = SmartDistribution._summaryAccum
-    if acc == nil then acc = { sales = 0, biogas = 0, cost = 0 }; SmartDistribution._summaryAccum = acc end
+    if acc == nil then acc = { sales = 0, biogas = 0, cost = 0, pf = 0 }; SmartDistribution._summaryAccum = acc end
     acc.sales  = acc.sales  + cm.sales
     acc.biogas = acc.biogas + cm.biogas
     acc.cost   = acc.cost   + cm.cost
+    acc.pf     = (acc.pf or 0) + (cm.pf or 0)
 end
 
 -- emit the combined summary this many real seconds after the last money tally: long enough that an
@@ -5664,6 +5669,68 @@ function SmartDistribution.bestPriceSellAmount(placeable, ft, mode, storage, lev
     return sell
 end
 
+-- Precision Farming environmental-score sell-price factor (1.0 = no effect).
+-- PF applies its bonus/penalty only when a REAL selling station completes a sale (it wraps
+-- SellingStation.sellFillType). Distribution Redux's direct sales (Sell / Distribute + Sell on silos,
+-- productions and sheds) add the money themselves and never reach that code, so they apply the same
+-- factor here. Returns the price MULTIPLIER (e.g. 1.0962), or 1 when PF is not installed, not readable,
+-- or returns anything implausible.
+-- Declared as a table field, not a local: this file is at Lua's 200-local cap.
+function SmartDistribution.pfSellFactor(farmId)
+    local ok, f = pcall(function()
+        local env = _G["FS25_precisionFarming"]
+        if type(env) ~= "table" then return 1 end
+        local pf = env.g_precisionFarming
+        local es = type(pf) == "table" and pf.environmentalScore or nil
+        if type(es) ~= "table" or es.getSellPriceFactor == nil then return 1 end
+        return es:getSellPriceFactor(farmId)
+    end)
+    -- PF's getSellPriceFactor returns the bonus/penalty as a FRACTION (0.0962 = +9.62%, -0.01 = -1%), not a
+    -- multiplier. Verified in game: environmental score 82.07 -> 0.09620496, and a hand sale paid
+    -- exactly 1.09620496 x litres x station price.
+    if ok and type(f) == "number" and f > -0.5 and f < 1 then
+        f = 1 + f
+        local last = SmartDistribution._pfFactorLast
+        if last == nil or math.abs(last - f) > 0.0005 then
+            SmartDistribution._pfFactorLast = f
+            if Logging ~= nil and Logging.info ~= nil then
+                Logging.info("[Distribution Redux] Precision Farming sell-price factor %.4f now applied to direct sales (farm %s)", f, tostring(farmId))
+            end
+        end
+        return f
+    end
+    return 1
+end
+
+-- PF's own money types for the environmental reward (positive) / penalty (negative). nil if unreadable.
+function SmartDistribution.pfMoneyType(positive)
+    local ok, mt = pcall(function()
+        local env = _G["FS25_precisionFarming"]
+        local es = env.g_precisionFarming.environmentalScore
+        if positive then return es.moneyChangeTypePos end
+        return es.moneyChangeTypeNeg
+    end)
+    if ok and type(mt) == "table" then return mt end
+    return nil
+end
+
+-- Pay a direct sale whose price already includes Precision Farming's environmental factor `pfF`.
+-- The money is booked in the same finance category as before, but split into two changes so the
+-- per-cycle summary can report the environmental bonus on its own line. Field, not a local (200-local cap).
+function SmartDistribution.payDirectSale(total, pfF, farmId, mt)
+    if pfF ~= nil and pfF > 0 and pfF ~= 1 then
+        local base  = total / pfF
+        local bonus = total - base
+        applyMoney(base, farmId, mt)
+        -- Book the bonus under PF's own money type, exactly as PF does on a hand sale (verified in game: a
+        -- second addMoney with type "info_environmentalScoreReward"/"...Penalty", finance statistic "other").
+        -- Falls back to the sale's own type if PF's types cannot be read.
+        applyMoney(bonus, farmId, SmartDistribution.pfMoneyType(bonus >= 0) or mt, "pf")
+    else
+        applyMoney(total, farmId, mt)
+    end
+end
+
 local function sellAmount(p, storage, ft, farmId)
     if S.global.excludedFillTypes[ft] then return end
     local m = resolveMode(p, ft)
@@ -5702,6 +5769,8 @@ local function sellAmount(p, storage, ft, farmId)
     if econ == nil or econ.getPricePerLiter == nil then return end
     local price = econ:getPricePerLiter(ft) or 0
     if price <= 0 then return end
+    local pfF = SmartDistribution.pfSellFactor(farmId)       -- PF environmental score (see pfSellFactor)
+    price = price * pfF
     if SmartDistribution.dryRun then
         log("[dry-run] would sell %d %s for %d", amount, fillTypeName(ft), amount * price)
         return
@@ -5713,7 +5782,7 @@ local function sellAmount(p, storage, ft, farmId)
     ledgerAdd(p, ft, "sold", amount)
     ledgerAdd(p, ft, "money", amount * price)
     local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
-    applyMoney(amount * price, farmId, mt)   -- batched across sleep, settled at wake
+    SmartDistribution.payDirectSale(amount * price, pfF, farmId, mt)   -- batched across sleep, settled at wake
     log("sold %d %s for %d", amount, fillTypeName(ft), amount * price)
 end
 
@@ -5727,12 +5796,14 @@ local function sellProduction(pp, farmId)
         local amount = SmartDistribution.drawableLevel(pp.owningPlaceable, ft, level)   -- keep the reserve back
         if amount > 0 and not S.global.excludedFillTypes[ft] then
             local price = econ:getPricePerLiter(ft) or 0
+            local pfF = SmartDistribution.pfSellFactor(farmId)       -- PF environmental score (see pfSellFactor)
+            price = price * pfF
             if price > 0 then
                 if SmartDistribution.dryRun then
                     log("[dry-run] would sell %d %s for %d", amount, fillTypeName(ft), amount * price)
                 else
                     local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
-                    applyMoney(amount * price, farmId, mt)   -- batched across sleep, settled at wake
+                    SmartDistribution.payDirectSale(amount * price, pfF, farmId, mt)   -- batched across sleep, settled at wake
                     setLevel(pp.storage, ft, level - amount, farmId, -amount)   -- not 0: the reserve stays
 
                     ledgerAdd(pp.owningPlaceable, ft, "sold", amount)
@@ -6428,14 +6499,22 @@ function SmartDistribution.marketSell(station, farmId, ft, liters)
         if after ~= nil then nativePaid = after - before end
     end
     if nativePaid > 0 then
-        tallyMoney(nativePaid, mt)                          -- fold the native base into the batched "Product sales" summary (silent through sleep)
+        -- PF's environmental score is already inside nativePaid (the station applied it); split it out so the
+        -- summary reports it on its own line. The money itself was already paid by the station.
+        local pfFn = SmartDistribution.pfSellFactor(farmId)
+        local pfPart = (pfFn > 0 and pfFn ~= 1) and (nativePaid - nativePaid / pfFn) or 0
+        tallyMoney(nativePaid - pfPart, mt)                 -- fold the native base into the batched "Product sales" summary (silent through sleep)
+        if pfPart ~= 0 then tallyMoney(pfPart, mt, "pf") end
         applyMoney(0.20 * nativePaid, farmId, mt)          -- +20% bonus (silent + tallied)
         log("market sold %d %s: native %d + bonus %d", liters, fillTypeName(ft), math.floor(nativePaid), math.floor(0.20 * nativePaid))
         return nativePaid * 1.20
     end
-    applyMoney(liters * price * 1.20, farmId, mt)          -- native path unavailable / paid nothing: abstract sale, silent + tallied
-    log("market sold %d %s: abstract %d (native price %.4f x1.2)", liters, fillTypeName(ft), math.floor(liters * price * 1.20), price)
-    return liters * price * 1.20
+    -- native path unavailable / paid nothing: abstract sale, silent + tallied. The native path gets PF's
+    -- environmental score from the station itself; this fallback has to add it.
+    local pfF = SmartDistribution.pfSellFactor(farmId)
+    SmartDistribution.payDirectSale(liters * price * 1.20 * pfF, pfF, farmId, mt)
+    log("market sold %d %s: abstract %d (native price %.4f x1.2 x PF %.4f)", liters, fillTypeName(ft), math.floor(liters * price * 1.20 * pfF), price, pfF)
+    return liters * price * 1.20 * pfF
 end
 
 -- ---- manual tipping into an owned market -----------------------------------
@@ -7750,6 +7829,8 @@ local function sellShedLiters(shed, ft, liters, farmId)
     if econ == nil or econ.getPricePerLiter == nil then return 0 end
     local price = econ:getPricePerLiter(ft) or 0
     if price <= 0 then return 0 end
+    local pfF = SmartDistribution.pfSellFactor(farmId)       -- PF environmental score (see pfSellFactor)
+    price = price * pfF
     if SmartDistribution.dryRun then
         log("[dry-run] would sell %d %s (shed) for %d", liters, fillTypeName(ft), liters * price)
         return 0
@@ -7759,7 +7840,7 @@ local function sellShedLiters(shed, ft, liters, farmId)
         ledgerAdd(shed, ft, "sold", drained)
         ledgerAdd(shed, ft, "money", drained * price)
         local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
-        applyMoney(drained * price, farmId, mt)   -- batched across sleep, settled at wake
+        SmartDistribution.payDirectSale(drained * price, pfF, farmId, mt)   -- batched across sleep, settled at wake
         log("sold %d %s (shed) for %d  [%s]", drained, fillTypeName(ft), drained * price, placeableName(shed))
     end
     return drained
@@ -8176,6 +8257,8 @@ local function sellPalletAmount(p, ft, farmId, cap)
     if econ == nil or econ.getPricePerLiter == nil then return end
     local price = econ:getPricePerLiter(ft) or 0
     if price <= 0 then return end
+    local pfF = SmartDistribution.pfSellFactor(farmId)       -- PF environmental score (see pfSellFactor)
+    price = price * pfF
     if SmartDistribution.dryRun then
         log("[dry-run] would sell %d %s (pallets) for %d", level, fillTypeName(ft), level * price)
         return
@@ -8185,7 +8268,7 @@ local function sellPalletAmount(p, ft, farmId, cap)
         ledgerAdd(p, ft, "sold", drained)
         ledgerAdd(p, ft, "money", drained * price)
         local mt = MoneyType ~= nil and (MoneyType.SOLD_PRODUCTS or MoneyType.OTHER) or nil
-        applyMoney(drained * price, farmId, mt)   -- batched across sleep, settled at wake
+        SmartDistribution.payDirectSale(drained * price, pfF, farmId, mt)   -- batched across sleep, settled at wake
         log("sold %d %s (pallets) for %d  [%s]", drained, fillTypeName(ft), drained * price, placeableName(p))
     end
 end
@@ -13701,37 +13784,42 @@ InitEventClass(DistributionMoneyNotifyEvent, "DistributionMoneyNotifyEvent")   -
 function DistributionMoneyNotifyEvent.emptyNew()
     return Event.new(DistributionMoneyNotifyEvent_mt)
 end
-function DistributionMoneyNotifyEvent.new(biogas, sales, cost)
+function DistributionMoneyNotifyEvent.new(biogas, sales, cost, pf)
     local self = DistributionMoneyNotifyEvent.emptyNew()
     self.biogas = biogas or 0
     self.sales  = sales  or 0
     self.cost   = cost   or 0
+    self.pf     = pf     or 0
     return self
 end
 function DistributionMoneyNotifyEvent:writeStream(streamId, connection)
     streamWriteFloat32(streamId, self.biogas)
     streamWriteFloat32(streamId, self.sales)
     streamWriteFloat32(streamId, self.cost)
+    streamWriteFloat32(streamId, self.pf)
 end
 function DistributionMoneyNotifyEvent:readStream(streamId, connection)
     self.biogas = streamReadFloat32(streamId)
     self.sales  = streamReadFloat32(streamId)
     self.cost   = streamReadFloat32(streamId)
+    self.pf     = streamReadFloat32(streamId)
     self:run(connection)
 end
 function DistributionMoneyNotifyEvent:run(connection)
     -- client display only; never relayed onward. Mirrors flushCycleSummary's notifications.
     if self.biogas ~= 0 then SmartDistribution.notify("Biogas income: "     .. fmtMoney(self.biogas)) end
     if self.sales  ~= 0 then SmartDistribution.notify("Product sales: "     .. fmtMoney(self.sales))  end
+    if self.pf     > 0 then SmartDistribution.notify("Environmental bonus: "   .. fmtMoney(self.pf))  end
+    if self.pf     < 0 then SmartDistribution.notify("Environmental penalty: -" .. fmtMoney(math.abs(self.pf))) end
     if self.cost   ~= 0 then SmartDistribution.notify("Distribution costs: -" .. fmtMoney(math.abs(self.cost)), SmartDistribution.COST_NOTIFY_COLOUR) end
 end
 -- server: mirror the just-emitted summary to all clients. No-op in single-player.
-function DistributionMoneyNotifyEvent.broadcast(biogas, sales, cost)
+function DistributionMoneyNotifyEvent.broadcast(biogas, sales, cost, pf)
     if g_currentMission == nil or not g_currentMission:getIsServer() then return end
     local dyn = g_currentMission.missionDynamicInfo
     if dyn == nil or dyn.isMultiplayer ~= true or g_server == nil then return end
-    if (biogas or 0) == 0 and (sales or 0) == 0 and (cost or 0) == 0 then return end
-    g_server:broadcastEvent(DistributionMoneyNotifyEvent.new(biogas, sales, cost))
+    if (biogas or 0) == 0 and (sales or 0) == 0 and (cost or 0) == 0 and (pf or 0) == 0 then return end
+    g_server:broadcastEvent(DistributionMoneyNotifyEvent.new(biogas, sales, cost, pf))
 end
 
 -- cycle ONE production output's distribution mode (per fill type) through the shared
