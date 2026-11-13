@@ -460,6 +460,8 @@
         <text name="dr_money_biogas"    text="Biogas income: " />
         <text name="dr_money_sales"     text="Product sales: " />
         <text name="dr_money_distCost"  text="Distribution costs: -" />
+        <text name="dr_money_pf"        text="Environmental bonus: " />
+        <text name="dr_money_pfNeg"     text="Environmental penalty: -" />
 
         <!-- ================= MISC ENGINE LABELS ================= -->
         <!-- Stands in for the map's water where there is no physical tank to name. -->
