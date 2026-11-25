@@ -44,6 +44,16 @@ end
 
 local KEEP, DISTRIBUTE, SELL, DISTSELL, DISTSTORE, STORE, TRANSFER, DISTMARKET = 0, 1, 2, 3, 4, 5, 6, 7
 local HOLD_INTERNAL_V = 8   -- Hold Internal: keep output as bulk (engine KEEP) but suppress the auto pallet-spawn
+-- "Distribute across biogas plant": a Pumps & Hoses FERMENTER's methane only (5.124). The DLC's pipe feeds
+-- the plant's CHP and DR does nothing else with it -- the only setting that feeds the agenitor in the base
+-- game too. Asset side: MODE.PLANT_DISTRIBUTE.
+local PLANT_V = 9
+
+-- Is this the fermenter's methane (the one output that carries the plant mode)?
+local function isPlantMethane(pl, ft)
+    return pl ~= nil and SD.isPlantRoot ~= nil and SD.isPlantRoot(pl)
+       and SD.isPlantInternal ~= nil and SD.isPlantInternal(pl, ft)
+end
 
 local function vanillaModes()
     local OM = ProductionPoint.OUTPUT_MODE or {}
@@ -127,6 +137,39 @@ local function isSell(pp, ft)
 end
 
 -- per-productionPoint / per-fillType virtual mode (weak so it GCs with the world)
+-- Biogas grid outputs (electricity / methane) are sellDirectly: the engine sells them the instant
+-- they're produced and does NOT register them as distributable/storable outputs, so calling the
+-- vanilla setOutputDistributionMode/setOutputDistribution on them throws "is not an output fillType".
+-- We detect them (scanning the production definitions once per point) to skip that engine write.
+local SELLDIRECT_CACHE = setmetatable({}, { __mode = "k" })   -- pp -> { [ft] = true } for sellDirectly outputs
+local function isSellDirectlyOutput(pp, ft)
+    if pp == nil or ft == nil then return false end
+    local c = SELLDIRECT_CACHE[pp]
+    if c == nil then
+        c = {}
+        if type(pp.productions) == "table" then
+            for _, prod in ipairs(pp.productions) do
+                for _, o in ipairs(prod.outputs or {}) do
+                    if o.sellDirectly and o.type ~= nil then c[o.type] = true end
+                end
+            end
+        end
+        SELLDIRECT_CACHE[pp] = c
+    end
+    return c[ft] == true
+end
+
+-- AUTO-SOLD OUTPUTS HAVE EXACTLY TWO MODES (2026-09-30). An output with no storage cannot be held, stored,
+-- sent to a market or left to wait: whatever consumers do not take this hour has either been sold or is
+-- gone. So the only honest choices are Sell and Distribute + Sell, and every other v-mode collapses onto
+-- Distribute + Sell -- which is also the default, because plain Distribute silently threw the surplus away
+-- and "Hold" sold everything, i.e. both did the opposite of their label. Declared above seedV / getV,
+-- which call it: a local used before its declaration resolves to a nil global (CLAUDE.md 5.44).
+local function sellDirectV(v)
+    if v == SELL then return SELL end
+    return DISTSELL
+end
+
 local VTAB = setmetatable({}, { __mode = "k" })
 
 -- WHICH VTAB ENTRIES ARE MERELY DERIVED, and therefore PROVISIONAL.
@@ -169,6 +212,11 @@ local function seedV(pp, ft)
             tostring(SD._ftTitle ~= nil and SD._ftTitle(ft) or ft),
             tostring(pl ~= nil and pl.uniqueId or "?"), tostring(uid), tostring(raw))
     end
+    if isSellDirectlyOutput(pp, ft) then
+        return (raw == SD.MODE.SELL) and SELL or DISTSELL
+    end
+    -- the fermenter's methane: unset means the plant mode, its default (5.124)
+    if isPlantMethane(pl, ft) and (raw == SD.MODE.INHERIT or raw == SD.MODE.PLANT_DISTRIBUTE) then return PLANT_V end
     if raw == SD.MODE.STORE then return STORE end
     if raw == SD.MODE.DISTRIBUTE_STORE then return DISTSTORE end
     if raw == SD.MODE.DISTRIBUTE_SELL then return DISTSELL end
@@ -196,7 +244,10 @@ end
 
 local function getV(pp, ft)
     local t = VTAB[pp]
-    if t ~= nil and t[ft] ~= nil then return t[ft] end
+    if t ~= nil and t[ft] ~= nil then
+        if isSellDirectlyOutput(pp, ft) then return sellDirectV(t[ft]) end
+        return t[ft]
+    end
     local v = seedV(pp, ft)
     VTAB[pp] = t or {}
     VTAB[pp][ft] = v
@@ -228,27 +279,6 @@ function SD.invalidateSeededVModes()
     SD._vmodeEpoch = (SD._vmodeEpoch or 0) + 1
 end
 
--- Biogas grid outputs (electricity / methane) are sellDirectly: the engine sells them the instant
--- they're produced and does NOT register them as distributable/storable outputs, so calling the
--- vanilla setOutputDistributionMode/setOutputDistribution on them throws "is not an output fillType".
--- We detect them (scanning the production definitions once per point) to skip that engine write.
-local SELLDIRECT_CACHE = setmetatable({}, { __mode = "k" })   -- pp -> { [ft] = true } for sellDirectly outputs
-local function isSellDirectlyOutput(pp, ft)
-    if pp == nil or ft == nil then return false end
-    local c = SELLDIRECT_CACHE[pp]
-    if c == nil then
-        c = {}
-        if type(pp.productions) == "table" then
-            for _, prod in ipairs(pp.productions) do
-                for _, o in ipairs(prod.outputs or {}) do
-                    if o.sellDirectly and o.type ~= nil then c[o.type] = true end
-                end
-            end
-        end
-        SELLDIRECT_CACHE[pp] = c
-    end
-    return c[ft] == true
-end
 
 -- THE ENGINE WRITE MUST NEVER BE ABLE TO LOSE DR'S OWN RECORD.
 --
@@ -280,6 +310,7 @@ end
 -- output flag, and set the mod override -- all with noEventSend, so this never
 -- emits a network event. Callers fire ProductionOutputModeEvent to sync peers.
 local function applyVLocal(pp, ft, v)
+    if isSellDirectlyOutput(pp, ft) then v = sellDirectV(v) end   -- only Sell / Distribute + Sell exist here
     setV(pp, ft, v)
     -- A production's v-mode decides which destination kinds outputDestinationsForMode resolves, so the
     -- Overview's cached DEST / OUT STATUS columns are stale the moment it changes.
@@ -295,20 +326,19 @@ local function applyVLocal(pp, ft, v)
     -- still booked by SmartDistribution.sellDirectProduction.
     if isSellDirectlyOutput(pp, ft) then
         if pl ~= nil then
-            local drMode = M.HOLD
-            if     v == DISTRIBUTE then drMode = M.DISTRIBUTE
-            elseif v == DISTSELL   then drMode = M.DISTRIBUTE_SELL
-            elseif v == DISTSTORE  then drMode = M.DISTRIBUTE_SELL   -- can't store a virtual product: sell the remainder
-            elseif v == DISTMARKET then drMode = M.DISTRIBUTE_SELL   -- no market buffer for a virtual product
-            elseif v == SELL       then drMode = M.SELL
-            elseif v == TRANSFER   then drMode = M.SELL
-            -- KEEP / STORE / HOLD_INTERNAL_V -> HOLD: nothing to store or hold-as-pallets for a virtual product
-            end
+            local drMode = (v == SELL) and M.SELL or M.DISTRIBUTE_SELL
             SD.applyAssetMode(pl, ft, drMode, true, SD.productionRoleOf(pl))
         end
         return
     end
     local store, _, sell = vanillaModes()   -- AUTO_DELIVER (2nd) no longer used: every distribute mode keeps STORE
+    if v == PLANT_V then
+        -- the DLC pipes it; DR only records the choice. setAssetMode's methane hook then switches the
+        -- plant's pipe flag on (applyPlantMethaneRouting), on every machine the change reaches.
+        engineSet(pp, ft, store)
+        if pl ~= nil then SD.applyAssetMode(pl, ft, M.PLANT_DISTRIBUTE, true, SD.productionRoleOf(pl)) end
+        return
+    end
     if v == DISTSELL then
         -- STORE, not AUTO_DELIVER. AUTO_DELIVER hands the output to the engine's own auto-delivery, which
         -- for an output with a delivery target (e.g. a mod's electricity grid) SELLS it before DR's phase-1
@@ -336,6 +366,11 @@ local function applyVLocal(pp, ft, v)
         if econ ~= nil and econ.getPricePerLiter ~= nil then
             local ok, p = pcall(econ.getPricePerLiter, econ, ft)
             hasPrice = ok and type(p) == "number" and p > 0
+        end
+        -- the fermenter's methane reads no market price but has a grid price, which sellRemainder pays; without
+        -- this it fell to the engine's own direct sell, which DR suppresses -- so Sell would sell nothing (5.124)
+        if not hasPrice and isPlantMethane(pl, ft) and SD.gridSellPricePerLiter ~= nil then
+            hasPrice = (SD.gridSellPricePerLiter(ft) or 0) > 0
         end
         if hasPrice then
             engineSet(pp, ft, store)
@@ -518,7 +553,8 @@ end
 -- dialog drive, so the two surfaces always agree.
 local VLABEL = { [KEEP]="Hold", [DISTRIBUTE]="Distribute", [SELL]="Sell",
                  [DISTSELL]="Distribute + Sell", [DISTSTORE]="Distribute + Store", [STORE]="Store",
-                 [TRANSFER]="Market Supply", [DISTMARKET]="Distribute + Market Supply", [HOLD_INTERNAL_V]="Hold Internal" }
+                 [TRANSFER]="Market Supply", [DISTMARKET]="Distribute + Market Supply", [HOLD_INTERNAL_V]="Hold Internal",
+                 [PLANT_V]="Distribute across biogas plant" }
 -- The v-modes are a SEPARATE enum from the asset MODE enum, but they name the same nine things,
 -- so they deliberately reuse the dr_mode_<assetModeId> keys: a translator writes "Distribute +
 -- Sell" once and both surfaces pick it up. VLABEL above stays the English fallback.
@@ -527,7 +563,8 @@ local VLABEL = { [KEEP]="Hold", [DISTRIBUTE]="Distribute", [SELL]="Sell",
 -- aborts the page mid-render and shows an empty list (CLAUDE.md 5.44 / 5.57).
 local VMODE_KEY = { [KEEP]="dr_mode_1", [DISTRIBUTE]="dr_mode_2", [SELL]="dr_mode_4",
                     [DISTSELL]="dr_mode_3", [DISTSTORE]="dr_mode_5", [STORE]="dr_mode_6",
-                    [TRANSFER]="dr_mode_7", [DISTMARKET]="dr_mode_8", [HOLD_INTERNAL_V]="dr_mode_9" }
+                    [TRANSFER]="dr_mode_7", [DISTMARKET]="dr_mode_8", [HOLD_INTERNAL_V]="dr_mode_9",
+                    [PLANT_V]="dr_mode_12" }
 local function vLabel(v)
     local fb = VLABEL[v]
     if fb == nil then return nil end
@@ -539,27 +576,31 @@ end
 -- `hasSell` is false when the Selling setting is off, and the two sell entries drop out of the ring --
 -- the production-side mirror of hasSellEndpoint gating the asset ring. prevVirtual walks THIS function,
 -- so the backward arrow follows automatically and the two orders cannot drift apart.
-local function nextVirtual(v, hasMarket, hasPallets, hasSell)
+-- `hasPlant` (the fermenter's methane only, 5.124) puts "Distribute across biogas plant" at the head of
+-- the ring: every step that would wrap to Hold goes there first, and it steps on to Hold.
+local function nextVirtual(v, hasMarket, hasPallets, hasSell, hasPlant)
     if hasSell == nil then hasSell = true end            -- default: every existing caller is unchanged
+    local wrap = hasPlant and PLANT_V or KEEP
+    if v == PLANT_V         then return KEEP end
     if v == KEEP            then return hasPallets and HOLD_INTERNAL_V or DISTRIBUTE end
     if v == HOLD_INTERNAL_V then return DISTRIBUTE end
     if v == DISTRIBUTE      then return hasSell and SELL or DISTSTORE end
     if v == SELL            then return hasSell and DISTSELL or DISTSTORE end
     if v == DISTSELL        then return DISTSTORE end
     if v == DISTSTORE       then return STORE end
-    if v == STORE           then return hasMarket and TRANSFER or KEEP end
+    if v == STORE           then return hasMarket and TRANSFER or wrap end
     if v == TRANSFER        then return DISTMARKET end
-    if v == DISTMARKET      then return KEEP end
-    return KEEP
+    if v == DISTMARKET      then return wrap end
+    return wrap
 end
 -- One step BACKWARD through the ring nextVirtual defines, for the in-row left arrow.
 -- DERIVED BY WALKING FORWARD and keeping the predecessor, rather than written out in reverse: a second
 -- hand-maintained order would be free to drift from nextVirtual the next time a mode is added, and this
 -- cannot, because it IS nextVirtual. The ring is at most 9 entries, and this runs on a click.
-local function prevVirtual(v, hasMarket, hasPallets, hasSell)
+local function prevVirtual(v, hasMarket, hasPallets, hasSell, hasPlant)
     local cur = KEEP
-    for _ = 1, 12 do                                     -- ring is <=9; the cap is a backstop
-        local nxt = nextVirtual(cur, hasMarket, hasPallets, hasSell)
+    for _ = 1, 12 do                                     -- ring is <=10; the cap is a backstop
+        local nxt = nextVirtual(cur, hasMarket, hasPallets, hasSell, hasPlant)
         if nxt == v then return cur end
         cur = nxt
         if cur == KEEP then break end                    -- full lap without finding v: leave it alone
@@ -586,6 +627,12 @@ end
 
 local function cycleVirtual(pp, ft, back)
     local pl = placeableOf(pp)
+    -- a biogas plant MEMBER's internal product (the CHP's methane input) is the plant's, not a DR mode
+    -- (5.121 B). The fermenter's methane takes the normal ring plus the plant mode (5.124).
+    local hasPlant = isPlantMethane(pl, ft)
+    if not hasPlant and SD.isPlantInternal ~= nil and SD.isPlantInternal(pl, ft) then
+        return getV(pp, ft)
+    end
     -- market modes only when a market can actually take THIS product (a market that doesn't accept, say,
     -- slurry is not an endpoint for it), not merely when some market is in range.
     local hasMarket  = pl ~= nil and SD.hasMarketEndpoint ~= nil and SD.hasMarketEndpoint(pl, ft)
@@ -601,8 +648,13 @@ local function cycleVirtual(pp, ft, back)
     -- step from what the player is LOOKING at, not from the hidden stored value -- otherwise the arrow
     -- appears to jump a mode on a building whose stored choice is currently masked.
     local cur = vSellMask(getV(pp, ft), hasSell)
-    local nv = back and prevVirtual(cur, hasMarket, hasPallets, hasSell)
-                     or nextVirtual(cur, hasMarket, hasPallets, hasSell)
+    local nv
+    if isSellDirectlyOutput(pp, ft) then
+        nv = (cur == SELL) and DISTSELL or SELL          -- a two-entry ring: both arrows toggle
+    else
+        nv = back and prevVirtual(cur, hasMarket, hasPallets, hasSell, hasPlant)
+                  or nextVirtual(cur, hasMarket, hasPallets, hasSell, hasPlant)
+    end
     applyVLocal(pp, ft, nv)                              -- apply on this machine immediately
     if isMP() then                                      -- and sync the rest of the session
         ProductionOutputModeEvent.sendEvent(placeableOf(pp), ft, nv)
@@ -666,6 +718,8 @@ if InGameMenuProductionFrame ~= nil and InGameMenuProductionFrame.populateCellFo
         if self.getSelectedProduction == nil then return end
         local _, pp = self:getSelectedProduction()
         if pp == nil or pp.sortedProductions == nil then return end
+        -- A Pumps & Hoses plant building shows DR's label like every other production (5.124): HOOK 1 sends
+        -- its clicks through DR's ring, which carries "Distribute across biogas plant" for the methane.
         local production = pp.sortedProductions[index]
         if production == nil then return end
         local ft = production.primaryProductFillType
@@ -788,12 +842,20 @@ local function sellRemainder(manager)
                     local sellMode = nil
                     -- sellDirectly outputs (base-game biogas electricity / methane) are grid-sold by
                     -- SmartDistribution.sellDirectProduction; selling them here too would double-book.
-                    if not excluded[ft] and not isSellDirectlyOutput(pp, ft) then
+                    -- a biogas plant's INTERNAL product (methane for its BHKW) is never DR's to sell (5.121 B)
+                    if not excluded[ft] and not isSellDirectlyOutput(pp, ft)
+                       and not (SD.isPlantHeld ~= nil and SD.isPlantHeld(placeableOf(pp), ft)) then
                         if isDistSell(pp, ft) then sellMode = SD.MODE.DISTRIBUTE_SELL
                         elseif isSell(pp, ft) then sellMode = SD.MODE.SELL end   -- plain Sell: mod sells the whole output at best price
                     end
                     if sellMode ~= nil then
-                        local level = pp.storage.getFillLevel ~= nil and pp.storage:getFillLevel(ft) or 0
+                        -- a biogas plant's digestate also sits in its member tank (5.121 B)
+                        local stores = { pp.storage }
+                        if SD.plantOutputStorages ~= nil then
+                            for _, ms in ipairs(SD.plantOutputStorages(placeableOf(pp), ft)) do stores[#stores + 1] = ms end
+                        end
+                        for _, st in ipairs(stores) do
+                        local level = st.getFillLevel ~= nil and st:getFillLevel(ft) or 0
                         if level > 0 then
                             -- Market price if the product has one; otherwise the FLAT grid price (electricity /
                             -- methane read 0 from getPricePerLiter but have a real fixed value). This is what
@@ -814,7 +876,7 @@ local function sellRemainder(manager)
                                 sell = SD.drawableLevel(pl, ft, level)
                             end
                             if not isGrid and pl ~= nil and SD.bestPriceSellAmount ~= nil then
-                                sell = SD.bestPriceSellAmount(pl, ft, sellMode, pp.storage, level, sell)
+                                sell = SD.bestPriceSellAmount(pl, ft, sellMode, st, level, sell)
                             end
                             local price = sell > 0 and unit or 0
                             local ftName = (g_fillTypeManager ~= nil and g_fillTypeManager.getFillTypeNameByIndex ~= nil)
@@ -831,7 +893,7 @@ local function sellRemainder(manager)
                                 else
                                     g_currentMission:addMoney(sell * price, farmId, mt, true, false)
                                 end
-                                pp.storage:setFillLevel(level - sell, ft)
+                                st:setFillLevel(level - sell, ft)
                                 if SD.recordCycleStat ~= nil then
                                     SD.recordCycleStat(pl, ft, "sold", sell)
                                     SD.recordCycleStat(pl, ft, "money", sell * price)   -- so the SOLD /mo column shows the value in brackets, like the other tabs
@@ -842,6 +904,7 @@ local function sellRemainder(manager)
                             else
                                 dbg("prod-hold %s: best-price holding %d L (price %.4f)  [%s]", ftName, level, unit, plName)
                             end
+                        end
                         end
                     end
                 end

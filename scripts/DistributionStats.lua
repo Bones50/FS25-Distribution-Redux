@@ -33,7 +33,7 @@ local yearPos  = 0      -- 0-based index of the bucket currently being filled
 -- of received / distributed: product a player, helper or other mod put in or took out by hand.
 -- "cost" is the distance-based haulage DR charged for moving this product OUT of this building
 -- (source-side; see recordBill / chargeDistribution).
-local FIELDS = { "dist", "sold", "stored", "received", "money", "produced", "consumed", "loaded", "unloaded", "cost" }
+local FIELDS = { "dist", "sold", "stored", "received", "money", "produced", "consumed", "loaded", "unloaded", "cost", "costIn" }
 
 local function newEntry()
     local e = {}
@@ -830,6 +830,10 @@ local function settingsFor(p, ft, role, brole, window)
            and SD.productionOutputVMode ~= nil and SD.productionOutputVModeName ~= nil then
             local v = SD.productionOutputVMode(pp, ft)
             s.mode = (v ~= nil) and SD.productionOutputVModeName(v) or nil
+            -- a plant member's internal product names the plant; the fermenter's methane keeps its v-mode (5.124)
+            if SD.isPlantInternal ~= nil and SD.isPlantInternal(p, ft) and not SD.isPlantRoot(p) then
+                s.mode = SD.l10n("dr_mode_plantInternal", "Biogas plant")
+            end
         elseif SD.modeName ~= nil and SD.resolvedAssetMode ~= nil then
             local pal = (SD.holdLabelFlag ~= nil) and SD.holdLabelFlag(p, ft) or nil
             s.mode = SD.modeName(SD.resolvedAssetMode(p, ft, brole), pal)

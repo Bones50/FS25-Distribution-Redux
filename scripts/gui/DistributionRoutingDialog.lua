@@ -76,6 +76,7 @@ local BLD_ROW_H  = 15
 local BLD_STO_H  = 16
 local BLD_STO_N  = 3
 local BLD_PAD    = 12
+local plantPipedInputs       -- defined with the plant link rows below (5.123)
 local PITCH_PX   = 52      -- the slot pitch, and the ruler the runtime layout measures with
 
 -- The "what moved last cycle" label on a connector, in design px. It is wider than the 56px
@@ -545,6 +546,29 @@ function DistributionRoutingDialog:rebuildAssets()
             function(a) return a.name or a.baseName or a.origName end,
             function(a) return a.roleUid end)
     end
+    -- A BIOGAS PLANT'S CHP AND TANK are routable on their own (5.123) but are never listed as buildings
+    -- elsewhere: added here, after the sort, so the plant view can open on them and walk between them.
+    if SmartDistribution.biogasPlants ~= nil then
+        for _, root in ipairs(SmartDistribution.biogasPlants()) do
+            for _, m in ipairs(SmartDistribution.plantMembers(root)) do
+                if SmartDistribution.isPlantChp(m) or SmartDistribution.isPlantSourceMember(m) then
+                    local uid = SmartDistribution.assetUid(m)
+                    local nm = string.format("%s : %s", SmartDistribution.plantDisplayName(root),
+                                             SmartDistribution.plantTypeLabel(m))
+                    -- THE PRIMARY ROLE, never nil: roleProductSets answers a production's outputs only
+                    -- for role "PRODUCTION", so a nil role sent the CHP down the silo branch and its
+                    -- electricity vanished from the outputs column (reported 2026-10-05).
+                    local cls = (SmartDistribution.primaryRole ~= nil) and SmartDistribution.primaryRole(m)
+                                or (SmartDistribution.isPlantChp(m) and "PRODUCTION" or "HEAP")
+                    self.assets[#self.assets + 1] = {
+                        placeable = m, role = cls, roleUid = uid, isPrimaryRole = true,
+                        name = nm, baseName = nm, origName = SmartDistribution.plantTypeLabel(m),
+                        class = cls,
+                    }
+                end
+            end
+        end
+    end
     if self.assetIndex > #self.assets then self.assetIndex = 1 end
     self:updateAssetButton()
 end
@@ -671,6 +695,12 @@ function DistributionRoutingDialog:gather()
         end
         return t, hidden, all
     end
+    -- A BIOGAS PLANT PIECE (5.123). The CHP and the tank take no DR deliveries -- the CHP is fed by the
+    -- plant's pipes, the tank is source only -- so their inputs are exactly what the PLANT pipes to them,
+    -- and their only sources are the plant's own buildings (plantLinkRows).
+    d.plant = (SmartDistribution.plantRootOf ~= nil) and SmartDistribution.plantRootOf(p) or nil
+    d.member = d.plant ~= nil and SmartDistribution.isPlantMember(p)
+    if d.member then ins = plantPipedInputs(d.plant, p) end
     d.inputs,  d.inHidden,  d.inputsAll  = ordered(ins,  d.inRole)
     d.outputs, d.outHidden, d.outputsAll = ordered(outs, role)
 
@@ -798,7 +828,7 @@ function DistributionRoutingDialog:gather()
     -- uid `inputSourceRows` and `fedBy` were asked about -- the BASE uid, not the role one
     -- (5.77): the feed log and `gatherSources`' own block test are both keyed that way.
     d.uid = uid
-    if d.selIn ~= nil and SmartDistribution.inputSourceRows ~= nil then
+    if d.selIn ~= nil and SmartDistribution.inputSourceRows ~= nil and not d.member then
         if uid ~= nil then
             local ok, rows = pcall(SmartDistribution.inputSourceRows, uid, d.selIn)
             if ok and type(rows) == "table" then d.sources = rows end
@@ -822,6 +852,16 @@ function DistributionRoutingDialog:gather()
             for _, r in ipairs(rows) do d.dests[#d.dests + 1] = r end
         end
     end
+    -- THE PLANT'S OWN BUILDINGS, ahead of the DR rows: the bunker feeding the fermenter, the fermenter
+    -- feeding the CHP / torch / tank. They are the DLC's pipes, not DR routing, so they carry no toggle,
+    -- no rank and take no part in the drag order or the Block all buttons -- which all keep reading
+    -- d.sources / d.dests. Only the drawn columns read the views.
+    d.plantSrc, d.plantDst = self:plantLinkRows(d)
+    d.srcView, d.dstView = {}, {}
+    for _, r in ipairs(d.plantSrc) do d.srcView[#d.srcView + 1] = r end
+    for _, r in ipairs(d.sources)  do d.srcView[#d.srcView + 1] = r end
+    for _, r in ipairs(d.plantDst) do d.dstView[#d.dstView + 1] = r end
+    for _, r in ipairs(d.dests)    do d.dstView[#d.dstView + 1] = r end
     return d
 end
 
@@ -1024,8 +1064,8 @@ function DistributionRoutingDialog:_refreshGraphInner()
     -- the top with the building node alone in the middle. See columnWindow.
     local frIn,  toIn,  offIn,  moIn  = self:columnWindow("In",    #d.inputs,  d.inHidden,  d.selInIdx)
     local frOut, toOut, offOut, moOut = self:columnWindow("Out",   #d.outputs, d.outHidden, d.selOutIdx)
-    local frSrc, toSrc, offSrc, moSrc = self:columnWindow("Src",   #d.sources, 0)
-    local frDst, toDst, offDst, moDst = self:columnWindow("Dst",   #d.dests,   0)
+    local frSrc, toSrc, offSrc, moSrc = self:columnWindow("Src",   #d.srcView, 0)
+    local frDst, toDst, offDst, moDst = self:columnWindow("Dst",   #d.dstView, 0)
 
     -- ---- columns 2 and 6: the products ----
     local inNode, outNode = {}, {}
@@ -1077,7 +1117,17 @@ function DistributionRoutingDialog:_refreshGraphInner()
     -- stopping this", which is exactly true here -- so the word needs no new state.
     local selInBlocked = self:inputBlockedFor(d, d.selIn)
     for i = frSrc, toSrc do
-        local s = d.sources[i]
+        local s = d.srcView[i]
+        if s.plant then
+            local n = self:plantRowNode("Src", offSrc + (i - frSrc) + 1, s, d.selIn, "SRC")
+            if n == nil then break end
+            local tgt = inNode[d.selInIdx or 1]
+            if tgt ~= nil then
+                local moved = (s.moved or 0) > 0
+                self:edge(1, n, tgt, moved and EDGE_COLOUR.FEEDING or EDGE_COLOUR.INTERNAL, nil,
+                          moved and fmtV(s.moved) or nil, nil)
+            end
+        else
         local sStatus = selInBlocked and "BLOCKED" or s.status
         local range = s.farWide and L("dr_rg_farmWide", "farm") or string.format("%dm", math.floor(s.dist or 0))
         -- THE STATUS, which is the one thing this column could not say. It is 5.79's six-state answer
@@ -1108,8 +1158,9 @@ function DistributionRoutingDialog:_refreshGraphInner()
             local tog = self:togFor(s.uid, d.selIn, d.uid, nil, s.name, false)
             self:edge(1, n, tgt, self:edgeColour(sStatus, tog), nil, fed, tog)
         end
+        end
     end
-    self:setNote("Src", frSrc, toSrc, #d.sources, moSrc, 0, offSrc)
+    self:setNote("Src", frSrc, toSrc, #d.srcView, moSrc, 0, offSrc)
 
     -- ---- column 7: the destinations of the selected output ----
     -- `outputDestinations` resolves fedBy only far enough to pick a status, so the litres are
@@ -1119,8 +1170,19 @@ function DistributionRoutingDialog:_refreshGraphInner()
     -- ONE walk for the whole column, and only when there is a column to draw. A destination row
     -- carries no placeable, and the held / capacity pair needs one.
     local dstMap = (frDst <= toDst) and self:uidPlaceables() or nil
+    local kDst = #d.plantDst
     for i = frDst, toDst do
-        local r = d.dests[i]
+        local r = d.dstView[i]
+        if r.plant then
+            local n = self:plantRowNode("Dst", offDst + (i - frDst) + 1, r, d.selOut, "DST")
+            if n == nil then break end
+            local src = outNode[d.selOutIdx or 1]
+            if src ~= nil then
+                local moved = (r.moved or 0) > 0
+                self:edge(GAPS, src, n, r.colour or (moved and EDGE_COLOUR.FEEDING or EDGE_COLOUR.INTERNAL), nil,
+                          moved and fmtV(r.moved) or nil, nil)
+            end
+        else
         local n = self:node("Dst", offDst + (i - frDst) + 1, r.icon, r.name,
             string.format("%dm  %s", math.floor(r.dist or 0), r.statusLabel or ""),
             self:destHoldsText(r.uid, d.selOut, dstMap))
@@ -1128,7 +1190,7 @@ function DistributionRoutingDialog:_refreshGraphInner()
         -- THE FILL ORDER, large, on the node itself, from the moment the window opens. `r.rank`
         -- decides only the COLOUR: the number is the position either way, because that is what
         -- the product will actually do.
-        setRank(n, i, r.rank ~= nil)
+        setRank(n, i - kDst, r.rank ~= nil)
         self:markJump(n, r.uid, nil,
                       string.format(L("dr_rg_jumpRg", "Double-click to route %s"), r.name or ""),
                       "ROUTING", d.selOut, "DST")
@@ -1144,8 +1206,9 @@ function DistributionRoutingDialog:_refreshGraphInner()
             local tog = self:togFor(srcUid, d.selOut, r.uid, d.role, r.name, true)
             self:edge(GAPS, src, n, self:edgeColour(r.status, tog), nil, fed, tog)
         end
+        end
     end
-    self:setNote("Dst", frDst, toDst, #d.dests, moDst, 0, offDst)
+    self:setNote("Dst", frDst, toDst, #d.dstView, moDst, 0, offDst)
 
     -- ---- the internal edges: product <-> building ----
     -- NO LANE on either of these. `lane` exists to tell one shared ENDPOINT from another, and with
@@ -1307,7 +1370,9 @@ function DistributionRoutingDialog:outModeText(d, ft)
     local SD, p = SmartDistribution, d.placeable
     local pp = (SD.productionPointOf ~= nil) and SD.productionPointOf(p) or nil
     local name
-    if pp ~= nil and (SD.usesVMode == nil or SD.usesVMode(p, ft))
+    if SD.isPlantInternal ~= nil and SD.isPlantInternal(p, ft) and not SD.isPlantRoot(p) then   -- a member's plant product (5.124)
+        name = SD.l10n("dr_mode_plantInternal", "Biogas plant")
+    elseif pp ~= nil and (SD.usesVMode == nil or SD.usesVMode(p, ft))
        and SD.productionOutputVMode ~= nil and SD.productionOutputVModeName ~= nil then
         local okv, v = pcall(SD.productionOutputVMode, pp, ft)
         if okv and v ~= nil then
@@ -1987,6 +2052,190 @@ end
 -- tanks are different containers, so one figure cannot serve both -- that is 5.107f's finding, and
 -- it is the reason this is two rows rather than one. A row with nothing to say is omitted rather
 -- than showing a zero, so a pure receiver gets one row and not a blank second.
+-- ---- A BIOGAS PLANT'S OWN LINKS (5.123) -------------------------------------------------------
+-- The dialog shows the selected building the ordinary way. What a plant adds is its PIPES: the other
+-- buildings of the plant appear among its sources and destinations -- the feed bunker feeding the
+-- fermenter, the fermenter feeding the CHP / gas torch / liquid manure tank -- each with what moved over
+-- that pipe in the LAST COMPLETED CYCLE, from the per-piece ledger the BIOGAS tab reads (5.122). They are
+-- the DLC's links, not DR routing, so they carry no toggle and no rank and stay out of the drag order and
+-- the Block all buttons. A double click on one re-points the dialog at it (the bunker and the torch are
+-- configured on the fermenter's row, so they route the fermenter).
+
+local function plantPieceShort(p, root)
+    local n = nil
+    if p ~= nil and p.getName ~= nil then
+        local ok, v = pcall(p.getName, p)
+        if ok and type(v) == "string" and v ~= "" then n = v end
+    end
+    n = n or SmartDistribution.plantTypeLabel(p)
+    local rn = SmartDistribution.plantDisplayName(root)
+    if type(rn) == "string" and rn ~= "" and n:sub(1, #rn) == rn then
+        local rest = n:sub(#rn + 1):gsub("^%s*:?%s*", "")
+        if rest ~= "" then n = rest end
+    end
+    return n
+end
+
+-- One piece's own flow of one product over the last cycle.
+local function pieceFlow(p, ft, field)
+    local key = (SmartDistribution.plantLocalUid ~= nil) and SmartDistribution.plantLocalUid(p) or nil
+    if key == nil or ft == nil or SmartDistribution.uidWindowStats == nil then return 0 end
+    local ok, st = pcall(SmartDistribution.uidWindowStats, key, ft, "hour")
+    if ok and type(st) == "table" and type(st[field]) == "number" then return st[field] end
+    return 0
+end
+
+-- What a piece holds of one product: its silo storages, else its production buffer.
+local function pieceHeld(p, ft)
+    local held, any = 0, false
+    local sp = p ~= nil and p.spec_silo or nil
+    for _, st in ipairs(sp ~= nil and sp.storages or {}) do
+        local v = type(st.fillLevels) == "table" and st.fillLevels[ft] or nil
+        if v ~= nil then held = held + v; any = true end
+    end
+    if not any then
+        local pp = (SmartDistribution.productionPointOf ~= nil) and SmartDistribution.productionPointOf(p) or nil
+        local v = pp ~= nil and pp.storage ~= nil and type(pp.storage.fillLevels) == "table" and pp.storage.fillLevels[ft] or nil
+        if v ~= nil then held = v; any = true end
+    end
+    return any and held or nil
+end
+
+local function siloHolds(p, ft)
+    local sp = p ~= nil and p.spec_silo or nil
+    for _, st in ipairs(sp ~= nil and sp.storages or {}) do
+        if (type(st.fillTypes) == "table" and st.fillTypes[ft] ~= nil)
+           or (type(st.capacities) == "table" and st.capacities[ft] ~= nil)
+           or (type(st.fillLevels) == "table" and st.fillLevels[ft] ~= nil) then return true end
+    end
+    return false
+end
+
+local function productionInputs(p)
+    local set = {}
+    local pp = (SmartDistribution.productionPointOf ~= nil) and SmartDistribution.productionPointOf(p) or nil
+    for ft in pairs(pp ~= nil and pp.inputFillTypeIds or {}) do set[ft] = true end
+    return set
+end
+
+-- What the plant pipes INTO a member: the CHP's own inputs (its methane), and for the tank whatever the
+-- fermenter makes that the tank can hold (its digestate). Assigned to the forward declaration at the top.
+function plantPipedInputs(root, p)
+    local SD = SmartDistribution
+    if SD.isPlantChp(p) then return productionInputs(p) end
+    local set = {}
+    local rpp = (SD.productionPointOf ~= nil) and SD.productionPointOf(root) or nil
+    for ft in pairs(rpp ~= nil and rpp.outputFillTypeIds or {}) do
+        if not SD.isPlantInternal(root, ft) and siloHolds(p, ft) then set[ft] = true end
+    end
+    return set
+end
+
+local TORCH_BURNING = { 0.95, 0.65, 0.20, 1 }
+
+---The plant rows for the two outer columns of `d`: { sources }, { destinations }.
+function DistributionRoutingDialog:plantLinkRows(d)
+    local src, dst = {}, {}
+    local SD = SmartDistribution
+    local root, p = d.plant, d.placeable
+    if root == nil or p == nil then return src, dst end
+    local L = function(k, fb) return SD.l10n(k, fb) end
+    local pipe = L("dr_rg_plantPipe", "Plant pipe")
+    local function row(piece, ft, moved, status, colour)
+        return {
+            plant = true, p = piece, name = plantPieceShort(piece, root),
+            icon = (SD.assetIconFile ~= nil) and SD.assetIconFile(piece) or nil,
+            moved = moved, liters = pieceHeld(piece, ft), statusLabel = status or pipe, colour = colour,
+        }
+    end
+    local T = SD.PLANT_TYPE
+    local members = SD.plantMembers(root)
+    local function ofType(t)
+        local out = {}
+        for _, m in ipairs(members) do if SD.plantType(m) == t then out[#out + 1] = m end end
+        return out
+    end
+
+    if SD.isPlantRoot(p) then
+        -- feeds: the bunker that holds the product pipes it into the fermenter
+        if d.selIn ~= nil then
+            for _, b in ipairs(ofType(T.BUNKER)) do
+                if siloHolds(b, d.selIn) then src[#src + 1] = row(b, d.selIn, pieceFlow(b, d.selIn, "dist")) end
+            end
+        end
+        if d.selOut ~= nil then
+            if SD.isPlantInternal(root, d.selOut) then
+                -- the methane: piped to the CHP only on "Distribute across biogas plant" (the base game's
+                -- rule, 5.124); the gas torch burns the excess in every mode while the burner is on
+                local onPlant = SD.plantMethaneOnPlant(root, d.selOut)
+                for _, c in ipairs(ofType(T.BHKW)) do
+                    if onPlant and productionInputs(c)[d.selOut] then
+                        dst[#dst + 1] = row(c, d.selOut, pieceFlow(c, d.selOut, "received"))
+                    end
+                end
+                for _, t in ipairs(ofType(T.TORCH)) do
+                    local off = SD.torchDisabled ~= nil and SD.torchDisabled(t)
+                    local burning, pct = false, 0.9
+                    if SD.torchReading ~= nil then
+                        local ok, held, cap, thr, p2 = pcall(SD.torchReading, t)
+                        if ok and type(cap) == "number" then
+                            burning = (not off) and cap > 0 and held >= thr
+                            pct = p2 or pct
+                        end
+                    end
+                    local status
+                    if off then status = L("dr_torch_off", "Off - burner switched off")
+                    elseif burning then status = L("dr_torch_burning", "Burning")
+                    else status = string.format(L("dr_torch_idle", "Idle - lights above %d%%"), math.floor(pct * 100 + 0.5)) end
+                    local r = row(t, d.selOut, nil, status,
+                                  burning and TORCH_BURNING or (off and EDGE_COLOUR.OUT_OF_RANGE or EDGE_COLOUR.INTERNAL))
+                    r.liters = nil
+                    dst[#dst + 1] = r
+                end
+            else
+                -- the digestate: piped on to the liquid manure tank
+                for _, k in ipairs(ofType(T.TANK)) do
+                    if siloHolds(k, d.selOut) then
+                        dst[#dst + 1] = row(k, d.selOut, pieceFlow(k, d.selOut, "received"))
+                    end
+                end
+            end
+        end
+    elseif SD.isPlantChp(p) or SD.isPlantSourceMember(p) then
+        -- the CHP's methane and the tank's digestate both come from the fermenter
+        if d.selIn ~= nil then src[#src + 1] = row(root, d.selIn, pieceFlow(p, d.selIn, "received")) end
+    end
+    return src, dst
+end
+
+---Draw one plant row into slot `slot` of column `key`.
+function DistributionRoutingDialog:plantRowNode(key, slot, r, ft, side)
+    local n = self:node(key, slot, r.icon, r.name, r.statusLabel, r.liters ~= nil and holdsText(r.liters, nil) or "")
+    if n == nil then return nil end
+    if key == "Dst" then setRank(n, nil, false) end
+    local SD = SmartDistribution
+    local target = r.p
+    if not (SD.isPlantRoot(target) or SD.isPlantChp(target) or SD.isPlantSourceMember(target)) then
+        target = SD.plantRootOf(target)
+    end
+    self:markJump(n, SD.assetUid(target), target,
+                  string.format(SD.l10n("dr_rg_jumpRg", "Double-click to route %s"), r.name or ""),
+                  "ROUTING", ft, side)
+    return n
+end
+
+-- The BIOGAS tab's Advanced button: the routing graph on the piece that is selected, where that piece
+-- routes on its own (the fermenter, the CHP, the tank), otherwise on the fermenter.
+function SmartDistribution.openPlantOverview(p)
+    if p == nil or SmartDistribution.openRoutingDialog == nil then return false end
+    local root = SmartDistribution.plantRootOf(p)
+    if root == nil then return false end
+    local target = p
+    if not (SmartDistribution.isPlantRoot(p) or SmartDistribution.isPlantChp(p)
+            or SmartDistribution.isPlantSourceMember(p)) then target = root end
+    return SmartDistribution.openRoutingDialog(target, nil, nil, nil)
+end
+
 function DistributionRoutingDialog:buildingStorageRows(d)
     local out = {}
     if d == nil then return out end
@@ -2259,13 +2508,19 @@ end
 function DistributionRoutingDialog:dstSlotAt(posX, posY)
     local d = self._data
     if d == nil then return nil end
-    local from, to, base = self:columnWindow("Dst", #d.dests, 0)
+    -- over the drawn VIEW, whose first k rows are the plant's own buildings (not draggable); the
+    -- answer is an index into d.dests, the list the drag reorders
+    local k = #(d.plantDst or {})
+    local from, to, base = self:columnWindow("Dst", k + #d.dests, 0)
     for i = from, to do
         local el = self["rgDst" .. (base + (i - from) + 1)]
         if el ~= nil and el.absPosition ~= nil and el.absSize ~= nil and el:getIsVisible() then
             local x, y = el.absPosition[1], el.absPosition[2]
             local w, h = el.absSize[1], el.absSize[2]
-            if posX >= x and posX <= x + w and posY >= y and posY <= y + h then return i end
+            if posX >= x and posX <= x + w and posY >= y and posY <= y + h then
+                if i <= k then return nil end
+                return i - k
+            end
         end
     end
     return nil
@@ -2301,7 +2556,9 @@ end
 function DistributionRoutingDialog:paintDragOrder()
     local d, order = self._data, self._dragOrder
     if d == nil or order == nil then return end
-    local from, to, base = self:columnWindow("Dst", #order, 0)
+    local plantDst = d.plantDst or {}
+    local k = #plantDst
+    local from, to, base = self:columnWindow("Dst", k + #order, 0)
     for gi = 1, EDGES do
         for si = 1, EDGE_SEGS do
             local e = self["rgE" .. GAPS .. "_" .. ((gi - 1) * EDGE_SEGS + si)]
@@ -2311,9 +2568,14 @@ function DistributionRoutingDialog:paintDragOrder()
         local t = self["rgTog" .. GAPS .. "_" .. gi]; if t ~= nil then t:setVisible(false) end
     end
     local dstMap = self._dragMap
-    for i = from, to do
+    for vi = from, to do
+        local slot = base + (vi - from) + 1
+        if vi <= k then
+            if self:plantRowNode("Dst", slot, plantDst[vi], d.selOut, "DST") == nil then break end
+        else
+        local i = vi - k
         local r = order[i]
-        local n = self:node("Dst", base + (i - from) + 1, r.icon, r.name,
+        local n = self:node("Dst", slot, r.icon, r.name,
             string.format("%dm  %s", math.floor(r.dist or 0), r.statusLabel or ""),
             self:destHoldsText(r.uid, d.selOut, dstMap), i == self._dragAt)
         if n == nil then break end
@@ -2322,6 +2584,7 @@ function DistributionRoutingDialog:paintDragOrder()
         -- as EXPLICIT throughout a drag -- the moment the button is released every one of these
         -- is stored, so previewing them as "measured" would be the wrong promise.
         setRank(n, i, true)
+        end
     end
 end
 

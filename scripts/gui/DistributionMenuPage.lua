@@ -66,7 +66,8 @@ function DistributionMenuPage:refreshGroupTabs()
     local labels, cur = {}, 1
     for i, t in ipairs(list) do
         labels[i] = t.label
-        if type(t.entry) == "table" and t.entry.page == self then cur = i end
+        -- an ALIAS page (BIOGAS's storage-template half, 5.122) is the same tab as its entry's page
+        if type(t.entry) == "table" and (t.entry.page == self or t.entry.alias == self) then cur = i end
     end
     self.currentTab = cur
     -- Flag off: no labels, so drawPageTabs suppresses the strip and gives the header band back to
@@ -83,7 +84,7 @@ function DistributionMenuPage:selectPageTab(i)
     local target = t.entry.page
     -- Already here: goToPage would still fire a page change, closing and reopening this very frame
     -- for nothing -- which on these pages means a full re-enumeration.
-    if target == nil or target == self then return end
+    if target == nil or target == self or t.entry.alias == self then return end
     local menu = SmartDistribution._menu
     if menu ~= nil and menu.goToPage ~= nil then pcall(menu.goToPage, menu, target) end
 end

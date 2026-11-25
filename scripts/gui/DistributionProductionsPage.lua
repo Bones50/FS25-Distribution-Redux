@@ -953,7 +953,12 @@ function DistributionProductionsPage:rebuildAssets()
         -- A pass-through store keeps a PRODUCTION role of its own when it still has a genuine line (the
         -- DriveIn's SILAGE -> SILAGE_ADDITIVE), so it arrives here as an ordinary role row -- no special
         -- case needed. This replaces the tab-level test that stood in for roles before they existed.
-        if a.class == "PRODUCTION" then
+        -- A Pumps & Hoses plant (its fermenter is the root) has a tab of its own, the P&H BIOGAS tab,
+        -- which draws each of its buildings; listing the whole plant here as well only confused it. A
+        -- bought single-placeable biogas plant has no plant root and stays on this tab.
+        local plant = SmartDistribution.isPlantRoot ~= nil and a.placeable ~= nil
+            and SmartDistribution.isPlantRoot(a.placeable)
+        if a.class == "PRODUCTION" and not plant then
             self.assets[#self.assets + 1] = a
         end
     end
@@ -1213,6 +1218,14 @@ function DistributionProductionsPage:onFrameOpen()
         end
     end
     self:setSoundSuppressed(false)
+    -- A JUMP THAT ARRIVED BEFORE THIS PAGE OPENED (DistributionMenu:focusAsset leaves it here). Honoured
+    -- AFTER the default row-1 selection, so the jump wins whichever order the tab switch and the
+    -- selection happen in -- the switch's timing is in stripped base code and cannot be read.
+    local pend = self._pendingSelect
+    if pend ~= nil then
+        self._pendingSelect = nil
+        self:selectPlaceable(pend.placeable, pend.role)
+    end
 end
 
 -- One shared frame tick driving the ping-pong scroll of the overflowing input strips. It only moves /
@@ -1581,9 +1594,11 @@ function DistributionProductionsPage:selectPlaceable(placeable)
     self:selectAsset(target)
     self:setSoundSuppressed(true)
     if self.assetList ~= nil then
-        if self.assetList.setSelectedIndex ~= nil then
-            pcall(function() self.assetList:setSelectedIndex(target) end)
-        end
+        -- setSelectedItem, the list's REAL selection call. setSelectedIndex does not exist on a SmoothList
+        -- (6.30), so the list kept its old row and the next focus entry re-announced THAT row through
+        -- onListSelectionChanged -- the jump landed on another building, footer included. Reported from
+        -- Production Redux's "Open in Distribution Redux" (2026-10-20): the Advanced button was missing.
+        pcall(function() self.assetList:setSelectedItem(1, target) end)
         pcall(function() FocusManager:setFocus(self.assetList) end)
     end
     self:setSoundSuppressed(false)

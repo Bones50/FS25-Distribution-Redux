@@ -3,7 +3,7 @@
      loads; 110 matches the current patch and silences the version notice. -->
 <modDesc descVersion="111">
     <author>Bones</author>
-    <version>1.1.0.5</version>
+    <version>1.1.0.6</version>
 
     <title>
         <en>Distribution Redux</en>
@@ -253,6 +253,7 @@ v1.0.0.1
         <sourceFile filename="scripts/gui/DistributionSettingsPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionStoragePage.lua"/>
         <sourceFile filename="scripts/gui/DistributionProductionsPage.lua"/>
+        <sourceFile filename="scripts/gui/DistributionBiogasPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionOverviewPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionHelpPage.lua"/>
         <sourceFile filename="scripts/gui/DistributionSpawnDialog.lua"/>

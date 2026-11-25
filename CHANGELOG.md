@@ -1,6 +1,16 @@
 # CHANGELOG
 
-Changelog Last updated: 17/09/2026
+Changelog Last updated: 25/11/2026
+<h2><b>1.1.0.6 Release Candidate</b></h2>
+
+Added
+1) Support for Pumps and Hoses. BGA plants added through the mod have their own tab now. Each plant can be selected and all buildings within the plant will be shown on the list. Advanced will show all the materials moving through the plant as well as input and output sources/destinations. There is a new output setting that allows material to be used only within the BGA plant, rather than distirbuted normally.
+2) Burner switch for each BGA plant (on the P&H Biogas tab). Switched off, the gas torch never burns methane.
+3) Pumps and Hoses plants no longer appear on the Productions tab, and looking at a fermenter opens the P&H Biogas tab.
+4) Silos built near a BGA plant stay ordinary silos instead of disappearing into the plant.
+5) DR API v16 to support Production Redux, including the distribution cost recorded at the receiving building.
+
+
 <h2><b>1.1.0.5 Release Candidate</b></h2>
 
 Added

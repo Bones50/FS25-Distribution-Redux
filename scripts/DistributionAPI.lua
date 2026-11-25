@@ -38,6 +38,7 @@
 --   SmartDistribution.API.unregisterOverviewTab(modName)               -- v13
 --   content.page on registerOverviewTab, a PAGE the tab navigates to   -- v15
 --   SmartDistribution.API.overviewTabs() / selectOverviewTab(i)        -- v15
+--   SmartDistribution.API.openBuilding(placeable)                      -- v16
 --
 --   A PAGE CONVENTION, not a function to call (v14): a page added with addMenuPage may
 --   define  page:stepPageTabBy(delta) -> boolean  to have the menu's A and D keys step
@@ -87,7 +88,7 @@ if SmartDistribution == nil then
 end
 
 SmartDistribution.API = SmartDistribution.API or {}
-SmartDistribution.API.VERSION = 15
+SmartDistribution.API.VERSION = 16
 
 -- name -> { fn = function, strikes = n }. Kept as an ARRAY too, so call order is
 -- registration order and therefore predictable rather than pairs()-random.
@@ -1008,6 +1009,16 @@ end
 function SmartDistribution.API.selectOverviewTab(i)
     if SmartDistribution.selectOverviewTab == nil then return false end
     local ok, res = pcall(SmartDistribution.selectOverviewTab, i)
+    return ok and res == true
+end
+
+---OPEN A BUILDING'S OWN DR PAGE (v16), from inside DR's menu. Added for Production Redux, whose page is
+-- information only while DR runs and carries a button to the building's DR page (where every control
+-- lives). Wraps jumpMenuToAsset, which picks the tab from the building's class and selects it -- the path
+-- the Overview's double-click already uses (5.37). Takes a PLACEABLE. Returns true if it went.
+function SmartDistribution.API.openBuilding(placeable)
+    if placeable == nil or SmartDistribution.jumpMenuToAsset == nil then return false end
+    local ok, res = pcall(SmartDistribution.jumpMenuToAsset, placeable)
     return ok and res == true
 end
 

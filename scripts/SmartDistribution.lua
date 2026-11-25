@@ -287,7 +287,7 @@ end
 local INF = math.huge
 
 -- ---- enums -----------------------------------------------------------------
-local MODE = { INHERIT = 0, HOLD = 1, DISTRIBUTE = 2, DISTRIBUTE_SELL = 3, SELL = 4, DISTRIBUTE_STORE = 5, STORE = 6, TRANSFER_MARKET = 7, DISTRIBUTE_MARKET = 8, HOLD_INTERNAL = 9, STORE_TO = 10, DISTRIBUTE_STORE_TO = 11 }
+local MODE = { INHERIT = 0, HOLD = 1, DISTRIBUTE = 2, DISTRIBUTE_SELL = 3, SELL = 4, DISTRIBUTE_STORE = 5, STORE = 6, TRANSFER_MARKET = 7, DISTRIBUTE_MARKET = 8, HOLD_INTERNAL = 9, STORE_TO = 10, DISTRIBUTE_STORE_TO = 11, PLANT_DISTRIBUTE = 12 }
 local REACH = { INHERIT = 0, PROXIMITY = 1, FARM_WIDE = 2 }
 local PART  = { ALL = 1, VANILLA_ONLY = 2, NONE = 3 }
 SmartDistribution.MODE, SmartDistribution.REACH, SmartDistribution.PARTICIPATION = MODE, REACH, PART
@@ -509,6 +509,8 @@ end
 local function setLevel(storage, ft, level, farmId, delta)
     local depth = SmartDistribution._selfWrite or 0
     SmartDistribution._selfWrite = depth + 1
+    -- the BIOGAS tab's per-piece ledger sees DR's own writes here (5.122); one map lookup otherwise
+    local before = (type(storage.fillLevels) == "table") and (storage.fillLevels[ft] or 0) or nil
     if storage.setFillLevel ~= nil then
         storage:setFillLevel(level, ft)                 -- [CONFIRMED] (level, fillType)
     elseif storage.addFillLevel ~= nil and delta ~= nil then
@@ -517,6 +519,9 @@ local function setLevel(storage, ft, level, farmId, delta)
         storage.fillLevels[ft] = level
     end
     SmartDistribution._selfWrite = depth
+    if before ~= nil and SmartDistribution.notePlantFlow ~= nil then
+        pcall(SmartDistribution.notePlantFlow, storage, ft, (storage.fillLevels[ft] or 0) - before, true)
+    end
 end
 
 -- ---- production-point helper ----------------------------------------------
@@ -891,8 +896,572 @@ function SmartDistribution.extensionParentFor(storage)
     return SmartDistribution._extParentMap[storage]
 end
 
+-- ============================================================================
+-- BIOGAS PLANTS (Pumps & Hoses DLC): ONE BUILDING MADE OF SEVERAL PLACEABLES (CLAUDE.md 5.121 B)
+--
+-- The DLC joins placeables into a plant around a ROOT (the fermenter): each member carries a
+-- `sandboxPlaceable` spec pointing at it (`sandboxPlaceableRoot`), and the root has `sandboxIsRoot`.
+-- DR treats the plant as ONE building keyed by the root: members stop being DR buildings of their own
+-- (isEnrolled), their silo storages fold into the root (parentExtensionStorages), anything a member
+-- consumes is plant-internal (resolveMode -> HOLD), and the root's demand is delivered into its bunker.
+--
+-- MEMBERSHIP IS THE DLC's, NEVER A DR RADIUS: a DR proximity test would eventually disagree with it.
+-- THE SPEC ALONE IS NOT MEMBERSHIP -- measured 2026-10-01, ordinary silos (Main Farm, Farm North...)
+-- carry it too with type 1 and no root. Only `sandboxIsRoot` or a non-nil `sandboxPlaceableRoot` count.
+-- sandboxType (measured): 1 eligible silo, 2 fermenter (root), 3 BHKW, 4 feed bunker, 5 gas torch,
+-- 6 liquid manure tank.
+-- Fields, never locals: the main chunk is at the 200-local ceiling (1.1).
+SmartDistribution.PLANT_SPEC = "spec_pdlc_pumpsAndHosesPack.sandboxPlaceable"
+SmartDistribution.PLANT_TYPE = { ROOT = 2, BHKW = 3, BUNKER = 4, TORCH = 5, TANK = 6 }
+-- THE PLANT'S OWN BUILDING TYPES. The DLC also ADOPTS any ordinary silo built inside a plant's radius
+-- (type 1: a pig food silo, a methane tank, a Unia Karma feed bin -- reported 2026-10-19), giving it a
+-- root and the "BGA (1) :" name prefix. Those are not plant buildings to DR: they stay ordinary DR silos.
+-- Only these types are members; anything else, a future type included, keeps being its own building.
+SmartDistribution.PLANT_MEMBER_TYPES = { [3] = true, [4] = true, [5] = true, [6] = true }
+
+function SmartDistribution.plantSpec(p)
+    if p == nil then return nil end
+    return p[SmartDistribution.PLANT_SPEC] or p.spec_sandboxPlaceable
+end
+
+-- The root placeable of the plant p belongs to (p itself for the root), or nil when p is in no plant.
+function SmartDistribution.plantRootOf(p)
+    local sp = SmartDistribution.plantSpec(p)
+    if sp == nil then return nil end
+    if sp.sandboxIsRoot == true then return p end
+    if not SmartDistribution.PLANT_MEMBER_TYPES[sp.sandboxType or -1] then return nil end
+    local r = sp.sandboxPlaceableRoot
+    if type(r) == "table" and r.rootNode ~= nil then return r end
+    return nil
+end
+
+function SmartDistribution.isPlantRoot(p)
+    local sp = SmartDistribution.plantSpec(p)
+    return sp ~= nil and sp.sandboxIsRoot == true
+end
+
+-- A member that is NOT the root. These are not DR buildings: the root speaks for the whole plant.
+function SmartDistribution.isPlantMember(p)
+    local sp = SmartDistribution.plantSpec(p)
+    if sp == nil or sp.sandboxIsRoot == true then return false end
+    if not SmartDistribution.PLANT_MEMBER_TYPES[sp.sandboxType or -1] then return false end
+    local r = sp.sandboxPlaceableRoot
+    return type(r) == "table" and r.rootNode ~= nil
+end
+
+-- The root's members (never the root itself), from the DLC's own child list. A child that no longer
+-- points back at this root is skipped, so a stale list can never claim another plant's building.
+function SmartDistribution.plantMembers(root)
+    local out = {}
+    local sp = SmartDistribution.plantSpec(root)
+    if sp == nil or sp.sandboxIsRoot ~= true then return out end
+    for _, c in pairs(sp.sandboxChildren or {}) do
+        if type(c) == "table" and c ~= root and c.rootNode ~= nil
+           and SmartDistribution.plantRootOf(c) == root then
+            out[#out + 1] = c
+        end
+    end
+    return out
+end
+
+function SmartDistribution.plantType(p)
+    local sp = SmartDistribution.plantSpec(p)
+    return sp ~= nil and sp.sandboxType or nil
+end
+
+-- Every SILO storage a member holds (the V-BIO / DOB bunker, the liquid manure tank). These belong to
+-- the plant, so they fold into the root. A member's PRODUCTION buffer (the BHKW's methane) does not:
+-- that is the plant's own internal plumbing, never stock DR may touch.
+function SmartDistribution.plantMemberStorages(root)
+    local out = {}
+    for _, m in ipairs(SmartDistribution.plantMembers(root)) do
+        local sp = m.spec_silo
+        -- the liquid manure TANK is a DR source of its own with its own mode (5.123), so it is not the root's
+        if sp ~= nil and sp.storages ~= nil and SmartDistribution.plantType(m) ~= SmartDistribution.PLANT_TYPE.TANK then
+            for _, s in ipairs(sp.storages) do out[#out + 1] = s end
+        end
+    end
+    return out
+end
+
+-- Fill types the plant uses INTERNALLY: anything a member production consumes (the BHKW's methane).
+-- They are piped between members by the DLC, so DR must never route them anywhere.
+function SmartDistribution.plantInternalFillTypes(root)
+    local set = {}
+    for _, m in ipairs(SmartDistribution.plantMembers(root)) do
+        local mpp = getProductionPoint(m)
+        if mpp ~= nil and type(mpp.inputFillTypeIds) == "table" then
+            for ft in pairs(mpp.inputFillTypeIds) do set[ft] = true end
+        end
+    end
+    return set
+end
+
+function SmartDistribution.isPlantInternal(p, ft)
+    if ft == nil then return false end
+    local root = SmartDistribution.plantRootOf(p)
+    if root == nil then return false end
+    return SmartDistribution.plantInternalFillTypes(root)[ft] == true
+end
+
+-- Where DR delivers a feed: a member BUNKER that holds it ("the fermenter is fed from the V-BIO"), else
+-- nil -- the caller then delivers into the fermenter's own buffer. The liquid manure TANK is deliberately
+-- not an intake: it also stores the plant's digestate, and filling it with manure would choke the output.
+function SmartDistribution.plantIntakeStorages(root, ft)
+    local out = {}
+    for _, m in ipairs(SmartDistribution.plantMembers(root)) do
+        if SmartDistribution.plantType(m) == SmartDistribution.PLANT_TYPE.BUNKER and m.spec_silo ~= nil then
+            for _, s in ipairs(m.spec_silo.storages or {}) do
+                -- inlined (storageSupports is a local declared far below this): any of the three tables
+                local holds = (type(s.fillTypes) == "table" and s.fillTypes[ft] ~= nil)
+                           or (type(s.capacities) == "table" and s.capacities[ft] ~= nil)
+                           or (type(s.fillLevels) == "table" and s.fillLevels[ft] ~= nil)
+                if holds then out[#out + 1] = s end
+            end
+        end
+    end
+    return out
+end
+
+-- Member storages holding the plant's OUTPUT ft (digestate piped to the tank "across plant"), so the
+-- store / market / sell phases reach it as well as the fermenter's buffer. Empty for anything outside a
+-- plant, so every other production pays one table lookup. Never an internal product: those are HOLD.
+function SmartDistribution.plantOutputStorages(p, ft)
+    local out = {}
+    if ft == nil or not SmartDistribution.isPlantRoot(p) then return out end
+    if SmartDistribution.isPlantInternal(p, ft) then return out end
+    for _, s in ipairs(SmartDistribution.plantMemberStorages(p)) do
+        if type(s.fillLevels) == "table" and (s.fillLevels[ft] or 0) > 0 then out[#out + 1] = s end
+    end
+    return out
+end
+
+-- The placeable a flow is BOOKED to: a member's flows belong to its plant (the BHKW's electricity sale
+-- shows on the plant), everything else to itself.
+function SmartDistribution.ledgerOwner(p)
+    if SmartDistribution.isPlantMember(p) then return SmartDistribution.plantRootOf(p) end
+    return p
+end
+
+-- ---- MEMBERS THAT ARE DR SOURCES OF THEIR OWN (2026-10-05, CLAUDE.md 5.123) ----
+-- The LIQUID MANURE TANK has its own output mode: it is a DR building again, but SOURCE ONLY -- never a
+-- delivery target (every sink test still refuses a member), and its flows still book to the plant
+-- (ledgerOwner). Its storages no longer fold into the root, so the fermenter's digestate mode governs the
+-- fermenter's own buffer and the tank's mode governs the tank.
+function SmartDistribution.isPlantSourceMember(p)
+    return SmartDistribution.isPlantMember(p)
+       and SmartDistribution.plantType(p) == SmartDistribution.PLANT_TYPE.TANK
+end
+
+-- The CHP (BHKW): its electricity is an auto-sold output with the normal Sell / Distribute + Sell pair,
+-- and on Distribute + Sell it is offered to consumers before the rest is sold. It is NOT enrolled -- its
+-- methane input is the plant's internal plumbing -- only its virtual output is a source.
+function SmartDistribution.isPlantChp(p)
+    return SmartDistribution.isPlantMember(p)
+       and SmartDistribution.plantType(p) == SmartDistribution.PLANT_TYPE.BHKW
+end
+
+-- ---- THE FERMENTER'S METHANE: the normal production ring + "Distribute across biogas plant" (5.124) ----
+-- Matches the base game exactly (measured 2026-10-06, DR off): ONLY the DLC's "distribute across biogas
+-- plant" output setting sends methane to the CHP (agenitor). Plain Distribute reaches other productions
+-- but never the agenitor, Sell sells it, Store keeps it in the fermenter. So the fermenter's methane takes
+-- the ordinary production ring, with one extra mode at its head, stored as MODE.PLANT_DISTRIBUTE on the
+-- root under the methane fill type. That mode -- and an unset methane, its default -- means "the DLC's
+-- pipe carries it, DR does nothing": resolveMode answers HOLD for it (isPlantHeld). Every other mode is
+-- DR's to act on exactly as on any production, and the pipe flag is switched OFF for it.
+function SmartDistribution.plantMethaneOnPlant(root, ft)
+    local uid = root ~= nil and SmartDistribution.assetUid(root) or nil
+    local a = uid ~= nil and S.assets[uid] or nil
+    local m = a ~= nil and a[ft] or nil
+    return m == nil or m == MODE.INHERIT or m == MODE.PLANT_DISTRIBUTE
+end
+
+-- Is this product the plant's own business, i.e. NOT DR's to route? A member's internal product always
+-- is (the CHP's methane input); the fermenter's methane only while it is on the plant mode.
+function SmartDistribution.isPlantHeld(p, ft)
+    if not SmartDistribution.isPlantInternal(p, ft) then return false end
+    if SmartDistribution.isPlantRoot(p) then return SmartDistribution.plantMethaneOnPlant(p, ft) end
+    return true
+end
+
+-- THE TORCH. Turning the burner off raises the torch's light threshold out of reach rather than touching
+-- the DLC's code (it is encrypted). The original value is kept on the spec so it is restored exactly and
+-- so the BIOGAS tab can still draw where the torch would light. UNVERIFIED IN GAME: that the DLC reads
+-- fermenterPercentageToRun live rather than once at load.
+SmartDistribution.TORCH_OFF_PCT = 100
+function SmartDistribution.torchBasePct(ts)
+    if ts == nil then return 0.9 end
+    local v = ts._drOrigPct or ts.fermenterPercentageToRun
+    return type(v) == "number" and v or 0.9
+end
+
+function SmartDistribution.plantMethaneFt(root)
+    for ft in pairs(SmartDistribution.plantInternalFillTypes(root)) do return ft end
+    return nil
+end
+
+-- THE BURNER SWITCH (5.124): one setting per plant, ON by default. It is the last resort in EVERY
+-- methane mode: whatever the mode leaves in the fermenter above the torch's light level is burned.
+-- Stored on each TORCH under the methane fill type -- HOLD_INTERNAL = off, nothing stored = on -- so
+-- persistence and the MP mode event carry it with no new plumbing, and setAssetMode's methane hook
+-- re-applies the torches the moment it changes, on every machine.
+function SmartDistribution.torchMethaneFt()
+    if g_fillTypeManager == nil or g_fillTypeManager.getFillTypeIndexByName == nil then return nil end
+    return g_fillTypeManager:getFillTypeIndexByName("METHANE")
+end
+
+function SmartDistribution.plantTorches(root)
+    local out = {}
+    if root == nil then return out end
+    for _, m in ipairs(SmartDistribution.plantMembers(root)) do
+        if SmartDistribution.plantType(m) == SmartDistribution.PLANT_TYPE.TORCH then out[#out + 1] = m end
+    end
+    return out
+end
+
+function SmartDistribution.torchDisabled(torch)
+    local ft = SmartDistribution.torchMethaneFt()
+    local uid = (torch ~= nil and ft ~= nil) and SmartDistribution.assetUid(torch) or nil
+    local a = uid ~= nil and S.assets[uid] or nil
+    return a ~= nil and a[ft] == MODE.HOLD_INTERNAL
+end
+
+function SmartDistribution.plantHasTorch(root)
+    return #SmartDistribution.plantTorches(root) > 0
+end
+
+function SmartDistribution.plantBurnerOn(root)
+    for _, t in ipairs(SmartDistribution.plantTorches(root)) do
+        if not SmartDistribution.torchDisabled(t) then return true end
+    end
+    return false
+end
+
+function SmartDistribution.setPlantBurner(root, on)
+    local ft = SmartDistribution.torchMethaneFt()
+    if ft == nil then return end
+    for _, t in ipairs(SmartDistribution.plantTorches(root)) do
+        SmartDistribution.applyAssetMode(t, ft, on and MODE.INHERIT or MODE.HOLD_INTERNAL, false)
+    end
+end
+
+-- THE PIPE FLAG FOLLOWS THE METHANE MODE (5.124). The DLC pipes a fermenter output to the plant's other
+-- buildings only while it is in `outputFillTypeIdsAutoDistribution` (ft -> true, saved as
+-- <autoDistributionFillType>). On the plant mode DR puts methane in that set; on every other mode it takes
+-- it out, so the methane stays in the fermenter for DR to distribute / sell / store -- the base game's own
+-- behaviour for those modes. Other flags (digestate) are never touched. Reasserted every pass, so a flag
+-- changed behind DR's back is put right within the hour. UNVERIFIED that the DLC reads the set live.
+function SmartDistribution.applyPlantMethaneRouting(root)
+    local pp = getProductionPoint(root)
+    if pp == nil then return end
+    local ft = SmartDistribution.plantMethaneFt(root)
+    if ft == nil or pp.outputFillTypeIds == nil or not pp.outputFillTypeIds[ft] then return end
+    local want = SmartDistribution.plantMethaneOnPlant(root, ft)
+    if want then
+        if type(pp.outputFillTypeIdsAutoDistribution) ~= "table" then pp.outputFillTypeIdsAutoDistribution = {} end
+        if pp.outputFillTypeIdsAutoDistribution[ft] == nil then pp.outputFillTypeIdsAutoDistribution[ft] = true end
+    elseif type(pp.outputFillTypeIdsAutoDistribution) == "table" and pp.outputFillTypeIdsAutoDistribution[ft] ~= nil then
+        pp.outputFillTypeIdsAutoDistribution[ft] = nil
+    end
+end
+
+-- Apply every plant's methane mode to its torches (and keep its methane routed to the plant). Cheap (one
+-- placeable walk), called at the top of each pass, after loading and whenever a methane mode is written,
+-- on every machine (the fields are harmless on a client).
+function SmartDistribution.applyPlantTorches()
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return end
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil and SmartDistribution.isPlantRoot(p) then
+            pcall(SmartDistribution.applyPlantMethaneRouting, p)
+        end
+        if p.rootNode ~= nil and SmartDistribution.plantType(p) == SmartDistribution.PLANT_TYPE.TORCH
+           and SmartDistribution.isPlantMember(p) then
+            local ts = SmartDistribution.torchSpec(p)
+            if ts ~= nil and type(ts.fermenterPercentageToRun) == "number" then
+                if ts._drOrigPct == nil then ts._drOrigPct = ts.fermenterPercentageToRun end
+                local want = SmartDistribution.torchDisabled(p) and SmartDistribution.TORCH_OFF_PCT or ts._drOrigPct
+                if ts.fermenterPercentageToRun ~= want then ts.fermenterPercentageToRun = want end
+            end
+        end
+    end
+end
+
+-- ---- THE BIOGAS TAB: each building of a plant on its own (5.122) -------------------------------------
+-- Everywhere else the plant is ONE building (above). The BIOGAS tab takes it apart again so the player
+-- can see what happens INSIDE it: each piece shows its OWN storage and its OWN flows. Two mechanisms,
+-- both scoped so the rest of DR is untouched:
+--   * PLANT-LOCAL VIEW. While `_plantLocal` is raised, the root stops folding its members' storages in
+--     (parentExtensionStorages) and the root's window figures come from its own local ledger key. Raised
+--     ONLY around the biogas pages' own calls (withPlantLocal), never inside the hourly pass.
+--   * A PER-PIECE FLOW LEDGER. Every write to a plant piece's storage -- DR's (setLevel) and everyone
+--     else's (the Storage hook: pipes, the production itself, a player's trailer) -- is noted against the
+--     piece, classified at the end of the pass and booked under the piece's LOCAL key: the member's own
+--     uid, or `<root uid>#plant` for the fermenter (its plain uid is the whole plant's). Only received /
+--     consumed / produced / dist are ever written there -- never sold or money -- so no sales total, and
+--     no Overview row (members are not enumerated, the suffixed key matches no building), can double count.
+
+SmartDistribution.PLANT_LOCAL_SUFFIX = "#plant"
+SmartDistribution.TORCH_SPEC = "spec_pdlc_pumpsAndHosesPack.sandboxPlaceableTorch"
+
+-- The key a piece's OWN figures are booked under.
+function SmartDistribution.plantLocalUid(p)
+    if p == nil then return nil end
+    local u = SmartDistribution.assetUid(p)
+    if u == nil then return nil end
+    if SmartDistribution.isPlantRoot(p) then return u .. SmartDistribution.PLANT_LOCAL_SUFFIX end
+    return u
+end
+
+function SmartDistribution.isPlantLocal()
+    return (SmartDistribution._plantLocal or 0) > 0
+end
+
+-- Run fn with the plant-local view raised. The memo epoch is bumped on the way IN and OUT: the root's
+-- pool / pad / share answers differ between the two views, and a memo filled in one must never be read
+-- in the other. Depth-counted and restored, never decremented, so a throw cannot leave it raised.
+function SmartDistribution.withPlantLocal(fn, ...)
+    local depth = SmartDistribution._plantLocal or 0
+    if depth == 0 then SmartDistribution.invalidateMenuMemos() end
+    SmartDistribution._plantLocal = depth + 1
+    local res = { pcall(fn, ...) }
+    SmartDistribution._plantLocal = depth
+    if depth == 0 then SmartDistribution.invalidateMenuMemos() end
+    if not res[1] then error(res[2], 0) end
+    return unpack(res, 2)
+end
+
+function SmartDistribution.torchSpec(p)
+    if p == nil then return nil end
+    return p[SmartDistribution.TORCH_SPEC] or p.spec_sandboxPlaceableTorch
+end
+
+-- Which page template draws this piece: "PRODUCTION" (fermenter, CHP) or "STORAGE" (feed bunker, tank,
+-- gas torch -- the torch has no storage of its own and is drawn on the storage template, see the page).
+function SmartDistribution.plantPieceKind(p)
+    if p ~= nil and getProductionPoint(p) ~= nil then return "PRODUCTION" end
+    return "STORAGE"
+end
+
+-- The plant's buildings, fermenter first, then in the order the plant works: feed in, power out, then
+-- the storage and the torch. Unknown member types go last, in the DLC's own order.
+SmartDistribution.PLANT_PIECE_ORDER = { [2] = 1, [4] = 2, [3] = 3, [6] = 4, [5] = 5 }
+function SmartDistribution.plantPieces(root)
+    if root == nil or not SmartDistribution.isPlantRoot(root) then return {} end
+    local out = { root }
+    local members = SmartDistribution.plantMembers(root)
+    local idx = {}
+    for i, m in ipairs(members) do idx[m] = i end
+    table.sort(members, function(a, b)
+        local ra = SmartDistribution.PLANT_PIECE_ORDER[SmartDistribution.plantType(a) or -1] or 99
+        local rb = SmartDistribution.PLANT_PIECE_ORDER[SmartDistribution.plantType(b) or -1] or 99
+        if ra ~= rb then return ra < rb end
+        return idx[a] < idx[b]
+    end)
+    for _, m in ipairs(members) do out[#out + 1] = m end
+    return out
+end
+
+-- Every plant on the map this farm may use, roots only, in a stable order (by name, then uid).
+function SmartDistribution.biogasPlants()
+    local out = {}
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return out end
+    local farmId = (g_currentMission.getFarmId ~= nil) and g_currentMission:getFarmId() or nil
+    for _, p in ipairs(ps.placeables) do
+        if p.rootNode ~= nil and SmartDistribution.isPlantRoot(p) and SmartDistribution._farmCanUse(p, farmId) then
+            out[#out + 1] = p
+        end
+    end
+    table.sort(out, function(a, b)
+        local na, nb = SmartDistribution.plantDisplayName(a), SmartDistribution.plantDisplayName(b)
+        if na ~= nb then return na < nb end
+        return tostring(SmartDistribution.assetUid(a)) < tostring(SmartDistribution.assetUid(b))
+    end)
+    return out
+end
+
+-- The plant's own name ("BGA (1)"), from the DLC; falls back to the fermenter's building name.
+function SmartDistribution.plantDisplayName(root)
+    local sp = SmartDistribution.plantSpec(root)
+    local n = sp ~= nil and sp.sandboxRootName or nil
+    if type(n) == "string" then
+        n = n:gsub("^%s+", ""):gsub("%s+$", "")
+        if n ~= "" then return n end
+    end
+    return placeableName(root) or "?"
+end
+
+-- What the piece IS, from the DLC's sandboxType, for the list's second line.
+SmartDistribution.PLANT_TYPE_KEYS = {
+    [2] = { "dr_plant_fermenter", "Fermenter" },
+    [3] = { "dr_plant_chp",       "Combined heat and power (CHP)" },
+    [4] = { "dr_plant_bunker",    "Feed bunker" },
+    [5] = { "dr_plant_torch",     "Gas torch" },
+    [6] = { "dr_plant_tank",      "Liquid manure tank" },
+}
+function SmartDistribution.plantTypeLabel(p)
+    local k = SmartDistribution.PLANT_TYPE_KEYS[SmartDistribution.plantType(p) or -1]
+    if k == nil then return SmartDistribution.l10n("dr_plant_piece", "Plant building") end
+    return SmartDistribution.l10n(k[1], k[2])
+end
+
+-- ---- the per-piece flow ledger ----
+SmartDistribution._plantFlowPending = {}     -- localUid -> ft -> { inN, outN, inD, outD }
+SmartDistribution._plantFlowPiece   = {}     -- localUid -> piece placeable
+SmartDistribution.PLANT_MAP_SEC     = 30     -- the piece map also rebuilds on this real-time interval,
+                                             -- because DLC membership can resolve after a count change
+
+-- storage -> plant piece, for every storage a plant piece owns (its silo storages and its production
+-- buffer). Built over the RAW storages, never through the plant-local switch: membership is a fact.
+function SmartDistribution.plantPieceOf(storage)
+    if storage == nil then return nil end
+    local ps = g_currentMission ~= nil and g_currentMission.placeableSystem or nil
+    if ps == nil or ps.placeables == nil then return nil end
+    local n = #ps.placeables
+    local now = (getTimeSec ~= nil) and getTimeSec() or 0
+    if SmartDistribution._plantPieceMap == nil or SmartDistribution._plantPieceCount ~= n
+       or (now - (SmartDistribution._plantPieceAt or 0)) > SmartDistribution.PLANT_MAP_SEC then
+        local map = setmetatable({}, { __mode = "k" })
+        for _, p in ipairs(ps.placeables) do
+            if p.rootNode ~= nil and SmartDistribution.plantRootOf(p) ~= nil then
+                if p.spec_silo ~= nil then
+                    for _, s in ipairs(p.spec_silo.storages or {}) do map[s] = p end
+                end
+                local pp = getProductionPoint(p)
+                if pp ~= nil and pp.storage ~= nil then map[pp.storage] = p end
+            end
+        end
+        SmartDistribution._plantPieceMap   = map
+        SmartDistribution._plantPieceCount = n
+        SmartDistribution._plantPieceAt    = now
+    end
+    return SmartDistribution._plantPieceMap[storage]
+end
+
+-- Note one write to a storage. byDR = it came through DR's own setLevel. Server only; a storage that is
+-- not a plant piece's returns after one table lookup.
+function SmartDistribution.notePlantFlow(storage, ft, delta, byDR)
+    if ft == nil or delta == nil or delta == 0 then return end
+    if g_currentMission == nil or not g_currentMission:getIsServer() then return end
+    local piece = SmartDistribution.plantPieceOf(storage)
+    if piece == nil then return end
+    local key = SmartDistribution.plantLocalUid(piece)
+    if key == nil then return end
+    local a = SmartDistribution._plantFlowPending[key]
+    if a == nil then a = {}; SmartDistribution._plantFlowPending[key] = a end
+    SmartDistribution._plantFlowPiece[key] = piece
+    local e = a[ft]
+    if e == nil then e = { inN = 0, outN = 0, inD = 0, outD = 0 }; a[ft] = e end
+    if byDR then
+        if delta > 0 then e.inD = e.inD + delta else e.outD = e.outD - delta end
+    else
+        if delta > 0 then e.inN = e.inN + delta else e.outN = e.outN - delta end
+    end
+end
+
+-- Pure: turn one piece's noted writes into ledger fields. `ins` / `outs` are the piece's production
+-- inputs and outputs (empty for a storage piece). A production's own writes ARE its work: an input
+-- falling by itself is CONSUMED and an output rising by itself is PRODUCED. Anything else coming in is
+-- RECEIVED (a pipe, DR, a trailer) and anything else going out is DISTRIBUTED (piped on, taken by DR).
+function SmartDistribution.classifyPlantFlow(e, isIn, isOut)
+    local f = { received = 0, consumed = 0, produced = 0, dist = 0 }
+    if isIn then
+        f.received = e.inN + e.inD
+        f.consumed = e.outN
+        f.dist     = e.outD
+    elseif isOut then
+        f.produced = e.inN
+        f.received = e.inD
+        f.dist     = e.outN + e.outD
+    else
+        f.received = e.inN + e.inD
+        f.dist     = e.outN + e.outD
+    end
+    return f
+end
+
+-- A production piece's inputs and outputs, the FULL recipe (the fermenter rewrites its running line
+-- to only the feeds present, so baseInputs is read as well).
+function SmartDistribution.plantPieceRecipe(p)
+    local ins, outs = {}, {}
+    local pp = getProductionPoint(p)
+    if pp == nil then return ins, outs end
+    for _, prod in ipairs(pp.productions or {}) do
+        for _, i in ipairs(prod.baseInputs or {}) do if i.type ~= nil then ins[i.type] = true end end
+        for _, i in ipairs(prod.inputs or {})     do if i.type ~= nil then ins[i.type] = true end end
+        for _, o in ipairs(prod.outputs or {})    do if o.type ~= nil then outs[o.type] = true end end
+    end
+    return ins, outs
+end
+
+-- An output the game sells on the spot never touches a storage (the CHP's electricity), so its writes
+-- cannot be seen. Estimated from what the piece consumed: whole cycles of the first line that makes it.
+function SmartDistribution.plantDirectSellEstimate(p, consumedByFt)
+    local out = {}
+    local pp = getProductionPoint(p)
+    if pp == nil then return out end
+    local direct = pp.outputFillTypeIdsDirectSell or {}
+    for _, prod in ipairs(pp.productions or {}) do
+        local cycles = nil
+        for _, i in ipairs(prod.inputs or {}) do
+            if i.type ~= nil and (i.amount or 0) > 0 then
+                local c = (consumedByFt[i.type] or 0) / i.amount
+                if cycles == nil or c < cycles then cycles = c end
+            end
+        end
+        if cycles ~= nil and cycles > 0 then
+            for _, o in ipairs(prod.outputs or {}) do
+                if o.type ~= nil and direct[o.type] and out[o.type] == nil then
+                    out[o.type] = cycles * (o.amount or 0)
+                end
+            end
+        end
+    end
+    return out
+end
+
+-- Fold the noted writes into this cycle's ledger under each piece's local key. Called beside
+-- flushManualTransfers, inside the pass.
+function SmartDistribution.flushPlantFlows(acc)
+    local pend, pieces = SmartDistribution._plantFlowPending, SmartDistribution._plantFlowPiece
+    SmartDistribution._plantFlowPending, SmartDistribution._plantFlowPiece = {}, {}
+    if acc == nil then return end
+    for key, byFt in pairs(pend) do
+        local p = pieces[key]
+        local ins, outs = SmartDistribution.plantPieceRecipe(p)
+        local consumed = {}
+        local a = acc[key]
+        for ft, e in pairs(byFt) do
+            local f = SmartDistribution.classifyPlantFlow(e, ins[ft] == true, outs[ft] == true and not ins[ft])
+            consumed[ft] = f.consumed
+            for field, v in pairs(f) do
+                if v > 0.5 then
+                    if a == nil then a = {}; acc[key] = a end
+                    local t = a[ft]
+                    if t == nil then t = { dist = 0, sold = 0, stored = 0, received = 0 }; a[ft] = t end
+                    t[field] = (t[field] or 0) + v
+                end
+            end
+        end
+        for ft, v in pairs(SmartDistribution.plantDirectSellEstimate(p, consumed)) do
+            if v > 0.5 then
+                if a == nil then a = {}; acc[key] = a end
+                local t = a[ft]
+                if t == nil then t = { dist = 0, sold = 0, stored = 0, received = 0 }; a[ft] = t end
+                t.produced = (t.produced or 0) + v
+            end
+        end
+    end
+end
+
 local function parentExtensionStorages(p)
     local out = {}
+    -- a biogas plant's root owns its members' silo storages (see the block above) -- except on the
+    -- BIOGAS tab, which shows each building's own storage (withPlantLocal)
+    if SmartDistribution.isPlantRoot(p) and (SmartDistribution._plantLocal or 0) == 0 then
+        for _, s in ipairs(SmartDistribution.plantMemberStorages(p)) do out[#out + 1] = s end
+    end
     local set = p ~= nil and EXT_BY_PARENT[p] or nil
     if set == nil then return out end
     -- exclude the silo's OWN storages (base slurry storages are flagged isExtension too); done at read
@@ -2722,6 +3291,7 @@ end
 
 local function ledgerAdd(placeable, ft, field, amount)
     if cycleAcc == nil or placeable == nil or ft == nil or amount == nil or amount <= 0 then return end
+    placeable = SmartDistribution.ledgerOwner(placeable)      -- a biogas plant member books to its plant (5.121 B)
     local uid = getUid(placeable)
     if uid == nil then return end
     local a = cycleAcc[uid]; if a == nil then a = {}; cycleAcc[uid] = a end
@@ -2756,6 +3326,10 @@ end
 
 local function isEnrolled(p)
     if not S.master then return false end
+    -- a biogas plant member is not a DR building; its plant's ROOT speaks for it (5.121 B) -- except the
+    -- liquid manure tank, which has its own output mode and is a SOURCE of its own (5.123). It is still
+    -- never a delivery target: every sink test refuses a member outright.
+    if SmartDistribution.isPlantMember(p) and not SmartDistribution.isPlantSourceMember(p) then return false end
     local part = S.global.participation
     if part == PART.NONE then return false end
     if part == PART.VANILLA_ONLY then return VANILLA_ELIGIBLE[getAssetClass(p)] == true end
@@ -2795,6 +3369,12 @@ function SmartDistribution.sellMask(m)
 end
 
 local function resolveMode(p, ft, role)
+    -- A biogas plant's INTERNAL product (the methane its BHKW burns) is piped between members by the DLC
+    -- and is not DR's to route: HOLD here keeps it out of distribute, store, Move To, market and sell
+    -- alike, since every one of those phases gates on this resolver (5.121 B). The fermenter's methane is
+    -- held only while it is on "Distribute across biogas plant"; any other mode is DR's (5.124). The plant
+    -- spec test comes first so every building outside a plant pays one table lookup.
+    if SmartDistribution.plantSpec(p) ~= nil and SmartDistribution.isPlantHeld(p, ft) then return MODE.HOLD end
     local uid = SmartDistribution.roleUid(p, role)
     local a = uid ~= nil and S.assets[uid] or nil
     if a ~= nil and a[ft] ~= nil and a[ft] ~= MODE.INHERIT then return SmartDistribution.sellMask(a[ft]) end
@@ -2867,6 +3447,13 @@ function SmartDistribution.setAssetMode(uid, ft, mode)
     if SmartDistribution.invalidateMenuMemos ~= nil then SmartDistribution.invalidateMenuMemos() end
     S.assets[uid] = S.assets[uid] or {}
     S.assets[uid][ft] = mode
+    -- a biogas plant's methane mode decides whether its gas torch may light (5.123): apply it at once,
+    -- on every machine this reaches (the server via the MP event as well as the one that clicked)
+    if SmartDistribution.applyPlantTorches ~= nil and g_fillTypeManager ~= nil
+       and g_fillTypeManager.getFillTypeIndexByName ~= nil
+       and ft == g_fillTypeManager:getFillTypeIndexByName("METHANE") then
+        pcall(SmartDistribution.applyPlantTorches)
+    end
 end
 function SmartDistribution.getAssetMode(uid, ft)
     local a = S.assets[uid]
@@ -3453,6 +4040,14 @@ end
 -- a source may hand out ft only if enrolled, not excluded, and mode distributes
 local function canSourceDistribute(p, ft, role)
     if SmartDistribution.isMarket(p) then return false end   -- a market's buffer is sell-only; it can never feed the network back
+    -- A biogas plant's CHP is not enrolled, but its auto-sold electricity is a source on Distribute + Sell
+    -- (5.123): offered from this cycle's virtual stock, exactly as a stand-alone plant's would be.
+    if SmartDistribution.isPlantChp(p) then
+        local root = SmartDistribution.plantRootOf(p)
+        return root ~= nil and isEnrolled(root) and not S.global.excludedFillTypes[ft]
+           and SmartDistribution.isSellDirectlyFillType(p, ft)
+           and SmartDistribution.sellDirectMode(p, ft) == MODE.DISTRIBUTE_SELL
+    end
     if not isEnrolled(p) then return false end
     if S.global.excludedFillTypes[ft] then return false end
     local m = resolveMode(p, ft, role)
@@ -3684,6 +4279,66 @@ local function getPullAmount(pp, ft)
         return getFree(pp.storage, ft)
     end
     return 0
+end
+
+-- ---- BIOGAS PLANT DEMAND (5.121 B) -----------------------------------------------------------------
+-- The fermenter runs ONE dynamic line whose `inputs` are rewritten every cycle to only the feeds it
+-- currently has, so getActiveHourlyConsumption never asks for an optional feed the plant is not already
+-- holding. The full recipe is on `baseInputs` (measured: SILAGE 2500 required, LIQUIDMANURE 600,
+-- MANURE 600, SUGARBEET_CUT 300 per cycle). Only ENABLED lines count, as everywhere else.
+function SmartDistribution.plantFeedRate(pp, ft)
+    if pp == nil or ft == nil or type(pp.productions) ~= "table" then return 0 end
+    local active = {}
+    for _, ap in ipairs(pp.activeProductions or {}) do
+        if type(ap) == "table" then active[ap.id or ap] = true end
+    end
+    local rate = 0
+    for _, prod in ipairs(pp.productions) do
+        if active[prod.id] or active[prod] then
+            for _, b in ipairs(prod.baseInputs or prod.inputs or {}) do
+                if b.type == ft then rate = rate + (b.amount or 0) * (prod.cyclesPerHour or 1) end
+            end
+        end
+    end
+    return rate
+end
+
+-- (pull, current): litres to ask for, and what the plant already holds of it -- fermenter buffer PLUS
+-- the bunker DR delivers into, or a full bunker would keep asking while the fermenter drew it down.
+function SmartDistribution.plantFeedNeed(pp, root, ft)
+    if S.global.excludedFillTypes[ft] then return 0, 0 end
+    local cur = getLevel(pp.storage, ft)
+    local intake = SmartDistribution.plantIntakeStorages(root, ft)
+    local free = 0
+    for _, s in ipairs(intake) do
+        cur = cur + getLevel(s, ft)
+        free = free + getFree(s, ft)
+    end
+    if #intake == 0 then free = getFree(pp.storage, ft) end
+    local hourly = SmartDistribution.plantFeedRate(pp, ft)
+    if hourly <= 0 then return 0, cur end
+    return math.max(0, math.min(hourly * S.global.bufferHours - cur, free)), cur
+end
+
+-- Deliver a feed into the plant: its BUNKER when one holds this product ("the fermenter is fed only from
+-- the V-BIO"), else straight into the fermenter's own buffer. Returns what was (or would be) accepted.
+function SmartDistribution.plantDeposit(pp, root, ft, amount, dry, farmId)
+    local room = SmartDistribution.inputAcceptableLiters(root, ft)   -- receiver-side block / max in
+    local left = math.min(amount, room)
+    if left <= 0 then return 0 end
+    local intake = SmartDistribution.plantIntakeStorages(root, ft)
+    if #intake == 0 then intake = { pp.storage } end
+    local moved = 0
+    for _, s in ipairs(intake) do
+        if left <= 0 then break end
+        local mv = math.min(left, getFree(s, ft))
+        if mv > 0 then
+            if not dry then setLevel(s, ft, getLevel(s, ft) + mv, farmId, mv) end
+            moved = moved + mv
+            left = left - mv
+        end
+    end
+    return moved
 end
 
 -- ---- transfer --------------------------------------------------------------
@@ -4034,7 +4689,7 @@ local function recordBill(bill, farmId, src, dst, d2, ft, litres)
     local k = billLinkKey(farmId, src, dst)
     local link = bill[k]
     if link == nil then
-        link = { farmId = farmId, d2 = d2 or 0, src = src, fts = {} }   -- distance is fixed per link
+        link = { farmId = farmId, d2 = d2 or 0, src = src, dst = dst, fts = {} }   -- distance is fixed per link
         bill[k] = link
     end
     if ft ~= nil and litres ~= nil and litres > 0 then
@@ -4348,6 +5003,10 @@ local function chargeDistribution(bill)
             if total > 0 then
                 for ft, litres in pairs(link.fts) do
                     ledgerAdd(link.src, ft, "cost", linkCost * (litres / total))
+                    -- the same money on the RECEIVING side, `costIn` (2026-11-02, for Production Redux's
+                    -- Overview: what it costs to supply a production). One charge read from either end, so
+                    -- never summed with `cost`.
+                    if link.dst ~= nil then ledgerAdd(link.dst, ft, "costIn", linkCost * (litres / total)) end
                 end
             end
         end
@@ -4624,14 +5283,26 @@ local function collectProductionSlots(points, slots)
         -- like any silo; leaving it here as well would have DR demand the same product twice over.
         -- It is also what closes the black hole: getPullAmount's pass-through branch asks for
         -- getFree(pp.storage, ft) -- 4,000,000 L per fill type on the DriveIn -- every single hour.
+        -- A BIOGAS PLANT MEMBER RAISES NO DEMAND OF ITS OWN: the BHKW is fed methane by the plant's pipes,
+        -- and asking the network for it would starve nothing and haul gas about for no reason (5.121 B).
         if placeable ~= nil and placeable.rootNode ~= nil and
            pp.storage ~= nil and pp.inputFillTypeIds ~= nil and
-           not SmartDistribution.treatPassThroughAsStore(placeable) then
+           not SmartDistribution.treatPassThroughAsStore(placeable) and
+           not SmartDistribution.isPlantMember(placeable) then
             local x, _, z = getWorldTranslation(placeable.rootNode)
             local farmId  = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
+            local isPlant = SmartDistribution.isPlantRoot(placeable)
             for ft in pairs(pp.inputFillTypeIds) do
                 -- default = recipe pull; a fill target instead demands toward its set level and then holds it
-                local need = SmartDistribution.effectiveInputNeed(placeable, ft, getPullAmount(pp, ft), getLevel(pp.storage, ft))
+                -- A biogas plant reads its demand off the FULL recipe and counts what its bunker already
+                -- holds, since that is where DR delivers (see plantFeedNeed).
+                local pull, cur
+                if isPlant then
+                    pull, cur = SmartDistribution.plantFeedNeed(pp, placeable, ft)
+                else
+                    pull, cur = getPullAmount(pp, ft), getLevel(pp.storage, ft)
+                end
+                local need = SmartDistribution.effectiveInputNeed(placeable, ft, pull, cur)
                 if need > ALLOC_EPS then
                     local cands = buildSlotCandidates(pp, placeable, { ft }, x, z, farmId, nil)
                     if SmartDistribution.debug then
@@ -4645,6 +5316,7 @@ local function collectProductionSlots(points, slots)
                         slots[#slots + 1] = {
                             placeable = placeable, farmId = farmId, need = need, cands = cands, blocked = {},
                             deposit = function(dft, amount, dry)
+                                if isPlant then return SmartDistribution.plantDeposit(pp, placeable, dft, amount, dry, farmId) end
                                 local free = getFree(pp.storage, dft)
                                 local room = SmartDistribution.inputAcceptableLiters(placeable, dft)   -- receiver-side block / max %
                                 local mv = math.min(amount, free, room)
@@ -5065,6 +5737,8 @@ end
 -- and standalone manure pits -- never a barn or a production point)
 local function getSinkStorages(p, ft)
     local result = {}
+    -- a biogas plant member is never a store: the plant takes delivery through its own demand (5.121 B)
+    if SmartDistribution.isPlantMember(p) then return result end
     local isSilo = p.spec_silo ~= nil
     local hall = SmartDistribution.bulkHallSpec(p) ~= nil
     local pit = isManurePit(p)
@@ -5168,7 +5842,7 @@ function SmartDistribution.hasAnyStoreSink(asset, ft, x, z, farmId, srcReach)
     if ps == nil then return false end
     local r2 = S.global.radius * S.global.radius
     for _, p in ipairs(ps.placeables) do
-        if p ~= asset and p.rootNode ~= nil then
+        if p ~= asset and p.rootNode ~= nil and not SmartDistribution.isPlantMember(p) then
             if SmartDistribution._farmCanUse(p, farmId) then
                 local px, _, pz = getWorldTranslation(p.rootNode)
                 local dx, dz = px - x, pz - z
@@ -5463,6 +6137,10 @@ local function storePhase(manager, bill)
                 -- switched off is still real and must still be storable (see configuredOutputFillTypes).
                 for ft in pairs(SmartDistribution.configuredOutputFillTypes(pp)) do
                     storeAmount(placeable, pp.storage, ft, farmId, bill)
+                    -- a biogas plant's digestate also sits in its member TANK (piped there "across plant")
+                    for _, ms in ipairs(SmartDistribution.plantOutputStorages(placeable, ft)) do
+                        storeAmount(placeable, ms, ft, farmId, bill)
+                    end
                 end
             end
         end
@@ -5847,22 +6525,29 @@ function SmartDistribution.makeVirtualSourceProxy(pp, ft)
     }
 end
 
--- Build this cycle's virtual stock. Mirrors sellDirectProduction's gate (productionCanRun + not excluded),
--- but only for outputs whose resolved mode Distributes -- a plain SELL / default output is left entirely to
--- the legacy sell path, so nothing changes for anyone not using the new behaviour.
+-- Build this cycle's virtual stock. Mirrors sellDirectProduction's gate (productionCanRun), for outputs on
+-- Distribute + Sell -- the DEFAULT for an auto-sold output (sellDirectMode). A plain Sell output, or an
+-- excluded fill type, never enters the virtual stock and is sold in full by sellDirectProduction.
 function SmartDistribution.collectVirtualProduction(manager)
     SmartDistribution._virtualStock = {}
     if manager == nil then return end
     for _, farmTable in pairs(manager.farmIds or {}) do
         for _, pp in ipairs(farmTable.productionPoints or {}) do
             local placeable = pp.owningPlaceable
-            if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil and isEnrolled(placeable) then
+            -- a biogas plant's CHP is not enrolled but its electricity distributes when its PLANT is (5.123)
+            local plantChp = placeable ~= nil and SmartDistribution.isPlantChp(placeable)
+                             and SmartDistribution.plantRootOf(placeable) ~= nil
+                             and isEnrolled(SmartDistribution.plantRootOf(placeable))
+            if placeable ~= nil and placeable.rootNode ~= nil and pp.storage ~= nil and (isEnrolled(placeable) or plantChp) then
+                -- SERIAL point (5.28): N active lines each run at 1/N, so the virtual output is divided the same
+                -- way the allocator's demand is, or a shared-throughput plant emits N times its real output
+                local share = SmartDistribution.throughputShare(placeable)
                 for _, prod in ipairs(getActiveProductionDefs(pp)) do
                     if productionCanRun(pp, prod) then
-                        local cph = prod.cyclesPerHour or 1
+                        local cph = (prod.cyclesPerHour or 1) / share
                         for _, o in ipairs(prod.outputs or {}) do
                             if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type]
-                               and SmartDistribution.modeDistributes(resolveMode(placeable, o.type)) then
+                               and SmartDistribution.sellDirectMode(placeable, o.type) == MODE.DISTRIBUTE_SELL then
                                 local amount = (o.amount or 0) * cph
                                 local vs = SmartDistribution._virtualStock[pp]
                                 if vs == nil then vs = {}; SmartDistribution._virtualStock[pp] = vs end
@@ -5890,23 +6575,30 @@ local function sellDirectProduction(manager)
             local placeable = pp.owningPlaceable
             if placeable ~= nil and pp.storage ~= nil then
                 local farmId = pp.getOwnerFarmId ~= nil and pp:getOwnerFarmId() or placeable.ownerFarmId
+                local share = SmartDistribution.throughputShare(placeable)   -- serial point: see collectVirtualProduction
                 for _, prod in ipairs(getActiveProductionDefs(pp)) do
                     if productionCanRun(pp, prod) then
-                        local cph = prod.cyclesPerHour or 1
+                        local cph = (prod.cyclesPerHour or 1) / share
                         for _, o in ipairs(prod.outputs or {}) do
-                            if o.sellDirectly and (o.amount or 0) > 0 and not S.global.excludedFillTypes[o.type] then
+                            -- NOT gated on excludedFillTypes: "excluded" means DR does not ROUTE a product,
+                            -- and the base game always sold these. DR suppresses the base pass, so skipping
+                            -- the sale here deleted the plant income outright. An excluded output never
+                            -- enters the virtual stock (collectVirtualProduction), so it sells in full.
+                            if o.sellDirectly and (o.amount or 0) > 0 then
                                 local amount = (o.amount or 0) * cph
                                 -- DISTRIBUTE-FIRST for virtual outputs: if this output was set to a Distribute
                                 -- mode it was offered to consumers this cycle from the virtual stock, so sell
                                 -- only what is LEFT -- and only if the mode also sells. Pure DISTRIBUTE sells
                                 -- nothing. Outputs NOT set to a Distribute mode never touch the virtual stock,
                                 -- so they fall straight through here selling the full amount exactly as before.
-                                local vmode = resolveMode(placeable, o.type)
-                                if SmartDistribution.modeDistributes(vmode) then
+                                -- Only Sell and Distribute + Sell exist for these (sellDirectMode), and BOTH
+                                -- sell: the unsold remainder has nowhere else to go. Distribute + Sell sells
+                                -- what consumers left in the virtual stock; Sell -- or a plant with no virtual
+                                -- entry (unenrolled, excluded, starved at collect time) -- sells it all.
+                                if SmartDistribution.sellDirectMode(placeable, o.type) == MODE.DISTRIBUTE_SELL then
                                     local vs = SmartDistribution._virtualStock[pp]
                                     local e  = vs ~= nil and vs[o.type] or nil
-                                    local remaining = (e ~= nil) and math.max(0, e.remaining) or amount
-                                    amount = SmartDistribution.modeSells(vmode) and remaining or 0
+                                    if e ~= nil then amount = math.max(0, e.remaining) end
                                 end
                                 local price  = fillTypeBasePrice(o.type) * economyDifficultySellMultiplier()
                                 if amount > 0 and price > 0 then
@@ -6341,6 +7033,14 @@ function SmartDistribution.marketTransferPhase(manager)
                     if not S.global.excludedFillTypes[ft] and (m == MODE.TRANSFER_MARKET or m == MODE.DISTRIBUTE_MARKET) then
                         local amt = SmartDistribution.marketTransferAmount(placeable, ft, m, SmartDistribution.drawableLevel(placeable, ft, getLevel(pp.storage, ft)))
                         if amt > 0 then local moved = SmartDistribution.transferStorageToMarkets(pp.storage, ft, farmId, sx, sz, reach, amt); if moved > 0 then ledgerAdd(placeable, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end end
+                        -- ...and a biogas plant's member tank (digestate piped "across plant"), 5.121 B
+                        for _, ms in ipairs(SmartDistribution.plantOutputStorages(placeable, ft)) do
+                            local amt2 = SmartDistribution.marketTransferAmount(placeable, ft, m, SmartDistribution.drawableLevel(placeable, ft, getLevel(ms, ft)))
+                            if amt2 > 0 then
+                                local moved = SmartDistribution.transferStorageToMarkets(ms, ft, farmId, sx, sz, reach, amt2)
+                                if moved > 0 then ledgerAdd(placeable, ft, "stored", moved); SmartDistribution.noteSeasonalSpend(ft, moved) end
+                            end
+                        end
                     end
                 end
             end
@@ -7845,6 +8545,7 @@ end
 -- here (Distribute feeds those; Store To does not).
 function SmartDistribution.storeToTargetValid(srcForm, dst, ft)
     if dst == nil or ft == nil then return false end
+    if SmartDistribution.isPlantMember(dst) then return false end   -- a biogas plant member is never a store (5.121 B)
     -- AN OBJECT STORAGE IS NEVER A DEMAND BUFFER, so the class gate below deliberately does not apply to
     -- the pallet branch. The gate reads the PRIMARY class, so a building that owns a genuine pallet store
     -- but whose primary role is a production (Mechet Fromage, Escargot) was refused outright -- its shed
@@ -7888,6 +8589,7 @@ end
 -- untouched, so what actually MOVES is bit-for-bit unchanged.
 function SmartDistribution.storeToTargetPossible(srcForm, dst, ft)
     if dst == nil or ft == nil then return false end
+    if SmartDistribution.isPlantMember(dst) then return false end   -- mirrors storeToTargetValid (5.121 B)
     -- MIRRORS storeToTargetValid's gate exactly, including its object-storage exemption. The invariant
     -- the header states is valid => possible, so if this were the stricter of the two the mode ring would
     -- refuse to offer a mode that demonstrably works.
@@ -8824,6 +9526,7 @@ function SmartDistribution.runHourly(manager)
     -- ANYTHING THAT TRIES AGAIN MUST NOT TOUCH LINE STATE. That is the part worth keeping.
     local bill = {}
     local slots = {}
+    SmartDistribution.applyPlantTorches()                      -- biogas plants: torch on / off per methane mode (5.123)
     SmartDistribution.collectVirtualProduction(manager)        -- materialise sellDirectly outputs set to Distribute (electricity/methane) as sources BEFORE allocation
     for _, farmTable in pairs(manager.farmIds or {}) do        -- phases 1 + 1b + 1c: unified allocation
         collectProductionSlots(farmTable.productionPoints, slots)
@@ -8864,6 +9567,7 @@ function SmartDistribution.runHourly(manager)
     SmartDistribution.recordProductionThroughput(cycleAcc)    -- production consumed/produced this cycle (delta + this cycle's flows, aligned windows)
     SmartDistribution.recordHusbandryConsumption(cycleAcc)    -- husbandry feed/water/straw consumed this cycle
     SmartDistribution.flushManualTransfers(cycleAcc)          -- player/AI loads + unloads since the last pass
+    SmartDistribution.flushPlantFlows(cycleAcc)               -- each biogas plant building's own flows (5.122)
     S.lastCycle = cycleAcc                                     -- publish this cycle's tallies for the asset dialog
     SmartDistribution.publishFeedPass()                        -- ...and the link log, so BOTH sides of a
                                                                -- link update on the cycle it moved, not the next
@@ -9280,6 +9984,7 @@ local function saveOverrides(missionInfo)
                         setXMLFloat(xml,  ek .. "#loaded",   e.loaded or 0)
                         setXMLFloat(xml,  ek .. "#unloaded", e.unloaded or 0)
                         setXMLFloat(xml,  ek .. "#cost",     e.cost or 0)
+                        if (e.costIn or 0) ~= 0 then setXMLFloat(xml, ek .. "#costIn", e.costIn) end
                         ei = ei + 1
                     end
                 end
@@ -9378,6 +10083,8 @@ local function loadOverrides()
         end
         i = i + 1
     end
+    -- a saved burner-off switches its torch off, and the methane pipe flag follows its mode, straight away (5.124)
+    pcall(SmartDistribution.applyPlantTorches)
     -- INTEGRITY CHECK: does every stored override still match a LIVE placeable?
     --
     -- An override whose uniqueId resolves to nothing is silently dead: the join replay skips it
@@ -9639,6 +10346,7 @@ local function loadOverrides()
                         loaded   = getXMLFloat(xml, ek .. "#loaded")   or 0,
                         unloaded = getXMLFloat(xml, ek .. "#unloaded") or 0,
                         cost     = getXMLFloat(xml, ek .. "#cost")     or 0,
+                        costIn   = getXMLFloat(xml, ek .. "#costIn")   or 0,
                     }
                 end
             end
@@ -11595,7 +12303,7 @@ end
 -- GUI/input cannot be harness-tested; uncertain calls are pcall-guarded and
 -- logged so the in-game log shows exactly what resolved. [VERIFY] tags mark them.
 -- ============================================================================
-local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribute + Sell", [4]="Sell", [5]="Distribute + Store", [6]="Store", [7]="Market Supply", [8]="Distribute + Market Supply", [9]="Hold Internal", [10]="Move To", [11]="Distribute + Move To" }
+local MODE_NAMES = { [0]="Inherit", [1]="Hold", [2]="Distribute", [3]="Distribute + Sell", [4]="Sell", [5]="Distribute + Store", [6]="Store", [7]="Market Supply", [8]="Distribute + Market Supply", [9]="Hold Internal", [10]="Move To", [11]="Distribute + Move To", [12]="Distribute across biogas plant" }
 -- For a palletisable production output, plain Hold lets the engine auto-spawn pallets, so we surface it as
 -- "Hold Pallets" to distinguish it from Hold Internal (keep as bulk, no spawn). Non-palletisable outputs
 -- (silos, bulk goods) keep the plain "Hold" label since there are no pallets to differentiate.
@@ -12053,6 +12761,39 @@ function SmartDistribution.isSellDirectlyFillType(p, ft)
         end
     end
     return false
+end
+
+-- THE MODE OF AN AUTO-SOLD OUTPUT (2026-09-30): Sell, or Distribute + Sell -- nothing else exists for a
+-- product with no storage (ProductionDistributeSell collapses the ring to those two). Read from the RAW
+-- stored choice, NOT through resolveMode, for two reasons:
+--   * resolveMode applies sellMask, and the Selling switch must not reach these: the BASE GAME sells them,
+--     not DR (6.25's exemption). Masked, Distribute + Sell became plain Distribute and the surplus was lost.
+--   * resolveMode's fallback is the global default (Distribute), which paid NOTHING for any plant the
+--     player had never configured -- the whole hour of grid output vanished on a farm with no consumer.
+-- Anything that is not an explicit SELL answers DISTRIBUTE_SELL: offer it to consumers, sell what is left.
+function SmartDistribution.sellDirectMode(p, ft)
+    -- A biogas plant's CHP carries its OWN setting since the BIOGAS tab can set it (5.123); a save from
+    -- before that may hold one on the plant's row, which is still honoured when the CHP has none.
+    local uid = getUid(p)
+    local a = uid ~= nil and S.assets[uid] or nil
+    local m = a ~= nil and a[ft] or nil
+    if (m == nil or m == MODE.INHERIT) and SmartDistribution.isPlantMember(p) then
+        local ru = getUid(SmartDistribution.plantRootOf(p))
+        local ra = ru ~= nil and S.assets[ru] or nil
+        m = ra ~= nil and ra[ft] or nil
+    end
+    if m == nil or m == MODE.INHERIT then
+        -- applyVLocal writes with productionRoleOf(pl): for an ordinary production that is the bare uid
+        -- read above, for a pass-through store it is uid#production (the resolveMode role fallback)
+        local pr = SmartDistribution.productionRoleOf ~= nil and SmartDistribution.productionRoleOf(p) or nil
+        if pr ~= nil then
+            local ru = SmartDistribution.roleUid(p, pr)
+            local ra = (ru ~= nil and ru ~= uid) and S.assets[ru] or nil
+            m = ra ~= nil and ra[ft] or nil
+        end
+    end
+    if m == MODE.SELL then return MODE.SELL end
+    return MODE.DISTRIBUTE_SELL
 end
 
 -- something in the game actually buys this fill type
@@ -13035,7 +13776,9 @@ function SmartDistribution.productionLines(p)
         end
         cph = cph or 0
         local inputs = {}
-        for _, i in ipairs(prod.inputs or {}) do
+        -- `baseInputs` is the FULL recipe of a dynamic line (the Pumps & Hoses fermenter rewrites `inputs`
+        -- every cycle to only the feeds it currently has, 5.121 B). Absent on every ordinary line.
+        for _, i in ipairs(prod.baseInputs or prod.inputs or {}) do
             inputs[#inputs + 1] = { ft = i.type, name = ftTitle(i.type), held = held(i.type), capacity = cap(i.type), amount = i.amount or 0, perMonth = (i.amount or 0) * cpm }
         end
         local outputs = {}
@@ -13049,7 +13792,13 @@ function SmartDistribution.productionLines(p)
                 -- holdLabelFlag, not the raw spawner list: with pallet spawning off this must read
                 -- "Hold Internal", since the ring has dropped the separate Hold Internal option and this
                 -- is the only hold left. Productions come through here rather than modeName.
-                if drMode == MODE.HOLD_INTERNAL then vname = SmartDistribution.l10n("dr_mode_9", "Hold Internal")
+                if SmartDistribution.isPlantHeld(p, o.type) then
+                    -- the fermenter's methane on the plant mode keeps its v-mode name ("Distribute across
+                    -- biogas plant"); a member's internal product just names the plant (5.124)
+                    if not SmartDistribution.isPlantRoot(p) then
+                        vname = SmartDistribution.l10n("dr_mode_plantInternal", "Biogas plant")
+                    end
+                elseif drMode == MODE.HOLD_INTERNAL then vname = SmartDistribution.l10n("dr_mode_9", "Hold Internal")
                 elseif drMode == MODE.HOLD then
                     local hf = SmartDistribution.holdLabelFlag(p, o.type)
                     if hf == "internal" then vname = SmartDistribution.l10n("dr_mode_9", "Hold Internal")
@@ -13359,6 +14108,7 @@ function SmartDistribution.recordCycleStat(placeable, ft, field, amount)
     if placeable == nil or ft == nil or amount == nil or amount <= 0 then return end
     local tbl = cycleAcc or S.lastCycle
     if tbl == nil then return end
+    placeable = SmartDistribution.ledgerOwner(placeable)      -- a biogas plant member books to its plant (5.121 B)
     local uid = getUid(placeable)
     if uid == nil then return end
     local a = tbl[uid]; if a == nil then a = {}; tbl[uid] = a end
@@ -13389,13 +14139,14 @@ local function buildMonthlyAggList(window)
             for ft, e in pairs(fts) do
                 if type(e) == "table" then
                     local ae = au[ft]
-                    if ae == nil then ae = { d = 0, s = 0, st = 0, r = 0, mo = 0, pr = 0, co = 0, lo = 0, ul = 0, ct = 0 }; au[ft] = ae end
+                    if ae == nil then ae = { d = 0, s = 0, st = 0, r = 0, mo = 0, pr = 0, co = 0, lo = 0, ul = 0, ct = 0, ci = 0 }; au[ft] = ae end
                     ae.d  = ae.d  + (e.dist or 0);   ae.s = ae.s + (e.sold or 0)
                     ae.st = ae.st + (e.stored or 0); ae.r = ae.r + (e.received or 0)
                     ae.mo = ae.mo + (e.money or 0)
                     ae.pr = ae.pr + (e.produced or 0); ae.co = ae.co + (e.consumed or 0)
                     ae.lo = ae.lo + (e.loaded or 0);   ae.ul = ae.ul + (e.unloaded or 0)
                     ae.ct = ae.ct + (e.cost or 0)
+                    ae.ci = ae.ci + (e.costIn or 0)
                 end
             end
         end
@@ -13412,9 +14163,9 @@ local function buildMonthlyAggList(window)
                 if au ~= nil then
                     for ft, ae in pairs(au) do
                         local buf = isMkt and SmartDistribution.marketBufferLevel(uid, ft) or 0
-                        if (ae.d + ae.s + ae.st + ae.r + ae.mo + ae.pr + ae.co + ae.lo + ae.ul + ae.ct) > 0 or buf > 0 then
+                        if (ae.d + ae.s + ae.st + ae.r + ae.mo + ae.pr + ae.co + ae.lo + ae.ul + ae.ct + ae.ci) > 0 or buf > 0 then
                             list[#list + 1] = { p = p, ft = ft, d = ae.d, s = ae.s, st = ae.st, r = ae.r, mo = ae.mo,
-                                                buf = buf, pr = ae.pr, co = ae.co, lo = ae.lo, ul = ae.ul, ct = ae.ct }
+                                                buf = buf, pr = ae.pr, co = ae.co, lo = ae.lo, ul = ae.ul, ct = ae.ct, ci = ae.ci }
                         end
                     end
                 end
@@ -13472,6 +14223,7 @@ function DistributionStatsEvent:writeStream(streamId, connection)
         streamWriteFloat32(streamId, en.lo or 0)
         streamWriteFloat32(streamId, en.ul or 0)
         streamWriteFloat32(streamId, en.ct or 0)
+        streamWriteFloat32(streamId, en.ci or 0)
     end
 end
 function DistributionStatsEvent:readStream(streamId, connection)
@@ -13493,7 +14245,8 @@ function DistributionStatsEvent:readStream(streamId, connection)
         local lo = streamReadFloat32(streamId)
         local ul = streamReadFloat32(streamId)
         local ct = streamReadFloat32(streamId)
-        self.entries[i] = { p = p, ft = ft, d = d, s = s, st = st, r = r, mo = mo, buf = bf, pr = pr, co = co, lo = lo, ul = ul, ct = ct }
+        local ci = streamReadFloat32(streamId)
+        self.entries[i] = { p = p, ft = ft, d = d, s = s, st = st, r = r, mo = mo, buf = bf, pr = pr, co = co, lo = lo, ul = ul, ct = ct, ci = ci }
     end
     self:run(connection)
 end
@@ -13521,7 +14274,7 @@ function DistributionStatsEvent:run(connection)
                 local au = tbl[uid]; if au == nil then au = {}; tbl[uid] = au end
                 au[en.ft] = { dist = en.d, sold = en.s, stored = en.st, received = en.r, money = en.mo or 0,
                               produced = en.pr or 0, consumed = en.co or 0, loaded = en.lo or 0, unloaded = en.ul or 0,
-                              cost = en.ct or 0 }
+                              cost = en.ct or 0, costIn = en.ci or 0 }
                 if (en.buf or 0) > 0 then   -- client-side market buffer for the Markets tab (monthly push only)
                     local b = SmartDistribution._marketBuffer[uid]; if b == nil then b = {}; SmartDistribution._marketBuffer[uid] = b end
                     b[en.ft] = en.buf
@@ -14845,7 +15598,22 @@ function SmartDistribution.recordProductionThroughput(flows)
     end
     for _, p in ipairs(ps.placeables) do
         local pp = getProductionPoint(p)
-        if pp ~= nil and pp.storage ~= nil and isEnrolled(p) then
+        -- A BIOGAS PLANT is measured off the fermenter's OWN writes, not off level deltas. Its buffer is
+        -- refilled by pipe from the bunker between passes, so "prev + received - cur" reads that refill as
+        -- negative consumption; and its digestate leaves by pipe to the tank, so the buffer delta misses
+        -- what it made. The manual tracker already split every write by storage (recordManualDelta), and
+        -- DR's own writes are excluded from it -- so the fermenter's own drops ARE consumption and its own
+        -- rises ARE production, exactly. Read here because flushManualTransfers clears them next (5.121 B).
+        if pp ~= nil and pp.storage ~= nil and isEnrolled(p) and SmartDistribution.isPlantRoot(p) then
+            local pend = SmartDistribution._manualPending[getUid(p)]
+            if pend ~= nil then
+                local outs, ins = SmartDistribution.internalProcessFillTypes(p)
+                for ft, e in pairs(pend) do
+                    if ins[ft]  and (e.oU or 0) > 0.5 then ledgerAdd(p, ft, "consumed", e.oU) end
+                    if outs[ft] and (e.oL or 0) > 0.5 then ledgerAdd(p, ft, "produced", e.oL) end
+                end
+            end
+        elseif pp ~= nil and pp.storage ~= nil and isEnrolled(p) then
             local uid = getUid(p)
             local last = SmartDistribution._prodThruLast[uid]
             local rec  = last; if rec == nil then rec = {}; SmartDistribution._prodThruLast[uid] = rec end
@@ -15047,12 +15815,30 @@ function SmartDistribution.storageOwnerOf(storage)
     if ps == nil or ps.placeables == nil then return nil end
     local n = #ps.placeables
     if SmartDistribution._soMap == nil or SmartDistribution._soCount ~= n then
+        -- built over the PLANT-WIDE view whatever the caller had raised: this map is a fact about
+        -- ownership, and a build that happened while the BIOGAS tab was drawing would otherwise leave
+        -- the bunker unowned until the next placeable change (5.122)
+        local savedLocal = SmartDistribution._plantLocal
+        SmartDistribution._plantLocal = 0
         local map = setmetatable({}, { __mode = "k" })
         for _, p in ipairs(ps.placeables) do
-            for _, s in ipairs(getAllStorages(p)) do map[s] = p end
+            -- A biogas plant MEMBER's silo storages belong to its ROOT (they arrive there through
+            -- parentExtensionStorages), so the member must not claim them too -- iteration order would
+            -- otherwise decide who owns the bunker. Its production buffer (the BHKW's methane) stays
+            -- mapped to the member, which is not enrolled, so those internal writes are ignored.
+            if not SmartDistribution.isPlantMember(p) then
+                for _, s in ipairs(getAllStorages(p)) do map[s] = p end
+            elseif SmartDistribution.isPlantSourceMember(p) and p.spec_silo ~= nil then
+                -- the TANK sources on its own now (5.123), but a pipe moving digestate into it is
+                -- still the PLANT moving its own product: mapped to the root, so the fermenter -> tank
+                -- transfer nets out as internal exactly as it did when the tank folded into the root
+                local root = SmartDistribution.plantRootOf(p)
+                for _, s in ipairs(p.spec_silo.storages or {}) do map[s] = root end
+            end
             local pp = getProductionPoint(p)                       -- getAllStorages does not cover pp.storage
             if pp ~= nil and pp.storage ~= nil then map[pp.storage] = p end
         end
+        SmartDistribution._plantLocal = savedLocal
         SmartDistribution._soMap   = map
         SmartDistribution._soCount = n
     end
@@ -15072,6 +15858,16 @@ function SmartDistribution.recordManualDelta(storage, ft, delta)
     local e = a[ft]
     if e == nil then e = { loaded = 0, unloaded = 0 }; a[ft] = e end
     if delta > 0 then e.loaded = e.loaded + delta else e.unloaded = e.unloaded - delta end
+    -- A BIOGAS PLANT moves product between its own storages by pipe (bunker -> fermenter, fermenter ->
+    -- tank). Split each delta by WHICH storage moved -- the fermenter's own buffer ("o") or a member's
+    -- ("m") -- so flushManualTransfers can net a pipe transfer out as internal, and recordProductionThroughput
+    -- can read consumed / produced straight off the fermenter's own writes (5.121 B).
+    if SmartDistribution.isPlantRoot(p) then
+        local pp = getProductionPoint(p)
+        local k = (pp ~= nil and storage == pp.storage) and "o" or "m"
+        if delta > 0 then e[k .. "L"] = (e[k .. "L"] or 0) + delta
+        else              e[k .. "U"] = (e[k .. "U"] or 0) - delta end
+    end
 end
 
 -- The input / output fill types of a building whose OWN operation moves its storage levels -- i.e. a
@@ -15127,8 +15923,32 @@ function SmartDistribution.flushManualTransfers(acc)
     for uid, byFt in pairs(pend) do
         local p = owner[uid]
         local outs, ins = SmartDistribution.internalProcessFillTypes(p)     -- resolved once per building
+        -- BIOGAS PLANT (5.121 B): its own pipes move product between its storages. A pipe transfer shows
+        -- as a member storage falling while the fermenter rises (a feed going in), or the fermenter
+        -- falling while a member rises (digestate going out to the tank). Net those pairs out as INTERNAL
+        -- before the filters below, so they read as neither a load nor an unload. Its internal products
+        -- (methane) are not reported at all: they never leave the plant.
+        local isPlant = SmartDistribution.isPlantRoot(p)
+        local plantInt = isPlant and SmartDistribution.plantInternalFillTypes(p) or nil
         for ft, e in pairs(byFt) do
             local loaded, unloaded = e.loaded, e.unloaded
+            local moved = 0
+            if isPlant then
+                if plantInt[ft] then
+                    loaded, unloaded = 0, 0
+                elseif ins[ft] then
+                    moved = math.min(e.mU or 0, e.oL or 0)
+                elseif outs[ft] then
+                    moved = math.min(e.oU or 0, e.mL or 0)
+                end
+                loaded, unloaded = math.max(0, loaded - moved), math.max(0, unloaded - moved)
+                if moved > 0.5 then
+                    local a = acc[uid]; if a == nil then a = {}; acc[uid] = a end
+                    local t = a[ft]
+                    if t == nil then t = { dist = 0, sold = 0, stored = 0, received = 0 }; a[ft] = t end
+                    t.moved = (t.moved or 0) + moved
+                end
+            end
             if outs[ft] then
                 loaded = 0
                 if isPalletizedFillType(ft) then unloaded = 0 end
@@ -15234,7 +16054,9 @@ function SmartDistribution.installManualTransferTracking()
                 local rets = { pcall(orig, self, a1, a2, ...) }
                 SmartDistribution._inManualHook = false
                 if not rets[1] then error(rets[2], 0) end
-                pcall(SmartDistribution.recordManualDelta, self, a2, (self.fillLevels[a2] or 0) - before)
+                local d = (self.fillLevels[a2] or 0) - before
+                pcall(SmartDistribution.recordManualDelta, self, a2, d)
+                pcall(SmartDistribution.notePlantFlow, self, a2, d, false)   -- the BIOGAS tab (5.122)
                 return unpack(rets, 2)
             end
             hooked[#hooked + 1] = name
@@ -15277,6 +16099,10 @@ end
 -- Cheap enough for a per-cell call: it sums only this uid+ft across the window's ledgers, rather than
 -- flattening the whole ring the way windowAggregate does.
 function SmartDistribution.assetWindowStats(p, ft, window)
+    -- on the BIOGAS tab the fermenter answers for ITSELF, not for the whole plant (5.122)
+    if p ~= nil and (SmartDistribution._plantLocal or 0) > 0 and SmartDistribution.isPlantRoot(p) then
+        return SmartDistribution.uidWindowStats(SmartDistribution.plantLocalUid(p), ft, window)
+    end
     return SmartDistribution.uidWindowStats(p ~= nil and getUid(p) or nil, ft, window)
 end
 
@@ -15306,7 +16132,7 @@ end
 -- DISTRIBUTED, and an internal move is not distribution -- counting it there is what reported "20k
 -- distributed with no demand". It exists so a LINK STATUS can still see the movement over a window,
 -- which the last-pass link log cannot answer beyond the current cycle.
-SmartDistribution.WINDOW_FIELDS = { "received", "loaded", "consumed", "unloaded", "produced", "dist", "sold", "stored", "money", "cost", "moved" }
+SmartDistribution.WINDOW_FIELDS = { "received", "loaded", "consumed", "unloaded", "produced", "dist", "sold", "stored", "money", "cost", "costIn", "moved" }
 
 function SmartDistribution.windowAggregate(window)
     local out, fields = {}, SmartDistribution.WINDOW_FIELDS
@@ -15434,7 +16260,8 @@ function SmartDistribution.enumerateConfigurableAssets()
             -- ownership PLUS public map storage. This is the enumerator the four building tabs
             -- actually call -- enrolledAssets is a different list -- so gating only that one left
             -- the feature invisible in the UI however correct the engine side was.
-            if SmartDistribution._farmCanUse(p, farmId) then
+            if SmartDistribution._farmCanUse(p, farmId) and not SmartDistribution.isPlantMember(p) then
+                -- (a biogas plant member is shown inside its plant, never as a building of its own)
                 -- ONE ROW PER ROLE. A building that does two jobs at once appears once per job, each
                 -- with its own key, its own products and its own modes -- so a DriveIn is a silo on the
                 -- Silos tab, a pallet store beside it, and a one-line production on Productions.
@@ -15505,6 +16332,9 @@ function SmartDistribution.registerMenuGui()
         loadPage(DistributionStoragePage,         "distributionStoragePage",     "gui/DistributionStoragePage.xml")
         loadPage(DistributionAnimalHusbandryPage, "distributionHusbandryPage",   "gui/DistributionHusbandryPage.xml")
         loadPage(DistributionMarketsPage,         "distributionMarketsPage",     "gui/DistributionMarketsPage.xml")
+        -- the BIOGAS tab: two pages behind one tab, each a copy of an existing template (5.122)
+        loadPage(DistributionBiogasProductionPage, "distributionBiogasProductionPage", "gui/DistributionBiogasProductionPage.xml")
+        loadPage(DistributionBiogasStoragePage,    "distributionBiogasStoragePage",    "gui/DistributionBiogasStoragePage.xml")
         loadPage(DistributionProductionsPage, "distributionProductionsPage", "gui/DistributionProductionsPage.xml")
         loadPage(DistributionOverviewPage,    "distributionOverviewPage",    "gui/DistributionOverviewPage.xml")
         loadPage(DistributionHelpPage,        "distributionHelpPage",        "gui/DistributionHelpPage.xml")
@@ -18886,6 +19716,9 @@ function SmartDistribution.drawableLevel(p, ft, level)
     local loc = SmartDistribution.localProductionReserve(p, ft)
     if loc > 0 then res = math.max(res or 0, loc) end
     if res == nil then return level end
+    -- an AUTO-SOLD output holds nothing (it never enters pp.storage), so a floor measured against its held
+    -- level read 0 - reserve and blocked the output completely. There is nothing to keep back: exempt it.
+    if SmartDistribution.isSellDirectlyFillType(p, ft) then return level end
     local free = SmartDistribution.assetHeldTotal(p, ft) - res
     if free <= 0 then return 0 end
     return math.min(level, free)
@@ -22043,6 +22876,8 @@ function SmartDistribution.acceptsAsDemand(p, ft)
 end
 
 function SmartDistribution.canAccept(p, ft, supportsOnly)
+    -- a biogas plant member never takes delivery as a building of its own (the tank is source only, 5.123)
+    if SmartDistribution.isPlantMember(p) then return false, false end
     -- a folded extension adds SPACE, never PRODUCTS: a silo is never a distribute sink for something its
     -- own storages cannot hold (5.54). Fires only for a silo that actually has an extension folded in.
     if SmartDistribution.isExtensionOnlyFillType(p, ft) then return false, false end

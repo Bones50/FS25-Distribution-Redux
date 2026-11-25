@@ -103,6 +103,21 @@ function DistributionMenu:setupPages()
     local showSilos     = function() return DistributionSettings == nil or DistributionSettings.includeSilosSheds ~= false end
     local showHusbandry = function() return DistributionSettings == nil or DistributionSettings.includeHusbandry  ~= false end
     local showMarkets   = function() return (DistributionSettings == nil or DistributionSettings.includeMarkets ~= false) and SmartDistribution ~= nil and SmartDistribution.hasAnyMarket ~= nil and SmartDistribution.hasAnyMarket() end
+    local showBiogas    = function() return SmartDistribution ~= nil and SmartDistribution.hasBiogasPlants ~= nil and SmartDistribution.hasBiogasPlants() end
+
+    local function biogasButtonsFor(getPage)
+        return {
+            back,
+            -- the fermenter's and the CHP's production lines; the page hides it on the storage half
+            btn(InputAction.MENU_EXTRA_2, SmartDistribution.l10n("dr_btn_toggleLine", "Toggle Line"),
+                function() local p = getPage(); if p ~= nil and p.onToggleLine ~= nil then p:onToggleLine() end end, "toggleLine"),
+            btn(InputAction.MENU_ACCEPT, SmartDistribution.l10n("dr_btn_advanced", "Advanced"),
+                function() local p = getPage(); if p ~= nil and p.onPlantOverview ~= nil then p:onPlantOverview() end end, "plantOverview"),
+            -- the plant's gas torch on / off (5.124); the page relabels it and hides it on a plant with no torch
+            btn(InputAction.MENU_CANCEL, SmartDistribution.l10n("dr_btn_burnerOn", "Burner: On"),
+                function() local p = getPage(); if p ~= nil and p.onToggleBurner ~= nil then p:onToggleBurner() end end, "burner"),
+        }
+    end
 
     -- Markets uses the same footer as the other tabs.
     local marketButtons = storageButtonsFor(function() return self.pageMarkets end)
@@ -118,6 +133,11 @@ function DistributionMenu:setupPages()
         { self.pageStorage,     "gui.icon_construction_buildings",      storageButtonsFor(function() return self.pageStorage end),   showSilos },
         { self.pageHusbandry,   "gui.icon_ingameMenu_animals",          husbandryButtons, showHusbandry },
         { self.pageMarkets,     "gui.icon_ingameMenu_prices",           marketButtons, showMarkets },
+        -- BIOGAS (5.122 / 5.123): Back and Advanced (the routing graph on the selected building, with the
+        -- plant's other buildings among its sources and destinations). Modes are set with the in-row arrows. Two pages behind one tab; only on a
+        -- farm that has a Pumps & Hoses plant, since the predicate is what removes the tab everywhere else.
+        { self.pageBiogas,        "gui.icon_ingameMenu_productionChains", biogasButtonsFor(function() return self.pageBiogas end), showBiogas },
+        { self.pageBiogasStorage, "gui.icon_ingameMenu_productionChains", biogasButtonsFor(function() return self.pageBiogasStorage end), showBiogas },
         -- Overview carries one action beside Back: swap the flow figures for the Advanced Inputs / Outputs
         -- settings behind the same rows. The label flips with the view (updateViewButton).
         -- Refresh re-enumerates the network on demand. It is what makes the "Manual only" menu refresh rate
@@ -176,13 +196,16 @@ function DistributionMenu:groupPages()
         { self.pageStorage,     "dr_tab_storage",     "STORAGE"     },
         { self.pageHusbandry,   "dr_tab_husbandry",   "HUSBANDRY"   },
         { self.pageMarkets,     "dr_tab_markets",     "MARKETS"     },
+        -- one tab, two pages: the storage-template page is the production-template page's ALIAS, so the
+        -- strip lights BIOGAS on either and the left list hides both behind the group row (5.122)
+        { self.pageBiogas,      "dr_tab_biogas",      "BIOGAS", alias = self.pageBiogasStorage },
     }
 end
 
 function DistributionMenu:isGroupPage(page)
     if page == nil or SmartDistribution == nil or SmartDistribution.MENU_V2 ~= true then return false end
     for _, d in ipairs(self:groupPages()) do
-        if d[1] ~= nil and d[1] == page then return true end
+        if d[1] ~= nil and (d[1] == page or d.alias == page) then return true end
     end
     return false
 end
@@ -230,7 +253,7 @@ function DistributionMenu:rebuildGroupTabs()
             -- the LAST own entry so they hold the order they are registered in.
             -- The modName is a REGISTRY key for de-duplication, never anything on screen.
             SmartDistribution.registerPageTab(key, "dr:" .. d[2],
-                SmartDistribution.l10n(d[2], d[3]), { own = true, page = page })
+                SmartDistribution.l10n(d[2], d[3]), { own = true, page = page, alias = d.alias })
         end
     end
 end
@@ -256,12 +279,12 @@ function DistributionMenu:rebuildTabList()
     -- different orders, so the page list must stay append-only and the ROW list is where
     -- an order belongs.
     --
-    --   [the group] [any other mod's pages] [Overview] [User Guide] [Settings]
+    --   [the group] [Husbandry, Production, any other mod's pages] [Overview] [Settings] [User Guide]
     --
     -- A dependent mod's page sits directly under the group rather than after DR's own
     -- trailing utility pages, which is where a reader looks for it: Overview, Guide and
     -- Settings are the things you go to LAST, and they read as the bottom of the list.
-    -- Each bucket keeps the order enabledPages gave it, which is DR's registration order.
+    -- Foreign pages are ranked by family (see RANK below); the trailing three take a fixed order.
     local rep = self:groupRepresentative()
     local tail = {}
     for _, p in ipairs({ self.pageOverview, self.pageHelp, self.pageSettings }) do
@@ -280,6 +303,31 @@ function DistributionMenu:rebuildTabList()
         else
             foreign[#foreign + 1] = page
         end
+    end
+
+    -- ONE ORDER FOR THE WHOLE REDUX FAMILY (author, 2026-10-20), whichever mods are loaded:
+    --   [Distribution] [Husbandry] [Production] [Overview] [Settings] [Help]
+    -- Husbandry Redux's menu applies the same rule when it hosts, and Production Redux's own menu
+    -- is built in it, so the list reads the same in every combination; a missing mod's row simply
+    -- drops out and the rest shift up.
+    -- FOREIGN PAGES BY FAMILY RANK, then registration order for anyone else. Keyed on pageName,
+    -- which each mod sets on its page, never on load order: mods load alphabetically and that
+    -- happens to match today, which is exactly the kind of coincidence that stops holding.
+    local RANK = { HERDINSPECTOR_PAGE = 1, PRODUCTIONREDUX_PAGE = 2 }
+    local idx = {}
+    for i, p in ipairs(foreign) do idx[p] = i end
+    table.sort(foreign, function(a, b)
+        local ra, rb = RANK[a.pageName] or 99, RANK[b.pageName] or 99
+        if ra ~= rb then return ra < rb end
+        return idx[a] < idx[b]
+    end)
+    -- AND THE TRAILING THREE IN THAT EXACT ORDER, not registration order (which put the Guide
+    -- above Settings).
+    last = {}
+    local present = {}
+    for _, p in ipairs(self.enabledPages or {}) do present[p] = true end
+    for _, p in ipairs({ self.pageOverview, self.pageSettings, self.pageHelp }) do
+        if p ~= nil and present[p] then last[#last + 1] = p end
     end
 
     local kept = {}
@@ -695,8 +743,19 @@ function DistributionMenu:focusAsset()
     if cls == "PRODUCTION" then page = self.pageProductions
     elseif cls == "HUSBANDRY" or cls == "HEAP" then page = self.pageHusbandry
     elseif cls == "MARKET" then page = self.pageMarkets end   -- pits ride with husbandry
+    -- a Pumps & Hoses plant is not on the Productions tab: open its own tab on the fermenter
+    if SmartDistribution.isPlantRoot ~= nil and SmartDistribution.isPlantRoot(placeable) and self.pageBiogas ~= nil then
+        page = self.pageBiogas
+        local st = SmartDistribution._biogas
+        if st ~= nil then st.root, st.piece = placeable, placeable end
+    end
     if page == nil then return end
 
+    -- LEFT ON THE PAGE TOO, for the case where the tab switch has not opened it yet: its onFrameOpen
+    -- would otherwise reset to row 1 AFTER the selection below and land the jump elsewhere (2026-10-20,
+    -- Production Redux's "Open in Distribution Redux"). Cleared again if the page is already open, so a
+    -- stale target can never hijack the next visit.
+    page._pendingSelect = { placeable = placeable, role = cls }
     local idx = self.tabIndexByPage ~= nil and self.tabIndexByPage[page] or nil
     if idx ~= nil and self.pageSelector ~= nil and self.pageSelector.setState ~= nil then
         pcall(function() self.pageSelector:setState(idx, true) end)   -- switch tab (content + highlight)
@@ -704,4 +763,5 @@ function DistributionMenu:focusAsset()
     if page.selectPlaceable ~= nil then
         pcall(function() page:selectPlaceable(placeable, cls) end)   -- preselect the gazed asset (its primary role)
     end
+    if self.currentPage == page then page._pendingSelect = nil end
 end

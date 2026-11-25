@@ -49,6 +49,7 @@
         <text name="dr_title_storage"         text="Distribution Redux - Storage" />
         <text name="dr_title_husbandry"       text="Distribution Redux - Animal Husbandry" />
         <text name="dr_title_markets"         text="Distribution Redux - Markets" />
+        <text name="dr_title_biogas"          text="Distribution Redux - Pumps &amp; Hoses Biogas" />
         <text name="dr_title_help"            text="Help" />
         <text name="dr_tab_distribution" text="DISTRIBUTION"/>
         <text name="dr_tab_productions" text="PRODUCTIONS" />
@@ -116,6 +117,7 @@
         <text name="dr_rg_capClamped"    text="Capped at the tank: %s" />
         <text name="dr_rg_blockedNoSet"  text="That product is blocked" />
         <text name="dr_tab_markets"     text="MARKETS" />
+        <text name="dr_tab_biogas"      text="P&amp;H BIOGAS" />
         <text name="dr_title_settings"        text="Settings" />
         <text name="dr_title_advanced"        text="Advanced" />
         <text name="dr_title_advancedInputs"  text="Advanced Inputs" />
@@ -126,6 +128,7 @@
         <text name="dr_col_husbandries"   text="HUSBANDRIES" />
         <text name="dr_col_markets"       text="MARKETS" />
         <text name="dr_col_productions"   text="PRODUCTIONS" />
+        <text name="dr_col_plantBuildings" text="PLANT BUILDINGS" />
 
         <!-- ================= selector labels above the tables ================= -->
         <text name="dr_lbl_timescale"        text="Timescale" />
@@ -401,10 +404,33 @@
         <text name="dr_mode_9"   text="Hold Internal" />
         <text name="dr_mode_10"  text="Move To" />
         <text name="dr_mode_11"  text="Distribute + Move To" />
+        <text name="dr_mode_12"  text="Distribute across biogas plant" />
         <!-- Plain "Hold" on a building that emits PALLETS: the product is held as pallets on
              the pad, as opposed to "Hold Internal" which keeps it as bulk inside the building
              and spawns nothing. The distinction is the whole point, so keep them distinct. -->
         <text name="dr_mode_holdPallets" text="Hold Pallets" />
+        <!-- A biogas plant's INTERNAL product (methane its own engine burns): the plant pipes it,
+             DR never routes it, so the mode cell names the plant instead of a DR mode. -->
+        <text name="dr_mode_plantInternal" text="Biogas plant" />
+
+        <!-- ================= BIOGAS tab (Pumps & Hoses plants, one row per building) ================= -->
+        <text name="dr_lbl_plant"         text="Plant" />
+        <text name="dr_lbl_biogasNote"    text="Modes: fermenter, CHP and tank rows. Advanced shows each building with its plant links." />
+        <text name="dr_plant_fermenter"   text="Fermenter" />
+        <text name="dr_plant_chp"         text="Combined heat and power (CHP)" />
+        <text name="dr_plant_bunker"      text="Feed bunker" />
+        <text name="dr_plant_torch"       text="Gas torch" />
+        <text name="dr_plant_tank"        text="Liquid manure tank" />
+        <text name="dr_plant_piece"       text="Plant building" />
+        <text name="dr_torch_burning"     text="Burning" />
+        <text name="dr_btn_burnerOn"      text="Burner: On" />
+        <text name="dr_btn_burnerOff"     text="Burner: Off" />
+        <!-- %d is the fermenter fill percentage the torch lights at -->
+        <text name="dr_torch_idle"        text="Idle - lights above %d%%" />
+        <text name="dr_torch_off"         text="Off - burner switched off" />
+        <!-- the fermenter's methane: three PLANT modes (5.123) -->
+        <text name="dr_rg_plantPipe"      text="Plant pipe" />
+        <!-- %d is the fermenter fill percentage the torch lights at -->
 
         <!-- ================= SILOS/BUNKERS ================= -->
         <text name="dr_bunker_fermenting"    text="Fermenting" />
