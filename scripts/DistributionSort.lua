@@ -311,16 +311,21 @@ end
 
 -- The three-level comparison. idA / idB are the caller's stable tie-breakers and
 -- may be nil, numbers or strings.
+local ID_TYPE_ORDER = { ["nil"] = 0, number = 1, string = 2 }
+local function idLess(a, b)
+    local ta, tb = type(a), type(b)
+    if ta ~= tb then return (ID_TYPE_ORDER[ta] or 3) < (ID_TYPE_ORDER[tb] or 3) end
+    if ta == "number" or ta == "string" then return a < b end
+    return false
+end
+
 function DistributionSort.less(nameA, idA, nameB, idB)
     local ka, kb = DistributionSort.key(nameA), DistributionSort.key(nameB)
     if ka ~= kb then return ka < kb end
     local la = (type(nameA) == "string") and nameA:lower() or ""
     local lb = (type(nameB) == "string") and nameB:lower() or ""
     if la ~= lb then return la < lb end
-    local ta, tb = type(idA), type(idB)
-    if ta == "number" and tb == "number" then return idA < idB end
-    if idA == nil and idB == nil then return false end
-    return tostring(idA or "") < tostring(idB or "")
+    return idLess(idA, idB)
 end
 
 -- Sort a DISPLAY table in place, alphabetically by the localized name each entry
@@ -347,9 +352,8 @@ function DistributionSort.sort(list, nameFn, idFn)
     table.sort(dec, function(a, b)
         if a.k ~= b.k then return a.k < b.k end
         if a.l ~= b.l then return a.l < b.l end
-        local ta, tb = type(a.id), type(b.id)
-        if ta == "number" and tb == "number" and a.id ~= b.id then return a.id < b.id end
-        if ta == "string" and tb == "string" and a.id ~= b.id then return a.id < b.id end
+        if idLess(a.id, b.id) then return true end
+        if idLess(b.id, a.id) then return false end
         return a.i < b.i          -- fully stable: original position is the last word
     end)
     for i = 1, #dec do list[i] = dec[i].e end
@@ -399,7 +403,7 @@ function DistributionSort.sortFillTypes(list, titleFn)
     table.sort(dec, function(a, b)
         if a.k ~= b.k then return a.k < b.k end
         if a.l ~= b.l then return a.l < b.l end
-        return tostring(a.ft) < tostring(b.ft)
+        return idLess(a.ft, b.ft)
     end)
     for i = 1, #dec do list[i] = dec[i].ft end
     return list

@@ -1,0 +1,6 @@
+# Locally installed, checksum-verified CI tools
+/.local/
+/.memsearch
+/.codegraph
+/.codex
+/.claude

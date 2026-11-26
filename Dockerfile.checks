@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        bash make lua5.1 xmlstarlet bats shellcheck \
+        curl ca-certificates tar coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY .github/scripts/install-linters.sh /tmp/install-linters.sh
+RUN bash /tmp/install-linters.sh /opt/check-tools/bin \
+    && rm /tmp/install-linters.sh
+
+ENV PATH="/opt/check-tools/bin:${PATH}" \
+    LINTER_DIR="/opt/check-tools/bin" \
+    LUA="lua5.1"
+WORKDIR /workspace
+# The repository is mounted read-only; Bats writes fixtures under /tmp.
+USER 65532:65532
+CMD ["make", "check"]

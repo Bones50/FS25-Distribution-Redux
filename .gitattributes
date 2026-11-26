@@ -1,0 +1,10 @@
+# Keep scripts executable by Linux containers after Windows checkouts.
+*.sh text eol=lf
+*.bats text eol=lf
+*.lua text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Makefile text eol=lf
+Dockerfile.checks text eol=lf
+.dockerignore text eol=lf
+.gitattributes text eol=lf

@@ -54,11 +54,15 @@ function DistributionSellTimingEvent:readStream(streamId, connection)
 end
 
 function DistributionSellTimingEvent:run(connection)
-    -- received on the server from a client: relay to the other clients
-    if not connection:getIsServer() then
-        g_server:broadcastEvent(self, false, connection)
-    end
     if SmartDistribution == nil then return end
+    -- Relay only resolved objects, with an identity derived by the server.
+    -- A client's local UID may differ and must never become another client's key.
+    if not connection:getIsServer() then
+        if self.placeable == nil then return end
+        local role = (self.role ~= nil and self.role ~= "") and self.role or nil
+        local relay = DistributionSellTimingEvent.new(self.placeable, self.fillTypeIndex, self.bestPrice, role)
+        g_server:broadcastEvent(relay, false, connection)
+    end
     -- client prefers the uid string, server prefers the placeable -- see DistributionModeEvent:run
     if connection ~= nil and connection:getIsServer()
        and self.uid ~= nil and self.uid ~= "" and SmartDistribution.setAssetSellTiming ~= nil then
